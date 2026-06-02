@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashtop</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div>
+          <h1>Dashtop</h1>
+          <p>Dashboard desktop</p>
+        </div>
+      </div>
+      <button id="toggle-config" class="primary-button" type="button">Add app</button>
+    </header>
+
+    <main id="desktop" class="desktop" aria-label="Dashtop desktop">
+      <section id="empty-state" class="empty-state" hidden>
+        <h2>No apps configured</h2>
+        <p>Add a dashboard or website to start building your desktop.</p>
+        <button id="empty-add" class="primary-button" type="button">Add app</button>
+      </section>
+    </main>
+
+    <aside id="config-panel" class="config-panel" aria-label="App configuration" hidden>
+      <div class="panel-header">
+        <h2>Apps</h2>
+        <button id="close-config" class="icon-button" type="button" aria-label="Close panel">x</button>
+      </div>
+
+      <form id="app-form" class="app-form">
+        <label>
+          Name
+          <input id="app-name" name="name" type="text" autocomplete="off" required>
+        </label>
+        <label>
+          URL
+          <input id="app-url" name="url" type="url" placeholder="https://example.com" required>
+        </label>
+        <button class="primary-button" type="submit">Add app</button>
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+      </form>
+
+      <div id="app-list" class="app-list"></div>
+    </aside>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

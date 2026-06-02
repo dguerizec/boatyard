@@ -1,0 +1,23 @@
+{
+  "name": "dashtop",
+  "version": "0.1.0",
+  "description": "Electron desktop shell prototype for dashboards and important websites.",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "smoke": "electron . --smoke --no-sandbox",
+    "lint": "node scripts/check-js.mjs",
+    "test": "node --test"
+  },
+  "keywords": [
+    "electron",
+    "dashboard",
+    "desktop"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^42.3.2"
+  }
+}
