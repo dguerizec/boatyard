@@ -1,0 +1,5 @@
+[project]
+name = "dashtop"
+
+[runtime]
+kind = "codex"
