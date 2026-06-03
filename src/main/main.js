@@ -6,6 +6,7 @@ const { ProjectStore } = require("./store");
 
 let mainWindow = null;
 let store = null;
+let saveWindowStateTimer = null;
 
 function getStorePath() {
   if (process.env.DASHTOP_STATE_PATH) {
@@ -16,9 +17,10 @@ function getStorePath() {
 }
 
 function createMainWindow() {
+  const windowState = store.getWindowState();
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 820,
+    ...windowState.bounds,
     minWidth: 920,
     minHeight: 620,
     title: "Dashtop",
@@ -32,6 +34,10 @@ function createMainWindow() {
     }
   });
 
+  if (windowState.isMaximized) {
+    mainWindow.maximize();
+  }
+
   mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
@@ -43,6 +49,28 @@ function createMainWindow() {
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
+
+  mainWindow.on("move", scheduleWindowStateSave);
+  mainWindow.on("resize", scheduleWindowStateSave);
+  mainWindow.on("maximize", saveWindowState);
+  mainWindow.on("unmaximize", saveWindowState);
+  mainWindow.on("close", saveWindowState);
+}
+
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isMinimized()) {
+    return;
+  }
+
+  store.updateWindowState({
+    bounds: mainWindow.getNormalBounds(),
+    isMaximized: mainWindow.isMaximized()
+  });
+}
+
+function scheduleWindowStateSave() {
+  clearTimeout(saveWindowStateTimer);
+  saveWindowStateTimer = setTimeout(saveWindowState, 250);
 }
 
 function registerIpcHandlers() {

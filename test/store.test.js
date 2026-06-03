@@ -5,7 +5,13 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { ProjectStore, normalizeBounds, normalizeUrl } = require("../src/main/store");
+const {
+  ProjectStore,
+  normalizeBounds,
+  normalizeUrl,
+  normalizeWindowBounds,
+  normalizeWindowState
+} = require("../src/main/store");
 
 test("normalizeUrl adds https and rejects unsupported schemes", () => {
   assert.equal(normalizeUrl("example.com"), "https://example.com/");
@@ -19,6 +25,35 @@ test("normalizeBounds clamps dimensions", () => {
     y: 0,
     width: 260,
     height: 200
+  });
+});
+
+test("normalizeWindowBounds preserves position and enforces app minimum size", () => {
+  assert.deepEqual(normalizeWindowBounds({ x: 120, y: 80, width: 500, height: 400 }), {
+    x: 120,
+    y: 80,
+    width: 920,
+    height: 620
+  });
+});
+
+test("normalizeWindowState keeps maximized state", () => {
+  assert.deepEqual(normalizeWindowState({
+    bounds: {
+      x: 12,
+      y: 34,
+      width: 1440,
+      height: 900
+    },
+    isMaximized: true
+  }), {
+    bounds: {
+      x: 12,
+      y: 34,
+      width: 1440,
+      height: 900
+    },
+    isMaximized: true
   });
 });
 
@@ -40,6 +75,36 @@ test("ProjectStore persists configured projects", () => {
   const reloaded = new ProjectStore(filePath);
   const reloadedState = reloaded.load();
   assert.deepEqual(reloadedState, state);
+});
+
+test("ProjectStore persists window state", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  const state = store.updateWindowState({
+    bounds: {
+      x: 140,
+      y: 96,
+      width: 1360,
+      height: 860
+    },
+    isMaximized: true
+  });
+
+  assert.deepEqual(state, {
+    bounds: {
+      x: 140,
+      y: 96,
+      width: 1360,
+      height: 860
+    },
+    isMaximized: true
+  });
+
+  const reloaded = new ProjectStore(filePath);
+  assert.deepEqual(reloaded.load().window, state);
 });
 
 test("ProjectStore persists project updates and removals", () => {

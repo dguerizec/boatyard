@@ -11,9 +11,20 @@ const DEFAULT_BOUNDS = {
   height: 460
 };
 
+const DEFAULT_WINDOW_BOUNDS = {
+  x: 80,
+  y: 60,
+  width: 1280,
+  height: 820
+};
+
 function createDefaultState() {
   return {
-    projects: []
+    projects: [],
+    window: {
+      bounds: DEFAULT_WINDOW_BOUNDS,
+      isMaximized: false
+    }
   };
 }
 
@@ -50,6 +61,23 @@ function normalizeBounds(bounds, fallback = DEFAULT_BOUNDS) {
     y: Math.max(0, Math.round(next.y)),
     width: Math.max(260, Math.round(next.width)),
     height: Math.max(200, Math.round(next.height))
+  };
+}
+
+function normalizeWindowBounds(bounds, fallback = DEFAULT_WINDOW_BOUNDS) {
+  const normalized = normalizeBounds(bounds, fallback);
+
+  return {
+    ...normalized,
+    width: Math.max(920, normalized.width),
+    height: Math.max(620, normalized.height)
+  };
+}
+
+function normalizeWindowState(windowState = {}) {
+  return {
+    bounds: normalizeWindowBounds(windowState.bounds),
+    isMaximized: windowState.isMaximized === true
   };
 }
 
@@ -91,7 +119,8 @@ class ProjectStore {
           ? parsed.apps
           : [];
       this.state = {
-        projects: projects.map((project, index) => normalizeProject(project, index))
+        projects: projects.map((project, index) => normalizeProject(project, index)),
+        window: normalizeWindowState(parsed.window)
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -110,6 +139,20 @@ class ProjectStore {
 
   getState() {
     return structuredClone(this.state);
+  }
+
+  getWindowState() {
+    return structuredClone(this.state.window);
+  }
+
+  updateWindowState(windowState) {
+    this.state.window = normalizeWindowState({
+      ...this.state.window,
+      ...windowState,
+      bounds: windowState.bounds || this.state.window.bounds
+    });
+    this.save();
+    return this.getWindowState();
   }
 
   addProject(project) {
@@ -153,8 +196,11 @@ class ProjectStore {
 
 module.exports = {
   DEFAULT_BOUNDS,
+  DEFAULT_WINDOW_BOUNDS,
   normalizeBounds,
   normalizeProject,
+  normalizeWindowBounds,
+  normalizeWindowState,
   ProjectStore,
   normalizeUrl
 };
