@@ -22,6 +22,7 @@ function createMainWindow() {
     minWidth: 920,
     minHeight: 620,
     title: "Dashtop",
+    icon: path.join(__dirname, "../renderer/assets/dashtop-icon.png"),
     backgroundColor: "#101418",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
