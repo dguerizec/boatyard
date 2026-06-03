@@ -36,9 +36,9 @@ test("normalizeSlug derives stable project slugs", () => {
 });
 
 test("deriveRepoUrl converts git remotes to browser urls", () => {
-  assert.equal(deriveRepoUrl("git@github.com:owner/dashtop.git"), "https://github.com/owner/dashtop");
-  assert.equal(deriveRepoUrl("https://github.com/owner/dashtop.git"), "https://github.com/owner/dashtop");
-  assert.equal(deriveRepoUrl("ssh://git@github.com/owner/dashtop.git"), "https://github.com/owner/dashtop");
+  assert.equal(deriveRepoUrl("git@github.com:owner/repo.git"), "https://github.com/owner/repo");
+  assert.equal(deriveRepoUrl("https://github.com/owner/repo.git"), "https://github.com/owner/repo");
+  assert.equal(deriveRepoUrl("ssh://git@github.com/owner/repo.git"), "https://github.com/owner/repo");
   assert.equal(deriveRepoUrl(""), "");
 });
 
@@ -47,15 +47,15 @@ test("normalizeProject derives project tool defaults", () => {
     id: "project-id",
     name: "DashTop",
     sourcePath: "/tmp/dashtop",
-    gitUrl: "git@github.com:owner/dashtop.git",
+    gitUrl: "git@github.com:owner/repo.git",
     previewUrl: "localhost:5173"
   }), {
     id: "project-id",
     slug: "dashtop",
     name: "DashTop",
     sourcePath: "/tmp/dashtop",
-    gitUrl: "git@github.com:owner/dashtop.git",
-    repoUrl: "https://github.com/owner/dashtop",
+    gitUrl: "git@github.com:owner/repo.git",
+    repoUrl: "https://github.com/owner/repo",
     devBranch: "",
     previewUrl: "http://localhost:5173/",
     twiccUrl: normalizeUrl(DEFAULT_TWICC_URL),
@@ -76,9 +76,9 @@ test("normalizeProject keeps explicit repo urls", () => {
     id: "project-id",
     name: "DashTop",
     sourcePath: "/tmp/dashtop",
-    gitUrl: "git@github.com:owner/dashtop.git",
-    repoUrl: "https://github.com/owner/dashtop/tree/main/src/renderer"
-  }).repoUrl, "https://github.com/owner/dashtop/tree/main/src/renderer");
+    gitUrl: "git@github.com:owner/repo.git",
+    repoUrl: "https://github.com/owner/repo/tree/main/src/renderer"
+  }).repoUrl, "https://github.com/owner/repo/tree/main/src/renderer");
 });
 
 test("normalizeProjectUrls keeps provider urls with stable ids", () => {
@@ -90,7 +90,7 @@ test("normalizeProjectUrls keeps provider urls with stable ids", () => {
     {
       id: "github-secrets",
       label: "GitHub secrets",
-      url: "https://github.com/owner/dashtop/settings/secrets/actions"
+      url: "https://github.com/owner/repo/settings/secrets/actions"
     },
     {
       label: "",
@@ -105,7 +105,7 @@ test("normalizeProjectUrls keeps provider urls with stable ids", () => {
     {
       id: "github-secrets",
       label: "GitHub secrets",
-      url: "https://github.com/owner/dashtop/settings/secrets/actions"
+      url: "https://github.com/owner/repo/settings/secrets/actions"
     }
   ]);
 
