@@ -9,6 +9,8 @@ let store = null;
 let saveWindowStateTimer = null;
 const webAppViews = new Map();
 let activeWebAppKey = null;
+let visibleWebAppKeys = new Set();
+let webAppsFrozen = false;
 
 function getStorePath() {
   if (process.env.DASHTOP_STATE_PATH) {
@@ -145,7 +147,7 @@ function showWebApp({ key, url, bounds }) {
 
   const webApp = ensureWebAppView(String(key));
   webApp.view.setBounds(normalizeWebAppBounds(bounds));
-  webApp.view.setVisible(true);
+  webApp.view.setVisible(!webAppsFrozen);
   activeWebAppKey = String(key);
 
   if (webApp.url !== parsedUrl.toString()) {
@@ -166,20 +168,60 @@ function setWebAppBounds(bounds) {
 }
 
 function setVisibleWebApps(keys) {
-  const visibleKeys = new Set(Array.isArray(keys) ? keys.map(String) : []);
+  visibleWebAppKeys = new Set(Array.isArray(keys) ? keys.map(String) : []);
 
   for (const [key, item] of webAppViews) {
-    item.view.setVisible(visibleKeys.has(key));
+    item.view.setVisible(!webAppsFrozen && visibleWebAppKeys.has(key));
   }
 
-  activeWebAppKey = visibleKeys.size > 0 ? [...visibleKeys].at(-1) : null;
+  activeWebAppKey = visibleWebAppKeys.size > 0 ? [...visibleWebAppKeys].at(-1) : null;
 }
 
 function hideWebApp() {
   activeWebAppKey = null;
+  visibleWebAppKeys = new Set();
 
   for (const item of webAppViews.values()) {
     item.view.setVisible(false);
+  }
+}
+
+async function freezeWebApps() {
+  webAppsFrozen = true;
+  const captures = [];
+
+  for (const key of visibleWebAppKeys) {
+    const item = webAppViews.get(key);
+    if (!item || item.view.webContents.isDestroyed()) {
+      continue;
+    }
+
+    try {
+      const image = await item.view.webContents.capturePage();
+      if (!image.isEmpty()) {
+        captures.push({
+          key,
+          bounds: item.view.getBounds(),
+          dataUrl: image.toDataURL()
+        });
+      }
+    } catch (error) {
+      console.warn(`Could not capture webapp ${key}: ${error.message}`);
+    }
+  }
+
+  for (const item of webAppViews.values()) {
+    item.view.setVisible(false);
+  }
+
+  return captures;
+}
+
+function restoreWebApps() {
+  webAppsFrozen = false;
+
+  for (const [key, item] of webAppViews) {
+    item.view.setVisible(visibleWebAppKeys.has(key));
   }
 }
 
@@ -197,6 +239,8 @@ function destroyWebAppViews() {
   }
   webAppViews.clear();
   activeWebAppKey = null;
+  visibleWebAppKeys = new Set();
+  webAppsFrozen = false;
 }
 
 function registerIpcHandlers() {
@@ -232,6 +276,14 @@ function registerIpcHandlers() {
 
   ipcMain.handle("webapp:hide", () => {
     hideWebApp();
+  });
+
+  ipcMain.handle("webapp:freeze", () => {
+    return freezeWebApps();
+  });
+
+  ipcMain.handle("webapp:restore", () => {
+    restoreWebApps();
   });
 
   ipcMain.handle("shell:open-external", (_event, url) => {

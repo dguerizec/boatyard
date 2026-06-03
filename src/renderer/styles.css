@@ -498,6 +498,24 @@ button {
   background: #0b0f14;
 }
 
+.webapp-freeze-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  overflow: hidden;
+  background: rgba(7, 10, 14, 0.22);
+}
+
+.webapp-freeze-shot {
+  position: absolute;
+  display: block;
+  object-fit: cover;
+  filter: blur(8px) brightness(0.76) saturate(0.92);
+  transform: scale(1.012);
+  transform-origin: center;
+  opacity: 0.92;
+}
+
 .config-panel {
   position: fixed;
   top: 76px;

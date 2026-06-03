@@ -12,5 +12,7 @@ contextBridge.exposeInMainWorld("dashtop", {
   setWebAppBounds: (bounds) => ipcRenderer.invoke("webapp:set-bounds", bounds),
   setVisibleWebApps: (keys) => ipcRenderer.invoke("webapp:set-visible", keys),
   hideWebApp: () => ipcRenderer.invoke("webapp:hide"),
+  freezeWebApps: () => ipcRenderer.invoke("webapp:freeze"),
+  restoreWebApps: () => ipcRenderer.invoke("webapp:restore"),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url)
 });

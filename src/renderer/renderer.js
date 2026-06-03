@@ -28,6 +28,7 @@ const selectedWebAppByPane = new Map();
 let visibleWebAppHosts = new Map();
 let webAppBoundsFrame = null;
 let nextPaneId = 1;
+let frozenWebAppLayer = null;
 
 function getProjects() {
   return state.projects;
@@ -606,6 +607,83 @@ function queueWebAppSync() {
   webAppBoundsFrame = requestAnimationFrame(syncWebAppView);
 }
 
+function clearFrozenWebAppLayer() {
+  frozenWebAppLayer?.remove();
+  frozenWebAppLayer = null;
+}
+
+function renderFrozenWebApps(captures) {
+  clearFrozenWebAppLayer();
+
+  if (!Array.isArray(captures) || captures.length === 0) {
+    return;
+  }
+
+  const layer = document.createElement("div");
+  layer.className = "webapp-freeze-layer";
+  layer.setAttribute("aria-hidden", "true");
+
+  for (const capture of captures) {
+    if (!capture?.bounds || !capture.dataUrl) {
+      continue;
+    }
+
+    const image = document.createElement("img");
+    image.className = "webapp-freeze-shot";
+    image.src = capture.dataUrl;
+    image.alt = "";
+    image.style.left = `${capture.bounds.x}px`;
+    image.style.top = `${capture.bounds.y}px`;
+    image.style.width = `${capture.bounds.width}px`;
+    image.style.height = `${capture.bounds.height}px`;
+    layer.append(image);
+  }
+
+  document.body.append(layer);
+  frozenWebAppLayer = layer;
+}
+
+async function freezeWebAppsForOverlay() {
+  try {
+    const captures = await window.dashtop.freezeWebApps();
+    renderFrozenWebApps(captures);
+  } catch (error) {
+    console.error("Could not freeze webapps:", error);
+  }
+}
+
+async function restoreWebAppsAfterOverlay() {
+  clearFrozenWebAppLayer();
+
+  try {
+    await window.dashtop.restoreWebApps();
+  } catch (error) {
+    console.error("Could not restore webapps:", error);
+  }
+
+  queueWebAppSync();
+}
+
+async function openConfigPanel() {
+  if (!configPanel.hidden) {
+    projectNameInput.focus();
+    return;
+  }
+
+  await freezeWebAppsForOverlay();
+  configPanel.hidden = false;
+  projectNameInput.focus();
+}
+
+function closeConfigPanel() {
+  if (configPanel.hidden) {
+    return;
+  }
+
+  configPanel.hidden = true;
+  restoreWebAppsAfterOverlay();
+}
+
 function selectProject(id) {
   currentProjectId = id;
   render();
@@ -696,12 +774,15 @@ window.addEventListener("resize", queueWebAppSync);
 workspace.addEventListener("scroll", queueWebAppSync);
 
 toggleConfigButton.addEventListener("click", () => {
-  configPanel.hidden = !configPanel.hidden;
-  projectNameInput.focus();
+  if (configPanel.hidden) {
+    openConfigPanel();
+  } else {
+    closeConfigPanel();
+  }
 });
 
 closeConfigButton.addEventListener("click", () => {
-  configPanel.hidden = true;
+  closeConfigPanel();
 });
 
 projectForm.addEventListener("submit", async (event) => {
