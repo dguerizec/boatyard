@@ -1,289 +1,31 @@
 "use strict";
 
-const MIN_WIDTH = 260;
-const MIN_HEIGHT = 200;
-const TITLEBAR_HEIGHT = 36;
-
-const desktop = document.querySelector("#desktop");
-const emptyState = document.querySelector("#empty-state");
+const globalNav = document.querySelector("#global-nav");
+const globalViewButton = document.querySelector("#global-view");
+const projectCount = document.querySelector("#project-count");
+const projectList = document.querySelector("#project-list");
+const dashboardGrid = document.querySelector("#dashboard-grid");
+const workspaceKicker = document.querySelector("#workspace-kicker");
+const workspaceTitle = document.querySelector("#workspace-title");
+const workspaceSummary = document.querySelector("#workspace-summary");
 const configPanel = document.querySelector("#config-panel");
 const toggleConfigButton = document.querySelector("#toggle-config");
 const closeConfigButton = document.querySelector("#close-config");
-const emptyAddButton = document.querySelector("#empty-add");
-const appForm = document.querySelector("#app-form");
-const appNameInput = document.querySelector("#app-name");
-const appUrlInput = document.querySelector("#app-url");
+const projectForm = document.querySelector("#project-form");
+const projectNameInput = document.querySelector("#project-name");
+const projectUrlInput = document.querySelector("#project-url");
 const formError = document.querySelector("#form-error");
-const appList = document.querySelector("#app-list");
+const configuredProjects = document.querySelector("#configured-projects");
 
 let state = { apps: [] };
-let activeAppId = null;
-let dragSession = null;
-let saveLayoutTimer = null;
-let highestZ = 1;
+let currentProjectId = null;
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+function getProjects() {
+  return state.apps;
 }
 
-function getDesktopSize() {
-  return {
-    width: desktop.clientWidth,
-    height: desktop.clientHeight
-  };
-}
-
-function getAppElement(id) {
-  return desktop.querySelector(`.app-window[data-app-id="${CSS.escape(id)}"]`);
-}
-
-function getSurfaceBounds(element) {
-  const surface = element.querySelector(".web-surface");
-  const rect = surface.getBoundingClientRect();
-
-  return {
-    x: Math.round(rect.left),
-    y: Math.round(rect.top),
-    width: Math.round(rect.width),
-    height: Math.round(rect.height)
-  };
-}
-
-function setElementBounds(element, bounds) {
-  const size = getDesktopSize();
-  const width = clamp(bounds.width, MIN_WIDTH, Math.max(MIN_WIDTH, size.width));
-  const height = clamp(bounds.height, MIN_HEIGHT, Math.max(MIN_HEIGHT, size.height));
-  const x = clamp(bounds.x, 0, Math.max(0, size.width - width));
-  const y = clamp(bounds.y, 0, Math.max(0, size.height - height));
-
-  element.style.left = `${x}px`;
-  element.style.top = `${y}px`;
-  element.style.width = `${width}px`;
-  element.style.height = `${height}px`;
-}
-
-function syncViewBounds(id) {
-  const element = getAppElement(id);
-
-  if (element) {
-    window.dashtop.setViewBounds(id, getSurfaceBounds(element));
-  }
-}
-
-function syncAllViewBounds() {
-  if (!configPanel.hidden) {
-    return;
-  }
-
-  for (const appConfig of state.apps) {
-    if (appConfig.isOpen) {
-      syncViewBounds(appConfig.id);
-    }
-  }
-}
-
-function scheduleLayoutSave(id) {
-  window.clearTimeout(saveLayoutTimer);
-  saveLayoutTimer = window.setTimeout(async () => {
-    const element = getAppElement(id);
-
-    if (!element) {
-      return;
-    }
-
-    const bounds = {
-      x: Number.parseInt(element.style.left, 10),
-      y: Number.parseInt(element.style.top, 10),
-      width: Number.parseInt(element.style.width, 10),
-      height: Number.parseInt(element.style.height, 10)
-    };
-
-    state = await window.dashtop.updateApp(id, { bounds });
-    render();
-  }, 150);
-}
-
-async function focusApp(id) {
-  activeAppId = id;
-  const element = getAppElement(id);
-
-  if (element) {
-    highestZ += 1;
-    element.style.zIndex = String(highestZ);
-    document.querySelectorAll(".app-window.active").forEach((node) => {
-      node.classList.remove("active");
-    });
-    element.classList.add("active");
-  }
-
-  await window.dashtop.focusView(id);
-  syncViewBounds(id);
-}
-
-function startDrag(event, id, mode) {
-  const element = getAppElement(id);
-
-  if (!element) {
-    return;
-  }
-
-  event.preventDefault();
-  focusApp(id);
-
-  const rect = element.getBoundingClientRect();
-  const desktopRect = desktop.getBoundingClientRect();
-  dragSession = {
-    id,
-    mode,
-    startX: event.clientX,
-    startY: event.clientY,
-    bounds: {
-      x: rect.left - desktopRect.left,
-      y: rect.top - desktopRect.top,
-      width: rect.width,
-      height: rect.height
-    }
-  };
-}
-
-function handlePointerMove(event) {
-  if (!dragSession) {
-    return;
-  }
-
-  const deltaX = event.clientX - dragSession.startX;
-  const deltaY = event.clientY - dragSession.startY;
-  const nextBounds = { ...dragSession.bounds };
-
-  if (dragSession.mode === "move") {
-    nextBounds.x += deltaX;
-    nextBounds.y += deltaY;
-  } else {
-    nextBounds.width += deltaX;
-    nextBounds.height += deltaY;
-  }
-
-  const element = getAppElement(dragSession.id);
-  setElementBounds(element, nextBounds);
-  syncViewBounds(dragSession.id);
-}
-
-function handlePointerUp() {
-  if (!dragSession) {
-    return;
-  }
-
-  scheduleLayoutSave(dragSession.id);
-  dragSession = null;
-}
-
-function createWindowElement(appConfig) {
-  const element = document.createElement("article");
-  element.className = "app-window";
-  element.dataset.appId = appConfig.id;
-  element.innerHTML = `
-    <div class="window-titlebar">
-      <span class="window-title"></span>
-      <div class="window-actions">
-        <button class="icon-button close-window" type="button" aria-label="Close window">x</button>
-      </div>
-    </div>
-    <div class="web-surface"></div>
-    <div class="resize-handle" aria-hidden="true"></div>
-  `;
-
-  element.querySelector(".window-title").textContent = appConfig.name;
-  setElementBounds(element, appConfig.bounds);
-
-  element.addEventListener("pointerdown", () => {
-    focusApp(appConfig.id);
-  });
-  element.querySelector(".window-titlebar").addEventListener("pointerdown", (event) => {
-    startDrag(event, appConfig.id, "move");
-  });
-  element.querySelector(".resize-handle").addEventListener("pointerdown", (event) => {
-    startDrag(event, appConfig.id, "resize");
-  });
-  element.querySelector(".close-window").addEventListener("click", async (event) => {
-    event.stopPropagation();
-    state = await window.dashtop.updateApp(appConfig.id, { isOpen: false });
-    render();
-  });
-
-  return element;
-}
-
-function renderDesktop() {
-  for (const node of desktop.querySelectorAll(".app-window")) {
-    node.remove();
-  }
-
-  const openApps = state.apps.filter((appConfig) => appConfig.isOpen);
-  emptyState.hidden = state.apps.length > 0;
-
-  for (const appConfig of openApps) {
-    const element = createWindowElement(appConfig);
-    highestZ += 1;
-    element.style.zIndex = String(highestZ);
-    desktop.append(element);
-  }
-
-  if (!activeAppId && openApps.length > 0) {
-    activeAppId = openApps[openApps.length - 1].id;
-  }
-
-  if (activeAppId) {
-    const active = getAppElement(activeAppId);
-
-    if (active) {
-      active.classList.add("active");
-    }
-  }
-
-  requestAnimationFrame(syncAllViewBounds);
-}
-
-function renderAppList() {
-  appList.innerHTML = "";
-
-  for (const appConfig of state.apps) {
-    const item = document.createElement("div");
-    item.className = "app-list-item";
-    item.innerHTML = `
-      <div class="app-list-title">
-        <strong></strong>
-        <span></span>
-      </div>
-      <div class="app-list-actions">
-        <button class="secondary-button open-app" type="button"></button>
-        <button class="danger-button remove-app" type="button">Remove</button>
-      </div>
-    `;
-
-    item.querySelector("strong").textContent = appConfig.name;
-    item.querySelector("span").textContent = appConfig.url;
-    item.querySelector(".open-app").textContent = appConfig.isOpen ? "Focus" : "Open";
-    item.querySelector(".open-app").addEventListener("click", async () => {
-      state = await window.dashtop.updateApp(appConfig.id, { isOpen: true });
-      activeAppId = appConfig.id;
-      render();
-      await focusApp(appConfig.id);
-    });
-    item.querySelector(".remove-app").addEventListener("click", async () => {
-      state = await window.dashtop.removeApp(appConfig.id);
-      if (activeAppId === appConfig.id) {
-        activeAppId = null;
-      }
-      render();
-    });
-
-    appList.append(item);
-  }
-}
-
-function render() {
-  renderDesktop();
-  renderAppList();
+function getCurrentProject() {
+  return getProjects().find((project) => project.id === currentProjectId) || null;
 }
 
 function showError(message) {
@@ -291,59 +33,234 @@ function showError(message) {
   formError.hidden = !message;
 }
 
+function createCard({ title, eyebrow, body, meta, action }) {
+  const card = document.createElement("article");
+  card.className = "widget-card";
+
+  const content = document.createElement("div");
+  content.className = "widget-content";
+
+  if (eyebrow) {
+    const eyebrowNode = document.createElement("p");
+    eyebrowNode.className = "widget-eyebrow";
+    eyebrowNode.textContent = eyebrow;
+    content.append(eyebrowNode);
+  }
+
+  const titleNode = document.createElement("h3");
+  titleNode.textContent = title;
+  content.append(titleNode);
+
+  const bodyNode = document.createElement("p");
+  bodyNode.textContent = body;
+  content.append(bodyNode);
+
+  if (meta) {
+    const metaNode = document.createElement("span");
+    metaNode.className = "widget-meta";
+    metaNode.textContent = meta;
+    content.append(metaNode);
+  }
+
+  card.append(content);
+
+  if (action) {
+    const button = document.createElement("button");
+    button.className = "secondary-button";
+    button.type = "button";
+    button.textContent = action.label;
+    button.addEventListener("click", action.onClick);
+    card.append(button);
+  }
+
+  return card;
+}
+
+function renderGlobalDashboard() {
+  const projects = getProjects();
+  workspaceKicker.textContent = "Global";
+  workspaceTitle.textContent = "System overview";
+  workspaceSummary.textContent = "Global widgets will collect usage, agents, assistants, and service health.";
+  dashboardGrid.innerHTML = "";
+
+  dashboardGrid.append(
+    createCard({
+      eyebrow: "Projects",
+      title: String(projects.length),
+      body: "Configured projects in this workspace.",
+      meta: "Project switcher is the primary navigation."
+    }),
+    createCard({
+      eyebrow: "Usage",
+      title: "Usage",
+      body: "Placeholder for global agent and API usage.",
+      meta: "Runtime widget target"
+    }),
+    createCard({
+      eyebrow: "Agents",
+      title: "Agent config",
+      body: "Placeholder for Tars, Hermes, and agent settings.",
+      meta: "Global widget"
+    }),
+    createCard({
+      eyebrow: "Inbox",
+      title: "Hawser",
+      body: "Placeholder for cross-project messages and active requests.",
+      meta: "API widget target"
+    })
+  );
+}
+
+function renderProjectDashboard(project) {
+  workspaceKicker.textContent = "Project";
+  workspaceTitle.textContent = project.name;
+  workspaceSummary.textContent = project.url;
+  dashboardGrid.innerHTML = "";
+
+  dashboardGrid.append(
+    createCard({
+      eyebrow: "Preview",
+      title: "Project preview",
+      body: "A non-overlapping app pane can render this project when the focus mode lands.",
+      meta: project.url,
+      action: {
+        label: "Open URL",
+        onClick: () => window.dashtop.openExternal(project.url)
+      }
+    }),
+    createCard({
+      eyebrow: "Sessions",
+      title: "Twicc",
+      body: "Placeholder for sessions linked to this project.",
+      meta: "Contextual widget"
+    }),
+    createCard({
+      eyebrow: "Terminal",
+      title: "Project shell",
+      body: "Placeholder for a terminal pane rooted in the project directory.",
+      meta: "Contextual widget"
+    }),
+    createCard({
+      eyebrow: "Comms",
+      title: "Discord",
+      body: "Placeholder for the project channel or activity feed.",
+      meta: "Contextual widget"
+    })
+  );
+}
+
+function selectProject(id) {
+  currentProjectId = id;
+  render();
+}
+
+function renderProjectList() {
+  const projects = getProjects();
+  projectCount.textContent = String(projects.length);
+  projectList.innerHTML = "";
+
+  globalNav.classList.toggle("active", currentProjectId === null);
+
+  if (projects.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-copy";
+    empty.textContent = "No projects configured yet.";
+    projectList.append(empty);
+    return;
+  }
+
+  for (const project of projects) {
+    const button = document.createElement("button");
+    button.className = "nav-item";
+    button.type = "button";
+    button.classList.toggle("active", project.id === currentProjectId);
+    button.innerHTML = `
+      <span></span>
+      <small></small>
+    `;
+    button.querySelector("span").textContent = project.name;
+    button.querySelector("small").textContent = project.url;
+    button.addEventListener("click", () => selectProject(project.id));
+    projectList.append(button);
+  }
+}
+
+function renderConfiguredProjects() {
+  configuredProjects.innerHTML = "";
+
+  for (const project of getProjects()) {
+    const item = document.createElement("div");
+    item.className = "configured-project";
+    item.innerHTML = `
+      <div>
+        <strong></strong>
+        <span></span>
+      </div>
+      <button class="danger-button" type="button">Remove</button>
+    `;
+
+    item.querySelector("strong").textContent = project.name;
+    item.querySelector("span").textContent = project.url;
+    item.querySelector("button").addEventListener("click", async () => {
+      state = await window.dashtop.removeApp(project.id);
+
+      if (currentProjectId === project.id) {
+        currentProjectId = null;
+      }
+
+      render();
+    });
+    configuredProjects.append(item);
+  }
+}
+
+function render() {
+  renderProjectList();
+  renderConfiguredProjects();
+
+  const project = getCurrentProject();
+
+  if (project) {
+    renderProjectDashboard(project);
+  } else {
+    renderGlobalDashboard();
+  }
+}
+
 async function loadState() {
   state = await window.dashtop.getState();
   render();
 }
 
+globalNav.addEventListener("click", () => selectProject(null));
+globalViewButton.addEventListener("click", () => selectProject(null));
+
 toggleConfigButton.addEventListener("click", () => {
   configPanel.hidden = !configPanel.hidden;
-
-  if (configPanel.hidden) {
-    window.dashtop.resumeViews().then(syncAllViewBounds);
-  } else {
-    window.dashtop.suspendViews();
-  }
-
-  appNameInput.focus();
-});
-
-emptyAddButton.addEventListener("click", () => {
-  configPanel.hidden = false;
-  window.dashtop.suspendViews();
-  appNameInput.focus();
+  projectNameInput.focus();
 });
 
 closeConfigButton.addEventListener("click", () => {
   configPanel.hidden = true;
-  window.dashtop.resumeViews().then(syncAllViewBounds);
 });
 
-appForm.addEventListener("submit", async (event) => {
+projectForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   showError("");
 
   try {
     state = await window.dashtop.addApp({
-      name: appNameInput.value,
-      url: appUrlInput.value
+      name: projectNameInput.value,
+      url: projectUrlInput.value,
+      isOpen: false
     });
-    activeAppId = state.apps[state.apps.length - 1].id;
-    appForm.reset();
+    const project = state.apps[state.apps.length - 1];
+    currentProjectId = project.id;
+    projectForm.reset();
     render();
-
-    if (!configPanel.hidden) {
-      await window.dashtop.suspendViews();
-    }
   } catch (error) {
     showError(error.message);
   }
-});
-
-window.addEventListener("pointermove", handlePointerMove);
-window.addEventListener("pointerup", handlePointerUp);
-window.addEventListener("resize", () => {
-  renderDesktop();
 });
 
 loadState();

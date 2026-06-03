@@ -1,16 +1,15 @@
 # Dashtop
 
-Dashtop is a prototype Electron application that acts as a desktop for dashboards and other important websites.
+Dashtop is a prototype Electron application that acts as a project cockpit for dashboards, tools, and development workflows.
 
-The prototype displays configured apps and sites in a desktop-like workspace with movable and resizable internal windows. Each app window renders its URL through an Electron `WebContentsView`; the renderer process only draws the Dashtop shell, window chrome, and configuration UI.
+The prototype now focuses on a clean dashboard shell: a global workspace, a project switcher, and project-scoped panes/widgets. It intentionally avoids the previous "desktop inside a desktop" model.
 
 ## Features
 
-- Add apps with a name and URL.
-- Move and resize app windows inside the main Dashtop window.
-- Close app windows without deleting their configuration.
-- Reopen or remove configured apps from the app panel.
-- Persist configured apps and window layouts locally across restarts.
+- Add projects with a name and preview URL.
+- Switch between global and project dashboards.
+- Persist configured projects locally across restarts.
+- Provide placeholder panes for future widgets such as usage, Hawser, Twicc sessions, terminals, and project previews.
 
 ## Requirements
 
@@ -26,8 +25,11 @@ npm install
 ## Run
 
 ```sh
-npm start
+make run
 ```
+
+`make run` stores configured apps and layouts in `.dashtop-state.json` at the
+repo root so manual test setups survive restarts. The file is ignored by git.
 
 ## Development
 
@@ -35,7 +37,9 @@ npm start
 npm run dev
 ```
 
-The app stores its local state in Electron's user data directory as `dashtop-state.json`.
+The app stores its local state in Electron's user data directory as
+`dashtop-state.json` by default. Set `DASHTOP_STATE_PATH` to force a specific
+state file.
 
 ## Validation
 
@@ -48,7 +52,7 @@ npm test
 
 ## Prototype Limitations
 
-- Apps are configured with only a name and URL.
+- Projects are configured with only a name and preview URL.
 - There is no packaged installer yet.
-- Some websites may block embedding, require authentication flows, or restrict behavior through their own headers and policies.
-- Window chrome is rendered by the Dashtop shell while page content is rendered by separate `WebContentsView` instances.
+- Runtime widgets are not implemented yet.
+- Full-app focus panes for tools such as Twicc or Hermes are not implemented yet.

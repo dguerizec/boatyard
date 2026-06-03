@@ -12,40 +12,67 @@
         <span class="brand-mark" aria-hidden="true"></span>
         <div>
           <h1>Dashtop</h1>
-          <p>Dashboard desktop</p>
+          <p>Project cockpit</p>
         </div>
       </div>
-      <button id="toggle-config" class="primary-button" type="button">Add app</button>
+      <div class="topbar-actions">
+        <button id="global-view" class="secondary-button" type="button">Global</button>
+        <button id="toggle-config" class="primary-button" type="button">Add project</button>
+      </div>
     </header>
 
-    <main id="desktop" class="desktop" aria-label="Dashtop desktop">
-      <section id="empty-state" class="empty-state" hidden>
-        <h2>No apps configured</h2>
-        <p>Add a dashboard or website to start building your desktop.</p>
-        <button id="empty-add" class="primary-button" type="button">Add app</button>
-      </section>
-    </main>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Projects">
+        <div class="sidebar-section">
+          <h2>Workspace</h2>
+          <button id="global-nav" class="nav-item active" type="button">
+            <span>Global</span>
+            <small>System overview</small>
+          </button>
+        </div>
 
-    <aside id="config-panel" class="config-panel" aria-label="App configuration" hidden>
+        <div class="sidebar-section">
+          <div class="section-heading">
+            <h2>Projects</h2>
+            <span id="project-count">0</span>
+          </div>
+          <div id="project-list" class="project-list"></div>
+        </div>
+      </aside>
+
+      <main class="workspace" aria-label="Dashboard">
+        <section class="workspace-header">
+          <div>
+            <p id="workspace-kicker" class="kicker">Global</p>
+            <h2 id="workspace-title">System overview</h2>
+          </div>
+          <p id="workspace-summary" class="workspace-summary"></p>
+        </section>
+
+        <section id="dashboard-grid" class="dashboard-grid"></section>
+      </main>
+    </div>
+
+    <aside id="config-panel" class="config-panel" aria-label="Project configuration" hidden>
       <div class="panel-header">
-        <h2>Apps</h2>
+        <h2>Projects</h2>
         <button id="close-config" class="icon-button" type="button" aria-label="Close panel">x</button>
       </div>
 
-      <form id="app-form" class="app-form">
+      <form id="project-form" class="project-form">
         <label>
           Name
-          <input id="app-name" name="name" type="text" autocomplete="off" required>
+          <input id="project-name" name="name" type="text" autocomplete="off" required>
         </label>
         <label>
-          URL
-          <input id="app-url" name="url" type="url" placeholder="https://example.com" required>
+          Preview URL
+          <input id="project-url" name="url" type="url" placeholder="http://localhost:5173" required>
         </label>
-        <button class="primary-button" type="submit">Add app</button>
+        <button class="primary-button" type="submit">Add project</button>
         <p id="form-error" class="form-error" role="alert" hidden></p>
       </form>
 
-      <div id="app-list" class="app-list"></div>
+      <div id="configured-projects" class="configured-projects"></div>
     </aside>
 
     <script src="./renderer.js"></script>

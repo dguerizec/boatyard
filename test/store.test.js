@@ -41,3 +41,33 @@ test("AppStore persists configured apps", () => {
   const reloadedState = reloaded.load();
   assert.deepEqual(reloadedState, state);
 });
+
+test("AppStore persists app updates and removals", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new AppStore(filePath);
+
+  store.load();
+  const state = store.addApp({
+    name: "Project",
+    url: "project.example.test"
+  });
+  const id = state.apps[0].id;
+
+  const moved = store.updateApp(id, {
+    bounds: {
+      x: 42,
+      y: 24,
+      width: 640,
+      height: 420
+    },
+    isOpen: false
+  });
+
+  const reloaded = new AppStore(filePath);
+  assert.deepEqual(reloaded.load(), moved);
+
+  const removed = reloaded.removeApp(id);
+  const reloadedAgain = new AppStore(filePath);
+  assert.deepEqual(reloadedAgain.load(), removed);
+});
