@@ -60,6 +60,7 @@ let returnView = { view: "global", projectId: null };
 const selectedWebAppByProject = new Map();
 const paneLayoutsByProject = new Map();
 const selectedWebAppByPane = new Map();
+const loadedWebAppKeys = new Set();
 let visibleWebAppHosts = new Map();
 let webAppBoundsFrame = null;
 let nextPaneId = 1;
@@ -231,9 +232,11 @@ async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWe
   for (const webApp of webApps) {
     const item = document.createElement("button");
     item.className = "webapp-tab-menu-item";
+    item.classList.toggle("loaded", loadedWebAppKeys.has(webApp.key));
     item.type = "button";
     item.setAttribute("role", "menuitem");
     item.setAttribute("aria-current", String(webApp.id === selectedWebApp.id));
+    item.setAttribute("data-load-state", loadedWebAppKeys.has(webApp.key) ? "Loaded" : "Not loaded");
     item.textContent = webApp.label;
     item.addEventListener("click", () => {
       closeWebAppTabMenu();
@@ -1127,6 +1130,9 @@ async function syncWebAppView() {
   }
 
   await Promise.all(showCalls);
+  for (const key of visibleKeys) {
+    loadedWebAppKeys.add(key);
+  }
   invokeWebApp("setVisibleWebApps", visibleKeys);
 }
 

@@ -534,9 +534,25 @@ button {
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: var(--muted);
+  color: #6f7e8c;
   text-align: left;
   font-weight: 700;
+}
+
+.webapp-tab-menu-item::before {
+  content: "○";
+  display: inline-block;
+  width: 16px;
+  color: #607080;
+}
+
+.webapp-tab-menu-item.loaded {
+  color: #d9e1e8;
+}
+
+.webapp-tab-menu-item.loaded::before {
+  content: "●";
+  color: var(--accent);
 }
 
 .webapp-tab-menu-item:hover,
