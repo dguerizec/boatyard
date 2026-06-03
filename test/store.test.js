@@ -343,7 +343,11 @@ test("ProjectStore persists project updates and removals", () => {
   const state = store.addProject({
     name: "Project",
     sourcePath: "/tmp/project",
-    previewUrl: "project.example.test"
+    previewUrl: "project.example.test",
+    urls: [{
+      label: "Cloudflare",
+      url: "dash.cloudflare.com"
+    }]
   });
   const id = state.projects[0].id;
   store.updateWebAppState(`${id}:twicc`, {
@@ -364,6 +368,12 @@ test("ProjectStore persists project updates and removals", () => {
     },
     isOpen: false
   });
+
+  assert.deepEqual(moved.projects[0].urls, [{
+    id: "cloudflare",
+    label: "Cloudflare",
+    url: "https://dash.cloudflare.com/"
+  }]);
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(reloaded.load(), moved);

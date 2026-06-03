@@ -992,13 +992,13 @@ function renderEditProjectPage(project) {
         twiccUrl: values.twiccUrl,
         hawserMainSession: values.hawserMainSession
       });
-      selectProject(project.id);
+      reloadProjectSettings(project.id);
     }
   }), createProjectUrlsForm({
     project,
     onSubmit: async (urls) => {
       state = await window.dashtop.updateProject(project.id, { urls });
-      selectProject(project.id);
+      reloadProjectSettings(project.id);
     }
   }));
 }
@@ -1141,6 +1141,12 @@ function selectProject(id) {
 }
 
 function selectEditProject(id) {
+  currentView = "project-edit";
+  currentProjectId = id;
+  render();
+}
+
+function reloadProjectSettings(id) {
   currentView = "project-edit";
   currentProjectId = id;
   render();
