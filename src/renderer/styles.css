@@ -208,14 +208,8 @@ button {
 }
 
 .project-nav-row {
+  position: relative;
   min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
-}
-
-.project-nav-row.active {
-  grid-template-columns: minmax(0, 1fr) 34px;
 }
 
 .nav-item {
@@ -257,15 +251,28 @@ button {
 }
 
 .project-settings-button {
-  width: 34px;
-  min-width: 34px;
-  min-height: 100%;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 26px;
+  min-width: 26px;
+  height: 26px;
+  min-height: 26px;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--panel-strong);
+  background: rgba(15, 20, 25, 0.92);
   color: var(--muted);
-  font-size: 15px;
+  font-size: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.project-nav-row:hover .project-settings-button,
+.project-nav-row:focus-within .project-settings-button {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .project-settings-button:hover,
