@@ -1,6 +1,8 @@
 "use strict";
 
 const globalNav = document.querySelector("#global-nav");
+const globalNavRow = document.querySelector("#global-nav-row");
+const globalSettingsButton = document.querySelector("#global-settings");
 const globalViewButton = document.querySelector("#global-view");
 const addProjectButton = document.querySelector("#add-project");
 const projectCount = document.querySelector("#project-count");
@@ -70,6 +72,14 @@ let draggedProjectId = null;
 
 function getProjects() {
   return state.projects;
+}
+
+function getSettings() {
+  return {
+    projectsBasePath: "",
+    blurWebAppOverlays: true,
+    ...(state.settings || {})
+  };
 }
 
 function getCurrentProject() {
@@ -635,6 +645,126 @@ function renderGlobalDashboard() {
   );
 }
 
+function createGlobalSettingsForm({ settings, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page global-settings-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const projectsSection = document.createElement("section");
+  projectsSection.className = "settings-form-section";
+
+  const projectsHeading = document.createElement("div");
+  projectsHeading.className = "form-heading";
+
+  const projectsTitle = document.createElement("h3");
+  projectsTitle.textContent = "Projects global settings";
+
+  const projectsCopy = document.createElement("p");
+  projectsCopy.textContent = "Configure defaults shared by project forms and tooling.";
+  projectsHeading.append(projectsTitle, projectsCopy);
+
+  const projectsBasePathLabel = document.createElement("label");
+  projectsBasePathLabel.textContent = "Projects base path";
+
+  const projectsBasePathInput = document.createElement("input");
+  projectsBasePathInput.name = "projectsBasePath";
+  projectsBasePathInput.type = "text";
+  projectsBasePathInput.autocomplete = "off";
+  projectsBasePathInput.placeholder = "/workspace/projects";
+  projectsBasePathInput.value = settings.projectsBasePath;
+  projectsBasePathLabel.append(projectsBasePathInput);
+  projectsSection.append(projectsHeading, projectsBasePathLabel);
+
+  const presentationSection = document.createElement("section");
+  presentationSection.className = "settings-form-section";
+
+  const presentationHeading = document.createElement("div");
+  presentationHeading.className = "form-heading";
+
+  const presentationTitle = document.createElement("h3");
+  presentationTitle.textContent = "Presentation";
+
+  const presentationCopy = document.createElement("p");
+  presentationCopy.textContent = "Tune how Dashtop displays webapp overlays.";
+  presentationHeading.append(presentationTitle, presentationCopy);
+
+  const blurLabel = document.createElement("label");
+  blurLabel.className = "switch-row";
+
+  const blurCopy = document.createElement("span");
+  blurCopy.className = "switch-copy";
+  blurCopy.innerHTML = "<strong>Blur webapp screenshots</strong><small>Apply blur to frozen WCV screenshots while a menu or overlay is open.</small>";
+
+  const blurSwitch = document.createElement("input");
+  blurSwitch.name = "blurWebAppOverlays";
+  blurSwitch.type = "checkbox";
+  blurSwitch.checked = settings.blurWebAppOverlays;
+
+  const switchTrack = document.createElement("span");
+  switchTrack.className = "switch-track";
+  switchTrack.setAttribute("aria-hidden", "true");
+
+  blurLabel.append(blurCopy, blurSwitch, switchTrack);
+  presentationSection.append(presentationHeading, blurLabel);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save settings";
+
+  actions.append(submitButton);
+  form.append(projectsSection, presentationSection, error, actions);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit({
+        projectsBasePath: projectsBasePathInput.value,
+        blurWebAppOverlays: blurSwitch.checked
+      });
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  requestAnimationFrame(() => projectsBasePathInput.focus());
+  return shell;
+}
+
+function renderGlobalSettingsPage() {
+  visibleWebAppHosts = new Map();
+  invokeWebApp("hideWebApp");
+  workspace.classList.remove("project-mode");
+  workspaceKicker.textContent = "Global";
+  workspaceTitle.textContent = "Global settings";
+  workspaceSummary.textContent = "";
+  dashboardGrid.innerHTML = "";
+  dashboardGrid.className = "project-form-layout";
+
+  dashboardGrid.append(createGlobalSettingsForm({
+    settings: getSettings(),
+    onSubmit: async (values) => {
+      state = await window.dashtop.updateSettings(values);
+      renderGlobalSettingsPage();
+    }
+  }));
+}
+
 function renderProjectDashboard(project) {
   workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Project";
@@ -1159,6 +1289,7 @@ function renderFrozenWebApps(captures) {
 
   const layer = document.createElement("div");
   layer.className = "webapp-freeze-layer";
+  layer.classList.toggle("blur-disabled", getSettings().blurWebAppOverlays === false);
   layer.setAttribute("aria-hidden", "true");
 
   for (const capture of captures) {
@@ -1208,6 +1339,12 @@ function selectGlobal() {
   render();
 }
 
+function selectGlobalSettings() {
+  currentView = "global-settings";
+  currentProjectId = null;
+  render();
+}
+
 function selectCreateProject() {
   if (currentView !== "project-create") {
     returnView = {
@@ -1252,7 +1389,8 @@ function renderProjectList() {
   projectCount.textContent = String(projects.length);
   projectList.innerHTML = "";
 
-  globalNav.classList.toggle("active", currentView === "global");
+  globalNav.classList.toggle("active", currentView === "global" || currentView === "global-settings");
+  globalNavRow.classList.toggle("active", currentView === "global" || currentView === "global-settings");
   addProjectButton.classList.toggle("active", currentView === "project-create");
 
   if (projects.length === 0) {
@@ -1359,6 +1497,8 @@ function render() {
 
   if (currentView === "project-create") {
     renderCreateProjectPage();
+  } else if (currentView === "global-settings") {
+    renderGlobalSettingsPage();
   } else if (currentView === "project-edit" && project) {
     renderEditProjectPage(project);
   } else if (currentView === "project" && project) {
@@ -1375,6 +1515,7 @@ async function loadState() {
 }
 
 globalNav.addEventListener("click", selectGlobal);
+globalSettingsButton.addEventListener("click", selectGlobalSettings);
 globalViewButton.addEventListener("click", selectGlobal);
 addProjectButton.addEventListener("click", selectCreateProject);
 window.addEventListener("resize", queueWebAppSync);

@@ -246,6 +246,10 @@ function destroyWebAppViews() {
 function registerIpcHandlers() {
   ipcMain.handle("state:get", () => store.getState());
 
+  ipcMain.handle("settings:update", (_event, patch) => {
+    return store.updateSettings(patch);
+  });
+
   ipcMain.handle("projects:add", (_event, projectConfig) => {
     return store.addProject(projectConfig);
   });

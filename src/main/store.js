@@ -22,6 +22,10 @@ const DEFAULT_TWICC_URL = "http://localhost:3500";
 
 function createDefaultState() {
   return {
+    settings: {
+      projectsBasePath: "",
+      blurWebAppOverlays: true
+    },
     projects: [],
     window: {
       bounds: DEFAULT_WINDOW_BOUNDS,
@@ -156,6 +160,15 @@ function normalizeWindowState(windowState = {}) {
   return {
     bounds: normalizeWindowBounds(windowState.bounds),
     isMaximized: windowState.isMaximized === true
+  };
+}
+
+function normalizeSettings(settings = {}) {
+  const source = settings && typeof settings === "object" ? settings : {};
+
+  return {
+    projectsBasePath: normalizeText(source.projectsBasePath),
+    blurWebAppOverlays: source.blurWebAppOverlays !== false
   };
 }
 
@@ -342,6 +355,7 @@ class ProjectStore {
           ? parsed.apps
           : [];
       this.state = {
+        settings: normalizeSettings(parsed.settings),
         projects: projects.map((project, index) => normalizeProject(project, index)),
         window: normalizeWindowState(parsed.window),
         webApps: normalizeWebAppState(parsed.webApps),
@@ -368,6 +382,15 @@ class ProjectStore {
 
   getWindowState() {
     return structuredClone(this.state.window);
+  }
+
+  updateSettings(patch) {
+    this.state.settings = normalizeSettings({
+      ...this.state.settings,
+      ...patch
+    });
+    this.save();
+    return this.getState();
   }
 
   updateWindowState(windowState) {
@@ -490,6 +513,7 @@ module.exports = {
   normalizeProjectUrls,
   normalizeSlug,
   deriveRepoUrl,
+  normalizeSettings,
   normalizeWebAppState,
   normalizeWindowBounds,
   normalizeWindowState,

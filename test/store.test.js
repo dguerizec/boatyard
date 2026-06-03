@@ -13,6 +13,7 @@ const {
   normalizePaneLayouts,
   normalizeProject,
   normalizeProjectUrls,
+  normalizeSettings,
   normalizeSlug,
   deriveRepoUrl,
   normalizeUrl,
@@ -150,6 +151,20 @@ test("normalizeWindowState keeps maximized state", () => {
   });
 });
 
+test("normalizeSettings keeps global settings defaults", () => {
+  assert.deepEqual(normalizeSettings(), {
+    projectsBasePath: "",
+    blurWebAppOverlays: true
+  });
+  assert.deepEqual(normalizeSettings({
+    projectsBasePath: "  /workspace/projects  ",
+    blurWebAppOverlays: false
+  }), {
+    projectsBasePath: "/workspace/projects",
+    blurWebAppOverlays: false
+  });
+});
+
 test("normalizeWebAppState keeps valid urls and drops invalid urls", () => {
   assert.deepEqual(normalizeWebAppState({
     "project:twicc": {
@@ -279,6 +294,26 @@ test("ProjectStore persists window state", () => {
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(reloaded.load().window, state);
+});
+
+test("ProjectStore persists global settings", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  const state = store.updateSettings({
+    projectsBasePath: "/workspace/projects",
+    blurWebAppOverlays: false
+  });
+
+  assert.deepEqual(state.settings, {
+    projectsBasePath: "/workspace/projects",
+    blurWebAppOverlays: false
+  });
+
+  const reloaded = new ProjectStore(filePath);
+  assert.deepEqual(reloaded.load().settings, state.settings);
 });
 
 test("ProjectStore persists webapp urls", () => {
