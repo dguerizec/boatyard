@@ -68,6 +68,16 @@ test("normalizeProject derives project tool defaults", () => {
   });
 });
 
+test("normalizeProject keeps explicit repo urls", () => {
+  assert.equal(normalizeProject({
+    id: "project-id",
+    name: "DashTop",
+    sourcePath: "/tmp/dashtop",
+    gitUrl: "git@github.com:owner/dashtop.git",
+    repoUrl: "https://github.com/owner/dashtop/tree/main/src/renderer"
+  }).repoUrl, "https://github.com/owner/dashtop/tree/main/src/renderer");
+});
+
 test("normalizeBounds clamps dimensions", () => {
   assert.deepEqual(normalizeBounds({ x: -10, y: -4, width: 8, height: 9 }), {
     x: 0,

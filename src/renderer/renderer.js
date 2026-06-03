@@ -23,6 +23,36 @@ function slugify(value) {
     .replace(/^-+|-+$/g, "");
 }
 
+function deriveRepoUrl(gitUrl) {
+  const trimmed = String(gitUrl || "").trim();
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const stripGitSuffix = (pathname) => pathname.replace(/\/+$/g, "").replace(/\.git$/i, "");
+  const scpLikeMatch = trimmed.match(/^git@([^:]+):(.+)$/);
+  if (scpLikeMatch) {
+    return `https://${scpLikeMatch[1]}/${stripGitSuffix(scpLikeMatch[2])}`;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+
+    if (parsed.protocol === "ssh:" && parsed.username === "git") {
+      return `https://${parsed.host}${stripGitSuffix(parsed.pathname)}`;
+    }
+
+    if (["http:", "https:"].includes(parsed.protocol)) {
+      return `https://${parsed.host}${stripGitSuffix(parsed.pathname)}`;
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
 let state = { projects: [] };
 let currentView = "global";
 let currentProjectId = null;
@@ -632,6 +662,17 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   gitUrlInput.value = initialValues.gitUrl || "";
   gitUrlLabel.append(gitUrlInput);
 
+  const repoUrlLabel = document.createElement("label");
+  repoUrlLabel.textContent = "Repo URL";
+
+  const repoUrlInput = document.createElement("input");
+  repoUrlInput.name = "repoUrl";
+  repoUrlInput.type = "text";
+  repoUrlInput.autocomplete = "off";
+  repoUrlInput.placeholder = "https://github.com/owner/repo/tree/main/path";
+  repoUrlInput.value = initialValues.repoUrl || deriveRepoUrl(initialValues.gitUrl);
+  repoUrlLabel.append(repoUrlInput);
+
   const devBranchLabel = document.createElement("label");
   devBranchLabel.textContent = "Dev branch";
 
@@ -690,6 +731,16 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     }
   });
 
+  gitUrlInput.addEventListener("input", () => {
+    if (!repoUrlInput.dataset.edited) {
+      repoUrlInput.value = deriveRepoUrl(gitUrlInput.value);
+    }
+  });
+
+  repoUrlInput.addEventListener("input", () => {
+    repoUrlInput.dataset.edited = "true";
+  });
+
   hawserMainSessionInput.addEventListener("input", () => {
     hawserMainSessionInput.dataset.edited = "true";
   });
@@ -720,6 +771,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     slugLabel,
     sourcePathLabel,
     gitUrlLabel,
+    repoUrlLabel,
     devBranchLabel,
     previewUrlLabel,
     twiccUrlLabel,
@@ -739,6 +791,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
         slug: slugInput.value,
         sourcePath: sourcePathInput.value,
         gitUrl: gitUrlInput.value,
+        repoUrl: repoUrlInput.value,
         devBranch: devBranchInput.value,
         previewUrl: previewUrlInput.value,
         twiccUrl: twiccUrlInput.value,
@@ -776,6 +829,7 @@ function renderCreateProjectPage() {
         slug: values.slug,
         sourcePath: values.sourcePath,
         gitUrl: values.gitUrl,
+        repoUrl: values.repoUrl,
         devBranch: values.devBranch,
         previewUrl: values.previewUrl,
         twiccUrl: values.twiccUrl,
@@ -809,6 +863,7 @@ function renderEditProjectPage(project) {
         slug: values.slug,
         sourcePath: values.sourcePath,
         gitUrl: values.gitUrl,
+        repoUrl: values.repoUrl,
         devBranch: values.devBranch,
         previewUrl: values.previewUrl,
         twiccUrl: values.twiccUrl,

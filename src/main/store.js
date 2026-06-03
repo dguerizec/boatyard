@@ -259,6 +259,7 @@ function normalizeProject(project, index = 0) {
   const previewUrl = normalizeOptionalUrl(project.previewUrl || project.url);
   const twiccUrl = normalizeUrl(project.twiccUrl || DEFAULT_TWICC_URL);
   const gitUrl = normalizeText(project.gitUrl);
+  const repoUrl = normalizeOptionalUrl(project.repoUrl) || deriveRepoUrl(gitUrl);
 
   return {
     id,
@@ -266,7 +267,7 @@ function normalizeProject(project, index = 0) {
     name,
     sourcePath: normalizeText(project.sourcePath),
     gitUrl,
-    repoUrl: deriveRepoUrl(gitUrl),
+    repoUrl,
     devBranch: normalizeText(project.devBranch),
     previewUrl,
     twiccUrl,
