@@ -28,7 +28,7 @@ npm install
 make run
 ```
 
-`make run` stores configured apps and layouts in `.dashtop-state.json` at the
+`make run` stores configured projects and layouts in `.dashtop-state.json` at the
 repo root so manual test setups survive restarts. The file is ignored by git.
 
 ## Development
@@ -55,4 +55,4 @@ npm test
 - Projects are configured with only a name and preview URL.
 - There is no packaged installer yet.
 - Runtime widgets are not implemented yet.
-- Full-app focus panes for tools such as Twicc or Hermes are not implemented yet.
+- Full-tool focus panes for tools such as Twicc or Hermes are not implemented yet.

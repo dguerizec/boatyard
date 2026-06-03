@@ -1,7 +1,7 @@
 {
   "name": "dashtop",
   "version": "0.1.0",
-  "description": "Electron desktop shell prototype for dashboards and important websites.",
+  "description": "Electron project cockpit prototype for dashboards and development workflows.",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
@@ -13,7 +13,7 @@
   "keywords": [
     "electron",
     "dashboard",
-    "desktop"
+    "projects"
   ],
   "author": "",
   "license": "MIT",

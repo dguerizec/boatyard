@@ -17,11 +17,11 @@ const projectUrlInput = document.querySelector("#project-url");
 const formError = document.querySelector("#form-error");
 const configuredProjects = document.querySelector("#configured-projects");
 
-let state = { apps: [] };
+let state = { projects: [] };
 let currentProjectId = null;
 
 function getProjects() {
-  return state.apps;
+  return state.projects;
 }
 
 function getCurrentProject() {
@@ -121,7 +121,7 @@ function renderProjectDashboard(project) {
     createCard({
       eyebrow: "Preview",
       title: "Project preview",
-      body: "A non-overlapping app pane can render this project when the focus mode lands.",
+      body: "A non-overlapping focus pane can render this project when the focus mode lands.",
       meta: project.url,
       action: {
         label: "Open URL",
@@ -202,7 +202,7 @@ function renderConfiguredProjects() {
     item.querySelector("strong").textContent = project.name;
     item.querySelector("span").textContent = project.url;
     item.querySelector("button").addEventListener("click", async () => {
-      state = await window.dashtop.removeApp(project.id);
+      state = await window.dashtop.removeProject(project.id);
 
       if (currentProjectId === project.id) {
         currentProjectId = null;
@@ -249,12 +249,12 @@ projectForm.addEventListener("submit", async (event) => {
   showError("");
 
   try {
-    state = await window.dashtop.addApp({
+    state = await window.dashtop.addProject({
       name: projectNameInput.value,
       url: projectUrlInput.value,
       isOpen: false
     });
-    const project = state.apps[state.apps.length - 1];
+    const project = state.projects[state.projects.length - 1];
     currentProjectId = project.id;
     projectForm.reset();
     render();

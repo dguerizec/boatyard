@@ -13,7 +13,7 @@ const DEFAULT_BOUNDS = {
 
 function createDefaultState() {
   return {
-    apps: []
+    projects: []
   };
 }
 
@@ -53,9 +53,9 @@ function normalizeBounds(bounds, fallback = DEFAULT_BOUNDS) {
   };
 }
 
-function normalizeApp(app, index = 0) {
-  const id = String(app.id || crypto.randomUUID());
-  const name = String(app.name || "").trim();
+function normalizeProject(project, index = 0) {
+  const id = String(project.id || crypto.randomUUID());
+  const name = String(project.name || "").trim();
 
   if (!name) {
     throw new Error("Name is required.");
@@ -64,18 +64,18 @@ function normalizeApp(app, index = 0) {
   return {
     id,
     name,
-    url: normalizeUrl(app.url),
-    bounds: normalizeBounds(app.bounds, {
+    url: normalizeUrl(project.url),
+    bounds: normalizeBounds(project.bounds, {
       x: 48 + index * 32,
       y: 92 + index * 28,
       width: DEFAULT_BOUNDS.width,
       height: DEFAULT_BOUNDS.height
     }),
-    isOpen: app.isOpen !== false
+    isOpen: project.isOpen !== false
   };
 }
 
-class AppStore {
+class ProjectStore {
   constructor(filePath) {
     this.filePath = filePath;
     this.state = createDefaultState();
@@ -85,9 +85,13 @@ class AppStore {
     try {
       const raw = fs.readFileSync(this.filePath, "utf8");
       const parsed = JSON.parse(raw);
-      const apps = Array.isArray(parsed.apps) ? parsed.apps : [];
+      const projects = Array.isArray(parsed.projects)
+        ? parsed.projects
+        : Array.isArray(parsed.apps)
+          ? parsed.apps
+          : [];
       this.state = {
-        apps: apps.map((app, index) => normalizeApp(app, index))
+        projects: projects.map((project, index) => normalizeProject(project, index))
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -108,29 +112,29 @@ class AppStore {
     return structuredClone(this.state);
   }
 
-  addApp(app) {
-    const normalized = normalizeApp(
+  addProject(project) {
+    const normalized = normalizeProject(
       {
-        ...app,
+        ...project,
         id: crypto.randomUUID(),
         isOpen: true
       },
-      this.state.apps.length
+      this.state.projects.length
     );
-    this.state.apps.push(normalized);
+    this.state.projects.push(normalized);
     this.save();
     return this.getState();
   }
 
-  updateApp(id, patch) {
-    const index = this.state.apps.findIndex((app) => app.id === id);
+  updateProject(id, patch) {
+    const index = this.state.projects.findIndex((project) => project.id === id);
 
     if (index === -1) {
-      throw new Error(`Unknown app: ${id}`);
+      throw new Error(`Unknown project: ${id}`);
     }
 
-    const current = this.state.apps[index];
-    this.state.apps[index] = normalizeApp({
+    const current = this.state.projects[index];
+    this.state.projects[index] = normalizeProject({
       ...current,
       ...patch,
       id: current.id,
@@ -140,17 +144,17 @@ class AppStore {
     return this.getState();
   }
 
-  removeApp(id) {
-    this.state.apps = this.state.apps.filter((app) => app.id !== id);
+  removeProject(id) {
+    this.state.projects = this.state.projects.filter((project) => project.id !== id);
     this.save();
     return this.getState();
   }
 }
 
 module.exports = {
-  AppStore,
   DEFAULT_BOUNDS,
-  normalizeApp,
   normalizeBounds,
+  normalizeProject,
+  ProjectStore,
   normalizeUrl
 };

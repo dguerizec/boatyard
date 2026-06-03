@@ -2,7 +2,7 @@
 
 const path = require("node:path");
 const { app, BrowserWindow, ipcMain, shell } = require("electron");
-const { AppStore } = require("./store");
+const { ProjectStore } = require("./store");
 
 let mainWindow = null;
 let store = null;
@@ -47,16 +47,16 @@ function createMainWindow() {
 function registerIpcHandlers() {
   ipcMain.handle("state:get", () => store.getState());
 
-  ipcMain.handle("apps:add", (_event, appConfig) => {
-    return store.addApp(appConfig);
+  ipcMain.handle("projects:add", (_event, projectConfig) => {
+    return store.addProject(projectConfig);
   });
 
-  ipcMain.handle("apps:update", (_event, id, patch) => {
-    return store.updateApp(id, patch);
+  ipcMain.handle("projects:update", (_event, id, patch) => {
+    return store.updateProject(id, patch);
   });
 
-  ipcMain.handle("apps:remove", (_event, id) => {
-    return store.removeApp(id);
+  ipcMain.handle("projects:remove", (_event, id) => {
+    return store.removeProject(id);
   });
 
   ipcMain.handle("shell:open-external", (_event, url) => {
@@ -65,7 +65,7 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(() => {
-  store = new AppStore(getStorePath());
+  store = new ProjectStore(getStorePath());
   store.load();
   registerIpcHandlers();
   createMainWindow();
