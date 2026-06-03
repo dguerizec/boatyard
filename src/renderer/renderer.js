@@ -64,6 +64,7 @@ let visibleWebAppHosts = new Map();
 let webAppBoundsFrame = null;
 let nextPaneId = 1;
 let frozenWebAppLayer = null;
+let openWebAppTabMenu = null;
 
 function getProjects() {
   return state.projects;
@@ -195,6 +196,81 @@ function invokeWebApp(action, payload) {
   });
 }
 
+function selectWebApp(project, paneNode, webApp) {
+  selectedWebAppByPane.set(paneNode.id, webApp.id);
+  paneNode.selectedWebAppId = webApp.id;
+  selectedWebAppByProject.set(project.id, webApp.id);
+  persistPaneLayout(project);
+  renderProjectDashboard(project);
+}
+
+function closeWebAppTabMenu() {
+  if (!openWebAppTabMenu) {
+    return;
+  }
+
+  openWebAppTabMenu.cleanup?.();
+  openWebAppTabMenu.remove();
+  openWebAppTabMenu = null;
+  restoreWebAppsAfterOverlay();
+}
+
+async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps) {
+  closeWebAppTabMenu();
+
+  await freezeWebAppsForOverlay();
+
+  const menu = document.createElement("div");
+  menu.className = "webapp-tab-menu";
+  menu.setAttribute("role", "menu");
+
+  const rect = button.getBoundingClientRect();
+  menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+  menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 220))}px`;
+
+  for (const webApp of webApps) {
+    const item = document.createElement("button");
+    item.className = "webapp-tab-menu-item";
+    item.type = "button";
+    item.setAttribute("role", "menuitem");
+    item.setAttribute("aria-current", String(webApp.id === selectedWebApp.id));
+    item.textContent = webApp.label;
+    item.addEventListener("click", () => {
+      closeWebAppTabMenu();
+      selectWebApp(project, paneNode, webApp);
+    });
+    menu.append(item);
+  }
+
+  document.body.append(menu);
+  openWebAppTabMenu = menu;
+
+  function onPointerDown(event) {
+    if (!menu.contains(event.target) && event.target !== button) {
+      closeWebAppTabMenu();
+    }
+  }
+
+  function onKeyDown(event) {
+    if (event.key === "Escape") {
+      closeWebAppTabMenu();
+    }
+  }
+
+  menu.cleanup = () => {
+    document.removeEventListener("pointerdown", onPointerDown);
+    document.removeEventListener("keydown", onKeyDown);
+    button.setAttribute("aria-expanded", "false");
+  };
+
+  setTimeout(() => {
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+  }, 0);
+
+  menu.querySelector("button")?.focus();
+}
+
 function createWebAppPane(project, paneNode) {
   const webApps = getProjectWebApps(project, paneNode.id);
   const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
@@ -210,22 +286,25 @@ function createWebAppPane(project, paneNode) {
   tabs.setAttribute("role", "tablist");
   tabs.setAttribute("aria-label", "Project webapps");
 
-  for (const webApp of webApps) {
-    const tab = document.createElement("button");
-    tab.className = "webapp-tab";
-    tab.type = "button";
-    tab.setAttribute("role", "tab");
-    tab.setAttribute("aria-selected", String(webApp.id === selectedWebApp.id));
-    tab.textContent = webApp.label;
-    tab.addEventListener("click", () => {
-      selectedWebAppByPane.set(paneNode.id, webApp.id);
-      paneNode.selectedWebAppId = webApp.id;
-      selectedWebAppByProject.set(project.id, webApp.id);
-      persistPaneLayout(project);
-      renderProjectDashboard(project);
-    });
-    tabs.append(tab);
-  }
+  const tabPickerButton = document.createElement("button");
+  tabPickerButton.className = "webapp-tab webapp-tab-picker";
+  tabPickerButton.type = "button";
+  tabPickerButton.setAttribute("role", "tab");
+  tabPickerButton.setAttribute("aria-selected", "true");
+  tabPickerButton.setAttribute("aria-haspopup", "menu");
+  tabPickerButton.setAttribute("aria-expanded", "false");
+  tabPickerButton.textContent = selectedWebApp.label;
+  tabPickerButton.addEventListener("click", () => {
+    const isOpen = Boolean(openWebAppTabMenu);
+    tabPickerButton.setAttribute("aria-expanded", String(!isOpen));
+
+    if (isOpen) {
+      closeWebAppTabMenu();
+    } else {
+      openWebAppTabMenuFromButton(tabPickerButton, project, paneNode, selectedWebApp, webApps);
+    }
+  });
+  tabs.append(tabPickerButton);
 
   const actions = document.createElement("div");
   actions.className = "webapp-actions";

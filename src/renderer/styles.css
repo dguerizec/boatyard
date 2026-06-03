@@ -498,6 +498,59 @@ button {
   border-color: rgba(65, 184, 131, 0.65);
 }
 
+.webapp-tab-picker {
+  max-width: min(260px, 34vw);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.webapp-tab-picker::after {
+  content: "v";
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.webapp-tab-menu {
+  position: fixed;
+  z-index: 90;
+  width: min(240px, calc(100vw - 24px));
+  max-height: min(420px, calc(100vh - 24px));
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(23, 29, 36, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.webapp-tab-menu-item {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  font-weight: 700;
+}
+
+.webapp-tab-menu-item:hover,
+.webapp-tab-menu-item:focus-visible,
+.webapp-tab-menu-item[aria-current="true"] {
+  color: var(--text);
+  background: var(--panel-strong);
+  border-color: var(--line);
+}
+
+.webapp-tab-menu-item[aria-current="true"] {
+  border-color: rgba(65, 184, 131, 0.65);
+}
+
 .webapp-tool-button {
   width: 32px;
   height: 32px;
