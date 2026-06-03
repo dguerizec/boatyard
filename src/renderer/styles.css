@@ -207,6 +207,17 @@ button {
   gap: 8px;
 }
 
+.project-nav-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+.project-nav-row.active {
+  grid-template-columns: minmax(0, 1fr) 34px;
+}
+
 .nav-item {
   width: 100%;
   display: grid;
@@ -243,6 +254,24 @@ button {
 
 .nav-item small {
   color: var(--muted);
+}
+
+.project-settings-button {
+  width: 34px;
+  min-width: 34px;
+  min-height: 100%;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-strong);
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.project-settings-button:hover,
+.project-settings-button:focus-visible {
+  color: var(--text);
+  border-color: rgba(65, 184, 131, 0.65);
 }
 
 .workspace {

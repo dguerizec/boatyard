@@ -779,6 +779,37 @@ function renderCreateProjectPage() {
   }));
 }
 
+function renderEditProjectPage(project) {
+  visibleWebAppHosts = new Map();
+  invokeWebApp("hideWebApp");
+  workspace.classList.remove("project-mode");
+  workspaceKicker.textContent = "Project";
+  workspaceTitle.textContent = `${project.name} settings`;
+  workspaceSummary.textContent = project.slug;
+  dashboardGrid.innerHTML = "";
+  dashboardGrid.className = "project-form-layout";
+
+  dashboardGrid.append(createProjectFormView({
+    title: "Project settings",
+    submitLabel: "Save changes",
+    initialValues: project,
+    onCancel: () => selectProject(project.id),
+    onSubmit: async (values) => {
+      state = await window.dashtop.updateProject(project.id, {
+        name: values.name,
+        slug: values.slug,
+        sourcePath: values.sourcePath,
+        gitUrl: values.gitUrl,
+        devBranch: values.devBranch,
+        previewUrl: values.previewUrl,
+        twiccUrl: values.twiccUrl,
+        hawserMainSession: values.hawserMainSession
+      });
+      selectProject(project.id);
+    }
+  }));
+}
+
 function getWebAppHostBounds(host) {
   if (!host) {
     return null;
@@ -916,6 +947,12 @@ function selectProject(id) {
   render();
 }
 
+function selectEditProject(id) {
+  currentView = "project-edit";
+  currentProjectId = id;
+  render();
+}
+
 function restoreReturnView() {
   if (returnView.view === "project" && getProjects().some((project) => project.id === returnView.projectId)) {
     selectProject(returnView.projectId);
@@ -942,10 +979,16 @@ function renderProjectList() {
   }
 
   for (const project of projects) {
+    const isActiveProject =
+      (currentView === "project" || currentView === "project-edit") && project.id === currentProjectId;
+    const row = document.createElement("div");
+    row.className = "project-nav-row";
+    row.classList.toggle("active", isActiveProject);
+
     const button = document.createElement("button");
     button.className = "nav-item";
     button.type = "button";
-    button.classList.toggle("active", currentView === "project" && project.id === currentProjectId);
+    button.classList.toggle("active", isActiveProject);
     button.innerHTML = `
       <span></span>
       <small></small>
@@ -953,7 +996,20 @@ function renderProjectList() {
     button.querySelector("span").textContent = project.name;
     button.querySelector("small").textContent = project.slug;
     button.addEventListener("click", () => selectProject(project.id));
-    projectList.append(button);
+    row.append(button);
+
+    if (isActiveProject) {
+      const settingsButton = document.createElement("button");
+      settingsButton.className = "project-settings-button";
+      settingsButton.type = "button";
+      settingsButton.title = "Project settings";
+      settingsButton.setAttribute("aria-label", `${project.name} settings`);
+      settingsButton.textContent = "⚙";
+      settingsButton.addEventListener("click", () => selectEditProject(project.id));
+      row.append(settingsButton);
+    }
+
+    projectList.append(row);
   }
 }
 
@@ -964,6 +1020,8 @@ function render() {
 
   if (currentView === "project-create") {
     renderCreateProjectPage();
+  } else if (currentView === "project-edit" && project) {
+    renderEditProjectPage(project);
   } else if (currentView === "project" && project) {
     renderProjectDashboard(project);
   } else {
