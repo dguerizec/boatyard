@@ -2,6 +2,7 @@
 
 const globalNav = document.querySelector("#global-nav");
 const globalViewButton = document.querySelector("#global-view");
+const addProjectButton = document.querySelector("#add-project");
 const projectCount = document.querySelector("#project-count");
 const projectList = document.querySelector("#project-list");
 const workspace = document.querySelector(".workspace");
@@ -9,19 +10,13 @@ const dashboardGrid = document.querySelector("#dashboard-grid");
 const workspaceKicker = document.querySelector("#workspace-kicker");
 const workspaceTitle = document.querySelector("#workspace-title");
 const workspaceSummary = document.querySelector("#workspace-summary");
-const configPanel = document.querySelector("#config-panel");
-const toggleConfigButton = document.querySelector("#toggle-config");
-const closeConfigButton = document.querySelector("#close-config");
-const projectForm = document.querySelector("#project-form");
-const projectNameInput = document.querySelector("#project-name");
-const projectUrlInput = document.querySelector("#project-url");
-const formError = document.querySelector("#form-error");
-const configuredProjects = document.querySelector("#configured-projects");
 
 const DEFAULT_TWICC_URL = "http://localhost:3500";
 
 let state = { projects: [] };
+let currentView = "global";
 let currentProjectId = null;
+let returnView = { view: "global", projectId: null };
 const selectedWebAppByProject = new Map();
 const paneLayoutsByProject = new Map();
 const selectedWebAppByPane = new Map();
@@ -36,11 +31,6 @@ function getProjects() {
 
 function getCurrentProject() {
   return getProjects().find((project) => project.id === currentProjectId) || null;
-}
-
-function showError(message) {
-  formError.textContent = message;
-  formError.hidden = !message;
 }
 
 function createCard({ title, eyebrow, body, meta, action }) {
@@ -551,6 +541,116 @@ function renderProjectDashboard(project) {
   dashboardGrid.append(widgetRail, createPaneLayout(project, getProjectPaneLayout(project)));
 }
 
+function createProjectFormView({ title, submitLabel, initialValues, onSubmit, onCancel }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = title;
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Configure the project workspace and preview URL.";
+
+  heading.append(headingTitle, headingCopy);
+
+  const nameLabel = document.createElement("label");
+  nameLabel.textContent = "Name";
+
+  const nameInput = document.createElement("input");
+  nameInput.name = "name";
+  nameInput.type = "text";
+  nameInput.autocomplete = "off";
+  nameInput.required = true;
+  nameInput.value = initialValues.name || "";
+  nameLabel.append(nameInput);
+
+  const urlLabel = document.createElement("label");
+  urlLabel.textContent = "Preview URL";
+
+  const urlInput = document.createElement("input");
+  urlInput.name = "url";
+  urlInput.type = "url";
+  urlInput.placeholder = "http://localhost:5173";
+  urlInput.required = true;
+  urlInput.value = initialValues.url || "";
+  urlLabel.append(urlInput);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const cancelButton = document.createElement("button");
+  cancelButton.className = "secondary-button";
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel";
+  cancelButton.addEventListener("click", onCancel);
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = submitLabel;
+
+  actions.append(cancelButton, submitButton);
+  form.append(heading, nameLabel, urlLabel, error, actions);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit({
+        name: nameInput.value,
+        url: urlInput.value
+      });
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  requestAnimationFrame(() => nameInput.focus());
+  return shell;
+}
+
+function renderCreateProjectPage() {
+  visibleWebAppHosts = new Map();
+  invokeWebApp("hideWebApp");
+  workspace.classList.remove("project-mode");
+  workspaceKicker.textContent = "Project";
+  workspaceTitle.textContent = "Add project";
+  workspaceSummary.textContent = "";
+  dashboardGrid.innerHTML = "";
+  dashboardGrid.className = "project-form-layout";
+
+  dashboardGrid.append(createProjectFormView({
+    title: "Project details",
+    submitLabel: "Add project",
+    initialValues: {},
+    onCancel: () => restoreReturnView(),
+    onSubmit: async (values) => {
+      state = await window.dashtop.addProject({
+        name: values.name,
+        url: values.url,
+        isOpen: false
+      });
+      const project = state.projects[state.projects.length - 1];
+      selectProject(project.id);
+    }
+  }));
+}
+
 function getWebAppHostBounds(host) {
   if (!host) {
     return null;
@@ -664,29 +764,37 @@ async function restoreWebAppsAfterOverlay() {
   queueWebAppSync();
 }
 
-async function openConfigPanel() {
-  if (!configPanel.hidden) {
-    projectNameInput.focus();
-    return;
-  }
-
-  await freezeWebAppsForOverlay();
-  configPanel.hidden = false;
-  projectNameInput.focus();
+function selectGlobal() {
+  currentView = "global";
+  currentProjectId = null;
+  render();
 }
 
-function closeConfigPanel() {
-  if (configPanel.hidden) {
-    return;
+function selectCreateProject() {
+  if (currentView !== "project-create") {
+    returnView = {
+      view: currentView,
+      projectId: currentProjectId
+    };
   }
-
-  configPanel.hidden = true;
-  restoreWebAppsAfterOverlay();
+  currentView = "project-create";
+  currentProjectId = null;
+  render();
 }
 
 function selectProject(id) {
+  currentView = "project";
   currentProjectId = id;
   render();
+}
+
+function restoreReturnView() {
+  if (returnView.view === "project" && getProjects().some((project) => project.id === returnView.projectId)) {
+    selectProject(returnView.projectId);
+    return;
+  }
+
+  selectGlobal();
 }
 
 function renderProjectList() {
@@ -694,7 +802,8 @@ function renderProjectList() {
   projectCount.textContent = String(projects.length);
   projectList.innerHTML = "";
 
-  globalNav.classList.toggle("active", currentProjectId === null);
+  globalNav.classList.toggle("active", currentView === "global");
+  addProjectButton.classList.toggle("active", currentView === "project-create");
 
   if (projects.length === 0) {
     const empty = document.createElement("p");
@@ -708,7 +817,7 @@ function renderProjectList() {
     const button = document.createElement("button");
     button.className = "nav-item";
     button.type = "button";
-    button.classList.toggle("active", project.id === currentProjectId);
+    button.classList.toggle("active", currentView === "project" && project.id === currentProjectId);
     button.innerHTML = `
       <span></span>
       <small></small>
@@ -720,42 +829,14 @@ function renderProjectList() {
   }
 }
 
-function renderConfiguredProjects() {
-  configuredProjects.innerHTML = "";
-
-  for (const project of getProjects()) {
-    const item = document.createElement("div");
-    item.className = "configured-project";
-    item.innerHTML = `
-      <div>
-        <strong></strong>
-        <span></span>
-      </div>
-      <button class="danger-button" type="button">Remove</button>
-    `;
-
-    item.querySelector("strong").textContent = project.name;
-    item.querySelector("span").textContent = project.url;
-    item.querySelector("button").addEventListener("click", async () => {
-      state = await window.dashtop.removeProject(project.id);
-
-      if (currentProjectId === project.id) {
-        currentProjectId = null;
-      }
-
-      render();
-    });
-    configuredProjects.append(item);
-  }
-}
-
 function render() {
   renderProjectList();
-  renderConfiguredProjects();
 
   const project = getCurrentProject();
 
-  if (project) {
+  if (currentView === "project-create") {
+    renderCreateProjectPage();
+  } else if (currentView === "project" && project) {
     renderProjectDashboard(project);
   } else {
     renderGlobalDashboard();
@@ -768,40 +849,10 @@ async function loadState() {
   render();
 }
 
-globalNav.addEventListener("click", () => selectProject(null));
-globalViewButton.addEventListener("click", () => selectProject(null));
+globalNav.addEventListener("click", selectGlobal);
+globalViewButton.addEventListener("click", selectGlobal);
+addProjectButton.addEventListener("click", selectCreateProject);
 window.addEventListener("resize", queueWebAppSync);
 workspace.addEventListener("scroll", queueWebAppSync);
-
-toggleConfigButton.addEventListener("click", () => {
-  if (configPanel.hidden) {
-    openConfigPanel();
-  } else {
-    closeConfigPanel();
-  }
-});
-
-closeConfigButton.addEventListener("click", () => {
-  closeConfigPanel();
-});
-
-projectForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  showError("");
-
-  try {
-    state = await window.dashtop.addProject({
-      name: projectNameInput.value,
-      url: projectUrlInput.value,
-      isOpen: false
-    });
-    const project = state.projects[state.projects.length - 1];
-    currentProjectId = project.id;
-    projectForm.reset();
-    render();
-  } catch (error) {
-    showError(error.message);
-  }
-});
 
 loadState();

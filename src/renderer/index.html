@@ -18,7 +18,6 @@
       </div>
       <div class="topbar-actions">
         <button id="global-view" class="secondary-button" type="button">Global</button>
-        <button id="toggle-config" class="primary-button" type="button">Add project</button>
       </div>
     </header>
 
@@ -35,7 +34,10 @@
         <div class="sidebar-section">
           <div class="section-heading">
             <h2>Projects</h2>
-            <span id="project-count">0</span>
+            <div class="section-heading-actions">
+              <span id="project-count">0</span>
+              <button id="add-project" class="icon-button" type="button" aria-label="Add project">+</button>
+            </div>
           </div>
           <div id="project-list" class="project-list"></div>
         </div>
@@ -53,28 +55,6 @@
         <section id="dashboard-grid" class="dashboard-grid"></section>
       </main>
     </div>
-
-    <aside id="config-panel" class="config-panel" aria-label="Project configuration" hidden>
-      <div class="panel-header">
-        <h2>Projects</h2>
-        <button id="close-config" class="icon-button" type="button" aria-label="Close panel">x</button>
-      </div>
-
-      <form id="project-form" class="project-form">
-        <label>
-          Name
-          <input id="project-name" name="name" type="text" autocomplete="off" required>
-        </label>
-        <label>
-          Preview URL
-          <input id="project-url" name="url" type="url" placeholder="http://localhost:5173" required>
-        </label>
-        <button class="primary-button" type="submit">Add project</button>
-        <p id="form-error" class="form-error" role="alert" hidden></p>
-      </form>
-
-      <div id="configured-projects" class="configured-projects"></div>
-    </aside>
 
     <script src="./renderer.js"></script>
   </body>
