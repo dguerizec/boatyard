@@ -8,6 +8,8 @@ const test = require("node:test");
 const {
   ProjectStore,
   normalizeBounds,
+  normalizePaneLayoutNode,
+  normalizePaneLayouts,
   normalizeUrl,
   normalizeWebAppState,
   normalizeWindowBounds,
@@ -72,6 +74,66 @@ test("normalizeWebAppState keeps valid urls and drops invalid urls", () => {
   }), {
     "project:twicc": {
       url: "http://localhost:3500/projects/example"
+    }
+  });
+});
+
+test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", () => {
+  assert.deepEqual(normalizePaneLayoutNode({
+    type: "split",
+    id: "project:split:1",
+    direction: "horizontal",
+    ratio: 0.94,
+    first: {
+      type: "pane",
+      id: "project:pane:1",
+      selectedWebAppId: "twicc"
+    },
+    second: {
+      type: "pane",
+      id: "project:pane:2",
+      selectedWebAppId: "preview"
+    }
+  }), {
+    type: "split",
+    id: "project:split:1",
+    direction: "horizontal",
+    ratio: 0.85,
+    first: {
+      type: "pane",
+      id: "project:pane:1",
+      selectedWebAppId: "twicc"
+    },
+    second: {
+      type: "pane",
+      id: "project:pane:2",
+      selectedWebAppId: "preview"
+    }
+  });
+});
+
+test("normalizePaneLayouts drops invalid layouts", () => {
+  assert.deepEqual(normalizePaneLayouts({
+    ok: {
+      type: "pane",
+      id: "ok:pane:1"
+    },
+    invalid: {
+      type: "split",
+      id: "invalid:split:1",
+      first: {
+        type: "pane",
+        id: ""
+      },
+      second: {
+        type: "pane",
+        id: "invalid:pane:2"
+      }
+    }
+  }), {
+    ok: {
+      type: "pane",
+      id: "ok:pane:1"
     }
   });
 });
@@ -149,6 +211,36 @@ test("ProjectStore persists webapp urls", () => {
   );
 });
 
+test("ProjectStore persists pane layouts", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  const layout = store.updatePaneLayout("project-id", {
+    type: "split",
+    id: "project-id:split:1",
+    direction: "vertical",
+    ratio: 0.35,
+    first: {
+      type: "pane",
+      id: "project-id:pane:1",
+      selectedWebAppId: "twicc"
+    },
+    second: {
+      type: "pane",
+      id: "project-id:pane:2",
+      selectedWebAppId: "preview"
+    }
+  });
+
+  const reloaded = new ProjectStore(filePath);
+  const state = reloaded.load();
+
+  assert.deepEqual(state.paneLayouts["project-id"], layout);
+  assert.deepEqual(reloaded.getPaneLayout("project-id"), layout);
+});
+
 test("ProjectStore persists project updates and removals", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
   const filePath = path.join(directory, "state.json");
@@ -160,6 +252,14 @@ test("ProjectStore persists project updates and removals", () => {
     url: "project.example.test"
   });
   const id = state.projects[0].id;
+  store.updateWebAppState(`${id}:twicc`, {
+    url: "http://localhost:3500/projects/demo"
+  });
+  store.updatePaneLayout(id, {
+    type: "pane",
+    id: `${id}:pane:1`,
+    selectedWebAppId: "twicc"
+  });
 
   const moved = store.updateProject(id, {
     bounds: {
@@ -175,6 +275,8 @@ test("ProjectStore persists project updates and removals", () => {
   assert.deepEqual(reloaded.load(), moved);
 
   const removed = reloaded.removeProject(id);
+  assert.equal(removed.webApps[`${id}:twicc`], undefined);
+  assert.equal(removed.paneLayouts[id], undefined);
   const reloadedAgain = new ProjectStore(filePath);
   assert.deepEqual(reloadedAgain.load(), removed);
 });

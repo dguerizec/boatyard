@@ -85,18 +85,18 @@ function createCard({ title, eyebrow, body, meta, action }) {
   return card;
 }
 
-function getProjectWebApps(project) {
+function getProjectWebApps(project, paneId) {
   return [
     {
       id: "twicc",
       label: "Twicc",
-      key: `${project.id}:twicc`,
+      key: `${paneId}:twicc`,
       url: DEFAULT_TWICC_URL
     },
     {
       id: "preview",
       label: "Preview",
-      key: `${project.id}:preview`,
+      key: `${paneId}:preview`,
       url: project.url
     }
   ];
@@ -112,7 +112,8 @@ function createPaneNode(project, selectedWebAppId = null) {
 
   return {
     type: "pane",
-    id
+    id,
+    selectedWebAppId: selectedWebAppId || null
   };
 }
 
@@ -125,8 +126,10 @@ function getProjectPaneLayout(project) {
 }
 
 function getSelectedWebApp(project, paneId, webApps) {
+  const paneNode = findPaneNode(getProjectPaneLayout(project), paneId);
   const selectedId =
     selectedWebAppByPane.get(paneId) ||
+    paneNode?.selectedWebAppId ||
     selectedWebAppByProject.get(project.id) ||
     webApps[0].id;
   return webApps.find((webApp) => webApp.id === selectedId) || webApps[0];
@@ -139,7 +142,7 @@ function invokeWebApp(action, payload) {
 }
 
 function createWebAppPane(project, paneNode) {
-  const webApps = getProjectWebApps(project);
+  const webApps = getProjectWebApps(project, paneNode.id);
   const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
   const pane = document.createElement("section");
   pane.className = "webapp-pane";
@@ -162,7 +165,9 @@ function createWebAppPane(project, paneNode) {
     tab.textContent = webApp.label;
     tab.addEventListener("click", () => {
       selectedWebAppByPane.set(paneNode.id, webApp.id);
+      paneNode.selectedWebAppId = webApp.id;
       selectedWebAppByProject.set(project.id, webApp.id);
+      persistPaneLayout(project);
       renderProjectDashboard(project);
     });
     tabs.append(tab);
@@ -197,7 +202,16 @@ function createWebAppPane(project, paneNode) {
   horizontalSplitButton.textContent = "H";
   horizontalSplitButton.addEventListener("click", () => splitPane(project, paneNode.id, "horizontal"));
 
-  actions.append(activeUrl, verticalSplitButton, horizontalSplitButton, openButton);
+  const closePaneButton = document.createElement("button");
+  closePaneButton.className = "webapp-tool-button danger";
+  closePaneButton.type = "button";
+  closePaneButton.title = "Close pane";
+  closePaneButton.setAttribute("aria-label", "Close pane");
+  closePaneButton.textContent = "X";
+  closePaneButton.disabled = countPaneNodes(getProjectPaneLayout(project)) <= 1;
+  closePaneButton.addEventListener("click", () => closePane(project, paneNode.id));
+
+  actions.append(activeUrl, verticalSplitButton, horizontalSplitButton, closePaneButton, openButton);
   header.append(tabs, actions);
 
   const host = document.createElement("div");
@@ -226,6 +240,18 @@ function createSplitNode(project, direction, first, selectedWebAppId = null) {
   };
 }
 
+function findPaneNode(node, paneId) {
+  if (!node) {
+    return null;
+  }
+
+  if (node.type === "pane") {
+    return node.id === paneId ? node : null;
+  }
+
+  return findPaneNode(node.first, paneId) || findPaneNode(node.second, paneId);
+}
+
 function replacePaneNode(node, paneId, replacement) {
   if (node.type === "pane") {
     return node.id === paneId ? replacement : node;
@@ -238,13 +264,96 @@ function replacePaneNode(node, paneId, replacement) {
   };
 }
 
+function countPaneNodes(node) {
+  if (!node) {
+    return 0;
+  }
+
+  if (node.type === "pane") {
+    return 1;
+  }
+
+  return countPaneNodes(node.first) + countPaneNodes(node.second);
+}
+
+function removePaneNode(node, paneId) {
+  if (!node || node.type === "pane") {
+    return {
+      node,
+      removed: false
+    };
+  }
+
+  if (node.first.type === "pane" && node.first.id === paneId) {
+    return {
+      node: node.second,
+      removed: true
+    };
+  }
+
+  if (node.second.type === "pane" && node.second.id === paneId) {
+    return {
+      node: node.first,
+      removed: true
+    };
+  }
+
+  const firstResult = removePaneNode(node.first, paneId);
+  if (firstResult.removed) {
+    return {
+      node: {
+        ...node,
+        first: firstResult.node
+      },
+      removed: true
+    };
+  }
+
+  const secondResult = removePaneNode(node.second, paneId);
+  if (secondResult.removed) {
+    return {
+      node: {
+        ...node,
+        second: secondResult.node
+      },
+      removed: true
+    };
+  }
+
+  return {
+    node,
+    removed: false
+  };
+}
+
 function splitPane(project, paneId, direction) {
   const layout = getProjectPaneLayout(project);
-  const webApps = getProjectWebApps(project);
+  const webApps = getProjectWebApps(project, paneId);
   const currentWebAppId = selectedWebAppByPane.get(paneId) || selectedWebAppByProject.get(project.id) || webApps[0].id;
   const nextWebAppId = webApps.find((webApp) => webApp.id !== currentWebAppId)?.id || currentWebAppId;
   const replacement = createSplitNode(project, direction, { type: "pane", id: paneId }, nextWebAppId);
+  replacement.first.selectedWebAppId = currentWebAppId;
   paneLayoutsByProject.set(project.id, replacePaneNode(layout, paneId, replacement));
+  selectedWebAppByPane.set(paneId, currentWebAppId);
+  persistPaneLayout(project);
+  renderProjectDashboard(project);
+}
+
+function closePane(project, paneId) {
+  const layout = getProjectPaneLayout(project);
+
+  if (countPaneNodes(layout) <= 1) {
+    return;
+  }
+
+  const result = removePaneNode(layout, paneId);
+  if (!result.removed) {
+    return;
+  }
+
+  selectedWebAppByPane.delete(paneId);
+  paneLayoutsByProject.set(project.id, result.node);
+  persistPaneLayout(project);
   renderProjectDashboard(project);
 }
 
@@ -272,6 +381,7 @@ function createSplitResizer(project, splitNode) {
     function onPointerUp() {
       document.removeEventListener("pointermove", onPointerMove);
       document.removeEventListener("pointerup", onPointerUp);
+      persistPaneLayout(project);
     }
 
     document.addEventListener("pointermove", onPointerMove);
@@ -308,6 +418,51 @@ function createPaneLayout(project, node) {
     createPaneLayout(project, node.second)
   );
   return split;
+}
+
+function persistPaneLayout(project) {
+  const layout = paneLayoutsByProject.get(project.id);
+  if (!layout) {
+    return;
+  }
+
+  window.dashtop.updatePaneLayout(project.id, layout).catch((error) => {
+    console.error("Could not persist pane layout:", error);
+  });
+}
+
+function hydratePaneLayouts() {
+  const persistedLayouts = state.paneLayouts || {};
+
+  for (const [projectId, layout] of Object.entries(persistedLayouts)) {
+    paneLayoutsByProject.set(projectId, layout);
+    hydratePaneLayoutSelections(layout);
+  }
+}
+
+function hydratePaneLayoutSelections(node) {
+  if (!node) {
+    return;
+  }
+
+  if (node.type === "pane") {
+    if (node.selectedWebAppId) {
+      selectedWebAppByPane.set(node.id, node.selectedWebAppId);
+    }
+
+    const idMatch = node.id.match(/:pane:(\d+)$/);
+    if (idMatch) {
+      nextPaneId = Math.max(nextPaneId, Number(idMatch[1]) + 1);
+    }
+    return;
+  }
+
+  const splitMatch = node.id.match(/:split:(\d+)$/);
+  if (splitMatch) {
+    nextPaneId = Math.max(nextPaneId, Number(splitMatch[1]) + 1);
+  }
+  hydratePaneLayoutSelections(node.first);
+  hydratePaneLayoutSelections(node.second);
 }
 
 function renderGlobalDashboard() {
@@ -537,6 +692,7 @@ function render() {
 
 async function loadState() {
   state = await window.dashtop.getState();
+  hydratePaneLayouts();
   render();
 }
 

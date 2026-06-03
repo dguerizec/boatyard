@@ -459,6 +459,23 @@ button {
   border-color: rgba(65, 184, 131, 0.65);
 }
 
+.webapp-tool-button.danger {
+  color: #ffd7db;
+}
+
+.webapp-tool-button.danger:hover {
+  border-color: var(--danger);
+}
+
+.webapp-tool-button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.webapp-tool-button:disabled:hover {
+  border-color: var(--line);
+}
+
 .webapp-actions {
   flex: 1 1 auto;
   justify-content: flex-end;

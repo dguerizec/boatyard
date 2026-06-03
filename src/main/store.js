@@ -25,7 +25,8 @@ function createDefaultState() {
       bounds: DEFAULT_WINDOW_BOUNDS,
       isMaximized: false
     },
-    webApps: {}
+    webApps: {},
+    paneLayouts: {}
   };
 }
 
@@ -105,6 +106,71 @@ function normalizeWebAppState(webApps = {}) {
   return normalized;
 }
 
+function normalizePaneLayoutNode(node, seenIds = new Set()) {
+  if (!node || typeof node !== "object") {
+    return null;
+  }
+
+  if (node.type === "pane") {
+    const id = String(node.id || "").trim();
+
+    if (!id || seenIds.has(id)) {
+      return null;
+    }
+
+    seenIds.add(id);
+    const normalized = {
+      type: "pane",
+      id
+    };
+
+    if (typeof node.selectedWebAppId === "string" && node.selectedWebAppId.trim()) {
+      normalized.selectedWebAppId = node.selectedWebAppId.trim();
+    }
+
+    return normalized;
+  }
+
+  if (node.type === "split") {
+    const id = String(node.id || "").trim();
+    const direction = node.direction === "horizontal" ? "horizontal" : "vertical";
+    const first = normalizePaneLayoutNode(node.first, seenIds);
+    const second = normalizePaneLayoutNode(node.second, seenIds);
+
+    if (!id || seenIds.has(id) || !first || !second) {
+      return null;
+    }
+
+    seenIds.add(id);
+    return {
+      type: "split",
+      id,
+      direction,
+      ratio: Math.min(0.85, Math.max(0.15, Number.isFinite(node.ratio) ? node.ratio : 0.5)),
+      first,
+      second
+    };
+  }
+
+  return null;
+}
+
+function normalizePaneLayouts(paneLayouts = {}) {
+  if (!paneLayouts || typeof paneLayouts !== "object" || Array.isArray(paneLayouts)) {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [projectId, layout] of Object.entries(paneLayouts)) {
+    const normalizedLayout = normalizePaneLayoutNode(layout);
+    if (normalizedLayout) {
+      normalized[String(projectId)] = normalizedLayout;
+    }
+  }
+
+  return normalized;
+}
+
 function normalizeProject(project, index = 0) {
   const id = String(project.id || crypto.randomUUID());
   const name = String(project.name || "").trim();
@@ -145,7 +211,8 @@ class ProjectStore {
       this.state = {
         projects: projects.map((project, index) => normalizeProject(project, index)),
         window: normalizeWindowState(parsed.window),
-        webApps: normalizeWebAppState(parsed.webApps)
+        webApps: normalizeWebAppState(parsed.webApps),
+        paneLayouts: normalizePaneLayouts(parsed.paneLayouts)
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -199,6 +266,23 @@ class ProjectStore {
     return structuredClone(this.state.webApps[String(key)] || null);
   }
 
+  getPaneLayout(projectId) {
+    return structuredClone(this.state.paneLayouts[String(projectId)] || null);
+  }
+
+  updatePaneLayout(projectId, layout) {
+    const normalized = normalizePaneLayoutNode(layout);
+
+    if (!normalized) {
+      delete this.state.paneLayouts[String(projectId)];
+    } else {
+      this.state.paneLayouts[String(projectId)] = normalized;
+    }
+
+    this.save();
+    return this.getPaneLayout(projectId);
+  }
+
   addProject(project) {
     const normalized = normalizeProject(
       {
@@ -232,7 +316,16 @@ class ProjectStore {
   }
 
   removeProject(id) {
-    this.state.projects = this.state.projects.filter((project) => project.id !== id);
+    const projectId = String(id);
+    this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
+    delete this.state.paneLayouts[projectId];
+
+    for (const key of Object.keys(this.state.webApps)) {
+      if (key.startsWith(`${projectId}:`)) {
+        delete this.state.webApps[key];
+      }
+    }
+
     this.save();
     return this.getState();
   }
@@ -242,6 +335,8 @@ module.exports = {
   DEFAULT_BOUNDS,
   DEFAULT_WINDOW_BOUNDS,
   normalizeBounds,
+  normalizePaneLayoutNode,
+  normalizePaneLayouts,
   normalizeProject,
   normalizeWebAppState,
   normalizeWindowBounds,

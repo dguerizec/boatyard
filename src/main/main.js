@@ -214,6 +214,10 @@ function registerIpcHandlers() {
     return store.removeProject(id);
   });
 
+  ipcMain.handle("pane-layout:update", (_event, projectId, layout) => {
+    return store.updatePaneLayout(projectId, layout);
+  });
+
   ipcMain.handle("webapp:show", (_event, webApp) => {
     showWebApp(webApp);
   });
