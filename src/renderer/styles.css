@@ -331,7 +331,11 @@ button {
 }
 
 .project-form-layout {
-  max-width: 720px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 560px));
+  gap: 16px;
+  align-items: start;
+  max-width: 1160px;
 }
 
 .project-workbench {
