@@ -616,6 +616,36 @@ button {
   border-color: var(--accent);
 }
 
+.project-url-list {
+  display: grid;
+  gap: 10px;
+}
+
+.project-url-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.35fr) minmax(180px, 1fr) 34px;
+  gap: 10px;
+  align-items: center;
+}
+
+.project-url-remove {
+  width: 34px;
+  height: 42px;
+  min-height: 42px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-strong);
+  color: #ffd7db;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.project-url-remove:hover {
+  border-color: var(--danger);
+}
+
 .form-error {
   margin: 0;
   color: #ffd7db;
@@ -670,5 +700,18 @@ button {
 
   .webapp-url {
     max-width: none;
+  }
+
+  .project-url-row {
+    grid-template-columns: 1fr 34px;
+  }
+
+  .project-url-row input[name="urlValue"] {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+
+  .project-url-remove {
+    order: 2;
   }
 }

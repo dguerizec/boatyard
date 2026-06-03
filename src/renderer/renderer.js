@@ -144,6 +144,15 @@ function getProjectWebApps(project, paneId) {
     });
   }
 
+  for (const projectUrl of project.urls || []) {
+    webApps.push({
+      id: `url:${projectUrl.id}`,
+      label: projectUrl.label,
+      key: `${paneId}:url:${projectUrl.id}`,
+      url: projectUrl.url
+    });
+  }
+
   return webApps;
 }
 
@@ -808,6 +817,120 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   return shell;
 }
 
+function createProjectUrlRow(entry = {}) {
+  const row = document.createElement("div");
+  row.className = "project-url-row";
+
+  const idInput = document.createElement("input");
+  idInput.name = "urlId";
+  idInput.type = "hidden";
+  idInput.value = entry.id || "";
+
+  const labelInput = document.createElement("input");
+  labelInput.name = "urlLabel";
+  labelInput.type = "text";
+  labelInput.autocomplete = "off";
+  labelInput.placeholder = "Cloudflare";
+  labelInput.value = entry.label || "";
+  labelInput.setAttribute("aria-label", "URL label");
+
+  const urlInput = document.createElement("input");
+  urlInput.name = "urlValue";
+  urlInput.type = "text";
+  urlInput.autocomplete = "off";
+  urlInput.placeholder = "https://dash.cloudflare.com/...";
+  urlInput.value = entry.url || "";
+  urlInput.setAttribute("aria-label", "URL");
+
+  const removeButton = document.createElement("button");
+  removeButton.className = "project-url-remove";
+  removeButton.type = "button";
+  removeButton.title = "Remove URL";
+  removeButton.setAttribute("aria-label", "Remove URL");
+  removeButton.textContent = "X";
+  removeButton.addEventListener("click", () => row.remove());
+
+  row.append(idInput, labelInput, urlInput, removeButton);
+  return row;
+}
+
+function readProjectUrlRows(list) {
+  return [...list.querySelectorAll(".project-url-row")]
+    .map((row) => ({
+      id: row.querySelector('[name="urlId"]').value,
+      label: row.querySelector('[name="urlLabel"]').value,
+      url: row.querySelector('[name="urlValue"]').value
+    }))
+    .filter((entry) => entry.id.trim() || entry.label.trim() || entry.url.trim());
+}
+
+function createProjectUrlsForm({ project, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Project URLs";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Add provider and operations URLs that should appear as webapp tabs.";
+  heading.append(headingTitle, headingCopy);
+
+  const list = document.createElement("div");
+  list.className = "project-url-list";
+
+  for (const entry of project.urls || []) {
+    list.append(createProjectUrlRow(entry));
+  }
+
+  if (list.children.length === 0) {
+    list.append(createProjectUrlRow());
+  }
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const addButton = document.createElement("button");
+  addButton.className = "secondary-button";
+  addButton.type = "button";
+  addButton.textContent = "Add URL";
+  addButton.addEventListener("click", () => list.append(createProjectUrlRow()));
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save URLs";
+
+  actions.append(addButton, submitButton);
+  form.append(heading, list, error, actions);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit(readProjectUrlRows(list));
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  return shell;
+}
+
 function renderCreateProjectPage() {
   visibleWebAppHosts = new Map();
   invokeWebApp("hideWebApp");
@@ -869,6 +992,12 @@ function renderEditProjectPage(project) {
         twiccUrl: values.twiccUrl,
         hawserMainSession: values.hawserMainSession
       });
+      selectProject(project.id);
+    }
+  }), createProjectUrlsForm({
+    project,
+    onSubmit: async (urls) => {
+      state = await window.dashtop.updateProject(project.id, { urls });
       selectProject(project.id);
     }
   }));

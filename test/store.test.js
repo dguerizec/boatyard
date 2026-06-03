@@ -12,6 +12,7 @@ const {
   normalizePaneLayoutNode,
   normalizePaneLayouts,
   normalizeProject,
+  normalizeProjectUrls,
   normalizeSlug,
   deriveRepoUrl,
   normalizeUrl,
@@ -58,6 +59,7 @@ test("normalizeProject derives project tool defaults", () => {
     previewUrl: "http://localhost:5173/",
     twiccUrl: normalizeUrl(DEFAULT_TWICC_URL),
     hawserMainSession: "dashtop:main",
+    urls: [],
     bounds: {
       x: 48,
       y: 92,
@@ -76,6 +78,38 @@ test("normalizeProject keeps explicit repo urls", () => {
     gitUrl: "git@github.com:owner/dashtop.git",
     repoUrl: "https://github.com/owner/dashtop/tree/main/src/renderer"
   }).repoUrl, "https://github.com/owner/dashtop/tree/main/src/renderer");
+});
+
+test("normalizeProjectUrls keeps provider urls with stable ids", () => {
+  assert.deepEqual(normalizeProjectUrls([
+    {
+      label: "Cloudflare",
+      url: "dash.cloudflare.com"
+    },
+    {
+      id: "github-secrets",
+      label: "GitHub secrets",
+      url: "https://github.com/owner/dashtop/settings/secrets/actions"
+    },
+    {
+      label: "",
+      url: ""
+    }
+  ]), [
+    {
+      id: "cloudflare",
+      label: "Cloudflare",
+      url: "https://dash.cloudflare.com/"
+    },
+    {
+      id: "github-secrets",
+      label: "GitHub secrets",
+      url: "https://github.com/owner/dashtop/settings/secrets/actions"
+    }
+  ]);
+
+  assert.throws(() => normalizeProjectUrls([{ label: "DNS", url: "" }]), /URL is required/);
+  assert.throws(() => normalizeProjectUrls([{ label: "", url: "example.com" }]), /URL label is required/);
 });
 
 test("normalizeBounds clamps dimensions", () => {

@@ -247,6 +247,49 @@ function normalizePaneLayouts(paneLayouts = {}) {
   return normalized;
 }
 
+function normalizeProjectUrls(urls = []) {
+  if (!Array.isArray(urls)) {
+    return [];
+  }
+
+  const seenIds = new Set();
+  return urls
+    .map((entry, index) => {
+      const source = entry && typeof entry === "object" ? entry : {};
+      const label = normalizeText(source.label);
+      const rawUrl = normalizeText(source.url);
+
+      if (!label && !rawUrl) {
+        return null;
+      }
+
+      if (!label) {
+        throw new Error("URL label is required.");
+      }
+
+      if (!rawUrl) {
+        throw new Error("URL is required.");
+      }
+
+      const baseId = normalizeText(source.id) || slugify(label) || `url-${index + 1}`;
+      let id = baseId;
+      let suffix = 2;
+
+      while (seenIds.has(id)) {
+        id = `${baseId}-${suffix}`;
+        suffix += 1;
+      }
+
+      seenIds.add(id);
+      return {
+        id,
+        label,
+        url: normalizeUrl(rawUrl)
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeProject(project, index = 0) {
   const id = String(project.id || crypto.randomUUID());
   const name = String(project.name || "").trim();
@@ -272,6 +315,7 @@ function normalizeProject(project, index = 0) {
     previewUrl,
     twiccUrl,
     hawserMainSession: normalizeRequiredText(project.hawserMainSession || `${slug}:main`, "Hawser main session"),
+    urls: normalizeProjectUrls(project.urls),
     bounds: normalizeBounds(project.bounds, {
       x: 48 + index * 32,
       y: 92 + index * 28,
@@ -428,6 +472,7 @@ module.exports = {
   normalizePaneLayoutNode,
   normalizePaneLayouts,
   normalizeProject,
+  normalizeProjectUrls,
   normalizeSlug,
   deriveRepoUrl,
   normalizeWebAppState,
