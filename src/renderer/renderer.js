@@ -23,9 +23,11 @@ const DEFAULT_TWICC_URL = "http://localhost:3500";
 let state = { projects: [] };
 let currentProjectId = null;
 const selectedWebAppByProject = new Map();
-let activeWebApp = null;
-let webAppHost = null;
+const paneLayoutsByProject = new Map();
+const selectedWebAppByPane = new Map();
+let visibleWebAppHosts = new Map();
 let webAppBoundsFrame = null;
+let nextPaneId = 1;
 
 function getProjects() {
   return state.projects;
@@ -100,22 +102,48 @@ function getProjectWebApps(project) {
   ];
 }
 
-function getSelectedWebApp(project, webApps) {
-  const selectedId = selectedWebAppByProject.get(project.id) || webApps[0].id;
+function createPaneNode(project, selectedWebAppId = null) {
+  const id = `${project.id}:pane:${nextPaneId}`;
+  nextPaneId += 1;
+
+  if (selectedWebAppId) {
+    selectedWebAppByPane.set(id, selectedWebAppId);
+  }
+
+  return {
+    type: "pane",
+    id
+  };
+}
+
+function getProjectPaneLayout(project) {
+  if (!paneLayoutsByProject.has(project.id)) {
+    paneLayoutsByProject.set(project.id, createPaneNode(project));
+  }
+
+  return paneLayoutsByProject.get(project.id);
+}
+
+function getSelectedWebApp(project, paneId, webApps) {
+  const selectedId =
+    selectedWebAppByPane.get(paneId) ||
+    selectedWebAppByProject.get(project.id) ||
+    webApps[0].id;
   return webApps.find((webApp) => webApp.id === selectedId) || webApps[0];
 }
 
 function invokeWebApp(action, payload) {
-  window.dashtop[action](payload).catch((error) => {
+  return window.dashtop[action](payload).catch((error) => {
     console.error(`Could not ${action}:`, error);
   });
 }
 
-function createWebAppPane(project) {
+function createWebAppPane(project, paneNode) {
   const webApps = getProjectWebApps(project);
-  const selectedWebApp = getSelectedWebApp(project, webApps);
+  const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
   const pane = document.createElement("section");
   pane.className = "webapp-pane";
+  pane.dataset.paneId = paneNode.id;
 
   const header = document.createElement("div");
   header.className = "webapp-pane-header";
@@ -133,6 +161,7 @@ function createWebAppPane(project) {
     tab.setAttribute("aria-selected", String(webApp.id === selectedWebApp.id));
     tab.textContent = webApp.label;
     tab.addEventListener("click", () => {
+      selectedWebAppByPane.set(paneNode.id, webApp.id);
       selectedWebAppByProject.set(project.id, webApp.id);
       renderProjectDashboard(project);
     });
@@ -152,7 +181,23 @@ function createWebAppPane(project) {
   openButton.textContent = "Open";
   openButton.addEventListener("click", () => window.dashtop.openExternal(selectedWebApp.url));
 
-  actions.append(activeUrl, openButton);
+  const verticalSplitButton = document.createElement("button");
+  verticalSplitButton.className = "webapp-tool-button";
+  verticalSplitButton.type = "button";
+  verticalSplitButton.title = "Split vertically";
+  verticalSplitButton.setAttribute("aria-label", "Split vertically");
+  verticalSplitButton.textContent = "V";
+  verticalSplitButton.addEventListener("click", () => splitPane(project, paneNode.id, "vertical"));
+
+  const horizontalSplitButton = document.createElement("button");
+  horizontalSplitButton.className = "webapp-tool-button";
+  horizontalSplitButton.type = "button";
+  horizontalSplitButton.title = "Split horizontally";
+  horizontalSplitButton.setAttribute("aria-label", "Split horizontally");
+  horizontalSplitButton.textContent = "H";
+  horizontalSplitButton.addEventListener("click", () => splitPane(project, paneNode.id, "horizontal"));
+
+  actions.append(activeUrl, verticalSplitButton, horizontalSplitButton, openButton);
   header.append(tabs, actions);
 
   const host = document.createElement("div");
@@ -162,16 +207,112 @@ function createWebAppPane(project) {
 
   pane.append(header, host);
 
-  activeWebApp = selectedWebApp;
-  webAppHost = host;
+  visibleWebAppHosts.set(paneNode.id, {
+    webApp: selectedWebApp,
+    host
+  });
   queueWebAppSync();
   return pane;
 }
 
+function createSplitNode(project, direction, first, selectedWebAppId = null) {
+  return {
+    type: "split",
+    id: `${project.id}:split:${nextPaneId++}`,
+    direction,
+    ratio: 0.5,
+    first,
+    second: createPaneNode(project, selectedWebAppId)
+  };
+}
+
+function replacePaneNode(node, paneId, replacement) {
+  if (node.type === "pane") {
+    return node.id === paneId ? replacement : node;
+  }
+
+  return {
+    ...node,
+    first: replacePaneNode(node.first, paneId, replacement),
+    second: replacePaneNode(node.second, paneId, replacement)
+  };
+}
+
+function splitPane(project, paneId, direction) {
+  const layout = getProjectPaneLayout(project);
+  const webApps = getProjectWebApps(project);
+  const currentWebAppId = selectedWebAppByPane.get(paneId) || selectedWebAppByProject.get(project.id) || webApps[0].id;
+  const nextWebAppId = webApps.find((webApp) => webApp.id !== currentWebAppId)?.id || currentWebAppId;
+  const replacement = createSplitNode(project, direction, { type: "pane", id: paneId }, nextWebAppId);
+  paneLayoutsByProject.set(project.id, replacePaneNode(layout, paneId, replacement));
+  renderProjectDashboard(project);
+}
+
+function createSplitResizer(project, splitNode) {
+  const resizer = document.createElement("div");
+  resizer.className = `webapp-split-resizer ${splitNode.direction}`;
+  resizer.setAttribute("role", "separator");
+  resizer.setAttribute("aria-orientation", splitNode.direction === "vertical" ? "vertical" : "horizontal");
+
+  resizer.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    const splitElement = resizer.parentElement;
+    const rect = splitElement.getBoundingClientRect();
+    const isVertical = splitNode.direction === "vertical";
+
+    function onPointerMove(moveEvent) {
+      const rawRatio = isVertical
+        ? (moveEvent.clientX - rect.left) / rect.width
+        : (moveEvent.clientY - rect.top) / rect.height;
+      splitNode.ratio = Math.min(0.85, Math.max(0.15, rawRatio));
+      applySplitRatio(splitElement, splitNode);
+      queueWebAppSync();
+    }
+
+    function onPointerUp() {
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+    }
+
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+  });
+
+  return resizer;
+}
+
+function applySplitRatio(splitElement, splitNode) {
+  const first = `${Math.round(splitNode.ratio * 1000) / 10}%`;
+  const second = `${Math.round((1 - splitNode.ratio) * 1000) / 10}%`;
+
+  if (splitNode.direction === "vertical") {
+    splitElement.style.gridTemplateColumns = `${first} 6px ${second}`;
+    splitElement.style.gridTemplateRows = "";
+  } else {
+    splitElement.style.gridTemplateColumns = "";
+    splitElement.style.gridTemplateRows = `${first} 6px ${second}`;
+  }
+}
+
+function createPaneLayout(project, node) {
+  if (node.type === "pane") {
+    return createWebAppPane(project, node);
+  }
+
+  const split = document.createElement("div");
+  split.className = `webapp-split ${node.direction}`;
+  applySplitRatio(split, node);
+  split.append(
+    createPaneLayout(project, node.first),
+    createSplitResizer(project, node),
+    createPaneLayout(project, node.second)
+  );
+  return split;
+}
+
 function renderGlobalDashboard() {
   const projects = getProjects();
-  activeWebApp = null;
-  webAppHost = null;
+  visibleWebAppHosts = new Map();
   invokeWebApp("hideWebApp");
   workspace.classList.remove("project-mode");
   workspaceKicker.textContent = "Global";
@@ -215,6 +356,7 @@ function renderProjectDashboard(project) {
   workspaceSummary.textContent = project.url;
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-workbench";
+  visibleWebAppHosts = new Map();
 
   const widgetRail = document.createElement("aside");
   widgetRail.className = "project-widget-rail";
@@ -256,15 +398,15 @@ function renderProjectDashboard(project) {
     })
   );
 
-  dashboardGrid.append(widgetRail, createWebAppPane(project));
+  dashboardGrid.append(widgetRail, createPaneLayout(project, getProjectPaneLayout(project)));
 }
 
-function getWebAppHostBounds() {
-  if (!webAppHost) {
+function getWebAppHostBounds(host) {
+  if (!host) {
     return null;
   }
 
-  const rect = webAppHost.getBoundingClientRect();
+  const rect = host.getBoundingClientRect();
   if (rect.width <= 0 || rect.height <= 0) {
     return null;
   }
@@ -277,25 +419,34 @@ function getWebAppHostBounds() {
   };
 }
 
-function syncWebAppView() {
+async function syncWebAppView() {
   webAppBoundsFrame = null;
 
-  if (!activeWebApp || !webAppHost) {
+  if (visibleWebAppHosts.size === 0) {
     invokeWebApp("hideWebApp");
     return;
   }
 
-  const bounds = getWebAppHostBounds();
-  if (!bounds) {
-    invokeWebApp("hideWebApp");
-    return;
+  const visibleKeys = [];
+
+  const showCalls = [];
+
+  for (const { webApp, host } of visibleWebAppHosts.values()) {
+    const bounds = getWebAppHostBounds(host);
+    if (!bounds) {
+      continue;
+    }
+
+    visibleKeys.push(webApp.key);
+    showCalls.push(invokeWebApp("showWebApp", {
+      key: webApp.key,
+      url: webApp.url,
+      bounds
+    }));
   }
 
-  invokeWebApp("showWebApp", {
-    key: activeWebApp.key,
-    url: activeWebApp.url,
-    bounds
-  });
+  await Promise.all(showCalls);
+  invokeWebApp("setVisibleWebApps", visibleKeys);
 }
 
 function queueWebAppSync() {

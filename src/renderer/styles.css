@@ -362,6 +362,42 @@ button {
   overflow: hidden;
 }
 
+.webapp-split {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  overflow: hidden;
+}
+
+.webapp-split.vertical {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.webapp-split.horizontal {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.webapp-split .webapp-pane {
+  border-right: 1px solid var(--line);
+}
+
+.webapp-split-resizer {
+  background: rgba(52, 64, 76, 0.65);
+  z-index: 5;
+}
+
+.webapp-split-resizer:hover {
+  background: rgba(65, 184, 131, 0.9);
+}
+
+.webapp-split-resizer.vertical {
+  cursor: col-resize;
+}
+
+.webapp-split-resizer.horizontal {
+  cursor: row-resize;
+}
+
 .webapp-pane-header {
   min-width: 0;
   display: flex;
@@ -403,6 +439,23 @@ button {
 }
 
 .webapp-tab[aria-selected="true"] {
+  border-color: rgba(65, 184, 131, 0.65);
+}
+
+.webapp-tool-button {
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.webapp-tool-button:hover {
   border-color: rgba(65, 184, 131, 0.65);
 }
 

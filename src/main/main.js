@@ -148,12 +148,6 @@ function showWebApp({ key, url, bounds }) {
   webApp.view.setVisible(true);
   activeWebAppKey = String(key);
 
-  for (const [viewKey, item] of webAppViews) {
-    if (viewKey !== activeWebAppKey) {
-      item.view.setVisible(false);
-    }
-  }
-
   if (webApp.url !== parsedUrl.toString()) {
     webApp.url = parsedUrl.toString();
     webApp.view.webContents.loadURL(webApp.url).catch((error) => {
@@ -169,6 +163,16 @@ function setWebAppBounds(bounds) {
 
   const webApp = webAppViews.get(activeWebAppKey);
   webApp?.view.setBounds(normalizeWebAppBounds(bounds));
+}
+
+function setVisibleWebApps(keys) {
+  const visibleKeys = new Set(Array.isArray(keys) ? keys.map(String) : []);
+
+  for (const [key, item] of webAppViews) {
+    item.view.setVisible(visibleKeys.has(key));
+  }
+
+  activeWebAppKey = visibleKeys.size > 0 ? [...visibleKeys].at(-1) : null;
 }
 
 function hideWebApp() {
@@ -216,6 +220,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("webapp:set-bounds", (_event, bounds) => {
     setWebAppBounds(bounds);
+  });
+
+  ipcMain.handle("webapp:set-visible", (_event, keys) => {
+    setVisibleWebApps(keys);
   });
 
   ipcMain.handle("webapp:hide", () => {
