@@ -334,6 +334,34 @@ test("ProjectStore persists pane layouts", () => {
   assert.deepEqual(reloaded.getPaneLayout("project-id"), layout);
 });
 
+test("ProjectStore reorders projects", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  store.addProject({
+    name: "First",
+    sourcePath: "/tmp/first"
+  });
+  store.addProject({
+    name: "Second",
+    sourcePath: "/tmp/second"
+  });
+  store.addProject({
+    name: "Third",
+    sourcePath: "/tmp/third"
+  });
+
+  const ids = store.getState().projects.map((project) => project.id);
+  const reordered = store.reorderProjects([ids[2], ids[0], ids[1]]);
+
+  assert.deepEqual(reordered.projects.map((project) => project.name), ["Third", "First", "Second"]);
+
+  const reloaded = new ProjectStore(filePath);
+  assert.deepEqual(reloaded.load().projects.map((project) => project.name), ["Third", "First", "Second"]);
+});
+
 test("ProjectStore persists project updates and removals", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
   const filePath = path.join(directory, "state.json");

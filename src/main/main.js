@@ -254,6 +254,10 @@ function registerIpcHandlers() {
     return store.updateProject(id, patch);
   });
 
+  ipcMain.handle("projects:reorder", (_event, projectIds) => {
+    return store.reorderProjects(projectIds);
+  });
+
   ipcMain.handle("projects:remove", (_event, id) => {
     return store.removeProject(id);
   });

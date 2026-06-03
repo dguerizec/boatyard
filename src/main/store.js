@@ -448,6 +448,21 @@ class ProjectStore {
     return this.getState();
   }
 
+  reorderProjects(projectIds) {
+    const order = Array.isArray(projectIds) ? projectIds.map(String) : [];
+    const positionById = new Map(order.map((id, index) => [id, index]));
+    this.state.projects = this.state.projects
+      .map((project, index) => ({ project, index }))
+      .sort((left, right) => {
+        const leftPosition = positionById.has(left.project.id) ? positionById.get(left.project.id) : order.length + left.index;
+        const rightPosition = positionById.has(right.project.id) ? positionById.get(right.project.id) : order.length + right.index;
+        return leftPosition - rightPosition;
+      })
+      .map(({ project }) => project);
+    this.save();
+    return this.getState();
+  }
+
   removeProject(id) {
     const projectId = String(id);
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);

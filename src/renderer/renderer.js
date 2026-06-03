@@ -66,6 +66,7 @@ let webAppBoundsFrame = null;
 let nextPaneId = 1;
 let frozenWebAppLayer = null;
 let openWebAppTabMenu = null;
+let draggedProjectId = null;
 
 function getProjects() {
   return state.projects;
@@ -1268,6 +1269,44 @@ function renderProjectList() {
     const row = document.createElement("div");
     row.className = "project-nav-row";
     row.classList.toggle("active", isActiveProject);
+    row.draggable = true;
+    row.dataset.projectId = project.id;
+    row.addEventListener("dragstart", (event) => {
+      draggedProjectId = project.id;
+      row.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", project.id);
+    });
+    row.addEventListener("dragend", () => {
+      draggedProjectId = null;
+      row.classList.remove("dragging");
+      for (const item of projectList.querySelectorAll(".project-nav-row")) {
+        item.classList.remove("drag-over");
+      }
+    });
+    row.addEventListener("dragover", (event) => {
+      if (!draggedProjectId || draggedProjectId === project.id) {
+        return;
+      }
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      row.classList.add("drag-over");
+    });
+    row.addEventListener("dragleave", () => {
+      row.classList.remove("drag-over");
+    });
+    row.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      row.classList.remove("drag-over");
+      const sourceId = event.dataTransfer.getData("text/plain") || draggedProjectId;
+
+      if (!sourceId || sourceId === project.id) {
+        return;
+      }
+
+      await reorderProjects(sourceId, project.id);
+    });
 
     const button = document.createElement("button");
     button.className = "nav-item";
@@ -1295,6 +1334,22 @@ function renderProjectList() {
 
     projectList.append(row);
   }
+}
+
+async function reorderProjects(sourceId, targetId) {
+  const projects = getProjects();
+  const sourceIndex = projects.findIndex((project) => project.id === sourceId);
+  const targetIndex = projects.findIndex((project) => project.id === targetId);
+
+  if (sourceIndex === -1 || targetIndex === -1) {
+    return;
+  }
+
+  const reordered = [...projects];
+  const [moved] = reordered.splice(sourceIndex, 1);
+  reordered.splice(targetIndex, 0, moved);
+  state = await window.dashtop.reorderProjects(reordered.map((project) => project.id));
+  render();
 }
 
 function render() {
