@@ -24,7 +24,8 @@ function createDefaultState() {
     window: {
       bounds: DEFAULT_WINDOW_BOUNDS,
       isMaximized: false
-    }
+    },
+    webApps: {}
   };
 }
 
@@ -81,6 +82,29 @@ function normalizeWindowState(windowState = {}) {
   };
 }
 
+function normalizeWebAppState(webApps = {}) {
+  if (!webApps || typeof webApps !== "object" || Array.isArray(webApps)) {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [key, webApp] of Object.entries(webApps)) {
+    if (!webApp || typeof webApp !== "object") {
+      continue;
+    }
+
+    try {
+      normalized[String(key)] = {
+        url: normalizeUrl(webApp.url)
+      };
+    } catch {
+      // Ignore invalid restored webapp URLs.
+    }
+  }
+
+  return normalized;
+}
+
 function normalizeProject(project, index = 0) {
   const id = String(project.id || crypto.randomUUID());
   const name = String(project.name || "").trim();
@@ -120,7 +144,8 @@ class ProjectStore {
           : [];
       this.state = {
         projects: projects.map((project, index) => normalizeProject(project, index)),
-        window: normalizeWindowState(parsed.window)
+        window: normalizeWindowState(parsed.window),
+        webApps: normalizeWebAppState(parsed.webApps)
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -153,6 +178,25 @@ class ProjectStore {
     });
     this.save();
     return this.getWindowState();
+  }
+
+  getWebAppUrl(key) {
+    return this.state.webApps[String(key)]?.url || null;
+  }
+
+  updateWebAppState(key, webAppState) {
+    const normalized = normalizeWebAppState({
+      [String(key)]: webAppState
+    });
+
+    if (!normalized[String(key)]) {
+      delete this.state.webApps[String(key)];
+    } else {
+      this.state.webApps[String(key)] = normalized[String(key)];
+    }
+
+    this.save();
+    return structuredClone(this.state.webApps[String(key)] || null);
   }
 
   addProject(project) {
@@ -199,6 +243,7 @@ module.exports = {
   DEFAULT_WINDOW_BOUNDS,
   normalizeBounds,
   normalizeProject,
+  normalizeWebAppState,
   normalizeWindowBounds,
   normalizeWindowState,
   ProjectStore,

@@ -106,6 +106,14 @@ function ensureWebAppView(key) {
     shell.openExternal(url);
     return { action: "deny" };
   });
+  view.webContents.on("did-navigate", (_event, url) => {
+    persistWebAppUrl(key, url);
+  });
+  view.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+    if (isMainFrame) {
+      persistWebAppUrl(key, url);
+    }
+  });
 
   mainWindow.contentView.addChildView(view);
   webAppViews.set(key, {
@@ -115,12 +123,21 @@ function ensureWebAppView(key) {
   return webAppViews.get(key);
 }
 
+function persistWebAppUrl(key, url) {
+  try {
+    store.updateWebAppState(key, { url });
+  } catch (error) {
+    console.warn(`Could not persist webapp ${key}: ${error.message}`);
+  }
+}
+
 function showWebApp({ key, url, bounds }) {
   if (!key) {
     throw new Error("Webapp key is required.");
   }
 
-  const parsedUrl = new URL(url);
+  const restoredUrl = store.getWebAppUrl(String(key));
+  const parsedUrl = new URL(restoredUrl || url);
 
   if (!["http:", "https:"].includes(parsedUrl.protocol)) {
     throw new Error("Only http and https webapps are supported.");

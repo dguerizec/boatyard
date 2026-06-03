@@ -9,6 +9,7 @@ const {
   ProjectStore,
   normalizeBounds,
   normalizeUrl,
+  normalizeWebAppState,
   normalizeWindowBounds,
   normalizeWindowState
 } = require("../src/main/store");
@@ -54,6 +55,24 @@ test("normalizeWindowState keeps maximized state", () => {
       height: 900
     },
     isMaximized: true
+  });
+});
+
+test("normalizeWebAppState keeps valid urls and drops invalid urls", () => {
+  assert.deepEqual(normalizeWebAppState({
+    "project:twicc": {
+      url: "http://localhost:3500/projects/example"
+    },
+    "project:file": {
+      url: "file:///tmp/example.html"
+    },
+    "project:empty": {
+      url: ""
+    }
+  }), {
+    "project:twicc": {
+      url: "http://localhost:3500/projects/example"
+    }
   });
 });
 
@@ -105,6 +124,29 @@ test("ProjectStore persists window state", () => {
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(reloaded.load().window, state);
+});
+
+test("ProjectStore persists webapp urls", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  store.updateWebAppState("project:twicc", {
+    url: "http://localhost:3500/projects/demo/sessions/123"
+  });
+
+  const reloaded = new ProjectStore(filePath);
+  const state = reloaded.load();
+
+  assert.equal(
+    state.webApps["project:twicc"].url,
+    "http://localhost:3500/projects/demo/sessions/123"
+  );
+  assert.equal(
+    reloaded.getWebAppUrl("project:twicc"),
+    "http://localhost:3500/projects/demo/sessions/123"
+  );
 });
 
 test("ProjectStore persists project updates and removals", () => {
