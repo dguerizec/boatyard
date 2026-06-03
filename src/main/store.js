@@ -72,6 +72,39 @@ function normalizeText(value) {
   return String(value || "").trim();
 }
 
+function stripGitSuffix(pathname) {
+  return pathname.replace(/\/+$/g, "").replace(/\.git$/i, "");
+}
+
+function deriveRepoUrl(gitUrl) {
+  const trimmed = normalizeText(gitUrl);
+
+  if (!trimmed) {
+    return "";
+  }
+
+  const scpLikeMatch = trimmed.match(/^git@([^:]+):(.+)$/);
+  if (scpLikeMatch) {
+    return `https://${scpLikeMatch[1]}/${stripGitSuffix(scpLikeMatch[2])}`;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+
+    if (parsed.protocol === "ssh:" && parsed.username === "git") {
+      return `https://${parsed.host}${stripGitSuffix(parsed.pathname)}`;
+    }
+
+    if (["http:", "https:"].includes(parsed.protocol)) {
+      return `https://${parsed.host}${stripGitSuffix(parsed.pathname)}`;
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
 function slugify(value) {
   return String(value || "")
     .trim()
@@ -225,13 +258,15 @@ function normalizeProject(project, index = 0) {
   const slug = normalizeSlug(project.slug, name);
   const previewUrl = normalizeOptionalUrl(project.previewUrl || project.url);
   const twiccUrl = normalizeUrl(project.twiccUrl || DEFAULT_TWICC_URL);
+  const gitUrl = normalizeText(project.gitUrl);
 
   return {
     id,
     slug,
     name,
     sourcePath: normalizeText(project.sourcePath),
-    gitUrl: normalizeText(project.gitUrl),
+    gitUrl,
+    repoUrl: deriveRepoUrl(gitUrl),
     devBranch: normalizeText(project.devBranch),
     previewUrl,
     twiccUrl,
@@ -393,6 +428,7 @@ module.exports = {
   normalizePaneLayouts,
   normalizeProject,
   normalizeSlug,
+  deriveRepoUrl,
   normalizeWebAppState,
   normalizeWindowBounds,
   normalizeWindowState,

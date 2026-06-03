@@ -105,6 +105,15 @@ function getProjectWebApps(project, paneId) {
     });
   }
 
+  if (project.repoUrl) {
+    webApps.push({
+      id: "repo",
+      label: "Repo",
+      key: `${paneId}:repo`,
+      url: project.repoUrl
+    });
+  }
+
   return webApps;
 }
 

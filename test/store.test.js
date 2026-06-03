@@ -13,6 +13,7 @@ const {
   normalizePaneLayouts,
   normalizeProject,
   normalizeSlug,
+  deriveRepoUrl,
   normalizeUrl,
   normalizeWebAppState,
   normalizeWindowBounds,
@@ -32,18 +33,27 @@ test("normalizeSlug derives stable project slugs", () => {
   assert.throws(() => normalizeSlug("", ""), /Slug is required/);
 });
 
+test("deriveRepoUrl converts git remotes to browser urls", () => {
+  assert.equal(deriveRepoUrl("git@github.com:owner/dashtop.git"), "https://github.com/owner/dashtop");
+  assert.equal(deriveRepoUrl("https://github.com/owner/dashtop.git"), "https://github.com/owner/dashtop");
+  assert.equal(deriveRepoUrl("ssh://git@github.com/owner/dashtop.git"), "https://github.com/owner/dashtop");
+  assert.equal(deriveRepoUrl(""), "");
+});
+
 test("normalizeProject derives project tool defaults", () => {
   assert.deepEqual(normalizeProject({
     id: "project-id",
     name: "DashTop",
     sourcePath: "/tmp/dashtop",
+    gitUrl: "git@github.com:owner/dashtop.git",
     previewUrl: "localhost:5173"
   }), {
     id: "project-id",
     slug: "dashtop",
     name: "DashTop",
     sourcePath: "/tmp/dashtop",
-    gitUrl: "",
+    gitUrl: "git@github.com:owner/dashtop.git",
+    repoUrl: "https://github.com/owner/dashtop",
     devBranch: "",
     previewUrl: "http://localhost:5173/",
     twiccUrl: normalizeUrl(DEFAULT_TWICC_URL),
