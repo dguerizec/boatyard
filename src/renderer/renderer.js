@@ -180,12 +180,6 @@ function createWebAppPane(project, paneNode) {
   activeUrl.className = "webapp-url";
   activeUrl.textContent = selectedWebApp.url;
 
-  const openButton = document.createElement("button");
-  openButton.className = "secondary-button";
-  openButton.type = "button";
-  openButton.textContent = "Open";
-  openButton.addEventListener("click", () => window.dashtop.openExternal(selectedWebApp.url));
-
   const verticalSplitButton = document.createElement("button");
   verticalSplitButton.className = "webapp-tool-button";
   verticalSplitButton.type = "button";
@@ -211,7 +205,7 @@ function createWebAppPane(project, paneNode) {
   closePaneButton.disabled = countPaneNodes(getProjectPaneLayout(project)) <= 1;
   closePaneButton.addEventListener("click", () => closePane(project, paneNode.id));
 
-  actions.append(activeUrl, verticalSplitButton, horizontalSplitButton, closePaneButton, openButton);
+  actions.append(activeUrl, verticalSplitButton, horizontalSplitButton, closePaneButton);
   header.append(tabs, actions);
 
   const host = document.createElement("div");
