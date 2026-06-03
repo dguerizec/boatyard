@@ -7,9 +7,12 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   ProjectStore,
+  DEFAULT_TWICC_URL,
   normalizeBounds,
   normalizePaneLayoutNode,
   normalizePaneLayouts,
+  normalizeProject,
+  normalizeSlug,
   normalizeUrl,
   normalizeWebAppState,
   normalizeWindowBounds,
@@ -18,8 +21,41 @@ const {
 
 test("normalizeUrl adds https and rejects unsupported schemes", () => {
   assert.equal(normalizeUrl("example.com"), "https://example.com/");
+  assert.equal(normalizeUrl("localhost:5173"), "http://localhost:5173/");
   assert.equal(normalizeUrl("http://example.com/path"), "http://example.com/path");
   assert.throws(() => normalizeUrl("file:///tmp/test.html"), /Only http and https/);
+});
+
+test("normalizeSlug derives stable project slugs", () => {
+  assert.equal(normalizeSlug("", "DashTop App"), "dashtop-app");
+  assert.equal(normalizeSlug("Pier_Main", "Fallback"), "pier-main");
+  assert.throws(() => normalizeSlug("", ""), /Slug is required/);
+});
+
+test("normalizeProject derives project tool defaults", () => {
+  assert.deepEqual(normalizeProject({
+    id: "project-id",
+    name: "DashTop",
+    sourcePath: "/tmp/dashtop",
+    previewUrl: "localhost:5173"
+  }), {
+    id: "project-id",
+    slug: "dashtop",
+    name: "DashTop",
+    sourcePath: "/tmp/dashtop",
+    gitUrl: "",
+    devBranch: "",
+    previewUrl: "http://localhost:5173/",
+    twiccUrl: normalizeUrl(DEFAULT_TWICC_URL),
+    hawserMainSession: "dashtop:main",
+    bounds: {
+      x: 48,
+      y: 92,
+      width: 720,
+      height: 460
+    },
+    isOpen: true
+  });
 });
 
 test("normalizeBounds clamps dimensions", () => {
@@ -151,7 +187,10 @@ test("ProjectStore persists configured projects", () => {
 
   assert.equal(state.projects.length, 1);
   assert.equal(state.projects[0].name, "Status");
-  assert.equal(state.projects[0].url, "https://status.example.com/");
+  assert.equal(state.projects[0].slug, "status");
+  assert.equal(state.projects[0].previewUrl, "https://status.example.com/");
+  assert.equal(state.projects[0].twiccUrl, normalizeUrl(DEFAULT_TWICC_URL));
+  assert.equal(state.projects[0].hawserMainSession, "status:main");
 
   const reloaded = new ProjectStore(filePath);
   const reloadedState = reloaded.load();
@@ -249,7 +288,8 @@ test("ProjectStore persists project updates and removals", () => {
   store.load();
   const state = store.addProject({
     name: "Project",
-    url: "project.example.test"
+    sourcePath: "/tmp/project",
+    previewUrl: "project.example.test"
   });
   const id = state.projects[0].id;
   store.updateWebAppState(`${id}:twicc`, {
@@ -296,5 +336,8 @@ test("ProjectStore migrates legacy apps state to projects", () => {
   const state = store.load();
 
   assert.deepEqual(state.projects.map((project) => project.id), ["legacy-id"]);
-  assert.equal(state.projects[0].url, "https://legacy.example.test/");
+  assert.equal(state.projects[0].slug, "legacy");
+  assert.equal(state.projects[0].previewUrl, "https://legacy.example.test/");
+  assert.equal(state.projects[0].twiccUrl, normalizeUrl(DEFAULT_TWICC_URL));
+  assert.equal(state.projects[0].hawserMainSession, "legacy:main");
 });

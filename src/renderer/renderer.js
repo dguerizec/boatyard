@@ -13,6 +13,16 @@ const workspaceSummary = document.querySelector("#workspace-summary");
 
 const DEFAULT_TWICC_URL = "http://localhost:3500";
 
+function slugify(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 let state = { projects: [] };
 let currentView = "global";
 let currentProjectId = null;
@@ -77,20 +87,25 @@ function createCard({ title, eyebrow, body, meta, action }) {
 }
 
 function getProjectWebApps(project, paneId) {
-  return [
+  const webApps = [
     {
       id: "twicc",
       label: "Twicc",
       key: `${paneId}:twicc`,
-      url: DEFAULT_TWICC_URL
-    },
-    {
+      url: project.twiccUrl || DEFAULT_TWICC_URL
+    }
+  ];
+
+  if (project.previewUrl) {
+    webApps.push({
       id: "preview",
       label: "Preview",
       key: `${paneId}:preview`,
-      url: project.url
-    }
-  ];
+      url: project.previewUrl
+    });
+  }
+
+  return webApps;
 }
 
 function createPaneNode(project, selectedWebAppId = null) {
@@ -493,7 +508,7 @@ function renderProjectDashboard(project) {
   workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Project";
   workspaceTitle.textContent = project.name;
-  workspaceSummary.textContent = project.url;
+  workspaceSummary.textContent = project.sourcePath || project.previewUrl || project.slug;
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-workbench";
   visibleWebAppHosts = new Map();
@@ -505,18 +520,22 @@ function renderProjectDashboard(project) {
     createCard({
       eyebrow: "Project",
       title: project.name,
-      body: project.url,
+      body: project.sourcePath || project.slug,
       meta: "Active workspace"
     }),
     createCard({
       eyebrow: "Preview",
       title: "Project preview",
-      body: "Project preview is available as a webapp tab in the project pane.",
-      meta: project.url,
-      action: {
-        label: "Open URL",
-        onClick: () => window.dashtop.openExternal(project.url)
-      }
+      body: project.previewUrl
+        ? "Project preview is available as a webapp tab in the project pane."
+        : "No preview URL configured for this project.",
+      meta: project.previewUrl || "Optional",
+      action: project.previewUrl
+        ? {
+            label: "Open URL",
+            onClick: () => window.dashtop.openExternal(project.previewUrl)
+          }
+        : null
     }),
     createCard({
       eyebrow: "Sessions",
@@ -555,7 +574,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   headingTitle.textContent = title;
 
   const headingCopy = document.createElement("p");
-  headingCopy.textContent = "Configure the project workspace and preview URL.";
+  headingCopy.textContent = "Configure the project identity, source checkout, and linked tools.";
 
   heading.append(headingTitle, headingCopy);
 
@@ -570,16 +589,101 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   nameInput.value = initialValues.name || "";
   nameLabel.append(nameInput);
 
-  const urlLabel = document.createElement("label");
-  urlLabel.textContent = "Preview URL";
+  const slugLabel = document.createElement("label");
+  slugLabel.textContent = "Slug";
 
-  const urlInput = document.createElement("input");
-  urlInput.name = "url";
-  urlInput.type = "url";
-  urlInput.placeholder = "http://localhost:5173";
-  urlInput.required = true;
-  urlInput.value = initialValues.url || "";
-  urlLabel.append(urlInput);
+  const slugInput = document.createElement("input");
+  slugInput.name = "slug";
+  slugInput.type = "text";
+  slugInput.autocomplete = "off";
+  slugInput.required = true;
+  slugInput.value = initialValues.slug || "";
+  slugLabel.append(slugInput);
+
+  const sourcePathLabel = document.createElement("label");
+  sourcePathLabel.textContent = "Source path";
+
+  const sourcePathInput = document.createElement("input");
+  sourcePathInput.name = "sourcePath";
+  sourcePathInput.type = "text";
+  sourcePathInput.autocomplete = "off";
+  sourcePathInput.required = true;
+  sourcePathInput.placeholder = "/workspace/projects/example";
+  sourcePathInput.value = initialValues.sourcePath || "";
+  sourcePathLabel.append(sourcePathInput);
+
+  const gitUrlLabel = document.createElement("label");
+  gitUrlLabel.textContent = "Git URL";
+
+  const gitUrlInput = document.createElement("input");
+  gitUrlInput.name = "gitUrl";
+  gitUrlInput.type = "text";
+  gitUrlInput.autocomplete = "off";
+  gitUrlInput.placeholder = "git@github.com:owner/repo.git";
+  gitUrlInput.value = initialValues.gitUrl || "";
+  gitUrlLabel.append(gitUrlInput);
+
+  const devBranchLabel = document.createElement("label");
+  devBranchLabel.textContent = "Dev branch";
+
+  const devBranchInput = document.createElement("input");
+  devBranchInput.name = "devBranch";
+  devBranchInput.type = "text";
+  devBranchInput.autocomplete = "off";
+  devBranchInput.placeholder = "main";
+  devBranchInput.value = initialValues.devBranch || "";
+  devBranchLabel.append(devBranchInput);
+
+  const previewUrlLabel = document.createElement("label");
+  previewUrlLabel.textContent = "Preview URL";
+
+  const previewUrlInput = document.createElement("input");
+  previewUrlInput.name = "previewUrl";
+  previewUrlInput.type = "text";
+  previewUrlInput.placeholder = "http://localhost:5173";
+  previewUrlInput.value = initialValues.previewUrl || "";
+  previewUrlLabel.append(previewUrlInput);
+
+  const twiccUrlLabel = document.createElement("label");
+  twiccUrlLabel.textContent = "Twicc URL";
+
+  const twiccUrlInput = document.createElement("input");
+  twiccUrlInput.name = "twiccUrl";
+  twiccUrlInput.type = "text";
+  twiccUrlInput.required = true;
+  twiccUrlInput.value = initialValues.twiccUrl || DEFAULT_TWICC_URL;
+  twiccUrlLabel.append(twiccUrlInput);
+
+  const hawserMainSessionLabel = document.createElement("label");
+  hawserMainSessionLabel.textContent = "Hawser main session";
+
+  const hawserMainSessionInput = document.createElement("input");
+  hawserMainSessionInput.name = "hawserMainSession";
+  hawserMainSessionInput.type = "text";
+  hawserMainSessionInput.required = true;
+  hawserMainSessionInput.value = initialValues.hawserMainSession || "";
+  hawserMainSessionLabel.append(hawserMainSessionInput);
+
+  nameInput.addEventListener("input", () => {
+    if (!slugInput.dataset.edited) {
+      const nextSlug = slugify(nameInput.value);
+      slugInput.value = nextSlug;
+      hawserMainSessionInput.value = nextSlug ? `${nextSlug}:main` : "";
+    }
+  });
+
+  slugInput.addEventListener("input", () => {
+    slugInput.dataset.edited = "true";
+
+    if (!hawserMainSessionInput.dataset.edited) {
+      const nextSlug = slugify(slugInput.value);
+      hawserMainSessionInput.value = nextSlug ? `${nextSlug}:main` : "";
+    }
+  });
+
+  hawserMainSessionInput.addEventListener("input", () => {
+    hawserMainSessionInput.dataset.edited = "true";
+  });
 
   const error = document.createElement("p");
   error.className = "form-error";
@@ -601,7 +705,19 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   submitButton.textContent = submitLabel;
 
   actions.append(cancelButton, submitButton);
-  form.append(heading, nameLabel, urlLabel, error, actions);
+  form.append(
+    heading,
+    nameLabel,
+    slugLabel,
+    sourcePathLabel,
+    gitUrlLabel,
+    devBranchLabel,
+    previewUrlLabel,
+    twiccUrlLabel,
+    hawserMainSessionLabel,
+    error,
+    actions
+  );
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -611,7 +727,13 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     try {
       await onSubmit({
         name: nameInput.value,
-        url: urlInput.value
+        slug: slugInput.value,
+        sourcePath: sourcePathInput.value,
+        gitUrl: gitUrlInput.value,
+        devBranch: devBranchInput.value,
+        previewUrl: previewUrlInput.value,
+        twiccUrl: twiccUrlInput.value,
+        hawserMainSession: hawserMainSessionInput.value
       });
     } catch (submitError) {
       error.textContent = submitError.message;
@@ -642,7 +764,13 @@ function renderCreateProjectPage() {
     onSubmit: async (values) => {
       state = await window.dashtop.addProject({
         name: values.name,
-        url: values.url,
+        slug: values.slug,
+        sourcePath: values.sourcePath,
+        gitUrl: values.gitUrl,
+        devBranch: values.devBranch,
+        previewUrl: values.previewUrl,
+        twiccUrl: values.twiccUrl,
+        hawserMainSession: values.hawserMainSession,
         isOpen: false
       });
       const project = state.projects[state.projects.length - 1];
@@ -823,7 +951,7 @@ function renderProjectList() {
       <small></small>
     `;
     button.querySelector("span").textContent = project.name;
-    button.querySelector("small").textContent = project.url;
+    button.querySelector("small").textContent = project.slug;
     button.addEventListener("click", () => selectProject(project.id));
     projectList.append(button);
   }

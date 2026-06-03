@@ -18,6 +18,8 @@ const DEFAULT_WINDOW_BOUNDS = {
   height: 820
 };
 
+const DEFAULT_TWICC_URL = "http://localhost:3500";
+
 function createDefaultState() {
   return {
     projects: [],
@@ -37,9 +39,11 @@ function normalizeUrl(rawUrl) {
     throw new Error("URL is required.");
   }
 
-  const withProtocol = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmed)
+  const hasProtocol = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed);
+  const isLocalhost = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:\/|$)/.test(trimmed);
+  const withProtocol = hasProtocol
     ? trimmed
-    : `https://${trimmed}`;
+    : `${isLocalhost ? "http" : "https"}://${trimmed}`;
   const parsed = new URL(withProtocol);
 
   if (!["http:", "https:"].includes(parsed.protocol)) {
@@ -47,6 +51,45 @@ function normalizeUrl(rawUrl) {
   }
 
   return parsed.toString();
+}
+
+function normalizeOptionalUrl(rawUrl) {
+  const trimmed = String(rawUrl || "").trim();
+  return trimmed ? normalizeUrl(trimmed) : "";
+}
+
+function normalizeRequiredText(value, fieldName) {
+  const trimmed = String(value || "").trim();
+
+  if (!trimmed) {
+    throw new Error(`${fieldName} is required.`);
+  }
+
+  return trimmed;
+}
+
+function normalizeText(value) {
+  return String(value || "").trim();
+}
+
+function slugify(value) {
+  return String(value || "")
+    .trim()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function normalizeSlug(slug, name) {
+  const normalized = slugify(slug || name);
+
+  if (!normalized) {
+    throw new Error("Slug is required.");
+  }
+
+  return normalized;
 }
 
 function normalizeBounds(bounds, fallback = DEFAULT_BOUNDS) {
@@ -179,10 +222,20 @@ function normalizeProject(project, index = 0) {
     throw new Error("Name is required.");
   }
 
+  const slug = normalizeSlug(project.slug, name);
+  const previewUrl = normalizeOptionalUrl(project.previewUrl || project.url);
+  const twiccUrl = normalizeUrl(project.twiccUrl || DEFAULT_TWICC_URL);
+
   return {
     id,
+    slug,
     name,
-    url: normalizeUrl(project.url),
+    sourcePath: normalizeText(project.sourcePath),
+    gitUrl: normalizeText(project.gitUrl),
+    devBranch: normalizeText(project.devBranch),
+    previewUrl,
+    twiccUrl,
+    hawserMainSession: normalizeRequiredText(project.hawserMainSession || `${slug}:main`, "Hawser main session"),
     bounds: normalizeBounds(project.bounds, {
       x: 48 + index * 32,
       y: 92 + index * 28,
@@ -334,13 +387,16 @@ class ProjectStore {
 module.exports = {
   DEFAULT_BOUNDS,
   DEFAULT_WINDOW_BOUNDS,
+  DEFAULT_TWICC_URL,
   normalizeBounds,
   normalizePaneLayoutNode,
   normalizePaneLayouts,
   normalizeProject,
+  normalizeSlug,
   normalizeWebAppState,
   normalizeWindowBounds,
   normalizeWindowState,
   ProjectStore,
+  normalizeOptionalUrl,
   normalizeUrl
 };
