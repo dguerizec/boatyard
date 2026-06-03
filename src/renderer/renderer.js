@@ -4,6 +4,7 @@ const globalNav = document.querySelector("#global-nav");
 const globalViewButton = document.querySelector("#global-view");
 const projectCount = document.querySelector("#project-count");
 const projectList = document.querySelector("#project-list");
+const workspace = document.querySelector(".workspace");
 const dashboardGrid = document.querySelector("#dashboard-grid");
 const workspaceKicker = document.querySelector("#workspace-kicker");
 const workspaceTitle = document.querySelector("#workspace-title");
@@ -17,8 +18,14 @@ const projectUrlInput = document.querySelector("#project-url");
 const formError = document.querySelector("#form-error");
 const configuredProjects = document.querySelector("#configured-projects");
 
+const DEFAULT_TWICC_URL = "http://localhost:3500";
+
 let state = { projects: [] };
 let currentProjectId = null;
+const selectedWebAppByProject = new Map();
+let activeWebApp = null;
+let webAppHost = null;
+let webAppBoundsFrame = null;
 
 function getProjects() {
   return state.projects;
@@ -76,12 +83,102 @@ function createCard({ title, eyebrow, body, meta, action }) {
   return card;
 }
 
+function getProjectWebApps(project) {
+  return [
+    {
+      id: "twicc",
+      label: "Twicc",
+      key: `${project.id}:twicc`,
+      url: DEFAULT_TWICC_URL
+    },
+    {
+      id: "preview",
+      label: "Preview",
+      key: `${project.id}:preview`,
+      url: project.url
+    }
+  ];
+}
+
+function getSelectedWebApp(project, webApps) {
+  const selectedId = selectedWebAppByProject.get(project.id) || webApps[0].id;
+  return webApps.find((webApp) => webApp.id === selectedId) || webApps[0];
+}
+
+function invokeWebApp(action, payload) {
+  window.dashtop[action](payload).catch((error) => {
+    console.error(`Could not ${action}:`, error);
+  });
+}
+
+function createWebAppPane(project) {
+  const webApps = getProjectWebApps(project);
+  const selectedWebApp = getSelectedWebApp(project, webApps);
+  const pane = document.createElement("section");
+  pane.className = "webapp-pane";
+
+  const header = document.createElement("div");
+  header.className = "webapp-pane-header";
+
+  const tabs = document.createElement("div");
+  tabs.className = "webapp-tabs";
+  tabs.setAttribute("role", "tablist");
+  tabs.setAttribute("aria-label", "Project webapps");
+
+  for (const webApp of webApps) {
+    const tab = document.createElement("button");
+    tab.className = "webapp-tab";
+    tab.type = "button";
+    tab.setAttribute("role", "tab");
+    tab.setAttribute("aria-selected", String(webApp.id === selectedWebApp.id));
+    tab.textContent = webApp.label;
+    tab.addEventListener("click", () => {
+      selectedWebAppByProject.set(project.id, webApp.id);
+      renderProjectDashboard(project);
+    });
+    tabs.append(tab);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "webapp-actions";
+
+  const activeUrl = document.createElement("span");
+  activeUrl.className = "webapp-url";
+  activeUrl.textContent = selectedWebApp.url;
+
+  const openButton = document.createElement("button");
+  openButton.className = "secondary-button";
+  openButton.type = "button";
+  openButton.textContent = "Open";
+  openButton.addEventListener("click", () => window.dashtop.openExternal(selectedWebApp.url));
+
+  actions.append(activeUrl, openButton);
+  header.append(tabs, actions);
+
+  const host = document.createElement("div");
+  host.className = "webapp-host";
+  host.setAttribute("role", "region");
+  host.setAttribute("aria-label", `${project.name} ${selectedWebApp.label}`);
+
+  pane.append(header, host);
+
+  activeWebApp = selectedWebApp;
+  webAppHost = host;
+  queueWebAppSync();
+  return pane;
+}
+
 function renderGlobalDashboard() {
   const projects = getProjects();
+  activeWebApp = null;
+  webAppHost = null;
+  invokeWebApp("hideWebApp");
+  workspace.classList.remove("project-mode");
   workspaceKicker.textContent = "Global";
   workspaceTitle.textContent = "System overview";
   workspaceSummary.textContent = "Global widgets will collect usage, agents, assistants, and service health.";
   dashboardGrid.innerHTML = "";
+  dashboardGrid.className = "dashboard-grid";
 
   dashboardGrid.append(
     createCard({
@@ -112,16 +209,27 @@ function renderGlobalDashboard() {
 }
 
 function renderProjectDashboard(project) {
+  workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Project";
   workspaceTitle.textContent = project.name;
   workspaceSummary.textContent = project.url;
   dashboardGrid.innerHTML = "";
+  dashboardGrid.className = "project-workbench";
 
-  dashboardGrid.append(
+  const widgetRail = document.createElement("aside");
+  widgetRail.className = "project-widget-rail";
+
+  widgetRail.append(
+    createCard({
+      eyebrow: "Project",
+      title: project.name,
+      body: project.url,
+      meta: "Active workspace"
+    }),
     createCard({
       eyebrow: "Preview",
       title: "Project preview",
-      body: "A non-overlapping focus pane can render this project when the focus mode lands.",
+      body: "Project preview is available as a webapp tab in the project pane.",
       meta: project.url,
       action: {
         label: "Open URL",
@@ -147,6 +255,55 @@ function renderProjectDashboard(project) {
       meta: "Contextual widget"
     })
   );
+
+  dashboardGrid.append(widgetRail, createWebAppPane(project));
+}
+
+function getWebAppHostBounds() {
+  if (!webAppHost) {
+    return null;
+  }
+
+  const rect = webAppHost.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) {
+    return null;
+  }
+
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height
+  };
+}
+
+function syncWebAppView() {
+  webAppBoundsFrame = null;
+
+  if (!activeWebApp || !webAppHost) {
+    invokeWebApp("hideWebApp");
+    return;
+  }
+
+  const bounds = getWebAppHostBounds();
+  if (!bounds) {
+    invokeWebApp("hideWebApp");
+    return;
+  }
+
+  invokeWebApp("showWebApp", {
+    key: activeWebApp.key,
+    url: activeWebApp.url,
+    bounds
+  });
+}
+
+function queueWebAppSync() {
+  if (webAppBoundsFrame !== null) {
+    return;
+  }
+
+  webAppBoundsFrame = requestAnimationFrame(syncWebAppView);
 }
 
 function selectProject(id) {
@@ -234,6 +391,8 @@ async function loadState() {
 
 globalNav.addEventListener("click", () => selectProject(null));
 globalViewButton.addEventListener("click", () => selectProject(null));
+window.addEventListener("resize", queueWebAppSync);
+workspace.addEventListener("scroll", queueWebAppSync);
 
 toggleConfigButton.addEventListener("click", () => {
   configPanel.hidden = !configPanel.hidden;

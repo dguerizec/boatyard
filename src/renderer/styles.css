@@ -245,6 +245,15 @@ button {
   padding: 28px;
 }
 
+.workspace.project-mode {
+  overflow: hidden;
+  padding: 0;
+}
+
+.workspace.project-mode .workspace-header {
+  display: none;
+}
+
 .workspace-header {
   display: flex;
   justify-content: space-between;
@@ -277,6 +286,24 @@ button {
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 16px;
   align-items: stretch;
+}
+
+.project-workbench {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  gap: 12px;
+  height: calc(100vh - 64px);
+  min-height: 0;
+}
+
+.project-widget-rail {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+  padding: 18px 0 18px 18px;
 }
 
 .widget-card {
@@ -320,6 +347,85 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.webapp-pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border: 1px solid var(--line);
+  border-right: 0;
+  border-radius: 0;
+  background: rgba(15, 20, 25, 0.96);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.webapp-pane-header {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(32, 40, 51, 0.82);
+}
+
+.webapp-tabs,
+.webapp-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.webapp-tabs {
+  flex: 0 0 auto;
+}
+
+.webapp-tab {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.webapp-tab:hover,
+.webapp-tab[aria-selected="true"] {
+  color: var(--text);
+  background: var(--panel-strong);
+  border-color: var(--line);
+}
+
+.webapp-tab[aria-selected="true"] {
+  border-color: rgba(65, 184, 131, 0.65);
+}
+
+.webapp-actions {
+  flex: 1 1 auto;
+  justify-content: flex-end;
+}
+
+.webapp-url {
+  min-width: 0;
+  max-width: 48vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.webapp-host {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #0b0f14;
 }
 
 .config-panel {
@@ -434,5 +540,28 @@ button {
 
   .workspace-summary {
     text-align: left;
+  }
+
+  .project-workbench {
+    grid-template-columns: 1fr;
+    height: calc(100vh - 64px);
+    overflow: auto;
+  }
+
+  .webapp-pane {
+    min-height: 70vh;
+    border-right: 1px solid var(--line);
+  }
+
+  .webapp-pane-header {
+    display: grid;
+  }
+
+  .webapp-actions {
+    justify-content: stretch;
+  }
+
+  .webapp-url {
+    max-width: none;
   }
 }

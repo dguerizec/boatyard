@@ -1,12 +1,14 @@
 "use strict";
 
 const path = require("node:path");
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, ipcMain, shell } = require("electron");
 const { ProjectStore } = require("./store");
 
 let mainWindow = null;
 let store = null;
 let saveWindowStateTimer = null;
+const webAppViews = new Map();
+let activeWebAppKey = null;
 
 function getStorePath() {
   if (process.env.DASHTOP_STATE_PATH) {
@@ -54,7 +56,10 @@ function createMainWindow() {
   mainWindow.on("resize", scheduleWindowStateSave);
   mainWindow.on("maximize", saveWindowState);
   mainWindow.on("unmaximize", saveWindowState);
-  mainWindow.on("close", saveWindowState);
+  mainWindow.on("close", () => {
+    saveWindowState();
+    destroyWebAppViews();
+  });
 }
 
 function saveWindowState() {
@@ -73,6 +78,106 @@ function scheduleWindowStateSave() {
   saveWindowStateTimer = setTimeout(saveWindowState, 250);
 }
 
+function normalizeWebAppBounds(bounds) {
+  const source = bounds && typeof bounds === "object" ? bounds : {};
+  return {
+    x: Math.max(0, Math.round(Number.isFinite(source.x) ? source.x : 0)),
+    y: Math.max(0, Math.round(Number.isFinite(source.y) ? source.y : 0)),
+    width: Math.max(1, Math.round(Number.isFinite(source.width) ? source.width : 1)),
+    height: Math.max(1, Math.round(Number.isFinite(source.height) ? source.height : 1))
+  };
+}
+
+function ensureWebAppView(key) {
+  const existing = webAppViews.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const view = new WebContentsView({
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  view.setBackgroundColor("#0b0f14");
+  view.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: "deny" };
+  });
+
+  mainWindow.contentView.addChildView(view);
+  webAppViews.set(key, {
+    view,
+    url: null
+  });
+  return webAppViews.get(key);
+}
+
+function showWebApp({ key, url, bounds }) {
+  if (!key) {
+    throw new Error("Webapp key is required.");
+  }
+
+  const parsedUrl = new URL(url);
+
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw new Error("Only http and https webapps are supported.");
+  }
+
+  const webApp = ensureWebAppView(String(key));
+  webApp.view.setBounds(normalizeWebAppBounds(bounds));
+  webApp.view.setVisible(true);
+  activeWebAppKey = String(key);
+
+  for (const [viewKey, item] of webAppViews) {
+    if (viewKey !== activeWebAppKey) {
+      item.view.setVisible(false);
+    }
+  }
+
+  if (webApp.url !== parsedUrl.toString()) {
+    webApp.url = parsedUrl.toString();
+    webApp.view.webContents.loadURL(webApp.url).catch((error) => {
+      console.warn(`Could not load webapp ${webApp.url}: ${error.message}`);
+    });
+  }
+}
+
+function setWebAppBounds(bounds) {
+  if (!activeWebAppKey) {
+    return;
+  }
+
+  const webApp = webAppViews.get(activeWebAppKey);
+  webApp?.view.setBounds(normalizeWebAppBounds(bounds));
+}
+
+function hideWebApp() {
+  activeWebAppKey = null;
+
+  for (const item of webAppViews.values()) {
+    item.view.setVisible(false);
+  }
+}
+
+function destroyWebAppViews() {
+  for (const item of webAppViews.values()) {
+    try {
+      mainWindow?.contentView.removeChildView(item.view);
+    } catch (error) {
+      console.warn(`Could not detach webapp view: ${error.message}`);
+    }
+
+    if (!item.view.webContents.isDestroyed()) {
+      item.view.webContents.close();
+    }
+  }
+  webAppViews.clear();
+  activeWebAppKey = null;
+}
+
 function registerIpcHandlers() {
   ipcMain.handle("state:get", () => store.getState());
 
@@ -86,6 +191,18 @@ function registerIpcHandlers() {
 
   ipcMain.handle("projects:remove", (_event, id) => {
     return store.removeProject(id);
+  });
+
+  ipcMain.handle("webapp:show", (_event, webApp) => {
+    showWebApp(webApp);
+  });
+
+  ipcMain.handle("webapp:set-bounds", (_event, bounds) => {
+    setWebAppBounds(bounds);
+  });
+
+  ipcMain.handle("webapp:hide", () => {
+    hideWebApp();
   });
 
   ipcMain.handle("shell:open-external", (_event, url) => {
