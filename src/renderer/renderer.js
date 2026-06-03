@@ -645,25 +645,22 @@ function renderGlobalDashboard() {
   );
 }
 
-function createGlobalSettingsForm({ settings, onSubmit }) {
+function createGlobalProjectsSettingsForm({ settings, onSubmit }) {
   const shell = document.createElement("section");
-  shell.className = "project-form-page global-settings-page";
+  shell.className = "project-form-page";
 
   const form = document.createElement("form");
   form.className = "project-form";
 
-  const projectsSection = document.createElement("section");
-  projectsSection.className = "settings-form-section";
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
 
-  const projectsHeading = document.createElement("div");
-  projectsHeading.className = "form-heading";
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Projects global settings";
 
-  const projectsTitle = document.createElement("h3");
-  projectsTitle.textContent = "Projects global settings";
-
-  const projectsCopy = document.createElement("p");
-  projectsCopy.textContent = "Configure defaults shared by project forms and tooling.";
-  projectsHeading.append(projectsTitle, projectsCopy);
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Configure defaults shared by project forms and tooling.";
+  heading.append(headingTitle, headingCopy);
 
   const projectsBasePathLabel = document.createElement("label");
   projectsBasePathLabel.textContent = "Projects base path";
@@ -675,20 +672,59 @@ function createGlobalSettingsForm({ settings, onSubmit }) {
   projectsBasePathInput.placeholder = "/workspace/projects";
   projectsBasePathInput.value = settings.projectsBasePath;
   projectsBasePathLabel.append(projectsBasePathInput);
-  projectsSection.append(projectsHeading, projectsBasePathLabel);
 
-  const presentationSection = document.createElement("section");
-  presentationSection.className = "settings-form-section";
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
 
-  const presentationHeading = document.createElement("div");
-  presentationHeading.className = "form-heading";
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
 
-  const presentationTitle = document.createElement("h3");
-  presentationTitle.textContent = "Presentation";
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save projects settings";
 
-  const presentationCopy = document.createElement("p");
-  presentationCopy.textContent = "Tune how Dashtop displays webapp overlays.";
-  presentationHeading.append(presentationTitle, presentationCopy);
+  actions.append(submitButton);
+  form.append(heading, projectsBasePathLabel, error, actions);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit({
+        projectsBasePath: projectsBasePathInput.value
+      });
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  requestAnimationFrame(() => projectsBasePathInput.focus());
+  return shell;
+}
+
+function createGlobalPresentationSettingsForm({ settings, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Presentation";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Tune how Dashtop displays webapp overlays.";
+  heading.append(headingTitle, headingCopy);
 
   const blurLabel = document.createElement("label");
   blurLabel.className = "switch-row";
@@ -707,7 +743,6 @@ function createGlobalSettingsForm({ settings, onSubmit }) {
   switchTrack.setAttribute("aria-hidden", "true");
 
   blurLabel.append(blurCopy, blurSwitch, switchTrack);
-  presentationSection.append(presentationHeading, blurLabel);
 
   const error = document.createElement("p");
   error.className = "form-error";
@@ -720,10 +755,10 @@ function createGlobalSettingsForm({ settings, onSubmit }) {
   const submitButton = document.createElement("button");
   submitButton.className = "primary-button";
   submitButton.type = "submit";
-  submitButton.textContent = "Save settings";
+  submitButton.textContent = "Save presentation";
 
   actions.append(submitButton);
-  form.append(projectsSection, presentationSection, error, actions);
+  form.append(heading, blurLabel, error, actions);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -732,7 +767,6 @@ function createGlobalSettingsForm({ settings, onSubmit }) {
 
     try {
       await onSubmit({
-        projectsBasePath: projectsBasePathInput.value,
         blurWebAppOverlays: blurSwitch.checked
       });
     } catch (submitError) {
@@ -742,7 +776,6 @@ function createGlobalSettingsForm({ settings, onSubmit }) {
   });
 
   shell.append(form);
-  requestAnimationFrame(() => projectsBasePathInput.focus());
   return shell;
 }
 
@@ -756,7 +789,13 @@ function renderGlobalSettingsPage() {
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-form-layout";
 
-  dashboardGrid.append(createGlobalSettingsForm({
+  dashboardGrid.append(createGlobalProjectsSettingsForm({
+    settings: getSettings(),
+    onSubmit: async (values) => {
+      state = await window.dashtop.updateSettings(values);
+      renderGlobalSettingsPage();
+    }
+  }), createGlobalPresentationSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
       state = await window.dashtop.updateSettings(values);

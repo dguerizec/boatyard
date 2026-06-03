@@ -674,22 +674,6 @@ button {
   gap: 16px;
 }
 
-.global-settings-page .project-form {
-  gap: 20px;
-}
-
-.settings-form-section {
-  display: grid;
-  gap: 16px;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--line);
-}
-
-.settings-form-section:last-of-type {
-  padding-bottom: 0;
-  border-bottom: 0;
-}
-
 .form-heading {
   display: grid;
   gap: 6px;
