@@ -2800,6 +2800,10 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     repoUrlInput.dataset.edited = "true";
   });
 
+  twiccUrlInput.addEventListener("input", () => {
+    twiccUrlInput.dataset.edited = "true";
+  });
+
   hawserMainSessionInput.addEventListener("input", () => {
     hawserMainSessionInput.dataset.edited = "true";
   });
@@ -2838,6 +2842,10 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       repoUrlInput.value = inspected.repoUrl;
     } else if (inspected?.gitUrl && !repoUrlInput.dataset.edited) {
       repoUrlInput.value = deriveRepoUrl(inspected.gitUrl);
+    }
+
+    if (inspected?.twiccUrl && !twiccUrlInput.dataset.edited) {
+      twiccUrlInput.value = inspected.twiccUrl;
     }
   }
 

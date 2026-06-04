@@ -8,6 +8,7 @@ const { getHawserWidgetData } = require("./hawserService");
 const { PasswordManager } = require("./passwordManager");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
+const { inspectTwiccProject } = require("./twiccService");
 
 const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:dashtop-webapps";
@@ -121,9 +122,11 @@ async function readGitValue(sourcePath, args) {
 
 async function inspectSourcePath(sourcePath) {
   const gitUrl = await readGitValue(sourcePath, ["config", "--get", "remote.origin.url"]);
+  const twiccProject = await inspectTwiccProject(sourcePath, { execFileAsync });
   return {
     gitUrl,
-    repoUrl: deriveRepoUrl(gitUrl)
+    repoUrl: deriveRepoUrl(gitUrl),
+    twiccUrl: twiccProject?.url || ""
   };
 }
 
