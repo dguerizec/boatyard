@@ -32,6 +32,18 @@ async function runTmux(args) {
   return stdout.trim();
 }
 
+async function resizeTmuxWindow(windowId, cols, rows) {
+  if (!windowId) {
+    return;
+  }
+
+  try {
+    await runTmux(["resize-window", "-t", String(windowId), "-x", String(cols), "-y", String(rows)]);
+  } catch (error) {
+    console.warn(`Could not resize tmux window ${windowId}: ${error.message}`);
+  }
+}
+
 class TerminalService {
   constructor({ getProject, sendToRenderer }) {
     this.findProject = getProject;
@@ -54,9 +66,11 @@ class TerminalService {
 
     try {
       await runTmux(["has-session", "-t", session]);
+      await runTmux(["set-option", "-t", session, "window-size", "latest"]);
       return session;
     } catch {
       await runTmux(["new-session", "-d", "-s", session, "-n", "main", "-c", getProjectCwd(project)]);
+      await runTmux(["set-option", "-t", session, "window-size", "latest"]);
       return session;
     }
   }
@@ -136,6 +150,7 @@ class TerminalService {
         TERM: "xterm-256color"
       }
     });
+    await resizeTmuxWindow(selectedTab.id, cols, rows);
 
     term.onData((data) => {
       this.sendToRenderer("terminal:data", {
@@ -150,7 +165,10 @@ class TerminalService {
         exitCode
       });
     });
-    this.terminals.set(terminalId, term);
+    this.terminals.set(terminalId, {
+      term,
+      windowId: selectedTab.id
+    });
 
     return {
       terminalId,
@@ -161,28 +179,29 @@ class TerminalService {
   write(terminalId, data) {
     const term = this.terminals.get(String(terminalId));
     if (term) {
-      term.write(String(data || ""));
+      term.term.write(String(data || ""));
     }
   }
 
   resize(terminalId, size = {}) {
-    const term = this.terminals.get(String(terminalId));
-    if (!term) {
+    const terminal = this.terminals.get(String(terminalId));
+    if (!terminal) {
       return;
     }
 
-    const cols = Math.max(20, Math.round(Number(size.cols) || term.cols));
-    const rows = Math.max(5, Math.round(Number(size.rows) || term.rows));
-    term.resize(cols, rows);
+    const cols = Math.max(20, Math.round(Number(size.cols) || terminal.term.cols));
+    const rows = Math.max(5, Math.round(Number(size.rows) || terminal.term.rows));
+    terminal.term.resize(cols, rows);
+    resizeTmuxWindow(terminal.windowId, cols, rows);
   }
 
   detach(terminalId) {
-    const term = this.terminals.get(String(terminalId));
-    if (!term) {
+    const terminal = this.terminals.get(String(terminalId));
+    if (!terminal) {
       return;
     }
 
-    term.kill();
+    terminal.term.kill();
     this.terminals.delete(String(terminalId));
   }
 

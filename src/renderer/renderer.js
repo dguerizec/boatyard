@@ -147,6 +147,12 @@ function getXtermConstructor() {
   return window.Terminal?.Terminal || window.Terminal || null;
 }
 
+function nextAnimationFrame() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
 function getTerminalGridSize(container) {
   const rect = container.getBoundingClientRect();
   return {
@@ -250,8 +256,11 @@ async function attachTerminalTab(project, card, windowId) {
     }
   });
   term.open(viewport);
+  await nextAnimationFrame();
+  const initialSize = getTerminalGridSize(viewport);
+  term.resize(initialSize.cols, initialSize.rows);
 
-  const attachResult = await window.dashtop.attachTerminal(project.id, windowId, getTerminalGridSize(viewport));
+  const attachResult = await window.dashtop.attachTerminal(project.id, windowId, initialSize);
   const disposable = term.onData((data) => {
     window.dashtop.writeTerminal(attachResult.terminalId, data);
   });
