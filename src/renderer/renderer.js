@@ -202,8 +202,8 @@ function getSelectedWebApp(project, paneId, webApps) {
   return webApps.find((webApp) => webApp.id === selectedId) || webApps[0];
 }
 
-function invokeWebApp(action, payload) {
-  return window.dashtop[action](payload).catch((error) => {
+function invokeWebApp(action, ...payload) {
+  return window.dashtop[action](...payload).catch((error) => {
     console.error(`Could not ${action}:`, error);
   });
 }
@@ -327,6 +327,30 @@ function createWebAppPane(project, paneNode) {
   activeUrl.className = "webapp-url";
   activeUrl.textContent = selectedWebApp.url;
 
+  const backButton = document.createElement("button");
+  backButton.className = "webapp-tool-button";
+  backButton.type = "button";
+  backButton.title = "Go back";
+  backButton.setAttribute("aria-label", "Go back");
+  backButton.textContent = "←";
+  backButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "back"));
+
+  const forwardButton = document.createElement("button");
+  forwardButton.className = "webapp-tool-button";
+  forwardButton.type = "button";
+  forwardButton.title = "Go forward";
+  forwardButton.setAttribute("aria-label", "Go forward");
+  forwardButton.textContent = "→";
+  forwardButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "forward"));
+
+  const refreshButton = document.createElement("button");
+  refreshButton.className = "webapp-tool-button";
+  refreshButton.type = "button";
+  refreshButton.title = "Refresh";
+  refreshButton.setAttribute("aria-label", "Refresh");
+  refreshButton.textContent = "↻";
+  refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
+
   const verticalSplitButton = document.createElement("button");
   verticalSplitButton.className = "webapp-tool-button";
   verticalSplitButton.type = "button";
@@ -352,7 +376,7 @@ function createWebAppPane(project, paneNode) {
   closePaneButton.disabled = countPaneNodes(getProjectPaneLayout(project)) <= 1;
   closePaneButton.addEventListener("click", () => closePane(project, paneNode.id));
 
-  actions.append(activeUrl, verticalSplitButton, horizontalSplitButton, closePaneButton);
+  actions.append(backButton, forwardButton, refreshButton, activeUrl, verticalSplitButton, horizontalSplitButton, closePaneButton);
   header.append(tabs, actions);
 
   const host = document.createElement("div");

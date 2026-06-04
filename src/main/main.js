@@ -197,6 +197,37 @@ function setWebAppBounds(bounds) {
   webApp?.view.setBounds(normalizeWebAppBounds(bounds));
 }
 
+function navigateWebApp(key, action) {
+  const webApp = webAppViews.get(String(key || ""));
+
+  if (!webApp || webApp.view.webContents.isDestroyed()) {
+    return false;
+  }
+
+  if (action === "back") {
+    if (webApp.view.webContents.canGoBack()) {
+      webApp.view.webContents.goBack();
+      return true;
+    }
+    return false;
+  }
+
+  if (action === "forward") {
+    if (webApp.view.webContents.canGoForward()) {
+      webApp.view.webContents.goForward();
+      return true;
+    }
+    return false;
+  }
+
+  if (action === "refresh") {
+    webApp.view.webContents.reload();
+    return true;
+  }
+
+  return false;
+}
+
 function setVisibleWebApps(keys) {
   visibleWebAppKeys = new Set(Array.isArray(keys) ? keys.map(String) : []);
 
@@ -324,6 +355,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("webapp:set-bounds", (_event, bounds) => {
     setWebAppBounds(bounds);
+  });
+
+  ipcMain.handle("webapp:navigate", (_event, key, action) => {
+    return navigateWebApp(key, action);
   });
 
   ipcMain.handle("webapp:set-visible", (_event, keys) => {
