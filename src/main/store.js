@@ -19,6 +19,7 @@ const DEFAULT_WINDOW_BOUNDS = {
 };
 
 const DEFAULT_TWICC_URL = "http://localhost:3500";
+const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
 const MIN_WIDGET_RAIL_WIDTH = 240;
 
 function createDefaultState() {
@@ -26,6 +27,8 @@ function createDefaultState() {
     settings: {
       projectsBasePath: "",
       blurWebAppOverlays: true,
+      hawserApiUrl: DEFAULT_HAWSER_API_URL,
+      hawserToken: "",
       widgetRailWidth: 340
     },
     projects: [],
@@ -177,6 +180,8 @@ function normalizeSettings(settings = {}) {
   return {
     projectsBasePath: normalizeText(source.projectsBasePath),
     blurWebAppOverlays: source.blurWebAppOverlays !== false,
+    hawserApiUrl: normalizeOptionalUrl(source.hawserApiUrl) || DEFAULT_HAWSER_API_URL,
+    hawserToken: normalizeText(source.hawserToken),
     widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340)
   };
 }

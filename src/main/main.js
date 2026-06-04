@@ -4,6 +4,7 @@ const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, dialog, ipcMain, shell } = require("electron");
+const { getHawserWidgetData } = require("./hawserService");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
 
@@ -412,6 +413,12 @@ function registerIpcHandlers() {
 
   ipcMain.handle("terminal:detach", (_event, terminalId) => {
     terminalService.detach(terminalId);
+  });
+
+  ipcMain.handle("hawser:widget-data", (_event, projectId) => {
+    const state = store.getState();
+    const project = state.projects.find((item) => item.id === String(projectId || ""));
+    return getHawserWidgetData(project, state.settings);
   });
 
   ipcMain.handle("webapp:show", (_event, webApp) => {

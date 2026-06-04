@@ -871,6 +871,124 @@ button {
   white-space: nowrap;
 }
 
+.hawser-widget {
+  gap: 12px;
+  padding: 14px;
+  overflow: hidden;
+}
+
+.hawser-widget-header {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.hawser-widget-title {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.hawser-widget-title h3 {
+  font-size: 18px;
+}
+
+.hawser-widget-title small,
+.hawser-widget-footer,
+.hawser-message-row span,
+.hawser-message-row small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.hawser-widget-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid rgba(65, 184, 131, 0.48);
+  border-radius: 999px;
+  color: #8ee7bb;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.hawser-widget-status.offline {
+  border-color: rgba(248, 113, 113, 0.48);
+  color: #fecaca;
+}
+
+.hawser-widget-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.hawser-widget-metric {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid rgba(52, 64, 76, 0.72);
+  border-radius: 6px;
+  background: rgba(15, 23, 32, 0.66);
+}
+
+.hawser-widget-metric strong {
+  font-size: 20px;
+}
+
+.hawser-widget-metric span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.hawser-message-list {
+  min-height: 0;
+  display: grid;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.hawser-message-row {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border-left: 2px solid rgba(148, 163, 184, 0.42);
+  border-radius: 6px;
+  background: rgba(15, 23, 32, 0.52);
+}
+
+.hawser-message-row.unread {
+  border-left-color: #facc15;
+}
+
+.hawser-message-row.processing {
+  border-left-color: var(--accent);
+}
+
+.hawser-message-row strong,
+.hawser-message-row span,
+.hawser-message-row small,
+.hawser-widget-footer {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hawser-message-empty {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .webapp-pane {
   min-width: 420px;
   min-height: 0;

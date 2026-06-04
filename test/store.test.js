@@ -158,15 +158,21 @@ test("normalizeSettings keeps global settings defaults", () => {
   assert.deepEqual(normalizeSettings(), {
     projectsBasePath: "",
     blurWebAppOverlays: true,
+    hawserApiUrl: "http://127.0.0.1:60082/",
+    hawserToken: "",
     widgetRailWidth: 340
   });
   assert.deepEqual(normalizeSettings({
     projectsBasePath: "  /workspace/projects  ",
     blurWebAppOverlays: false,
+    hawserApiUrl: "localhost:60082",
+    hawserToken: "  test-token  ",
     widgetRailWidth: 120
   }), {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
+    hawserApiUrl: "http://localhost:60082/",
+    hawserToken: "test-token",
     widgetRailWidth: 240
   });
 });
@@ -439,12 +445,16 @@ test("ProjectStore persists global settings", () => {
   store.load();
   const state = store.updateSettings({
     projectsBasePath: "/workspace/projects",
-    blurWebAppOverlays: false
+    blurWebAppOverlays: false,
+    hawserApiUrl: "http://127.0.0.1:60082",
+    hawserToken: "test-token"
   });
 
   assert.deepEqual(state.settings, {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
+    hawserApiUrl: "http://127.0.0.1:60082/",
+    hawserToken: "test-token",
     widgetRailWidth: 340
   });
 

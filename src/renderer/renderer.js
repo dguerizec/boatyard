@@ -14,6 +14,7 @@ const workspaceTitle = document.querySelector("#workspace-title");
 const workspaceSummary = document.querySelector("#workspace-summary");
 
 const DEFAULT_TWICC_URL = "http://localhost:3500";
+const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const MIN_WEBAPP_AREA_WIDTH = 420;
 const WIDGET_RAIL_RESIZER_WIDTH = 6;
@@ -92,6 +93,8 @@ function getSettings() {
   return {
     projectsBasePath: "",
     blurWebAppOverlays: true,
+    hawserApiUrl: DEFAULT_HAWSER_API_URL,
+    hawserToken: "",
     widgetRailWidth: 340,
     ...(state.settings || {})
   };
@@ -409,6 +412,132 @@ function createTerminalWidget(project) {
   return card;
 }
 
+function formatHawserEndpoint(message) {
+  if (message.direction === "in") {
+    return `from ${message.fromProject || "?"}${message.fromSession ? `:${message.fromSession}` : ""}`;
+  }
+
+  return `to ${message.toProject || "?"}${message.toSession ? `:${message.toSession}` : ""}`;
+}
+
+function createHawserWidget(project) {
+  const card = document.createElement("article");
+  card.className = "widget-card hawser-widget";
+
+  const header = document.createElement("header");
+  header.className = "hawser-widget-header";
+
+  const title = document.createElement("div");
+  title.className = "hawser-widget-title";
+
+  const titleText = document.createElement("h3");
+  titleText.textContent = "Hawser";
+
+  const subtitle = document.createElement("small");
+  subtitle.textContent = project.hawserMainSession || `${project.slug}:main`;
+
+  title.append(titleText, subtitle);
+
+  const status = document.createElement("span");
+  status.className = "hawser-widget-status";
+  status.textContent = "Loading";
+
+  header.append(title, status);
+
+  const metrics = document.createElement("div");
+  metrics.className = "hawser-widget-metrics";
+
+  const metricEntries = [
+    ["unread", "Unread"],
+    ["processing", "Processing"],
+    ["activeTasks", "Tasks"]
+  ];
+  const metricValues = new Map();
+
+  for (const [key, label] of metricEntries) {
+    const metric = document.createElement("div");
+    metric.className = "hawser-widget-metric";
+
+    const value = document.createElement("strong");
+    value.textContent = "0";
+    metricValues.set(key, value);
+
+    const labelElement = document.createElement("span");
+    labelElement.textContent = label;
+
+    metric.append(value, labelElement);
+    metrics.append(metric);
+  }
+
+  const list = document.createElement("div");
+  list.className = "hawser-message-list";
+
+  const footer = document.createElement("p");
+  footer.className = "hawser-widget-footer";
+  footer.textContent = "Waiting for Hawser.";
+
+  card.append(header, metrics, list, footer);
+
+  function renderMessages(data) {
+    list.innerHTML = "";
+
+    if (!data.messages.length) {
+      const empty = document.createElement("p");
+      empty.className = "hawser-message-empty";
+      empty.textContent = "No active inbox or tasks.";
+      list.append(empty);
+      return;
+    }
+
+    for (const message of data.messages.slice(0, 5)) {
+      const row = document.createElement("div");
+      row.className = `hawser-message-row ${message.status}`;
+
+      const subject = document.createElement("strong");
+      subject.textContent = message.subject;
+
+      const meta = document.createElement("span");
+      meta.textContent = `${message.kind} / ${message.status} / ${formatHawserEndpoint(message)}`;
+
+      const preview = document.createElement("small");
+      preview.textContent = message.worktree?.state
+        ? `${message.worktree.kind || "worktree"} / ${message.worktree.state}`
+        : message.preview || "No preview.";
+
+      row.append(subject, meta, preview);
+      list.append(row);
+    }
+  }
+
+  async function refresh() {
+    if (!document.body.contains(card)) {
+      clearInterval(intervalId);
+      return;
+    }
+
+    try {
+      const data = await window.dashtop.getHawserWidgetData(project.id);
+      status.textContent = data.live ? "Live" : "Offline";
+      status.classList.toggle("offline", !data.live);
+      for (const [key, value] of metricValues) {
+        value.textContent = String(data.counts?.[key] || 0);
+      }
+      renderMessages(data);
+      footer.textContent = data.error
+        ? data.error
+        : `${data.project || "unknown"} / ${data.source}`;
+    } catch (error) {
+      status.textContent = "Error";
+      status.classList.add("offline");
+      footer.textContent = error.message;
+    }
+  }
+
+  const intervalId = setInterval(refresh, 5000);
+  queueMicrotask(refresh);
+  return card;
+}
+
 function registerBuiltinProjectWidgets() {
   const registry = window.DashtopWidgetRegistry;
 
@@ -501,6 +630,22 @@ function registerBuiltinProjectWidgets() {
         max: { columns: 4, rows: 8 }
       },
       createElement: (project) => createTerminalWidget(project)
+    },
+    {
+      id: "hawser-inbox",
+      name: "Hawser",
+      title: "Hawser",
+      scope: "project",
+      category: "Developer tools",
+      status: "experimental",
+      description: "Shows Hawser inbox counts and active task status for the project.",
+      requires: [{ type: "projectField", key: "hawserMainSession" }],
+      layout: {
+        default: { columns: 2, rows: 3 },
+        min: { columns: 2, rows: 2 },
+        max: { columns: 4, rows: 6 }
+      },
+      createElement: (project) => createHawserWidget(project)
     },
     {
       id: "discord",
@@ -2077,6 +2222,80 @@ function createGlobalPresentationSettingsForm({ settings, onSubmit }) {
   return shell;
 }
 
+function createGlobalHawserSettingsForm({ settings, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Hawser";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Configure the Hawser API used by project widgets.";
+  heading.append(headingTitle, headingCopy);
+
+  const apiUrlLabel = document.createElement("label");
+  apiUrlLabel.textContent = "API URL";
+
+  const apiUrlInput = document.createElement("input");
+  apiUrlInput.name = "hawserApiUrl";
+  apiUrlInput.type = "text";
+  apiUrlInput.autocomplete = "off";
+  apiUrlInput.placeholder = DEFAULT_HAWSER_API_URL;
+  apiUrlInput.value = settings.hawserApiUrl || DEFAULT_HAWSER_API_URL;
+  apiUrlLabel.append(apiUrlInput);
+
+  const tokenLabel = document.createElement("label");
+  tokenLabel.textContent = "API token";
+
+  const tokenInput = document.createElement("input");
+  tokenInput.name = "hawserToken";
+  tokenInput.type = "password";
+  tokenInput.autocomplete = "off";
+  tokenInput.value = settings.hawserToken || "";
+  tokenLabel.append(tokenInput);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save Hawser";
+
+  actions.append(submitButton);
+  form.append(heading, apiUrlLabel, tokenLabel, error, actions);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit({
+        hawserApiUrl: apiUrlInput.value,
+        hawserToken: tokenInput.value
+      });
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  return shell;
+}
+
 function createGlobalWidgetsSettingsView() {
   const shell = document.createElement("section");
   shell.className = "project-form-page widgets-settings-page";
@@ -2149,6 +2368,12 @@ function renderGlobalSettingsPage() {
       renderGlobalSettingsPage();
     }
   }), createGlobalPresentationSettingsForm({
+    settings: getSettings(),
+    onSubmit: async (values) => {
+      state = await window.dashtop.updateSettings(values);
+      renderGlobalSettingsPage();
+    }
+  }), createGlobalHawserSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
       state = await window.dashtop.updateSettings(values);
