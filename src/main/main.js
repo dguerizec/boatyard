@@ -1,8 +1,12 @@
 "use strict";
 
+const { execFile } = require("node:child_process");
 const path = require("node:path");
+const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, dialog, ipcMain, shell } = require("electron");
-const { ProjectStore } = require("./store");
+const { ProjectStore, deriveRepoUrl } = require("./store");
+
+const execFileAsync = promisify(execFile);
 
 let mainWindow = null;
 let store = null;
@@ -87,6 +91,32 @@ function normalizeWebAppBounds(bounds) {
     y: Math.max(0, Math.round(Number.isFinite(source.y) ? source.y : 0)),
     width: Math.max(1, Math.round(Number.isFinite(source.width) ? source.width : 1)),
     height: Math.max(1, Math.round(Number.isFinite(source.height) ? source.height : 1))
+  };
+}
+
+async function readGitValue(sourcePath, args) {
+  const trimmedPath = typeof sourcePath === "string" ? sourcePath.trim() : "";
+
+  if (!trimmedPath) {
+    return "";
+  }
+
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", trimmedPath, ...args], {
+      timeout: 3000,
+      windowsHide: true
+    });
+    return stdout.trim();
+  } catch {
+    return "";
+  }
+}
+
+async function inspectSourcePath(sourcePath) {
+  const gitUrl = await readGitValue(sourcePath, ["config", "--get", "remote.origin.url"]);
+  return {
+    gitUrl,
+    repoUrl: deriveRepoUrl(gitUrl)
   };
 }
 
@@ -262,6 +292,10 @@ function registerIpcHandlers() {
 
     const result = await dialog.showOpenDialog(mainWindow, dialogOptions);
     return result.canceled ? null : result.filePaths[0];
+  });
+
+  ipcMain.handle("projects:inspect-source-path", (_event, sourcePath) => {
+    return inspectSourcePath(sourcePath);
   });
 
   ipcMain.handle("projects:add", (_event, projectConfig) => {

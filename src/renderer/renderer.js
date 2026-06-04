@@ -953,6 +953,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       );
       if (selectedPath) {
         sourcePathInput.value = selectedPath;
+        await applySourcePathInspection(selectedPath);
       }
     } catch (selectError) {
       error.textContent = selectError.message;
@@ -1056,6 +1057,20 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   hawserMainSessionInput.addEventListener("input", () => {
     hawserMainSessionInput.dataset.edited = "true";
   });
+
+  async function applySourcePathInspection(sourcePath) {
+    const inspected = await window.dashtop.inspectSourcePath(sourcePath);
+
+    if (inspected?.gitUrl) {
+      gitUrlInput.value = inspected.gitUrl;
+    }
+
+    if (inspected?.repoUrl) {
+      repoUrlInput.value = inspected.repoUrl;
+    } else if (inspected?.gitUrl && !repoUrlInput.dataset.edited) {
+      repoUrlInput.value = deriveRepoUrl(inspected.gitUrl);
+    }
+  }
 
   const error = document.createElement("p");
   error.className = "form-error";
