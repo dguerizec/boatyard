@@ -147,17 +147,30 @@ function getXtermConstructor() {
   return window.Terminal?.Terminal || window.Terminal || null;
 }
 
+function getFitAddonConstructor() {
+  return window.FitAddon?.FitAddon || window.FitAddon || null;
+}
+
 function nextAnimationFrame() {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve());
   });
 }
 
-function getTerminalGridSize(container) {
-  const rect = container.getBoundingClientRect();
+function fitTerminal(term, fitAddon) {
+  const dimensions = fitAddon.proposeDimensions();
+
+  if (!dimensions) {
+    return {
+      cols: Math.max(20, term.cols || 80),
+      rows: Math.max(5, term.rows || 24)
+    };
+  }
+
+  fitAddon.fit();
   return {
-    cols: Math.max(20, Math.floor(rect.width / 9)),
-    rows: Math.max(5, Math.floor(rect.height / 18))
+    cols: dimensions.cols,
+    rows: dimensions.rows
   };
 }
 
@@ -233,8 +246,9 @@ async function attachTerminalTab(project, card, windowId) {
   }
 
   const TerminalConstructor = getXtermConstructor();
+  const FitAddonConstructor = getFitAddonConstructor();
 
-  if (!TerminalConstructor) {
+  if (!TerminalConstructor || !FitAddonConstructor) {
     setTerminalStatus(card, "Terminal renderer unavailable.");
     return;
   }
@@ -255,18 +269,18 @@ async function attachTerminalTab(project, card, windowId) {
       cursor: "#41b883"
     }
   });
+  const fitAddon = new FitAddonConstructor();
+  term.loadAddon(fitAddon);
   term.open(viewport);
   await nextAnimationFrame();
-  const initialSize = getTerminalGridSize(viewport);
-  term.resize(initialSize.cols, initialSize.rows);
+  const initialSize = fitTerminal(term, fitAddon);
 
   const attachResult = await window.dashtop.attachTerminal(project.id, windowId, initialSize);
   const disposable = term.onData((data) => {
     window.dashtop.writeTerminal(attachResult.terminalId, data);
   });
   const resizeObserver = new ResizeObserver(() => {
-    const size = getTerminalGridSize(viewport);
-    term.resize(size.cols, size.rows);
+    const size = fitTerminal(term, fitAddon);
     window.dashtop.resizeTerminal(attachResult.terminalId, size);
   });
   resizeObserver.observe(viewport);
@@ -274,6 +288,7 @@ async function attachTerminalTab(project, card, windowId) {
     terminalId: attachResult.terminalId,
     activeWindowId: attachResult.tab.id,
     term,
+    fitAddon,
     disposable,
     resizeObserver
   });

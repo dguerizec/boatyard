@@ -630,6 +630,8 @@ button {
   min-height: 0;
   flex: 1;
   height: 100%;
+  box-sizing: border-box;
+  padding: 8px;
   border: 1px solid rgba(52, 64, 76, 0.7);
   border-radius: 6px;
   background: #080c11;
@@ -638,7 +640,6 @@ button {
 
 .terminal-viewport .xterm {
   height: 100%;
-  padding: 8px;
 }
 
 .terminal-status {
