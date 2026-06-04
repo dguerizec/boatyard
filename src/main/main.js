@@ -348,7 +348,9 @@ function registerIpcHandlers() {
       patch?.passwordManagerDisclaimerAccepted === true &&
       !passwordManager.getStatus().encryptionAvailable
     ) {
-      throw new Error("Electron safeStorage is unavailable on this system.");
+      throw new Error(
+        "Electron safeStorage is unavailable. On Linux, safeStorage depends on a secret storage backend available in the desktop session, typically gnome-libsecret or kwallet/kwallet5/kwallet6. Try launching Dashtop from your desktop session instead of a detached terminal, tmux, or headless environment."
+      );
     }
 
     return store.updateSettings(patch);
