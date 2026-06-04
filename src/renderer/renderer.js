@@ -671,7 +671,31 @@ function createGlobalProjectsSettingsForm({ settings, onSubmit }) {
   projectsBasePathInput.autocomplete = "off";
   projectsBasePathInput.placeholder = "/workspace/projects";
   projectsBasePathInput.value = settings.projectsBasePath;
-  projectsBasePathLabel.append(projectsBasePathInput);
+
+  const projectsBasePathControl = document.createElement("div");
+  projectsBasePathControl.className = "path-picker";
+
+  const browseButton = document.createElement("button");
+  browseButton.className = "secondary-button";
+  browseButton.type = "button";
+  browseButton.textContent = "Browse";
+  browseButton.addEventListener("click", async () => {
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      const selectedPath = await window.dashtop.selectProjectsBasePath(projectsBasePathInput.value);
+      if (selectedPath) {
+        projectsBasePathInput.value = selectedPath;
+      }
+    } catch (selectError) {
+      error.textContent = selectError.message;
+      error.hidden = false;
+    }
+  });
+
+  projectsBasePathControl.append(projectsBasePathInput, browseButton);
+  projectsBasePathLabel.append(projectsBasePathControl);
 
   const error = document.createElement("p");
   error.className = "form-error";

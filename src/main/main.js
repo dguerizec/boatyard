@@ -1,7 +1,7 @@
 "use strict";
 
 const path = require("node:path");
-const { app, BrowserWindow, WebContentsView, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, dialog, ipcMain, shell } = require("electron");
 const { ProjectStore } = require("./store");
 
 let mainWindow = null;
@@ -248,6 +248,20 @@ function registerIpcHandlers() {
 
   ipcMain.handle("settings:update", (_event, patch) => {
     return store.updateSettings(patch);
+  });
+
+  ipcMain.handle("settings:select-projects-base-path", async (_event, currentPath) => {
+    const dialogOptions = {
+      title: "Select projects base path",
+      properties: ["openDirectory", "createDirectory"]
+    };
+
+    if (typeof currentPath === "string" && currentPath.trim()) {
+      dialogOptions.defaultPath = currentPath.trim();
+    }
+
+    const result = await dialog.showOpenDialog(mainWindow, dialogOptions);
+    return result.canceled ? null : result.filePaths[0];
   });
 
   ipcMain.handle("projects:add", (_event, projectConfig) => {

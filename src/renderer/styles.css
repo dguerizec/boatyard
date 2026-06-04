@@ -709,6 +709,18 @@ button {
   border-color: var(--accent);
 }
 
+.path-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.path-picker .secondary-button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
 .switch-row {
   display: flex;
   align-items: center;
