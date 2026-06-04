@@ -2,29 +2,58 @@
 
 const { ipcRenderer } = require("electron");
 
-function findPasswordForm() {
-  const passwordInput = document.querySelector('input[type="password"]');
-  if (!passwordInput) {
-    return null;
+const PASSWORD_SELECTOR = 'input[type="password"]';
+const USERNAME_TYPES = new Set(["email", "text", "tel", "url"]);
+
+function isUsernameInput(input, passwordInput = null) {
+  if (!input || input === passwordInput || input.disabled || input.readOnly) {
+    return false;
   }
 
-  const form = passwordInput.closest("form") || document;
-  const inputs = [...form.querySelectorAll("input")];
-  const usernameInput = inputs.find((input) => {
-    if (input === passwordInput || input.disabled || input.readOnly) {
-      return false;
-    }
+  const type = String(input.type || "text").toLowerCase();
+  return USERNAME_TYPES.has(type) ||
+    /user|email|login|identifier/i.test(`${input.name} ${input.id} ${input.autocomplete}`);
+}
 
-    const type = String(input.type || "text").toLowerCase();
-    return ["email", "text", "tel", "url"].includes(type) ||
-      /user|email|login|identifier/i.test(`${input.name} ${input.id} ${input.autocomplete}`);
-  });
+function findUsernameInput(scope = document, passwordInput = null) {
+  return [...(scope.querySelectorAll?.("input") || [])].find((input) => isUsernameInput(input, passwordInput)) || null;
+}
+
+function findLoginFields() {
+  const passwordInput = document.querySelector(PASSWORD_SELECTOR);
+  const form = passwordInput?.closest("form") || document;
+  const usernameInput = findUsernameInput(form, passwordInput) || findUsernameInput(document, passwordInput);
 
   return {
     form,
     usernameInput,
     passwordInput
   };
+}
+
+function getPendingUsernameKey() {
+  return `dashtop:password-manager:${window.location.origin}:username`;
+}
+
+function getPendingUsername() {
+  try {
+    return sessionStorage.getItem(getPendingUsernameKey()) || "";
+  } catch {
+    return "";
+  }
+}
+
+function setPendingUsername(username) {
+  const normalizedUsername = String(username || "").trim();
+  if (!normalizedUsername) {
+    return;
+  }
+
+  try {
+    sessionStorage.setItem(getPendingUsernameKey(), normalizedUsername);
+  } catch {
+    // Ignore storage failures in constrained webapp contexts.
+  }
 }
 
 function setInputValue(input, value) {
@@ -44,8 +73,8 @@ function setInputValue(input, value) {
 }
 
 async function autofillCredential() {
-  const loginForm = findPasswordForm();
-  if (!loginForm || loginForm.passwordInput.dataset.dashtopAutofilled === "true") {
+  const loginFields = findLoginFields();
+  if (!loginFields.usernameInput && !loginFields.passwordInput) {
     return;
   }
 
@@ -54,28 +83,26 @@ async function autofillCredential() {
     return;
   }
 
-  setInputValue(loginForm.usernameInput, credential.username);
-  setInputValue(loginForm.passwordInput, credential.password);
-  loginForm.passwordInput.dataset.dashtopAutofilled = "true";
+  if (loginFields.usernameInput && loginFields.usernameInput.dataset.dashtopAutofilled !== "true") {
+    setInputValue(loginFields.usernameInput, credential.username);
+    loginFields.usernameInput.dataset.dashtopAutofilled = "true";
+    setPendingUsername(credential.username);
+  }
+
+  if (loginFields.passwordInput && loginFields.passwordInput.dataset.dashtopAutofilled !== "true") {
+    setInputValue(loginFields.passwordInput, credential.password);
+    loginFields.passwordInput.dataset.dashtopAutofilled = "true";
+  }
 }
 
 function readCredentialFromForm(form) {
-  const passwordInput = form.querySelector?.('input[type="password"]') || document.querySelector('input[type="password"]');
+  const passwordInput = form.querySelector?.(PASSWORD_SELECTOR) || document.querySelector(PASSWORD_SELECTOR);
   if (!passwordInput) {
     return null;
   }
 
-  const inputs = [...(form.querySelectorAll?.("input") || document.querySelectorAll("input"))];
-  const usernameInput = inputs.find((input) => {
-    if (input === passwordInput || input.disabled) {
-      return false;
-    }
-
-    const type = String(input.type || "text").toLowerCase();
-    return ["email", "text", "tel", "url"].includes(type) ||
-      /user|email|login|identifier/i.test(`${input.name} ${input.id} ${input.autocomplete}`);
-  });
-  const username = usernameInput?.value || "";
+  const usernameInput = findUsernameInput(form, passwordInput) || findUsernameInput(document, passwordInput);
+  const username = usernameInput?.value || getPendingUsername();
   const password = passwordInput.value || "";
 
   return username && password
@@ -87,7 +114,15 @@ function readCredentialFromForm(form) {
     : null;
 }
 
+function rememberUsernameFrom(target) {
+  const form = target?.closest?.("form") || document;
+  const usernameInput = findUsernameInput(form) || findUsernameInput(document);
+  setPendingUsername(usernameInput?.value);
+}
+
 function maybeSaveCredentialFrom(target) {
+  rememberUsernameFrom(target);
+
   const form = target?.closest?.("form") || document;
   const credential = readCredentialFromForm(form);
   if (credential) {
@@ -109,13 +144,24 @@ function installSubmitCapture() {
     const type = String(target.type || "").toLowerCase();
     const label = `${target.textContent || ""} ${target.value || ""} ${target.getAttribute("aria-label") || ""}`;
     if (type === "submit" || /sign|log.?in|continue|connect|next/i.test(label)) {
+      rememberUsernameFrom(target);
       maybeSaveCredentialFrom(target);
     }
   }, true);
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && event.target?.matches?.('input[type="password"]')) {
+    if (event.key === "Enter" && event.target?.matches?.("input")) {
+      rememberUsernameFrom(event.target);
+    }
+
+    if (event.key === "Enter" && event.target?.matches?.(PASSWORD_SELECTOR)) {
       maybeSaveCredentialFrom(event.target);
+    }
+  }, true);
+
+  document.addEventListener("input", (event) => {
+    if (isUsernameInput(event.target)) {
+      setPendingUsername(event.target.value);
     }
   }, true);
 }
