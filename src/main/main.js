@@ -197,7 +197,7 @@ function setWebAppBounds(bounds) {
   webApp?.view.setBounds(normalizeWebAppBounds(bounds));
 }
 
-function navigateWebApp(key, action) {
+function navigateWebApp(key, action, url) {
   const webApp = webAppViews.get(String(key || ""));
 
   if (!webApp || webApp.view.webContents.isDestroyed()) {
@@ -222,6 +222,20 @@ function navigateWebApp(key, action) {
 
   if (action === "refresh") {
     webApp.view.webContents.reload();
+    return true;
+  }
+
+  if (action === "home") {
+    const parsedUrl = new URL(url);
+
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return false;
+    }
+
+    webApp.url = parsedUrl.toString();
+    webApp.view.webContents.loadURL(webApp.url).catch((error) => {
+      console.warn(`Could not load webapp ${webApp.url}: ${error.message}`);
+    });
     return true;
   }
 
@@ -357,8 +371,8 @@ function registerIpcHandlers() {
     setWebAppBounds(bounds);
   });
 
-  ipcMain.handle("webapp:navigate", (_event, key, action) => {
-    return navigateWebApp(key, action);
+  ipcMain.handle("webapp:navigate", (_event, key, action, url) => {
+    return navigateWebApp(key, action, url);
   });
 
   ipcMain.handle("webapp:set-visible", (_event, keys) => {

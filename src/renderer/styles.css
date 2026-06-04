@@ -489,7 +489,7 @@ button {
 }
 
 .webapp-tabs {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
 }
 
 .webapp-tab {
@@ -617,13 +617,13 @@ button {
 }
 
 .webapp-actions {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   justify-content: flex-end;
 }
 
 .webapp-url {
   min-width: 0;
-  max-width: 48vw;
+  max-width: min(48vw, 720px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

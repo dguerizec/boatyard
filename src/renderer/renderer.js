@@ -318,6 +318,15 @@ function createWebAppPane(project, paneNode) {
       openWebAppTabMenuFromButton(tabPickerButton, project, paneNode, selectedWebApp, webApps);
     }
   });
+
+  const homeButton = document.createElement("button");
+  homeButton.className = "webapp-tool-button";
+  homeButton.type = "button";
+  homeButton.title = "Go home";
+  homeButton.setAttribute("aria-label", "Go home");
+  homeButton.textContent = "⌂";
+  homeButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "home", selectedWebApp.url));
+
   const backButton = document.createElement("button");
   backButton.className = "webapp-tool-button";
   backButton.type = "button";
@@ -342,14 +351,14 @@ function createWebAppPane(project, paneNode) {
   refreshButton.textContent = "↻";
   refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
 
-  tabs.append(tabPickerButton, backButton, forwardButton, refreshButton);
-
-  const actions = document.createElement("div");
-  actions.className = "webapp-actions";
-
   const activeUrl = document.createElement("span");
   activeUrl.className = "webapp-url";
   activeUrl.textContent = selectedWebApp.url;
+
+  tabs.append(tabPickerButton, homeButton, backButton, forwardButton, refreshButton, activeUrl);
+
+  const actions = document.createElement("div");
+  actions.className = "webapp-actions";
 
   const verticalSplitButton = document.createElement("button");
   verticalSplitButton.className = "webapp-tool-button";
@@ -376,7 +385,7 @@ function createWebAppPane(project, paneNode) {
   closePaneButton.disabled = countPaneNodes(getProjectPaneLayout(project)) <= 1;
   closePaneButton.addEventListener("click", () => closePane(project, paneNode.id));
 
-  actions.append(activeUrl, verticalSplitButton, horizontalSplitButton, closePaneButton);
+  actions.append(verticalSplitButton, horizontalSplitButton, closePaneButton);
   header.append(tabs, actions);
 
   const host = document.createElement("div");
