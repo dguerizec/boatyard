@@ -18,8 +18,10 @@ const MIN_WIDGET_RAIL_WIDTH = 240;
 const MIN_WEBAPP_AREA_WIDTH = 420;
 const WIDGET_RAIL_RESIZER_WIDTH = 6;
 const WIDGET_GRID_MIN_COLUMN_WIDTH = 150;
+const WIDGET_GRID_MAX_COLUMN_WIDTH = 220;
 const WIDGET_GRID_ROW_HEIGHT = 84;
 const WIDGET_GRID_GAP = 12;
+const WIDGET_GRID_HORIZONTAL_PADDING = 18;
 
 function slugify(value) {
   return String(value || "")
@@ -328,7 +330,17 @@ function clampWidgetGridSize(definition, size) {
 }
 
 function getWidgetGridColumnCount(widgetRailWidth) {
-  return Math.max(1, Math.floor((widgetRailWidth + WIDGET_GRID_GAP) / (WIDGET_GRID_MIN_COLUMN_WIDTH + WIDGET_GRID_GAP)));
+  const contentWidth = Math.max(1, widgetRailWidth - WIDGET_GRID_HORIZONTAL_PADDING);
+  const maxColumnsByMinStep = Math.max(
+    1,
+    Math.floor((contentWidth + WIDGET_GRID_GAP) / (WIDGET_GRID_MIN_COLUMN_WIDTH + WIDGET_GRID_GAP))
+  );
+  const minColumnsByMaxStep = Math.max(
+    1,
+    Math.ceil((contentWidth + WIDGET_GRID_GAP) / (WIDGET_GRID_MAX_COLUMN_WIDTH + WIDGET_GRID_GAP))
+  );
+
+  return Math.min(maxColumnsByMinStep, minColumnsByMaxStep);
 }
 
 function fitWidgetSizeToGrid(size, columnCount) {
@@ -336,6 +348,25 @@ function fitWidgetSizeToGrid(size, columnCount) {
     columns: Math.min(columnCount, size.columns),
     rows: size.rows
   };
+}
+
+function applyWidgetGridLayout(widgetRail, project, columnCount) {
+  const layout = getProjectWidgetLayout(project, columnCount);
+  widgetRail.style.setProperty("--widget-grid-columns", String(columnCount));
+  widgetRail.style.setProperty("--widget-grid-row-height", `${WIDGET_GRID_ROW_HEIGHT}px`);
+
+  for (const card of widgetRail.querySelectorAll(".widget-card")) {
+    const widgetId = card.dataset.widgetId;
+    const size = layout.sizes[widgetId];
+    const position = layout.positions[widgetId];
+
+    if (!size || !position) {
+      continue;
+    }
+
+    card.style.gridColumn = `${position.x + 1} / span ${size.columns}`;
+    card.style.gridRow = `${position.y + 2} / span ${size.rows}`;
+  }
 }
 
 function normalizeWidgetGridPosition(position) {
@@ -1504,11 +1535,16 @@ function createWidgetRailResizer() {
 
     function onPointerMove(moveEvent) {
       const nextWidth = clampWidgetRailWidth(startWidth + moveEvent.clientX - startX);
+      const project = getCurrentProject();
       state.settings = {
         ...getSettings(),
         widgetRailWidth: nextWidth
       };
       dashboardGrid.style.gridTemplateColumns = `${nextWidth}px ${WIDGET_RAIL_RESIZER_WIDTH}px minmax(${MIN_WEBAPP_AREA_WIDTH}px, 1fr)`;
+      const widgetRail = dashboardGrid.querySelector(".project-widget-rail");
+      if (project && widgetRail) {
+        applyWidgetGridLayout(widgetRail, project, getWidgetGridColumnCount(nextWidth));
+      }
       queueWebAppSync();
     }
 
@@ -1518,6 +1554,10 @@ function createWidgetRailResizer() {
       state = await window.dashtop.updateSettings({
         widgetRailWidth: getSettings().widgetRailWidth
       });
+      const project = getCurrentProject();
+      if (project) {
+        renderProjectDashboard(project);
+      }
     }
 
     document.addEventListener("pointermove", onPointerMove);
