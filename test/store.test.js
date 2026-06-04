@@ -160,11 +160,11 @@ test("normalizeSettings keeps global settings defaults", () => {
   assert.deepEqual(normalizeSettings({
     projectsBasePath: "  /workspace/projects  ",
     blurWebAppOverlays: false,
-    widgetRailWidth: 900
+    widgetRailWidth: 120
   }), {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
-    widgetRailWidth: 560
+    widgetRailWidth: 240
   });
 });
 

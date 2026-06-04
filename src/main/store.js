@@ -19,6 +19,7 @@ const DEFAULT_WINDOW_BOUNDS = {
 };
 
 const DEFAULT_TWICC_URL = "http://localhost:3500";
+const MIN_WIDGET_RAIL_WIDTH = 240;
 
 function createDefaultState() {
   return {
@@ -171,7 +172,7 @@ function normalizeSettings(settings = {}) {
   return {
     projectsBasePath: normalizeText(source.projectsBasePath),
     blurWebAppOverlays: source.blurWebAppOverlays !== false,
-    widgetRailWidth: Math.min(560, Math.max(240, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340))
+    widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340)
   };
 }
 

@@ -355,7 +355,7 @@ button {
 
 .project-workbench {
   display: grid;
-  grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
+  grid-template-columns: 340px 6px minmax(420px, 1fr);
   gap: 12px;
   height: calc(100vh - 64px);
   width: 100%;
@@ -434,7 +434,7 @@ button {
 }
 
 .webapp-pane {
-  min-width: 0;
+  min-width: 420px;
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);

@@ -14,6 +14,9 @@ const workspaceTitle = document.querySelector("#workspace-title");
 const workspaceSummary = document.querySelector("#workspace-summary");
 
 const DEFAULT_TWICC_URL = "http://localhost:3500";
+const MIN_WIDGET_RAIL_WIDTH = 240;
+const MIN_WEBAPP_AREA_WIDTH = 420;
+const WIDGET_RAIL_RESIZER_WIDTH = 6;
 
 function slugify(value) {
   return String(value || "")
@@ -905,13 +908,14 @@ function renderGlobalSettingsPage() {
 
 function renderProjectDashboard(project) {
   const settings = getSettings();
+  const widgetRailWidth = clampWidgetRailWidth(settings.widgetRailWidth);
   workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Project";
   workspaceTitle.textContent = project.name;
   workspaceSummary.textContent = project.sourcePath || project.previewUrl || project.slug;
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-workbench";
-  dashboardGrid.style.gridTemplateColumns = `${settings.widgetRailWidth}px 6px minmax(0, 1fr)`;
+  dashboardGrid.style.gridTemplateColumns = `${widgetRailWidth}px ${WIDGET_RAIL_RESIZER_WIDTH}px minmax(${MIN_WEBAPP_AREA_WIDTH}px, 1fr)`;
   visibleWebAppHosts = new Map();
 
   const widgetRail = document.createElement("aside");
@@ -961,6 +965,15 @@ function renderProjectDashboard(project) {
   dashboardGrid.append(widgetRail, createWidgetRailResizer(), createPaneLayout(project, getProjectPaneLayout(project)));
 }
 
+function clampWidgetRailWidth(width) {
+  const workbenchWidth = dashboardGrid.getBoundingClientRect().width || window.innerWidth;
+  const maxWidth = Math.max(
+    MIN_WIDGET_RAIL_WIDTH,
+    workbenchWidth - MIN_WEBAPP_AREA_WIDTH - WIDGET_RAIL_RESIZER_WIDTH
+  );
+  return Math.min(maxWidth, Math.max(MIN_WIDGET_RAIL_WIDTH, Math.round(width || 340)));
+}
+
 function createWidgetRailResizer() {
   const resizer = document.createElement("div");
   resizer.className = "widget-rail-resizer";
@@ -974,12 +987,12 @@ function createWidgetRailResizer() {
     const startWidth = getSettings().widgetRailWidth;
 
     function onPointerMove(moveEvent) {
-      const nextWidth = Math.min(560, Math.max(240, Math.round(startWidth + moveEvent.clientX - startX)));
+      const nextWidth = clampWidgetRailWidth(startWidth + moveEvent.clientX - startX);
       state.settings = {
         ...getSettings(),
         widgetRailWidth: nextWidth
       };
-      dashboardGrid.style.gridTemplateColumns = `${nextWidth}px 6px minmax(0, 1fr)`;
+      dashboardGrid.style.gridTemplateColumns = `${nextWidth}px ${WIDGET_RAIL_RESIZER_WIDTH}px minmax(${MIN_WEBAPP_AREA_WIDTH}px, 1fr)`;
       queueWebAppSync();
     }
 
