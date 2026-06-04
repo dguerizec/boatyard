@@ -513,6 +513,51 @@ button {
   outline: none;
 }
 
+.widget-rail-action:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.widget-add-menu {
+  position: fixed;
+  z-index: 80;
+  width: min(280px, calc(100vw - 24px));
+  max-height: min(360px, calc(100vh - 24px));
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(23, 29, 36, 0.98);
+  box-shadow: var(--shadow);
+}
+
+.widget-add-menu-item {
+  width: 100%;
+  min-height: 48px;
+  display: grid;
+  gap: 3px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.widget-add-menu-item small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.widget-add-menu-item:hover,
+.widget-add-menu-item:focus-visible {
+  background: var(--panel-strong);
+  border-color: rgba(65, 184, 131, 0.65);
+  outline: none;
+}
+
 .widget-rail-resizer {
   width: 6px;
   min-width: 6px;

@@ -78,6 +78,7 @@ let webAppBoundsFrame = null;
 let nextPaneId = 1;
 let frozenWebAppLayer = null;
 let openWebAppTabMenu = null;
+let openWidgetAddMenu = null;
 let draggedProjectId = null;
 let draggedWidgetId = null;
 const terminalWidgetsByProject = new Map();
@@ -807,6 +808,41 @@ async function removeProjectWidget(project, widgetId, columnCount) {
   return true;
 }
 
+async function addProjectWidget(project, widgetId, columnCount) {
+  const definition = getWidgetDefinition(widgetId);
+
+  if (!definition) {
+    return false;
+  }
+
+  const layout = getProjectWidgetLayout(project, columnCount);
+  const size = fitWidgetSizeToGrid(clampWidgetGridSize(definition), columnCount);
+  const hidden = layout.hidden.filter((id) => id !== widgetId);
+  const positions = { ...layout.positions };
+  const sizes = {
+    ...layout.sizes,
+    [widgetId]: size
+  };
+  positions[widgetId] = findAvailableWidgetPosition({
+    widgetId,
+    size,
+    positions,
+    sizes,
+    columnCount
+  });
+
+  widgetLayoutsByProject.set(project.id, {
+    ...layout,
+    order: [...layout.order.filter((id) => id !== widgetId), widgetId],
+    hidden,
+    sizes,
+    positions
+  });
+  await persistWidgetLayout(project);
+  renderProjectDashboard(project);
+  return true;
+}
+
 function getWidgetGridPositionFromPointer(event, rail, columnCount, size) {
   const rect = rail.getBoundingClientRect();
   const styles = window.getComputedStyle(rail);
@@ -1040,7 +1076,86 @@ function startWidgetResize(event, project, definition, layout, startSize, column
   window.addEventListener("pointerup", onPointerUp, { once: true });
 }
 
-function createWidgetRailHeader(project, layout) {
+function closeWidgetAddMenu() {
+  if (!openWidgetAddMenu) {
+    return;
+  }
+
+  openWidgetAddMenu.cleanup?.();
+  openWidgetAddMenu.remove();
+  openWidgetAddMenu = null;
+}
+
+function openWidgetAddMenuFromButton(button, project, layout, columnCount) {
+  closeWidgetAddMenu();
+
+  const hiddenDefinitions = layout.hidden
+    .map((id) => getWidgetDefinition(id))
+    .filter(Boolean);
+
+  if (!hiddenDefinitions.length) {
+    return;
+  }
+
+  const menu = document.createElement("div");
+  menu.className = "widget-add-menu";
+  menu.setAttribute("role", "menu");
+
+  const rect = button.getBoundingClientRect();
+  menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+  menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 260))}px`;
+
+  for (const definition of hiddenDefinitions) {
+    const item = document.createElement("button");
+    item.className = "widget-add-menu-item";
+    item.type = "button";
+    item.setAttribute("role", "menuitem");
+
+    const name = document.createElement("span");
+    name.textContent = definition.name;
+
+    const meta = document.createElement("small");
+    meta.textContent = `${definition.category} / ${definition.status}`;
+
+    item.append(name, meta);
+    item.addEventListener("click", async () => {
+      closeWidgetAddMenu();
+      await addProjectWidget(project, definition.id, columnCount);
+    });
+    menu.append(item);
+  }
+
+  document.body.append(menu);
+  openWidgetAddMenu = menu;
+  button.setAttribute("aria-expanded", "true");
+
+  function onPointerDown(event) {
+    if (!menu.contains(event.target) && event.target !== button) {
+      closeWidgetAddMenu();
+    }
+  }
+
+  function onKeyDown(event) {
+    if (event.key === "Escape") {
+      closeWidgetAddMenu();
+    }
+  }
+
+  menu.cleanup = () => {
+    document.removeEventListener("pointerdown", onPointerDown);
+    document.removeEventListener("keydown", onKeyDown);
+    button.setAttribute("aria-expanded", "false");
+  };
+
+  setTimeout(() => {
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+  }, 0);
+
+  menu.querySelector("button")?.focus();
+}
+
+function createWidgetRailHeader(project, layout, columnCount) {
   const header = document.createElement("header");
   header.className = "widget-rail-header";
 
@@ -1056,12 +1171,17 @@ function createWidgetRailHeader(project, layout) {
       text: layout.locked ? "Edit" : "Lock",
       wide: true,
       onClick: () => toggleWidgetLayoutLock(project)
-    },
-    {
-      label: "Add widget",
-      text: "+"
     }
   ];
+
+  if (!layout.locked) {
+    actionConfigs.push({
+      label: "Add widget",
+      text: "+",
+      disabled: !layout.hidden.length,
+      onClick: (event) => openWidgetAddMenuFromButton(event.currentTarget, project, layout, columnCount)
+    });
+  }
 
   for (const action of actionConfigs) {
     const button = document.createElement("button");
@@ -1069,7 +1189,12 @@ function createWidgetRailHeader(project, layout) {
     button.type = "button";
     button.title = action.label;
     button.setAttribute("aria-label", action.label);
+    button.disabled = action.disabled === true;
     button.textContent = action.text;
+    if (action.text === "+") {
+      button.setAttribute("aria-haspopup", "menu");
+      button.setAttribute("aria-expanded", "false");
+    }
     if (action.onClick) {
       button.addEventListener("click", action.onClick);
     }
@@ -1639,6 +1764,7 @@ function hydratePaneLayoutSelections(node) {
 
 function renderGlobalDashboard() {
   const projects = getProjects();
+  closeWidgetAddMenu();
   visibleWebAppHosts = new Map();
   invokeWebApp("hideWebApp");
   workspace.classList.remove("project-mode");
@@ -1889,6 +2015,7 @@ function createGlobalWidgetsSettingsView() {
 }
 
 function renderGlobalSettingsPage() {
+  closeWidgetAddMenu();
   visibleWebAppHosts = new Map();
   invokeWebApp("hideWebApp");
   workspace.classList.remove("project-mode");
@@ -1915,6 +2042,7 @@ function renderGlobalSettingsPage() {
 }
 
 function renderProjectDashboard(project) {
+  closeWidgetAddMenu();
   detachProjectTerminal(project.id);
   const settings = getSettings();
   const widgetRailWidth = clampWidgetRailWidth(settings.widgetRailWidth);
@@ -1936,7 +2064,7 @@ function renderProjectDashboard(project) {
   widgetRail.style.setProperty("--widget-grid-row-height", `${WIDGET_GRID_ROW_HEIGHT}px`);
 
   widgetRail.append(
-    createWidgetRailHeader(project, widgetLayout),
+    createWidgetRailHeader(project, widgetLayout, widgetGridColumns),
     ...getOrderedWidgetDefinitions(widgetLayout).map((definition) => (
       createProjectWidget(project, definition, widgetLayout, widgetGridColumns)
     ))
