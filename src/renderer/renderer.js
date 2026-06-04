@@ -2759,8 +2759,8 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   const twiccUrlInput = document.createElement("input");
   twiccUrlInput.name = "twiccUrl";
   twiccUrlInput.type = "text";
-  twiccUrlInput.required = true;
-  twiccUrlInput.value = initialValues.twiccUrl || DEFAULT_TWICC_URL;
+  twiccUrlInput.placeholder = DEFAULT_TWICC_URL;
+  twiccUrlInput.value = initialValues.twiccUrl || "";
   twiccUrlLabel.append(twiccUrlInput);
 
   const hawserMainSessionLabel = document.createElement("label");
@@ -2844,7 +2844,10 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       repoUrlInput.value = deriveRepoUrl(inspected.gitUrl);
     }
 
-    if (inspected?.twiccUrl && !twiccUrlInput.dataset.edited) {
+    const canReplaceTwiccUrl = !twiccUrlInput.dataset.edited ||
+      !twiccUrlInput.value.trim() ||
+      twiccUrlInput.value.trim() === DEFAULT_TWICC_URL;
+    if (inspected?.twiccUrl && canReplaceTwiccUrl) {
       twiccUrlInput.value = inspected.twiccUrl;
     }
   }

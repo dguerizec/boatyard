@@ -63,3 +63,22 @@ test("loadTwiccProjects returns JSON projects from the CLI", async () => {
 
   assert.deepEqual(projects, [{ id: "project", directory: "/workspace/project" }]);
 });
+
+test("loadTwiccProjects can feed source path URL detection", async () => {
+  const projects = await loadTwiccProjects({
+    execFileAsync: async () => ({
+      stdout: JSON.stringify([{
+        id: "-workspace-projects-app",
+        directory: "/workspace/projects/app",
+        git_root: "/workspace/projects/app"
+      }])
+    })
+  });
+  const project = findTwiccProjectForPath(projects, "/workspace/projects/app");
+
+  assert.equal(project?.id, "-workspace-projects-app");
+  assert.equal(
+    buildTwiccProjectUrl(project.id),
+    "http://localhost:3500/project/-workspace-projects-app"
+  );
+});
