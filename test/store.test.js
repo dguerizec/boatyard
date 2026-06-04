@@ -15,6 +15,7 @@ const {
   normalizeWidgetLayouts,
   normalizeProject,
   normalizeProjectUrls,
+  normalizeNavigationState,
   normalizeSettings,
   normalizeSlug,
   deriveRepoUrl,
@@ -167,6 +168,33 @@ test("normalizeSettings keeps global settings defaults", () => {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
     widgetRailWidth: 240
+  });
+});
+
+test("normalizeNavigationState keeps restorable app pages", () => {
+  assert.deepEqual(normalizeNavigationState(), {
+    view: "global",
+    projectId: null
+  });
+  assert.deepEqual(normalizeNavigationState({
+    view: "project",
+    projectId: " project-id "
+  }), {
+    view: "project",
+    projectId: "project-id"
+  });
+  assert.deepEqual(normalizeNavigationState({
+    view: "project-create",
+    projectId: "project-id"
+  }), {
+    view: "global",
+    projectId: null
+  });
+  assert.deepEqual(normalizeNavigationState({
+    view: "project-edit"
+  }), {
+    view: "global",
+    projectId: null
   });
 });
 
@@ -418,6 +446,37 @@ test("ProjectStore persists global settings", () => {
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(reloaded.load().settings, state.settings);
+});
+
+test("ProjectStore persists navigation and clears removed active projects", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  const state = store.addProject({
+    name: "Project",
+    sourcePath: "/tmp/project"
+  });
+  const projectId = state.projects[0].id;
+  const navigation = store.updateNavigation({
+    view: "project",
+    projectId
+  });
+
+  assert.deepEqual(navigation, {
+    view: "project",
+    projectId
+  });
+
+  const reloaded = new ProjectStore(filePath);
+  assert.deepEqual(reloaded.load().navigation, navigation);
+
+  const removed = reloaded.removeProject(projectId);
+  assert.deepEqual(removed.navigation, {
+    view: "global",
+    projectId: null
+  });
 });
 
 test("ProjectStore persists webapp urls", () => {

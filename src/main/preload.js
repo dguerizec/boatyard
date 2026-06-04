@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("dashtop", {
   getState: () => ipcRenderer.invoke("state:get"),
   updateSettings: (patch) => ipcRenderer.invoke("settings:update", patch),
+  updateNavigation: (navigation) => ipcRenderer.invoke("navigation:update", navigation),
   selectProjectsBasePath: (currentPath) => ipcRenderer.invoke("settings:select-projects-base-path", currentPath),
   inspectSourcePath: (sourcePath) => ipcRenderer.invoke("projects:inspect-source-path", sourcePath),
   addProject: (project) => ipcRenderer.invoke("projects:add", project),

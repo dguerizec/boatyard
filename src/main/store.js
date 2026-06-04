@@ -33,6 +33,10 @@ function createDefaultState() {
       bounds: DEFAULT_WINDOW_BOUNDS,
       isMaximized: false
     },
+    navigation: {
+      view: "global",
+      projectId: null
+    },
     webApps: {},
     paneLayouts: {},
     widgetLayouts: {}
@@ -174,6 +178,21 @@ function normalizeSettings(settings = {}) {
     projectsBasePath: normalizeText(source.projectsBasePath),
     blurWebAppOverlays: source.blurWebAppOverlays !== false,
     widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340)
+  };
+}
+
+function normalizeNavigationState(navigation = {}) {
+  const source = navigation && typeof navigation === "object" ? navigation : {};
+  const allowedViews = new Set(["global", "global-settings", "project", "project-edit"]);
+  const view = allowedViews.has(source.view) ? source.view : "global";
+  const projectId = typeof source.projectId === "string" && source.projectId.trim()
+    ? source.projectId.trim()
+    : null;
+  const isProjectView = view.startsWith("project");
+
+  return {
+    view: projectId || !isProjectView ? view : "global",
+    projectId: isProjectView ? projectId : null
   };
 }
 
@@ -440,6 +459,7 @@ class ProjectStore {
         settings: normalizeSettings(parsed.settings),
         projects: projects.map((project, index) => normalizeProject(project, index)),
         window: normalizeWindowState(parsed.window),
+        navigation: normalizeNavigationState(parsed.navigation),
         webApps: normalizeWebAppState(parsed.webApps),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts)
@@ -484,6 +504,12 @@ class ProjectStore {
     });
     this.save();
     return this.getWindowState();
+  }
+
+  updateNavigation(navigation) {
+    this.state.navigation = normalizeNavigationState(navigation);
+    this.save();
+    return structuredClone(this.state.navigation);
   }
 
   getWebAppUrl(key) {
@@ -584,6 +610,9 @@ class ProjectStore {
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
     delete this.state.paneLayouts[projectId];
     delete this.state.widgetLayouts[projectId];
+    if (this.state.navigation.projectId === projectId) {
+      this.state.navigation = normalizeNavigationState({ view: "global" });
+    }
 
     for (const key of Object.keys(this.state.webApps)) {
       if (key.startsWith(`${projectId}:`)) {
@@ -610,6 +639,7 @@ module.exports = {
   normalizeSlug,
   deriveRepoUrl,
   normalizeSettings,
+  normalizeNavigationState,
   normalizeWebAppState,
   normalizeWindowBounds,
   normalizeWindowState,

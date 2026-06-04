@@ -100,6 +100,45 @@ function getCurrentProject() {
   return getProjects().find((project) => project.id === currentProjectId) || null;
 }
 
+function isRestorableView(view) {
+  return ["global", "global-settings", "project", "project-edit"].includes(view);
+}
+
+function persistNavigation() {
+  if (!isRestorableView(currentView)) {
+    return;
+  }
+
+  window.dashtop.updateNavigation({
+    view: currentView,
+    projectId: currentProjectId
+  }).catch((error) => {
+    console.error("Could not persist navigation:", error);
+  });
+}
+
+function setCurrentView(view, projectId = null, { persist = true } = {}) {
+  currentView = view;
+  currentProjectId = projectId;
+
+  if (persist) {
+    persistNavigation();
+  }
+}
+
+function restoreNavigation() {
+  const navigation = state.navigation || {};
+  const projectExists = getProjects().some((project) => project.id === navigation.projectId);
+
+  if (navigation.view === "global-settings") {
+    setCurrentView("global-settings", null, { persist: false });
+  } else if ((navigation.view === "project" || navigation.view === "project-edit") && projectExists) {
+    setCurrentView(navigation.view, navigation.projectId, { persist: false });
+  } else {
+    setCurrentView("global", null, { persist: false });
+  }
+}
+
 function createCard({ title, eyebrow, body, meta, action }) {
   const card = document.createElement("article");
   card.className = "widget-card";
@@ -2376,14 +2415,12 @@ async function restoreWebAppsAfterOverlay() {
 }
 
 function selectGlobal() {
-  currentView = "global";
-  currentProjectId = null;
+  setCurrentView("global");
   render();
 }
 
 function selectGlobalSettings() {
-  currentView = "global-settings";
-  currentProjectId = null;
+  setCurrentView("global-settings");
   render();
 }
 
@@ -2394,26 +2431,22 @@ function selectCreateProject() {
       projectId: currentProjectId
     };
   }
-  currentView = "project-create";
-  currentProjectId = null;
+  setCurrentView("project-create", null, { persist: false });
   render();
 }
 
 function selectProject(id) {
-  currentView = "project";
-  currentProjectId = id;
+  setCurrentView("project", id);
   render();
 }
 
 function selectEditProject(id) {
-  currentView = "project-edit";
-  currentProjectId = id;
+  setCurrentView("project-edit", id);
   render();
 }
 
 function reloadProjectSettings(id) {
-  currentView = "project-edit";
-  currentProjectId = id;
+  setCurrentView("project-edit", id);
   render();
 }
 
@@ -2561,6 +2594,7 @@ async function loadState() {
   }
   hydratePaneLayouts();
   hydrateWidgetLayouts();
+  restoreNavigation();
   render();
 }
 

@@ -340,6 +340,10 @@ function registerIpcHandlers() {
     return store.updateSettings(patch);
   });
 
+  ipcMain.handle("navigation:update", (_event, navigation) => {
+    return store.updateNavigation(navigation);
+  });
+
   ipcMain.handle("settings:select-projects-base-path", async (_event, currentPath) => {
     const dialogOptions = {
       title: "Select projects base path",
