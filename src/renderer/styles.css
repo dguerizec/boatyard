@@ -353,6 +353,77 @@ button {
   max-width: 1160px;
 }
 
+.widgets-settings-page {
+  grid-column: 1 / -1;
+}
+
+.installed-widget-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 12px;
+}
+
+.installed-widget-item {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(15, 23, 32, 0.66);
+}
+
+.installed-widget-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.installed-widget-title h4 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+
+.installed-widget-item p {
+  color: #c3ccd5;
+  line-height: 1.4;
+}
+
+.widget-status,
+.installed-widget-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.widget-status.stable {
+  border-color: rgba(65, 184, 131, 0.52);
+  color: #8ee7bb;
+}
+
+.widget-status.experimental {
+  border-color: rgba(250, 204, 21, 0.5);
+  color: #fde68a;
+}
+
+.installed-widget-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .project-workbench {
   display: grid;
   grid-template-columns: 340px 6px minmax(420px, 1fr);

@@ -408,94 +408,138 @@ function createTerminalWidget(project) {
   return card;
 }
 
-const BUILTIN_PROJECT_WIDGETS = [
-  {
-    id: "project-summary",
-    title: "Project",
-    layout: {
-      default: { columns: 2, rows: 2 },
-      min: { columns: 1, rows: 2 },
-      max: { columns: 3, rows: 3 }
-    },
-    create: (project) => ({
-      eyebrow: "Project",
-      title: project.name,
-      body: project.sourcePath || project.slug,
-      meta: "Active workspace"
-    })
-  },
-  {
-    id: "project-preview",
-    title: "Project preview",
-    layout: {
-      default: { columns: 2, rows: 2 },
-      min: { columns: 1, rows: 2 },
-      max: { columns: 3, rows: 3 }
-    },
-    create: (project) => ({
-      eyebrow: "Preview",
-      title: "Project preview",
-      body: project.previewUrl
-        ? "Project preview is available as a webapp tab in the project pane."
-        : "No preview URL configured for this project.",
-      meta: project.previewUrl || "Optional",
-      action: project.previewUrl
-        ? {
-            label: "Open URL",
-            onClick: () => window.dashtop.openExternal(project.previewUrl)
-          }
-        : null
-    })
-  },
-  {
-    id: "twicc-sessions",
-    title: "Twicc",
-    requires: [{ type: "projectField", key: "twiccUrl" }],
-    layout: {
-      default: { columns: 2, rows: 2 },
-      min: { columns: 1, rows: 2 },
-      max: { columns: 4, rows: 4 }
-    },
-    create: () => ({
-      eyebrow: "Sessions",
-      title: "Twicc",
-      body: "Placeholder for sessions linked to this project.",
-      meta: "Contextual widget"
-    })
-  },
-  {
-    id: "project-shell",
-    title: "Terminal",
-    requires: [{ type: "projectField", key: "sourcePath" }],
-    layout: {
-      default: { columns: 4, rows: 5 },
-      min: { columns: 2, rows: 3 },
-      max: { columns: 4, rows: 8 }
-    },
-    createElement: (project) => createTerminalWidget(project)
-  },
-  {
-    id: "discord",
-    title: "Discord",
-    layout: {
-      default: { columns: 2, rows: 2 },
-      min: { columns: 1, rows: 2 },
-      max: { columns: 4, rows: 4 }
-    },
-    create: () => ({
-      eyebrow: "Comms",
-      title: "Discord",
-      body: "Placeholder for the project channel or activity feed.",
-      meta: "Contextual widget"
-    })
+function registerBuiltinProjectWidgets() {
+  const registry = window.DashtopWidgetRegistry;
+
+  if (!registry) {
+    throw new Error("Widget registry is unavailable.");
   }
-];
+
+  [
+    {
+      id: "project-summary",
+      name: "Project summary",
+      title: "Project",
+      scope: "project",
+      category: "Project",
+      status: "stable",
+      description: "Displays the selected project's identity and source path.",
+      layout: {
+        default: { columns: 2, rows: 2 },
+        min: { columns: 1, rows: 2 },
+        max: { columns: 3, rows: 3 }
+      },
+      create: (project) => ({
+        eyebrow: "Project",
+        title: project.name,
+        body: project.sourcePath || project.slug,
+        meta: "Active workspace"
+      })
+    },
+    {
+      id: "project-preview",
+      name: "Project preview",
+      title: "Project preview",
+      scope: "project",
+      category: "Project",
+      status: "stable",
+      description: "Links to the project's main preview URL when one is configured.",
+      layout: {
+        default: { columns: 2, rows: 2 },
+        min: { columns: 1, rows: 2 },
+        max: { columns: 3, rows: 3 }
+      },
+      create: (project) => ({
+        eyebrow: "Preview",
+        title: "Project preview",
+        body: project.previewUrl
+          ? "Project preview is available as a webapp tab in the project pane."
+          : "No preview URL configured for this project.",
+        meta: project.previewUrl || "Optional",
+        action: project.previewUrl
+          ? {
+              label: "Open URL",
+              onClick: () => window.dashtop.openExternal(project.previewUrl)
+            }
+          : null
+      })
+    },
+    {
+      id: "twicc-sessions",
+      name: "Twicc",
+      title: "Twicc",
+      scope: "project",
+      category: "Developer tools",
+      status: "experimental",
+      description: "Shows project sessions from Twicc.",
+      requires: [{ type: "projectField", key: "twiccUrl" }],
+      layout: {
+        default: { columns: 2, rows: 2 },
+        min: { columns: 1, rows: 2 },
+        max: { columns: 4, rows: 4 }
+      },
+      create: () => ({
+        eyebrow: "Sessions",
+        title: "Twicc",
+        body: "Placeholder for sessions linked to this project.",
+        meta: "Contextual widget"
+      })
+    },
+    {
+      id: "project-shell",
+      name: "Terminal",
+      title: "Terminal",
+      scope: "project",
+      category: "Developer tools",
+      status: "experimental",
+      description: "Persistent multi-tab tmux terminal rooted in the project.",
+      requires: [{ type: "projectField", key: "sourcePath" }],
+      layout: {
+        default: { columns: 4, rows: 5 },
+        min: { columns: 2, rows: 3 },
+        max: { columns: 4, rows: 8 }
+      },
+      createElement: (project) => createTerminalWidget(project)
+    },
+    {
+      id: "discord",
+      name: "Discord",
+      title: "Discord",
+      scope: "project",
+      category: "Communication",
+      status: "experimental",
+      description: "Shows project communication and activity feed placeholders.",
+      layout: {
+        default: { columns: 2, rows: 2 },
+        min: { columns: 1, rows: 2 },
+        max: { columns: 4, rows: 4 }
+      },
+      create: () => ({
+        eyebrow: "Comms",
+        title: "Discord",
+        body: "Placeholder for the project channel or activity feed.",
+        meta: "Contextual widget"
+      })
+    }
+  ].forEach((definition) => registry.register(definition));
+}
+
+registerBuiltinProjectWidgets();
+
+function getInstalledWidgets(filter = {}) {
+  return window.DashtopWidgetRegistry.list(filter);
+}
+
+function getProjectWidgetDefinitions() {
+  return getInstalledWidgets({ scope: "project" });
+}
 
 function normalizeWidgetLayoutForProject(project, columnCount = null) {
   const persisted = widgetLayoutsByProject.get(project.id) || {};
-  const knownIds = BUILTIN_PROJECT_WIDGETS.map((definition) => definition.id);
+  const widgetDefinitions = getProjectWidgetDefinitions();
+  const knownIds = widgetDefinitions.map((definition) => definition.id);
   const knownIdSet = new Set(knownIds);
-  const definitionsById = new Map(BUILTIN_PROJECT_WIDGETS.map((definition) => [definition.id, definition]));
+  const definitionsById = new Map(widgetDefinitions.map((definition) => [definition.id, definition]));
   const seenIds = new Set();
   const order = Array.isArray(persisted.order)
     ? persisted.order
@@ -698,14 +742,14 @@ function getProjectWidgetLayout(project, columnCount = null) {
 }
 
 function getOrderedWidgetDefinitions(layout) {
-  const definitionsById = new Map(BUILTIN_PROJECT_WIDGETS.map((definition) => [definition.id, definition]));
+  const definitionsById = new Map(getProjectWidgetDefinitions().map((definition) => [definition.id, definition]));
   return layout.order
     .map((id) => definitionsById.get(id))
     .filter(Boolean);
 }
 
 function getWidgetDefinition(widgetId) {
-  return BUILTIN_PROJECT_WIDGETS.find((definition) => definition.id === widgetId) || null;
+  return getProjectWidgetDefinitions().find((definition) => definition.id === widgetId) || null;
 }
 
 function persistWidgetLayout(project) {
@@ -1745,6 +1789,59 @@ function createGlobalPresentationSettingsForm({ settings, onSubmit }) {
   return shell;
 }
 
+function createGlobalWidgetsSettingsView() {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page widgets-settings-page";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Widgets";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Installed widget plugins available to Dashtop.";
+  heading.append(headingTitle, headingCopy);
+
+  const list = document.createElement("div");
+  list.className = "installed-widget-list";
+
+  for (const widget of getInstalledWidgets()) {
+    const item = document.createElement("article");
+    item.className = "installed-widget-item";
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "installed-widget-title";
+
+    const title = document.createElement("h4");
+    title.textContent = widget.name;
+
+    const status = document.createElement("span");
+    status.className = `widget-status ${widget.status}`;
+    status.textContent = widget.status;
+
+    titleRow.append(title, status);
+
+    const description = document.createElement("p");
+    description.textContent = widget.description || "No description provided.";
+
+    const meta = document.createElement("div");
+    meta.className = "installed-widget-meta";
+
+    for (const value of [widget.scope, widget.category, widget.provider]) {
+      const chip = document.createElement("span");
+      chip.textContent = value;
+      meta.append(chip);
+    }
+
+    item.append(titleRow, description, meta);
+    list.append(item);
+  }
+
+  shell.append(heading, list);
+  return shell;
+}
+
 function renderGlobalSettingsPage() {
   visibleWebAppHosts = new Map();
   invokeWebApp("hideWebApp");
@@ -1768,7 +1865,7 @@ function renderGlobalSettingsPage() {
       state = await window.dashtop.updateSettings(values);
       renderGlobalSettingsPage();
     }
-  }));
+  }), createGlobalWidgetsSettingsView());
 }
 
 function renderProjectDashboard(project) {
