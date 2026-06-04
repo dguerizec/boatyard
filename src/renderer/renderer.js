@@ -361,9 +361,9 @@ async function attachTerminalTab(project, card, windowId) {
   }
 }
 
-function createTerminalWidget(project) {
-  const card = document.createElement("article");
-  card.className = "widget-card terminal-widget";
+function createTerminalSurface(project, { tagName = "article", className = "widget-card terminal-widget" } = {}) {
+  const card = document.createElement(tagName);
+  card.className = className;
 
   const header = document.createElement("div");
   header.className = "terminal-widget-header";
@@ -425,6 +425,10 @@ function createTerminalWidget(project) {
     refreshTerminalTabs(project, card);
   });
   return card;
+}
+
+function createTerminalWidget(project) {
+  return createTerminalSurface(project);
 }
 
 function formatHawserEndpoint(message) {
@@ -1509,6 +1513,15 @@ function getProjectWebApps(project, paneId) {
     }
   ];
 
+  if (project.sourcePath) {
+    webApps.push({
+      id: "terminal",
+      label: "Terminal",
+      key: `${paneId}:terminal`,
+      kind: "terminal"
+    });
+  }
+
   if (project.previewUrl) {
     webApps.push({
       id: "preview",
@@ -1674,6 +1687,7 @@ async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWe
 function createWebAppPane(project, paneNode) {
   const webApps = getProjectWebApps(project, paneNode.id);
   const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
+  const isTerminalPane = selectedWebApp.kind === "terminal";
   const pane = document.createElement("section");
   pane.className = "webapp-pane";
   pane.dataset.paneId = paneNode.id;
@@ -1705,65 +1719,69 @@ function createWebAppPane(project, paneNode) {
     }
   });
 
-  const homeButton = document.createElement("button");
-  homeButton.className = "webapp-tool-button";
-  homeButton.type = "button";
-  homeButton.title = "Go home";
-  homeButton.setAttribute("aria-label", "Go home");
-  homeButton.textContent = "⌂";
-  homeButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "home", selectedWebApp.url));
+  tabs.append(tabPickerButton);
 
-  const backButton = document.createElement("button");
-  backButton.className = "webapp-tool-button";
-  backButton.type = "button";
-  backButton.title = "Go back";
-  backButton.setAttribute("aria-label", "Go back");
-  backButton.textContent = "←";
-  backButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "back"));
+  if (!isTerminalPane) {
+    const homeButton = document.createElement("button");
+    homeButton.className = "webapp-tool-button";
+    homeButton.type = "button";
+    homeButton.title = "Go home";
+    homeButton.setAttribute("aria-label", "Go home");
+    homeButton.textContent = "⌂";
+    homeButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "home", selectedWebApp.url));
 
-  const forwardButton = document.createElement("button");
-  forwardButton.className = "webapp-tool-button";
-  forwardButton.type = "button";
-  forwardButton.title = "Go forward";
-  forwardButton.setAttribute("aria-label", "Go forward");
-  forwardButton.textContent = "→";
-  forwardButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "forward"));
+    const backButton = document.createElement("button");
+    backButton.className = "webapp-tool-button";
+    backButton.type = "button";
+    backButton.title = "Go back";
+    backButton.setAttribute("aria-label", "Go back");
+    backButton.textContent = "←";
+    backButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "back"));
 
-  const refreshButton = document.createElement("button");
-  refreshButton.className = "webapp-tool-button";
-  refreshButton.type = "button";
-  refreshButton.title = "Refresh";
-  refreshButton.setAttribute("aria-label", "Refresh");
-  refreshButton.textContent = "↻";
-  refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
+    const forwardButton = document.createElement("button");
+    forwardButton.className = "webapp-tool-button";
+    forwardButton.type = "button";
+    forwardButton.title = "Go forward";
+    forwardButton.setAttribute("aria-label", "Go forward");
+    forwardButton.textContent = "→";
+    forwardButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "forward"));
 
-  const activeUrl = document.createElement("input");
-  activeUrl.className = "webapp-url";
-  activeUrl.type = "text";
-  activeUrl.autocomplete = "off";
-  activeUrl.spellcheck = false;
-  activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
-  activeUrl.dataset.webappKey = selectedWebApp.key;
-  activeUrl.setAttribute("aria-label", "Current webapp URL");
-  activeUrl.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
+    const refreshButton = document.createElement("button");
+    refreshButton.className = "webapp-tool-button";
+    refreshButton.type = "button";
+    refreshButton.title = "Refresh";
+    refreshButton.setAttribute("aria-label", "Refresh");
+    refreshButton.textContent = "↻";
+    refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
 
-      try {
-        const nextUrl = normalizeAddressInput(activeUrl.value);
-        currentWebAppUrlsByKey.set(selectedWebApp.key, nextUrl);
-        activeUrl.value = nextUrl;
-        invokeWebApp("navigateWebApp", selectedWebApp.key, "open", nextUrl);
-      } catch {
+    const activeUrl = document.createElement("input");
+    activeUrl.className = "webapp-url";
+    activeUrl.type = "text";
+    activeUrl.autocomplete = "off";
+    activeUrl.spellcheck = false;
+    activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
+    activeUrl.dataset.webappKey = selectedWebApp.key;
+    activeUrl.setAttribute("aria-label", "Current webapp URL");
+    activeUrl.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+
+        try {
+          const nextUrl = normalizeAddressInput(activeUrl.value);
+          currentWebAppUrlsByKey.set(selectedWebApp.key, nextUrl);
+          activeUrl.value = nextUrl;
+          invokeWebApp("navigateWebApp", selectedWebApp.key, "open", nextUrl);
+        } catch {
+          activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
+        }
+      } else if (event.key === "Escape") {
         activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
+        activeUrl.blur();
       }
-    } else if (event.key === "Escape") {
-      activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
-      activeUrl.blur();
-    }
-  });
+    });
 
-  tabs.append(tabPickerButton, homeButton, backButton, forwardButton, refreshButton, activeUrl);
+    tabs.append(homeButton, backButton, forwardButton, refreshButton, activeUrl);
+  }
 
   const actions = document.createElement("div");
   actions.className = "webapp-actions";
@@ -1797,16 +1815,24 @@ function createWebAppPane(project, paneNode) {
   header.append(tabs, actions);
 
   const host = document.createElement("div");
-  host.className = "webapp-host";
+  host.className = `webapp-host${isTerminalPane ? " terminal-pane-host" : ""}`;
   host.setAttribute("role", "region");
   host.setAttribute("aria-label", `${project.name} ${selectedWebApp.label}`);
 
   pane.append(header, host);
 
-  visibleWebAppHosts.set(paneNode.id, {
-    webApp: selectedWebApp,
-    host
-  });
+  if (isTerminalPane) {
+    host.append(createTerminalSurface(project, {
+      tagName: "div",
+      className: "terminal-pane-surface terminal-widget"
+    }));
+  } else {
+    visibleWebAppHosts.set(paneNode.id, {
+      webApp: selectedWebApp,
+      host
+    });
+  }
+
   queueWebAppSync();
   return pane;
 }
