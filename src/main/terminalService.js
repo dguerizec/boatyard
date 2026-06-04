@@ -44,6 +44,11 @@ async function resizeTmuxWindow(windowId, cols, rows) {
   }
 }
 
+async function configureTmuxSession(session) {
+  await runTmux(["set-option", "-t", session, "window-size", "latest"]);
+  await runTmux(["set-option", "-t", session, "mouse", "on"]);
+}
+
 class TerminalService {
   constructor({ getProject, sendToRenderer }) {
     this.findProject = getProject;
@@ -66,11 +71,11 @@ class TerminalService {
 
     try {
       await runTmux(["has-session", "-t", session]);
-      await runTmux(["set-option", "-t", session, "window-size", "latest"]);
+      await configureTmuxSession(session);
       return session;
     } catch {
       await runTmux(["new-session", "-d", "-s", session, "-n", "main", "-c", getProjectCwd(project)]);
-      await runTmux(["set-option", "-t", session, "window-size", "latest"]);
+      await configureTmuxSession(session);
       return session;
     }
   }
