@@ -19,5 +19,10 @@ contextBridge.exposeInMainWorld("dashtop", {
   hideWebApp: () => ipcRenderer.invoke("webapp:hide"),
   freezeWebApps: () => ipcRenderer.invoke("webapp:freeze"),
   restoreWebApps: () => ipcRenderer.invoke("webapp:restore"),
+  onWebAppUrlChanged: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("webapp:url-changed", listener);
+    return () => ipcRenderer.removeListener("webapp:url-changed", listener);
+  },
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url)
 });

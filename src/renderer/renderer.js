@@ -63,6 +63,7 @@ const selectedWebAppByProject = new Map();
 const paneLayoutsByProject = new Map();
 const selectedWebAppByPane = new Map();
 const loadedWebAppKeys = new Set();
+const currentWebAppUrlsByKey = new Map();
 let visibleWebAppHosts = new Map();
 let webAppBoundsFrame = null;
 let nextPaneId = 1;
@@ -208,6 +209,22 @@ function invokeWebApp(action, ...payload) {
   });
 }
 
+function getCurrentWebAppUrl(webApp) {
+  return currentWebAppUrlsByKey.get(webApp.key) || webApp.url;
+}
+
+function normalizeAddressInput(rawUrl) {
+  const trimmed = String(rawUrl || "").trim();
+
+  if (!trimmed) {
+    throw new Error("URL is required.");
+  }
+
+  const hasProtocol = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed);
+  const isLocalhost = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:\/|$)/.test(trimmed);
+  return hasProtocol ? trimmed : `${isLocalhost ? "http" : "https"}://${trimmed}`;
+}
+
 function selectWebApp(project, paneNode, webApp) {
   selectedWebAppByPane.set(paneNode.id, webApp.id);
   paneNode.selectedWebAppId = webApp.id;
@@ -351,9 +368,31 @@ function createWebAppPane(project, paneNode) {
   refreshButton.textContent = "↻";
   refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
 
-  const activeUrl = document.createElement("span");
+  const activeUrl = document.createElement("input");
   activeUrl.className = "webapp-url";
-  activeUrl.textContent = selectedWebApp.url;
+  activeUrl.type = "text";
+  activeUrl.autocomplete = "off";
+  activeUrl.spellcheck = false;
+  activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
+  activeUrl.dataset.webappKey = selectedWebApp.key;
+  activeUrl.setAttribute("aria-label", "Current webapp URL");
+  activeUrl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+
+      try {
+        const nextUrl = normalizeAddressInput(activeUrl.value);
+        currentWebAppUrlsByKey.set(selectedWebApp.key, nextUrl);
+        activeUrl.value = nextUrl;
+        invokeWebApp("navigateWebApp", selectedWebApp.key, "open", nextUrl);
+      } catch {
+        activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
+      }
+    } else if (event.key === "Escape") {
+      activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
+      activeUrl.blur();
+    }
+  });
 
   tabs.append(tabPickerButton, homeButton, backButton, forwardButton, refreshButton, activeUrl);
 
@@ -1648,9 +1687,28 @@ function render() {
 
 async function loadState() {
   state = await window.dashtop.getState();
+  currentWebAppUrlsByKey.clear();
+  for (const [key, webApp] of Object.entries(state.webApps || {})) {
+    if (webApp.url) {
+      currentWebAppUrlsByKey.set(key, webApp.url);
+    }
+  }
   hydratePaneLayouts();
   render();
 }
+
+window.dashtop.onWebAppUrlChanged(({ key, url }) => {
+  if (!key || !url) {
+    return;
+  }
+
+  currentWebAppUrlsByKey.set(key, url);
+  for (const input of document.querySelectorAll(".webapp-url")) {
+    if (input.dataset.webappKey === key && input !== document.activeElement) {
+      input.value = url;
+    }
+  }
+});
 
 globalNav.addEventListener("click", selectGlobal);
 globalSettingsButton.addEventListener("click", selectGlobalSettings);

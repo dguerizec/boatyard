@@ -158,6 +158,12 @@ function ensureWebAppView(key) {
 function persistWebAppUrl(key, url) {
   try {
     store.updateWebAppState(key, { url });
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send("webapp:url-changed", {
+        key: String(key),
+        url
+      });
+    }
   } catch (error) {
     console.warn(`Could not persist webapp ${key}: ${error.message}`);
   }
@@ -204,6 +210,26 @@ function navigateWebApp(key, action, url) {
     return false;
   }
 
+  if (action === "open" || action === "home") {
+    let parsedUrl;
+
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return false;
+    }
+
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return false;
+    }
+
+    webApp.url = parsedUrl.toString();
+    webApp.view.webContents.loadURL(webApp.url).catch((error) => {
+      console.warn(`Could not load webapp ${webApp.url}: ${error.message}`);
+    });
+    return true;
+  }
+
   if (action === "back") {
     if (webApp.view.webContents.canGoBack()) {
       webApp.view.webContents.goBack();
@@ -222,20 +248,6 @@ function navigateWebApp(key, action, url) {
 
   if (action === "refresh") {
     webApp.view.webContents.reload();
-    return true;
-  }
-
-  if (action === "home") {
-    const parsedUrl = new URL(url);
-
-    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-      return false;
-    }
-
-    webApp.url = parsedUrl.toString();
-    webApp.view.webContents.loadURL(webApp.url).catch((error) => {
-      console.warn(`Could not load webapp ${webApp.url}: ${error.message}`);
-    });
     return true;
   }
 

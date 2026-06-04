@@ -623,12 +623,26 @@ button {
 
 .webapp-url {
   min-width: 0;
+  width: min(48vw, 720px);
   max-width: min(48vw, 720px);
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--muted);
   font-size: 12px;
+}
+
+.webapp-url:hover,
+.webapp-url:focus {
+  border-color: var(--line);
+  background: #0f1419;
+  color: var(--text);
+  outline: none;
 }
 
 .webapp-host {
