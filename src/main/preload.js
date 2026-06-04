@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("dashtop", {
   reorderProjects: (ids) => ipcRenderer.invoke("projects:reorder", ids),
   removeProject: (id) => ipcRenderer.invoke("projects:remove", id),
   updatePaneLayout: (projectId, layout) => ipcRenderer.invoke("pane-layout:update", projectId, layout),
+  updateWidgetLayout: (projectId, layout) => ipcRenderer.invoke("widget-layout:update", projectId, layout),
   showWebApp: (webApp) => ipcRenderer.invoke("webapp:show", webApp),
   setWebAppBounds: (bounds) => ipcRenderer.invoke("webapp:set-bounds", bounds),
   navigateWebApp: (key, action, url) => ipcRenderer.invoke("webapp:navigate", key, action, url),

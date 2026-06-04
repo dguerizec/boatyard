@@ -34,7 +34,8 @@ function createDefaultState() {
       isMaximized: false
     },
     webApps: {},
-    paneLayouts: {}
+    paneLayouts: {},
+    widgetLayouts: {}
   };
 }
 
@@ -264,6 +265,41 @@ function normalizePaneLayouts(paneLayouts = {}) {
   return normalized;
 }
 
+function normalizeWidgetLayout(layout = {}) {
+  const source = layout && typeof layout === "object" ? layout : {};
+  const seenIds = new Set();
+  const order = Array.isArray(source.order)
+    ? source.order
+        .map((id) => String(id || "").trim())
+        .filter((id) => {
+          if (!id || seenIds.has(id)) {
+            return false;
+          }
+
+          seenIds.add(id);
+          return true;
+        })
+    : [];
+
+  return {
+    order,
+    locked: source.locked !== false
+  };
+}
+
+function normalizeWidgetLayouts(widgetLayouts = {}) {
+  if (!widgetLayouts || typeof widgetLayouts !== "object" || Array.isArray(widgetLayouts)) {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [projectId, layout] of Object.entries(widgetLayouts)) {
+    normalized[String(projectId)] = normalizeWidgetLayout(layout);
+  }
+
+  return normalized;
+}
+
 function normalizeProjectUrls(urls = []) {
   if (!Array.isArray(urls)) {
     return [];
@@ -363,7 +399,8 @@ class ProjectStore {
         projects: projects.map((project, index) => normalizeProject(project, index)),
         window: normalizeWindowState(parsed.window),
         webApps: normalizeWebAppState(parsed.webApps),
-        paneLayouts: normalizePaneLayouts(parsed.paneLayouts)
+        paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
+        widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts)
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -443,6 +480,16 @@ class ProjectStore {
     return this.getPaneLayout(projectId);
   }
 
+  getWidgetLayout(projectId) {
+    return structuredClone(this.state.widgetLayouts[String(projectId)] || null);
+  }
+
+  updateWidgetLayout(projectId, layout) {
+    this.state.widgetLayouts[String(projectId)] = normalizeWidgetLayout(layout);
+    this.save();
+    return this.getWidgetLayout(projectId);
+  }
+
   addProject(project) {
     const normalized = normalizeProject(
       {
@@ -494,6 +541,7 @@ class ProjectStore {
     const projectId = String(id);
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
     delete this.state.paneLayouts[projectId];
+    delete this.state.widgetLayouts[projectId];
 
     for (const key of Object.keys(this.state.webApps)) {
       if (key.startsWith(`${projectId}:`)) {
@@ -513,6 +561,8 @@ module.exports = {
   normalizeBounds,
   normalizePaneLayoutNode,
   normalizePaneLayouts,
+  normalizeWidgetLayout,
+  normalizeWidgetLayouts,
   normalizeProject,
   normalizeProjectUrls,
   normalizeSlug,

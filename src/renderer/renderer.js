@@ -64,6 +64,7 @@ let currentProjectId = null;
 let returnView = { view: "global", projectId: null };
 const selectedWebAppByProject = new Map();
 const paneLayoutsByProject = new Map();
+const widgetLayoutsByProject = new Map();
 const selectedWebAppByPane = new Map();
 const loadedWebAppKeys = new Set();
 const currentWebAppUrlsByKey = new Map();
@@ -73,6 +74,7 @@ let nextPaneId = 1;
 let frozenWebAppLayer = null;
 let openWebAppTabMenu = null;
 let draggedProjectId = null;
+let draggedWidgetId = null;
 
 function getProjects() {
   return state.projects;
@@ -197,14 +199,138 @@ const BUILTIN_PROJECT_WIDGETS = [
   }
 ];
 
-function createProjectWidget(project, definition) {
+function normalizeWidgetLayoutForProject(project) {
+  const persisted = widgetLayoutsByProject.get(project.id) || {};
+  const knownIds = BUILTIN_PROJECT_WIDGETS.map((definition) => definition.id);
+  const knownIdSet = new Set(knownIds);
+  const seenIds = new Set();
+  const order = Array.isArray(persisted.order)
+    ? persisted.order
+        .map((id) => String(id || "").trim())
+        .filter((id) => {
+          if (!knownIdSet.has(id) || seenIds.has(id)) {
+            return false;
+          }
+
+          seenIds.add(id);
+          return true;
+        })
+    : [];
+
+  for (const id of knownIds) {
+    if (!seenIds.has(id)) {
+      order.push(id);
+    }
+  }
+
+  return {
+    order,
+    locked: persisted.locked !== false
+  };
+}
+
+function getProjectWidgetLayout(project) {
+  const layout = normalizeWidgetLayoutForProject(project);
+  widgetLayoutsByProject.set(project.id, layout);
+  return layout;
+}
+
+function getOrderedWidgetDefinitions(layout) {
+  const definitionsById = new Map(BUILTIN_PROJECT_WIDGETS.map((definition) => [definition.id, definition]));
+  return layout.order
+    .map((id) => definitionsById.get(id))
+    .filter(Boolean);
+}
+
+function persistWidgetLayout(project) {
+  const layout = widgetLayoutsByProject.get(project.id);
+  if (!layout) {
+    return Promise.resolve(null);
+  }
+
+  return window.dashtop.updateWidgetLayout(project.id, layout).catch((error) => {
+    console.error("Could not persist widget layout:", error);
+    return null;
+  });
+}
+
+async function toggleWidgetLayoutLock(project) {
+  const layout = getProjectWidgetLayout(project);
+  widgetLayoutsByProject.set(project.id, {
+    ...layout,
+    locked: !layout.locked
+  });
+  await persistWidgetLayout(project);
+  renderProjectDashboard(project);
+}
+
+async function reorderProjectWidgets(project, sourceId, targetId) {
+  const layout = getProjectWidgetLayout(project);
+  const nextOrder = layout.order.filter((id) => id !== sourceId);
+  const targetIndex = nextOrder.indexOf(targetId);
+
+  if (targetIndex === -1) {
+    return;
+  }
+
+  nextOrder.splice(targetIndex, 0, sourceId);
+  widgetLayoutsByProject.set(project.id, {
+    ...layout,
+    order: nextOrder
+  });
+  await persistWidgetLayout(project);
+  renderProjectDashboard(project);
+}
+
+function createProjectWidget(project, definition, layout) {
   const cardConfig = definition.create(project);
   const card = createCard(cardConfig);
   card.dataset.widgetId = definition.id;
+
+  if (!layout.locked) {
+    card.draggable = true;
+    card.addEventListener("dragstart", (event) => {
+      draggedWidgetId = definition.id;
+      card.classList.add("dragging");
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", definition.id);
+    });
+    card.addEventListener("dragend", () => {
+      draggedWidgetId = null;
+      card.classList.remove("dragging");
+      for (const item of dashboardGrid.querySelectorAll(".widget-card")) {
+        item.classList.remove("drag-over");
+      }
+    });
+    card.addEventListener("dragover", (event) => {
+      if (!draggedWidgetId || draggedWidgetId === definition.id) {
+        return;
+      }
+
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      card.classList.add("drag-over");
+    });
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("drag-over");
+    });
+    card.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      card.classList.remove("drag-over");
+      const sourceId = event.dataTransfer.getData("text/plain") || draggedWidgetId;
+
+      if (!sourceId || sourceId === definition.id) {
+        return;
+      }
+
+      await reorderProjectWidgets(project, sourceId, definition.id);
+    });
+  }
+
   return card;
 }
 
-function createWidgetRailHeader(project) {
+function createWidgetRailHeader(project, layout) {
   const header = document.createElement("header");
   header.className = "widget-rail-header";
 
@@ -215,6 +341,12 @@ function createWidgetRailHeader(project) {
   actions.className = "widget-rail-actions";
 
   const actionConfigs = [
+    {
+      label: layout.locked ? "Unlock widget layout" : "Lock widget layout",
+      text: layout.locked ? "Edit" : "Lock",
+      wide: true,
+      onClick: () => toggleWidgetLayoutLock(project)
+    },
     {
       label: "Add widget",
       text: "+"
@@ -231,11 +363,14 @@ function createWidgetRailHeader(project) {
 
   for (const action of actionConfigs) {
     const button = document.createElement("button");
-    button.className = "widget-rail-action";
+    button.className = `widget-rail-action${action.wide ? " wide" : ""}`;
     button.type = "button";
     button.title = action.label;
     button.setAttribute("aria-label", action.label);
     button.textContent = action.text;
+    if (action.onClick) {
+      button.addEventListener("click", action.onClick);
+    }
     actions.append(button);
   }
 
@@ -766,6 +901,15 @@ function hydratePaneLayouts() {
   }
 }
 
+function hydrateWidgetLayouts() {
+  widgetLayoutsByProject.clear();
+  const persistedLayouts = state.widgetLayouts || {};
+
+  for (const [projectId, layout] of Object.entries(persistedLayouts)) {
+    widgetLayoutsByProject.set(projectId, layout);
+  }
+}
+
 function hydratePaneLayoutSelections(node) {
   if (!node) {
     return;
@@ -1027,12 +1171,14 @@ function renderProjectDashboard(project) {
   dashboardGrid.style.gridTemplateColumns = `${widgetRailWidth}px ${WIDGET_RAIL_RESIZER_WIDTH}px minmax(${MIN_WEBAPP_AREA_WIDTH}px, 1fr)`;
   visibleWebAppHosts = new Map();
 
+  const widgetLayout = getProjectWidgetLayout(project);
   const widgetRail = document.createElement("aside");
   widgetRail.className = "project-widget-rail";
+  widgetRail.classList.toggle("editing", !widgetLayout.locked);
 
   widgetRail.append(
-    createWidgetRailHeader(project),
-    ...BUILTIN_PROJECT_WIDGETS.map((definition) => createProjectWidget(project, definition))
+    createWidgetRailHeader(project, widgetLayout),
+    ...getOrderedWidgetDefinitions(widgetLayout).map((definition) => createProjectWidget(project, definition, widgetLayout))
   );
 
   dashboardGrid.append(widgetRail, createWidgetRailResizer(), createPaneLayout(project, getProjectPaneLayout(project)));
@@ -1824,6 +1970,7 @@ async function loadState() {
     }
   }
   hydratePaneLayouts();
+  hydrateWidgetLayouts();
   render();
 }
 

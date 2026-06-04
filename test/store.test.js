@@ -11,6 +11,8 @@ const {
   normalizeBounds,
   normalizePaneLayoutNode,
   normalizePaneLayouts,
+  normalizeWidgetLayout,
+  normalizeWidgetLayouts,
   normalizeProject,
   normalizeProjectUrls,
   normalizeSettings,
@@ -246,6 +248,36 @@ test("normalizePaneLayouts drops invalid layouts", () => {
   });
 });
 
+test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
+  assert.deepEqual(normalizeWidgetLayout({
+    order: ["project-summary", "", "twicc-sessions", "project-summary"],
+    locked: false
+  }), {
+    order: ["project-summary", "twicc-sessions"],
+    locked: false
+  });
+
+  assert.deepEqual(normalizeWidgetLayout(), {
+    order: [],
+    locked: true
+  });
+});
+
+test("normalizeWidgetLayouts drops invalid containers", () => {
+  assert.deepEqual(normalizeWidgetLayouts(null), {});
+  assert.deepEqual(normalizeWidgetLayouts({
+    "project-id": {
+      order: ["discord"],
+      locked: false
+    }
+  }), {
+    "project-id": {
+      order: ["discord"],
+      locked: false
+    }
+  });
+});
+
 test("ProjectStore persists configured projects", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
   const filePath = path.join(directory, "state.json");
@@ -373,6 +405,28 @@ test("ProjectStore persists pane layouts", () => {
   assert.deepEqual(reloaded.getPaneLayout("project-id"), layout);
 });
 
+test("ProjectStore persists widget layouts", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  const layout = store.updateWidgetLayout("project-id", {
+    order: ["twicc-sessions", "project-summary", "twicc-sessions"],
+    locked: false
+  });
+
+  const reloaded = new ProjectStore(filePath);
+  const state = reloaded.load();
+
+  assert.deepEqual(layout, {
+    order: ["twicc-sessions", "project-summary"],
+    locked: false
+  });
+  assert.deepEqual(state.widgetLayouts["project-id"], layout);
+  assert.deepEqual(reloaded.getWidgetLayout("project-id"), layout);
+});
+
 test("ProjectStore reorders projects", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
   const filePath = path.join(directory, "state.json");
@@ -425,6 +479,10 @@ test("ProjectStore persists project updates and removals", () => {
     id: `${id}:pane:1`,
     selectedWebAppId: "twicc"
   });
+  store.updateWidgetLayout(id, {
+    order: ["discord", "project-summary"],
+    locked: false
+  });
 
   const moved = store.updateProject(id, {
     bounds: {
@@ -448,6 +506,7 @@ test("ProjectStore persists project updates and removals", () => {
   const removed = reloaded.removeProject(id);
   assert.equal(removed.webApps[`${id}:twicc`], undefined);
   assert.equal(removed.paneLayouts[id], undefined);
+  assert.equal(removed.widgetLayouts[id], undefined);
   const reloadedAgain = new ProjectStore(filePath);
   assert.deepEqual(reloadedAgain.load(), removed);
 });

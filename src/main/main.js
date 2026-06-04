@@ -375,6 +375,10 @@ function registerIpcHandlers() {
     return store.updatePaneLayout(projectId, layout);
   });
 
+  ipcMain.handle("widget-layout:update", (_event, projectId, layout) => {
+    return store.updateWidgetLayout(projectId, layout);
+  });
+
   ipcMain.handle("webapp:show", (_event, webApp) => {
     showWebApp(webApp);
   });
