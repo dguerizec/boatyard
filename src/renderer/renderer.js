@@ -884,6 +884,10 @@ function updateWidgetDropPreview(widgetRail, position, size, available) {
 }
 
 function clearWidgetDropPreview(widgetRail) {
+  if (!widgetRail) {
+    return;
+  }
+
   widgetRail.querySelector(".widget-drop-preview")?.remove();
   delete widgetRail.dataset.dropState;
 }
@@ -984,14 +988,19 @@ function createProjectWidget(project, definition, layout, columnCount) {
     card.addEventListener("dragstart", (event) => {
       draggedWidgetId = definition.id;
       card.classList.add("dragging");
+      card.closest(".project-widget-rail")?.classList.add("dragging-widget");
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", definition.id);
     });
     card.addEventListener("dragend", () => {
       draggedWidgetId = null;
       card.classList.remove("dragging");
+      card.closest(".project-widget-rail")?.classList.remove("dragging-widget");
       for (const item of dashboardGrid.querySelectorAll(".widget-card")) {
         item.classList.remove("drag-over");
+      }
+      for (const dropzone of dashboardGrid.querySelectorAll(".widget-trash-dropzone")) {
+        dropzone.classList.remove("drag-over");
       }
       for (const rail of dashboardGrid.querySelectorAll(".project-widget-rail")) {
         clearWidgetDropPreview(rail);
@@ -1013,19 +1022,6 @@ function createProjectWidget(project, definition, layout, columnCount) {
       });
       card.append(resizeHandle);
     }
-
-    const removeButton = document.createElement("button");
-    removeButton.className = "widget-remove-button";
-    removeButton.type = "button";
-    removeButton.title = "Remove widget";
-    removeButton.setAttribute("aria-label", `Remove ${definition.name}`);
-    removeButton.textContent = "X";
-    removeButton.addEventListener("click", async (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      await removeProjectWidget(project, definition.id, columnCount);
-    });
-    card.append(removeButton);
   }
 
   return card;
@@ -1227,6 +1223,49 @@ function openWidgetAddMenuFromButton(button, project, layout, columnCount) {
   menu.querySelector("button")?.focus();
 }
 
+function createWidgetTrashDropzone(project, columnCount) {
+  const dropzone = document.createElement("div");
+  dropzone.className = "widget-trash-dropzone";
+  dropzone.setAttribute("role", "button");
+  dropzone.setAttribute("aria-label", "Remove dragged widget");
+  dropzone.textContent = "Trash";
+
+  dropzone.addEventListener("dragover", (event) => {
+    if (!draggedWidgetId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    clearWidgetDropPreview(dropzone.closest(".project-widget-rail"));
+    dropzone.classList.add("drag-over");
+  });
+
+  dropzone.addEventListener("dragleave", (event) => {
+    if (!dropzone.contains(event.relatedTarget)) {
+      dropzone.classList.remove("drag-over");
+    }
+  });
+
+  dropzone.addEventListener("drop", async (event) => {
+    const widgetId = event.dataTransfer.getData("text/plain") || draggedWidgetId;
+
+    if (!widgetId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    dropzone.classList.remove("drag-over");
+    clearWidgetDropPreview(dropzone.closest(".project-widget-rail"));
+    draggedWidgetId = null;
+    await removeProjectWidget(project, widgetId, columnCount);
+  });
+
+  return dropzone;
+}
+
 function createWidgetRailHeader(project, layout, columnCount) {
   const header = document.createElement("header");
   header.className = "widget-rail-header";
@@ -1245,6 +1284,8 @@ function createWidgetRailHeader(project, layout, columnCount) {
       onClick: () => toggleWidgetLayoutLock(project)
     }
   ];
+
+  const trashDropzone = !layout.locked ? createWidgetTrashDropzone(project, columnCount) : null;
 
   if (!layout.locked) {
     actionConfigs.push({
@@ -1271,6 +1312,9 @@ function createWidgetRailHeader(project, layout, columnCount) {
       button.addEventListener("click", action.onClick);
     }
     actions.append(button);
+    if (action.wide && trashDropzone) {
+      actions.append(trashDropzone);
+    }
   }
 
   header.append(title, actions);

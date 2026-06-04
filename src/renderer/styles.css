@@ -518,6 +518,35 @@ button {
   cursor: default;
 }
 
+.widget-trash-dropzone {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.34);
+  border-radius: 6px;
+  background: rgba(15, 23, 32, 0.72);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+  opacity: 0.72;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.project-widget-rail.dragging-widget .widget-trash-dropzone,
+.widget-trash-dropzone:hover,
+.widget-trash-dropzone.drag-over {
+  opacity: 1;
+}
+
+.widget-trash-dropzone.drag-over {
+  border-color: rgba(248, 113, 113, 0.95);
+  background: rgba(127, 29, 29, 0.58);
+  color: #fecaca;
+}
+
 .widget-add-menu {
   position: fixed;
   z-index: 80;
@@ -710,30 +739,6 @@ button {
   top: 0;
   left: 0;
   cursor: nwse-resize;
-}
-
-.widget-remove-button {
-  position: absolute;
-  z-index: 6;
-  top: 8px;
-  right: 8px;
-  width: 24px;
-  height: 24px;
-  min-height: 24px;
-  padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.36);
-  border-radius: 6px;
-  background: rgba(15, 23, 32, 0.95);
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.widget-remove-button:hover,
-.widget-remove-button:focus-visible {
-  border-color: var(--danger);
-  color: #fecaca;
-  outline: none;
 }
 
 .widget-content {
