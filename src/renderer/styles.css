@@ -350,7 +350,7 @@ button {
   grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 560px));
   gap: 16px;
   align-items: start;
-  max-width: 1160px;
+  max-width: 100%;
 }
 
 .widgets-settings-page {
@@ -368,6 +368,21 @@ button {
 .danger-zone-action {
   display: grid;
   gap: 14px;
+}
+
+.danger-confirmation {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(224, 108, 117, 0.28);
+  border-radius: 6px;
+  background: rgba(224, 108, 117, 0.06);
+}
+
+.danger-confirmation p {
+  margin: 0;
+  color: #ffd7db;
+  font-size: 13px;
 }
 
 .installed-widget-list {

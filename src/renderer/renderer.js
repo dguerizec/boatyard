@@ -2925,14 +2925,21 @@ function createProjectDangerZone({ project, onUnregister }) {
   const form = document.createElement("form");
   form.className = "danger-zone-action";
 
+  const confirmation = document.createElement("div");
+  confirmation.className = "danger-confirmation";
+
+  const confirmationCopy = document.createElement("p");
+  confirmationCopy.textContent = `Type "${project.name}" to confirm.`;
+
   const label = document.createElement("label");
-  label.textContent = `Type ${project.name} to confirm`;
+  label.textContent = "Project name";
 
   const confirmInput = document.createElement("input");
   confirmInput.name = "projectName";
   confirmInput.type = "text";
   confirmInput.autocomplete = "off";
   label.append(confirmInput);
+  confirmation.append(confirmationCopy, label);
 
   const error = document.createElement("p");
   error.className = "form-error";
@@ -2953,7 +2960,7 @@ function createProjectDangerZone({ project, onUnregister }) {
   });
 
   actions.append(unregisterButton);
-  form.append(label, error, actions);
+  form.append(confirmation, error, actions);
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     error.textContent = "";
