@@ -283,7 +283,11 @@ function normalizeWidgetLayout(layout = {}) {
   const rawSizes = source.sizes && typeof source.sizes === "object" && !Array.isArray(source.sizes)
     ? source.sizes
     : {};
+  const rawPositions = source.positions && typeof source.positions === "object" && !Array.isArray(source.positions)
+    ? source.positions
+    : {};
   const sizes = {};
+  const positions = {};
 
   for (const [widgetId, size] of Object.entries(rawSizes)) {
     if (!size || typeof size !== "object") {
@@ -301,9 +305,26 @@ function normalizeWidgetLayout(layout = {}) {
     }
   }
 
+  for (const [widgetId, position] of Object.entries(rawPositions)) {
+    if (!position || typeof position !== "object") {
+      continue;
+    }
+
+    const x = Number(position.x);
+    const y = Number(position.y);
+
+    if (Number.isFinite(x) && Number.isFinite(y)) {
+      positions[String(widgetId)] = {
+        x: Math.max(0, Math.round(x)),
+        y: Math.max(0, Math.round(y))
+      };
+    }
+  }
+
   return {
     order,
     sizes,
+    positions,
     locked: source.locked !== false
   };
 }

@@ -262,6 +262,17 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
       },
       ignored: null
     },
+    positions: {
+      "project-summary": {
+        x: 2.4,
+        y: 1
+      },
+      "twicc-sessions": {
+        x: -3,
+        y: "4"
+      },
+      ignored: null
+    },
     locked: false
   }), {
     order: ["project-summary", "twicc-sessions"],
@@ -275,12 +286,23 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         rows: 3
       }
     },
+    positions: {
+      "project-summary": {
+        x: 2,
+        y: 1
+      },
+      "twicc-sessions": {
+        x: 0,
+        y: 4
+      }
+    },
     locked: false
   });
 
   assert.deepEqual(normalizeWidgetLayout(), {
     order: [],
     sizes: {},
+    positions: {},
     locked: true
   });
 });
@@ -296,6 +318,12 @@ test("normalizeWidgetLayouts drops invalid containers", () => {
           rows: 2
         }
       },
+      positions: {
+        discord: {
+          x: 1,
+          y: 2
+        }
+      },
       locked: false
     }
   }), {
@@ -305,6 +333,12 @@ test("normalizeWidgetLayouts drops invalid containers", () => {
         discord: {
           columns: 1,
           rows: 2
+        }
+      },
+      positions: {
+        discord: {
+          x: 1,
+          y: 2
         }
       },
       locked: false
@@ -453,6 +487,12 @@ test("ProjectStore persists widget layouts", () => {
         rows: 3
       }
     },
+    positions: {
+      "twicc-sessions": {
+        x: 1,
+        y: 2
+      }
+    },
     locked: false
   });
 
@@ -465,6 +505,12 @@ test("ProjectStore persists widget layouts", () => {
       "twicc-sessions": {
         columns: 2,
         rows: 3
+      }
+    },
+    positions: {
+      "twicc-sessions": {
+        x: 1,
+        y: 2
       }
     },
     locked: false

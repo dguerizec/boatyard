@@ -455,6 +455,16 @@ button {
   background: rgba(65, 184, 131, 0.9);
 }
 
+.project-widget-rail[data-drop-state="available"] {
+  outline: 1px solid rgba(65, 184, 131, 0.7);
+  outline-offset: -1px;
+}
+
+.project-widget-rail[data-drop-state="blocked"] {
+  outline: 1px solid rgba(248, 113, 113, 0.8);
+  outline-offset: -1px;
+}
+
 .widget-card {
   position: relative;
   min-width: 0;
