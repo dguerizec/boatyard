@@ -134,6 +134,115 @@ function createCard({ title, eyebrow, body, meta, action }) {
   return card;
 }
 
+const BUILTIN_PROJECT_WIDGETS = [
+  {
+    id: "project-summary",
+    title: "Project",
+    create: (project) => ({
+      eyebrow: "Project",
+      title: project.name,
+      body: project.sourcePath || project.slug,
+      meta: "Active workspace"
+    })
+  },
+  {
+    id: "project-preview",
+    title: "Project preview",
+    create: (project) => ({
+      eyebrow: "Preview",
+      title: "Project preview",
+      body: project.previewUrl
+        ? "Project preview is available as a webapp tab in the project pane."
+        : "No preview URL configured for this project.",
+      meta: project.previewUrl || "Optional",
+      action: project.previewUrl
+        ? {
+            label: "Open URL",
+            onClick: () => window.dashtop.openExternal(project.previewUrl)
+          }
+        : null
+    })
+  },
+  {
+    id: "twicc-sessions",
+    title: "Twicc",
+    requires: [{ type: "projectField", key: "twiccUrl" }],
+    create: () => ({
+      eyebrow: "Sessions",
+      title: "Twicc",
+      body: "Placeholder for sessions linked to this project.",
+      meta: "Contextual widget"
+    })
+  },
+  {
+    id: "project-shell",
+    title: "Project shell",
+    requires: [{ type: "projectField", key: "sourcePath" }],
+    create: () => ({
+      eyebrow: "Terminal",
+      title: "Project shell",
+      body: "Placeholder for a terminal pane rooted in the project directory.",
+      meta: "Contextual widget"
+    })
+  },
+  {
+    id: "discord",
+    title: "Discord",
+    create: () => ({
+      eyebrow: "Comms",
+      title: "Discord",
+      body: "Placeholder for the project channel or activity feed.",
+      meta: "Contextual widget"
+    })
+  }
+];
+
+function createProjectWidget(project, definition) {
+  const cardConfig = definition.create(project);
+  const card = createCard(cardConfig);
+  card.dataset.widgetId = definition.id;
+  return card;
+}
+
+function createWidgetRailHeader(project) {
+  const header = document.createElement("header");
+  header.className = "widget-rail-header";
+
+  const title = document.createElement("h3");
+  title.textContent = project.name;
+
+  const actions = document.createElement("div");
+  actions.className = "widget-rail-actions";
+
+  const actionConfigs = [
+    {
+      label: "Add widget",
+      text: "+"
+    },
+    {
+      label: "List widgets",
+      text: "≡"
+    },
+    {
+      label: "Install widgets",
+      text: "↓"
+    }
+  ];
+
+  for (const action of actionConfigs) {
+    const button = document.createElement("button");
+    button.className = "widget-rail-action";
+    button.type = "button";
+    button.title = action.label;
+    button.setAttribute("aria-label", action.label);
+    button.textContent = action.text;
+    actions.append(button);
+  }
+
+  header.append(title, actions);
+  return header;
+}
+
 function getProjectWebApps(project, paneId) {
   const webApps = [
     {
@@ -922,44 +1031,8 @@ function renderProjectDashboard(project) {
   widgetRail.className = "project-widget-rail";
 
   widgetRail.append(
-    createCard({
-      eyebrow: "Project",
-      title: project.name,
-      body: project.sourcePath || project.slug,
-      meta: "Active workspace"
-    }),
-    createCard({
-      eyebrow: "Preview",
-      title: "Project preview",
-      body: project.previewUrl
-        ? "Project preview is available as a webapp tab in the project pane."
-        : "No preview URL configured for this project.",
-      meta: project.previewUrl || "Optional",
-      action: project.previewUrl
-        ? {
-            label: "Open URL",
-            onClick: () => window.dashtop.openExternal(project.previewUrl)
-          }
-        : null
-    }),
-    createCard({
-      eyebrow: "Sessions",
-      title: "Twicc",
-      body: "Placeholder for sessions linked to this project.",
-      meta: "Contextual widget"
-    }),
-    createCard({
-      eyebrow: "Terminal",
-      title: "Project shell",
-      body: "Placeholder for a terminal pane rooted in the project directory.",
-      meta: "Contextual widget"
-    }),
-    createCard({
-      eyebrow: "Comms",
-      title: "Discord",
-      body: "Placeholder for the project channel or activity feed.",
-      meta: "Contextual widget"
-    })
+    createWidgetRailHeader(project),
+    ...BUILTIN_PROJECT_WIDGETS.map((definition) => createProjectWidget(project, definition))
   );
 
   dashboardGrid.append(widgetRail, createWidgetRailResizer(), createPaneLayout(project, getProjectPaneLayout(project)));
