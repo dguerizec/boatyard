@@ -385,6 +385,15 @@ button {
   font-size: 13px;
 }
 
+.danger-confirmation label {
+  display: grid;
+  gap: 6px;
+}
+
+.danger-confirmation input {
+  width: 100%;
+}
+
 .installed-widget-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
