@@ -588,6 +588,7 @@ function registerBuiltinProjectWidgets() {
       scope: "project",
       category: "Project",
       status: "stable",
+      defaultVisible: false,
       description: "Links to the project's main preview URL when one is configured.",
       layout: {
         default: { columns: 2, rows: 2 },
@@ -616,6 +617,7 @@ function registerBuiltinProjectWidgets() {
       scope: "project",
       category: "Developer tools",
       status: "experimental",
+      defaultVisible: false,
       description: "Shows project sessions from Twicc.",
       requires: [{ type: "projectField", key: "twiccUrl" }],
       layout: {
@@ -670,6 +672,7 @@ function registerBuiltinProjectWidgets() {
       scope: "project",
       category: "Communication",
       status: "experimental",
+      defaultVisible: false,
       description: "Shows project communication and activity feed placeholders.",
       layout: {
         default: { columns: 2, rows: 2 },
