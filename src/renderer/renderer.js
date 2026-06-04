@@ -74,6 +74,11 @@ function deriveProjectNameFromPath(sourcePath) {
   return segments.at(-1) || "";
 }
 
+function formatProjectNameFromPath(sourcePath) {
+  const projectName = deriveProjectNameFromPath(sourcePath).replace(/[-_]+/g, " ").trim();
+  return projectName ? `${projectName.charAt(0).toUpperCase()}${projectName.slice(1)}` : "";
+}
+
 let state = { projects: [] };
 let currentView = "global";
 let currentProjectId = null;
@@ -2670,7 +2675,8 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   });
 
   function applySourcePathIdentity(sourcePath) {
-    const projectName = deriveProjectNameFromPath(sourcePath);
+    const projectName = formatProjectNameFromPath(sourcePath);
+    const projectSlug = slugify(deriveProjectNameFromPath(sourcePath));
 
     if (!projectName) {
       return;
@@ -2681,7 +2687,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     }
 
     if (!slugInput.value.trim()) {
-      slugInput.value = slugify(nameInput.value);
+      slugInput.value = projectSlug || slugify(nameInput.value);
     }
 
     if (!hawserMainSessionInput.value.trim() && !hawserMainSessionInput.dataset.edited) {
