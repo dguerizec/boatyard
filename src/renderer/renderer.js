@@ -80,6 +80,8 @@ let frozenWebAppLayer = null;
 let openWebAppTabMenu = null;
 let draggedProjectId = null;
 let draggedWidgetId = null;
+const terminalWidgetsByProject = new Map();
+const terminalWidgetsByTerminal = new Map();
 
 function getProjects() {
   return state.projects;
@@ -141,6 +143,208 @@ function createCard({ title, eyebrow, body, meta, action }) {
   return card;
 }
 
+function getXtermConstructor() {
+  return window.Terminal?.Terminal || window.Terminal || null;
+}
+
+function getTerminalGridSize(container) {
+  const rect = container.getBoundingClientRect();
+  return {
+    cols: Math.max(20, Math.floor(rect.width / 9)),
+    rows: Math.max(5, Math.floor(rect.height / 18))
+  };
+}
+
+function detachProjectTerminal(projectId) {
+  const session = terminalWidgetsByProject.get(projectId);
+
+  if (!session) {
+    return;
+  }
+
+  if (session.terminalId) {
+    window.dashtop.detachTerminal(session.terminalId).catch((error) => {
+      console.error("Could not detach terminal:", error);
+    });
+    terminalWidgetsByTerminal.delete(session.terminalId);
+  }
+
+  session.disposable?.dispose();
+  session.resizeObserver?.disconnect();
+  session.term?.dispose();
+  terminalWidgetsByProject.delete(projectId);
+}
+
+function detachInactiveProjectTerminals(activeProjectId = null) {
+  for (const projectId of terminalWidgetsByProject.keys()) {
+    if (projectId !== activeProjectId) {
+      detachProjectTerminal(projectId);
+    }
+  }
+}
+
+function setTerminalStatus(card, message) {
+  const status = card.querySelector(".terminal-status");
+  if (status) {
+    status.textContent = message;
+  }
+}
+
+async function refreshTerminalTabs(project, card, activeWindowId = null) {
+  const tabList = card.querySelector(".terminal-tabs");
+  tabList.innerHTML = "";
+
+  try {
+    const tabs = await window.dashtop.listTerminalTabs(project.id);
+    const selectedTab = tabs.find((tab) => tab.id === activeWindowId) || tabs[0];
+
+    for (const tab of tabs) {
+      const tabButton = document.createElement("button");
+      tabButton.className = "terminal-tab";
+      tabButton.classList.toggle("active", tab.id === selectedTab?.id);
+      tabButton.type = "button";
+      tabButton.dataset.windowId = tab.id;
+      tabButton.textContent = tab.name || `shell ${tab.index}`;
+      tabButton.addEventListener("click", () => attachTerminalTab(project, card, tab.id));
+      tabList.append(tabButton);
+    }
+
+    if (selectedTab) {
+      if (!card.isConnected) {
+        return;
+      }
+
+      await attachTerminalTab(project, card, selectedTab.id);
+    }
+  } catch (error) {
+    setTerminalStatus(card, `Terminal unavailable: ${error.message}`);
+  }
+}
+
+async function attachTerminalTab(project, card, windowId) {
+  if (!card.isConnected) {
+    return;
+  }
+
+  const TerminalConstructor = getXtermConstructor();
+
+  if (!TerminalConstructor) {
+    setTerminalStatus(card, "Terminal renderer unavailable.");
+    return;
+  }
+
+  detachProjectTerminal(project.id);
+  const viewport = card.querySelector(".terminal-viewport");
+  viewport.innerHTML = "";
+  setTerminalStatus(card, "Attaching...");
+
+  const term = new TerminalConstructor({
+    cursorBlink: true,
+    convertEol: true,
+    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+    fontSize: 12,
+    theme: {
+      background: "#080c11",
+      foreground: "#d7dde5",
+      cursor: "#41b883"
+    }
+  });
+  term.open(viewport);
+
+  const attachResult = await window.dashtop.attachTerminal(project.id, windowId, getTerminalGridSize(viewport));
+  const disposable = term.onData((data) => {
+    window.dashtop.writeTerminal(attachResult.terminalId, data);
+  });
+  const resizeObserver = new ResizeObserver(() => {
+    const size = getTerminalGridSize(viewport);
+    term.resize(size.cols, size.rows);
+    window.dashtop.resizeTerminal(attachResult.terminalId, size);
+  });
+  resizeObserver.observe(viewport);
+  terminalWidgetsByProject.set(project.id, {
+    terminalId: attachResult.terminalId,
+    activeWindowId: attachResult.tab.id,
+    term,
+    disposable,
+    resizeObserver
+  });
+  terminalWidgetsByTerminal.set(attachResult.terminalId, {
+    projectId: project.id,
+    term
+  });
+  setTerminalStatus(card, attachResult.tab.name || "attached");
+
+  for (const tabButton of card.querySelectorAll(".terminal-tab")) {
+    tabButton.classList.toggle("active", tabButton.dataset.windowId === attachResult.tab.id);
+  }
+}
+
+function createTerminalWidget(project) {
+  const card = document.createElement("article");
+  card.className = "widget-card terminal-widget";
+
+  const header = document.createElement("div");
+  header.className = "terminal-widget-header";
+
+  const title = document.createElement("div");
+  title.className = "terminal-widget-title";
+  title.innerHTML = "<span>Terminal</span><small>tmux</small>";
+
+  const actions = document.createElement("div");
+  actions.className = "terminal-widget-actions";
+
+  const tabs = document.createElement("div");
+  tabs.className = "terminal-tabs";
+
+  const addButton = document.createElement("button");
+  addButton.className = "terminal-action";
+  addButton.type = "button";
+  addButton.title = "New shell";
+  addButton.setAttribute("aria-label", "New shell");
+  addButton.textContent = "+";
+  addButton.addEventListener("click", async () => {
+    const tab = await window.dashtop.createTerminalTab(project.id, "shell");
+    await refreshTerminalTabs(project, card, tab.id);
+  });
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "terminal-action";
+  closeButton.type = "button";
+  closeButton.title = "Close current shell";
+  closeButton.setAttribute("aria-label", "Close current shell");
+  closeButton.textContent = "x";
+  closeButton.addEventListener("click", async () => {
+    const session = terminalWidgetsByProject.get(project.id);
+    if (!session) {
+      return;
+    }
+
+    const activeWindowId = session.activeWindowId;
+    detachProjectTerminal(project.id);
+    const allTabs = await window.dashtop.listTerminalTabs(project.id);
+    if (activeWindowId && allTabs.length > 1) {
+      await window.dashtop.closeTerminalTab(project.id, activeWindowId);
+    }
+    await refreshTerminalTabs(project, card);
+  });
+
+  actions.append(addButton, closeButton);
+  header.append(title, tabs, actions);
+
+  const viewport = document.createElement("div");
+  viewport.className = "terminal-viewport";
+
+  const status = document.createElement("p");
+  status.className = "terminal-status";
+  status.textContent = "Loading tmux session...";
+
+  card.append(header, viewport, status);
+  queueMicrotask(() => {
+    refreshTerminalTabs(project, card);
+  });
+  return card;
+}
+
 const BUILTIN_PROJECT_WIDGETS = [
   {
     id: "project-summary",
@@ -198,19 +402,14 @@ const BUILTIN_PROJECT_WIDGETS = [
   },
   {
     id: "project-shell",
-    title: "Project shell",
+    title: "Terminal",
     requires: [{ type: "projectField", key: "sourcePath" }],
     layout: {
-      default: { columns: 2, rows: 2 },
-      min: { columns: 1, rows: 2 },
-      max: { columns: 4, rows: 4 }
+      default: { columns: 4, rows: 5 },
+      min: { columns: 2, rows: 3 },
+      max: { columns: 4, rows: 8 }
     },
-    create: () => ({
-      eyebrow: "Terminal",
-      title: "Project shell",
-      body: "Placeholder for a terminal pane rooted in the project directory.",
-      meta: "Contextual widget"
-    })
+    createElement: (project) => createTerminalWidget(project)
   },
   {
     id: "discord",
@@ -569,8 +768,7 @@ function attachWidgetGridDropHandlers(widgetRail, project, layout, columnCount) 
 }
 
 function createProjectWidget(project, definition, layout, columnCount) {
-  const cardConfig = definition.create(project);
-  const card = createCard(cardConfig);
+  const card = definition.createElement ? definition.createElement(project) : createCard(definition.create(project));
   const size = fitWidgetSizeToGrid(layout.sizes[definition.id], columnCount);
   const position = layout.positions[definition.id] || { x: 0, y: 0 };
   card.dataset.widgetId = definition.id;
@@ -1482,6 +1680,7 @@ function renderGlobalSettingsPage() {
 }
 
 function renderProjectDashboard(project) {
+  detachProjectTerminal(project.id);
   const settings = getSettings();
   const widgetRailWidth = clampWidgetRailWidth(settings.widgetRailWidth);
   workspace.classList.add("project-mode");
@@ -2284,6 +2483,7 @@ function render() {
   renderProjectList();
 
   const project = getCurrentProject();
+  detachInactiveProjectTerminals(currentView === "project" && project ? project.id : null);
 
   if (currentView === "project-create") {
     renderCreateProjectPage();
@@ -2321,6 +2521,24 @@ window.dashtop.onWebAppUrlChanged(({ key, url }) => {
     if (input.dataset.webappKey === key && input !== document.activeElement) {
       input.value = url;
     }
+  }
+});
+
+window.dashtop.onTerminalData(({ terminalId, data }) => {
+  const session = terminalWidgetsByTerminal.get(terminalId);
+  session?.term.write(data);
+});
+
+window.dashtop.onTerminalExit(({ terminalId }) => {
+  const session = terminalWidgetsByTerminal.get(terminalId);
+  if (!session) {
+    return;
+  }
+
+  terminalWidgetsByTerminal.delete(terminalId);
+  const projectSession = terminalWidgetsByProject.get(session.projectId);
+  if (projectSession?.terminalId === terminalId) {
+    terminalWidgetsByProject.delete(session.projectId);
   }
 });
 

@@ -5,11 +5,13 @@ const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, dialog, ipcMain, shell } = require("electron");
 const { ProjectStore, deriveRepoUrl } = require("./store");
+const { TerminalService } = require("./terminalService");
 
 const execFileAsync = promisify(execFile);
 
 let mainWindow = null;
 let store = null;
+let terminalService = null;
 let saveWindowStateTimer = null;
 const webAppViews = new Map();
 let activeWebAppKey = null;
@@ -64,6 +66,7 @@ function createMainWindow() {
   mainWindow.on("unmaximize", saveWindowState);
   mainWindow.on("close", () => {
     saveWindowState();
+    terminalService?.detachAll();
     destroyWebAppViews();
   });
 }
@@ -379,6 +382,34 @@ function registerIpcHandlers() {
     return store.updateWidgetLayout(projectId, layout);
   });
 
+  ipcMain.handle("terminal:tabs", (_event, projectId) => {
+    return terminalService.listTabs(projectId);
+  });
+
+  ipcMain.handle("terminal:create-tab", (_event, projectId, name) => {
+    return terminalService.createTab(projectId, name);
+  });
+
+  ipcMain.handle("terminal:close-tab", (_event, projectId, windowId) => {
+    return terminalService.closeTab(projectId, windowId);
+  });
+
+  ipcMain.handle("terminal:attach", (_event, projectId, windowId, size) => {
+    return terminalService.attach(projectId, windowId, size);
+  });
+
+  ipcMain.handle("terminal:write", (_event, terminalId, data) => {
+    terminalService.write(terminalId, data);
+  });
+
+  ipcMain.handle("terminal:resize", (_event, terminalId, size) => {
+    terminalService.resize(terminalId, size);
+  });
+
+  ipcMain.handle("terminal:detach", (_event, terminalId) => {
+    terminalService.detach(terminalId);
+  });
+
   ipcMain.handle("webapp:show", (_event, webApp) => {
     showWebApp(webApp);
   });
@@ -415,6 +446,14 @@ function registerIpcHandlers() {
 app.whenReady().then(() => {
   store = new ProjectStore(getStorePath());
   store.load();
+  terminalService = new TerminalService({
+    getProject: (projectId) => store.getState().projects.find((project) => project.id === projectId),
+    sendToRenderer: (channel, payload) => {
+      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send(channel, payload);
+      }
+    }
+  });
   registerIpcHandlers();
   createMainWindow();
 });

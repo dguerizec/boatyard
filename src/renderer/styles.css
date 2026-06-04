@@ -550,6 +550,104 @@ button {
   white-space: nowrap;
 }
 
+.terminal-widget {
+  gap: 10px;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.terminal-widget-header {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-widget-title {
+  display: grid;
+  gap: 2px;
+}
+
+.terminal-widget-title span {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.terminal-widget-title small,
+.terminal-status {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.terminal-tabs {
+  min-width: 0;
+  display: flex;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.terminal-tab,
+.terminal-action {
+  height: 26px;
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(15, 23, 32, 0.8);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.terminal-tab {
+  min-width: 0;
+  max-width: 120px;
+  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-tab.active {
+  border-color: rgba(65, 184, 131, 0.75);
+  color: var(--text);
+}
+
+.terminal-widget-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.terminal-action {
+  width: 26px;
+  padding: 0;
+}
+
+.terminal-viewport {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  height: 100%;
+  border: 1px solid rgba(52, 64, 76, 0.7);
+  border-radius: 6px;
+  background: #080c11;
+  overflow: hidden;
+}
+
+.terminal-viewport .xterm {
+  height: 100%;
+  padding: 8px;
+}
+
+.terminal-status {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .webapp-pane {
   min-width: 420px;
   min-height: 0;
