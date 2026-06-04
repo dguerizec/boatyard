@@ -1102,8 +1102,11 @@ function openWidgetAddMenuFromButton(button, project, layout, columnCount) {
   menu.setAttribute("role", "menu");
 
   const rect = button.getBoundingClientRect();
+  const menuWidth = Math.min(280, Math.max(0, window.innerWidth - 24));
+  const maxLeft = Math.max(12, window.innerWidth - menuWidth - 12);
+  const menuLeft = clamp(rect.right - menuWidth, 12, maxLeft);
   menu.style.top = `${Math.round(rect.bottom + 6)}px`;
-  menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 260))}px`;
+  menu.style.left = `${Math.round(menuLeft)}px`;
 
   for (const definition of hiddenDefinitions) {
     const item = document.createElement("button");
