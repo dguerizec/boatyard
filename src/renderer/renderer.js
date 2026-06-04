@@ -638,6 +638,7 @@ function registerBuiltinProjectWidgets() {
       scope: "project",
       category: "Developer tools",
       status: "experimental",
+      defaultVisible: false,
       description: "Shows Hawser inbox counts and active task status for the project.",
       requires: [{ type: "projectField", key: "hawserMainSession" }],
       layout: {
@@ -686,11 +687,25 @@ function normalizeWidgetLayoutForProject(project, columnCount = null) {
   const knownIds = widgetDefinitions.map((definition) => definition.id);
   const knownIdSet = new Set(knownIds);
   const definitionsById = new Map(widgetDefinitions.map((definition) => [definition.id, definition]));
+  const persistedOrderIdSet = new Set(Array.isArray(persisted.order)
+    ? persisted.order.map((id) => String(id || "").trim()).filter((id) => knownIdSet.has(id))
+    : []);
   const hidden = Array.isArray(persisted.hidden)
     ? persisted.hidden
         .map((id) => String(id || "").trim())
         .filter((id, index, ids) => knownIdSet.has(id) && ids.indexOf(id) === index)
     : [];
+
+  for (const definition of widgetDefinitions) {
+    if (
+      definition.defaultVisible === false &&
+      !persistedOrderIdSet.has(definition.id) &&
+      !hidden.includes(definition.id)
+    ) {
+      hidden.push(definition.id);
+    }
+  }
+
   const hiddenIdSet = new Set(hidden);
   const seenIds = new Set();
   const order = Array.isArray(persisted.order)
