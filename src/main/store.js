@@ -299,6 +299,19 @@ function normalizeWidgetLayout(layout = {}) {
           return true;
         })
     : [];
+  const seenHiddenIds = new Set();
+  const hidden = Array.isArray(source.hidden)
+    ? source.hidden
+        .map((id) => String(id || "").trim())
+        .filter((id) => {
+          if (!id || seenHiddenIds.has(id)) {
+            return false;
+          }
+
+          seenHiddenIds.add(id);
+          return true;
+        })
+    : [];
   const rawSizes = source.sizes && typeof source.sizes === "object" && !Array.isArray(source.sizes)
     ? source.sizes
     : {};
@@ -342,6 +355,7 @@ function normalizeWidgetLayout(layout = {}) {
 
   return {
     order,
+    hidden,
     sizes,
     positions,
     locked: source.locked !== false

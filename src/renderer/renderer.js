@@ -540,12 +540,18 @@ function normalizeWidgetLayoutForProject(project, columnCount = null) {
   const knownIds = widgetDefinitions.map((definition) => definition.id);
   const knownIdSet = new Set(knownIds);
   const definitionsById = new Map(widgetDefinitions.map((definition) => [definition.id, definition]));
+  const hidden = Array.isArray(persisted.hidden)
+    ? persisted.hidden
+        .map((id) => String(id || "").trim())
+        .filter((id, index, ids) => knownIdSet.has(id) && ids.indexOf(id) === index)
+    : [];
+  const hiddenIdSet = new Set(hidden);
   const seenIds = new Set();
   const order = Array.isArray(persisted.order)
     ? persisted.order
         .map((id) => String(id || "").trim())
         .filter((id) => {
-          if (!knownIdSet.has(id) || seenIds.has(id)) {
+          if (!knownIdSet.has(id) || hiddenIdSet.has(id) || seenIds.has(id)) {
             return false;
           }
 
@@ -555,7 +561,7 @@ function normalizeWidgetLayoutForProject(project, columnCount = null) {
     : [];
 
   for (const id of knownIds) {
-    if (!seenIds.has(id)) {
+    if (!seenIds.has(id) && !hiddenIdSet.has(id)) {
       order.push(id);
     }
   }
@@ -592,6 +598,7 @@ function normalizeWidgetLayoutForProject(project, columnCount = null) {
 
   return {
     order,
+    hidden,
     sizes,
     positions,
     locked: persisted.locked !== false
@@ -774,6 +781,32 @@ async function toggleWidgetLayoutLock(project) {
   renderProjectDashboard(project);
 }
 
+async function removeProjectWidget(project, widgetId, columnCount) {
+  const definition = getWidgetDefinition(widgetId);
+
+  if (!definition) {
+    return false;
+  }
+
+  const layout = getProjectWidgetLayout(project, columnCount);
+  const hidden = [...new Set([...layout.hidden, widgetId])];
+  const sizes = { ...layout.sizes };
+  const positions = { ...layout.positions };
+  delete sizes[widgetId];
+  delete positions[widgetId];
+
+  widgetLayoutsByProject.set(project.id, {
+    ...layout,
+    order: layout.order.filter((id) => id !== widgetId),
+    hidden,
+    sizes,
+    positions
+  });
+  await persistWidgetLayout(project);
+  renderProjectDashboard(project);
+  return true;
+}
+
 function getWidgetGridPositionFromPointer(event, rail, columnCount, size) {
   const rect = rail.getBoundingClientRect();
   const styles = window.getComputedStyle(rail);
@@ -938,6 +971,19 @@ function createProjectWidget(project, definition, layout, columnCount) {
       startWidgetResize(event, project, definition, layout, size, columnCount);
     });
     card.append(resizeHandle);
+
+    const removeButton = document.createElement("button");
+    removeButton.className = "widget-remove-button";
+    removeButton.type = "button";
+    removeButton.title = "Remove widget";
+    removeButton.setAttribute("aria-label", `Remove ${definition.name}`);
+    removeButton.textContent = "X";
+    removeButton.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await removeProjectWidget(project, definition.id, columnCount);
+    });
+    card.append(removeButton);
   }
 
   return card;
