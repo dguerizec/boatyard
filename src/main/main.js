@@ -3,7 +3,7 @@
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
-const { app, BrowserWindow, WebContentsView, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell } = require("electron");
 const { getHawserWidgetData } = require("./hawserService");
 const { PasswordManager } = require("./passwordManager");
 const { ProjectStore, deriveRepoUrl } = require("./store");
@@ -431,6 +431,14 @@ function registerIpcHandlers() {
 
   ipcMain.handle("terminal:detach", (_event, terminalId) => {
     terminalService.detach(terminalId);
+  });
+
+  ipcMain.handle("terminal:write-selection", (_event, text) => {
+    clipboard.writeText(String(text || ""), "selection");
+  });
+
+  ipcMain.handle("terminal:read-selection", () => {
+    return clipboard.readText("selection");
   });
 
   ipcMain.handle("hawser:widget-data", (_event, projectId) => {

@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld("dashtop", {
   writeTerminal: (terminalId, data) => ipcRenderer.invoke("terminal:write", terminalId, data),
   resizeTerminal: (terminalId, size) => ipcRenderer.invoke("terminal:resize", terminalId, size),
   detachTerminal: (terminalId) => ipcRenderer.invoke("terminal:detach", terminalId),
+  writeTerminalSelection: (text) => ipcRenderer.invoke("terminal:write-selection", text),
+  readTerminalSelection: () => ipcRenderer.invoke("terminal:read-selection"),
   getHawserWidgetData: (projectId) => ipcRenderer.invoke("hawser:widget-data", projectId),
   onTerminalData: (callback) => {
     const listener = (_event, payload) => callback(payload);

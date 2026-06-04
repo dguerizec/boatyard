@@ -246,7 +246,10 @@ function detachProjectTerminal(projectId) {
     terminalWidgetsByTerminal.delete(session.terminalId);
   }
 
-  session.disposable?.dispose();
+  for (const disposable of session.disposables || []) {
+    disposable?.dispose?.();
+  }
+  session.removeMiddleClickPaste?.();
   session.resizeObserver?.disconnect();
   session.term?.dispose();
   terminalWidgetsByProject.delete(projectId);
@@ -337,6 +340,37 @@ async function attachTerminalTab(project, card, windowId) {
   const disposable = term.onData((data) => {
     window.dashtop.writeTerminal(attachResult.terminalId, data);
   });
+  let lastSelection = "";
+  let selectionTimer = null;
+  const selectionDisposable = term.onSelectionChange(() => {
+    clearTimeout(selectionTimer);
+    selectionTimer = setTimeout(() => {
+      const selection = term.getSelection();
+      if (selection && selection !== lastSelection) {
+        lastSelection = selection;
+        window.dashtop.writeTerminalSelection(selection).catch((error) => {
+          console.error("Could not write terminal selection:", error);
+        });
+      }
+    }, 60);
+  });
+  const onMiddleClickPaste = (event) => {
+    if (event.button !== 1) {
+      return;
+    }
+
+    event.preventDefault();
+    window.dashtop.readTerminalSelection()
+      .then((selection) => {
+        if (selection) {
+          window.dashtop.writeTerminal(attachResult.terminalId, selection);
+        }
+      })
+      .catch((error) => {
+        console.error("Could not read terminal selection:", error);
+      });
+  };
+  viewport.addEventListener("mousedown", onMiddleClickPaste);
   const resizeObserver = new ResizeObserver(() => {
     const size = fitTerminal(term, fitAddon);
     window.dashtop.resizeTerminal(attachResult.terminalId, size);
@@ -347,7 +381,14 @@ async function attachTerminalTab(project, card, windowId) {
     activeWindowId: attachResult.tab.id,
     term,
     fitAddon,
-    disposable,
+    disposables: [
+      disposable,
+      selectionDisposable,
+      {
+        dispose: () => clearTimeout(selectionTimer)
+      }
+    ],
+    removeMiddleClickPaste: () => viewport.removeEventListener("mousedown", onMiddleClickPaste),
     resizeObserver
   });
   terminalWidgetsByTerminal.set(attachResult.terminalId, {
