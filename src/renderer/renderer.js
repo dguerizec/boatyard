@@ -79,6 +79,7 @@ function getSettings() {
   return {
     projectsBasePath: "",
     blurWebAppOverlays: true,
+    widgetRailWidth: 340,
     ...(state.settings || {})
   };
 }
@@ -688,6 +689,7 @@ function renderGlobalDashboard() {
   workspaceSummary.textContent = "Global widgets will collect usage, agents, assistants, and service health.";
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "dashboard-grid";
+  dashboardGrid.style.gridTemplateColumns = "";
 
   dashboardGrid.append(
     createCard({
@@ -884,6 +886,7 @@ function renderGlobalSettingsPage() {
   workspaceSummary.textContent = "";
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-form-layout";
+  dashboardGrid.style.gridTemplateColumns = "";
 
   dashboardGrid.append(createGlobalProjectsSettingsForm({
     settings: getSettings(),
@@ -901,12 +904,14 @@ function renderGlobalSettingsPage() {
 }
 
 function renderProjectDashboard(project) {
+  const settings = getSettings();
   workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Project";
   workspaceTitle.textContent = project.name;
   workspaceSummary.textContent = project.sourcePath || project.previewUrl || project.slug;
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-workbench";
+  dashboardGrid.style.gridTemplateColumns = `${settings.widgetRailWidth}px 6px minmax(0, 1fr)`;
   visibleWebAppHosts = new Map();
 
   const widgetRail = document.createElement("aside");
@@ -953,7 +958,44 @@ function renderProjectDashboard(project) {
     })
   );
 
-  dashboardGrid.append(widgetRail, createPaneLayout(project, getProjectPaneLayout(project)));
+  dashboardGrid.append(widgetRail, createWidgetRailResizer(), createPaneLayout(project, getProjectPaneLayout(project)));
+}
+
+function createWidgetRailResizer() {
+  const resizer = document.createElement("div");
+  resizer.className = "widget-rail-resizer";
+  resizer.setAttribute("role", "separator");
+  resizer.setAttribute("aria-orientation", "vertical");
+  resizer.setAttribute("aria-label", "Resize widgets");
+
+  resizer.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = getSettings().widgetRailWidth;
+
+    function onPointerMove(moveEvent) {
+      const nextWidth = Math.min(560, Math.max(240, Math.round(startWidth + moveEvent.clientX - startX)));
+      state.settings = {
+        ...getSettings(),
+        widgetRailWidth: nextWidth
+      };
+      dashboardGrid.style.gridTemplateColumns = `${nextWidth}px 6px minmax(0, 1fr)`;
+      queueWebAppSync();
+    }
+
+    async function onPointerUp() {
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp);
+      state = await window.dashtop.updateSettings({
+        widgetRailWidth: getSettings().widgetRailWidth
+      });
+    }
+
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+  });
+
+  return resizer;
 }
 
 function createProjectFormView({ title, submitLabel, initialValues, onSubmit, onCancel }) {
@@ -1330,6 +1372,7 @@ function renderCreateProjectPage() {
   workspaceSummary.textContent = "";
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-form-layout";
+  dashboardGrid.style.gridTemplateColumns = "";
 
   dashboardGrid.append(createProjectFormView({
     title: "Project details",
@@ -1364,6 +1407,7 @@ function renderEditProjectPage(project) {
   workspaceSummary.textContent = project.slug;
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-form-layout";
+  dashboardGrid.style.gridTemplateColumns = "";
 
   dashboardGrid.append(createProjectFormView({
     title: "Project settings",

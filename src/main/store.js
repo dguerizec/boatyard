@@ -24,7 +24,8 @@ function createDefaultState() {
   return {
     settings: {
       projectsBasePath: "",
-      blurWebAppOverlays: true
+      blurWebAppOverlays: true,
+      widgetRailWidth: 340
     },
     projects: [],
     window: {
@@ -165,10 +166,12 @@ function normalizeWindowState(windowState = {}) {
 
 function normalizeSettings(settings = {}) {
   const source = settings && typeof settings === "object" ? settings : {};
+  const widgetRailWidth = Number(source.widgetRailWidth);
 
   return {
     projectsBasePath: normalizeText(source.projectsBasePath),
-    blurWebAppOverlays: source.blurWebAppOverlays !== false
+    blurWebAppOverlays: source.blurWebAppOverlays !== false,
+    widgetRailWidth: Math.min(560, Math.max(240, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340))
   };
 }
 

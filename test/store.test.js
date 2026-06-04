@@ -154,14 +154,17 @@ test("normalizeWindowState keeps maximized state", () => {
 test("normalizeSettings keeps global settings defaults", () => {
   assert.deepEqual(normalizeSettings(), {
     projectsBasePath: "",
-    blurWebAppOverlays: true
+    blurWebAppOverlays: true,
+    widgetRailWidth: 340
   });
   assert.deepEqual(normalizeSettings({
     projectsBasePath: "  /workspace/projects  ",
-    blurWebAppOverlays: false
+    blurWebAppOverlays: false,
+    widgetRailWidth: 900
   }), {
     projectsBasePath: "/workspace/projects",
-    blurWebAppOverlays: false
+    blurWebAppOverlays: false,
+    widgetRailWidth: 560
   });
 });
 
@@ -309,7 +312,8 @@ test("ProjectStore persists global settings", () => {
 
   assert.deepEqual(state.settings, {
     projectsBasePath: "/workspace/projects",
-    blurWebAppOverlays: false
+    blurWebAppOverlays: false,
+    widgetRailWidth: 340
   });
 
   const reloaded = new ProjectStore(filePath);
