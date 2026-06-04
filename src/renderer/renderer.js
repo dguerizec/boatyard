@@ -711,6 +711,31 @@ function getWidgetGridPositionFromPointer(event, rail, columnCount, size) {
   };
 }
 
+function ensureWidgetDropPreview(widgetRail) {
+  let preview = widgetRail.querySelector(".widget-drop-preview");
+
+  if (!preview) {
+    preview = document.createElement("div");
+    preview.className = "widget-drop-preview";
+    preview.setAttribute("aria-hidden", "true");
+    widgetRail.append(preview);
+  }
+
+  return preview;
+}
+
+function updateWidgetDropPreview(widgetRail, position, size, available) {
+  const preview = ensureWidgetDropPreview(widgetRail);
+  preview.classList.toggle("blocked", !available);
+  preview.style.gridColumn = `${position.x + 1} / span ${size.columns}`;
+  preview.style.gridRow = `${position.y + 2} / span ${size.rows}`;
+}
+
+function clearWidgetDropPreview(widgetRail) {
+  widgetRail.querySelector(".widget-drop-preview")?.remove();
+  delete widgetRail.dataset.dropState;
+}
+
 async function moveWidgetToGridPosition(project, widgetId, position, columnCount) {
   const definition = getWidgetDefinition(widgetId);
 
@@ -768,18 +793,19 @@ function attachWidgetGridDropHandlers(widgetRail, project, layout, columnCount) 
 
     event.dataTransfer.dropEffect = available ? "move" : "none";
     widgetRail.dataset.dropState = available ? "available" : "blocked";
+    updateWidgetDropPreview(widgetRail, position, size, available);
   });
 
   widgetRail.addEventListener("dragleave", (event) => {
     if (!widgetRail.contains(event.relatedTarget)) {
-      delete widgetRail.dataset.dropState;
+      clearWidgetDropPreview(widgetRail);
     }
   });
 
   widgetRail.addEventListener("drop", async (event) => {
     const widgetId = event.dataTransfer.getData("text/plain") || draggedWidgetId;
     const size = layout.sizes[widgetId];
-    delete widgetRail.dataset.dropState;
+    clearWidgetDropPreview(widgetRail);
 
     if (!widgetId || !size) {
       return;
@@ -812,6 +838,9 @@ function createProjectWidget(project, definition, layout, columnCount) {
       card.classList.remove("dragging");
       for (const item of dashboardGrid.querySelectorAll(".widget-card")) {
         item.classList.remove("drag-over");
+      }
+      for (const rail of dashboardGrid.querySelectorAll(".project-widget-rail")) {
+        clearWidgetDropPreview(rail);
       }
     });
 
