@@ -934,7 +934,34 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   sourcePathInput.required = true;
   sourcePathInput.placeholder = "/workspace/projects/example";
   sourcePathInput.value = initialValues.sourcePath || "";
-  sourcePathLabel.append(sourcePathInput);
+
+  const sourcePathControl = document.createElement("div");
+  sourcePathControl.className = "path-picker";
+
+  const sourcePathBrowseButton = document.createElement("button");
+  sourcePathBrowseButton.className = "secondary-button";
+  sourcePathBrowseButton.type = "button";
+  sourcePathBrowseButton.textContent = "Browse";
+  sourcePathBrowseButton.addEventListener("click", async () => {
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      const settings = getSettings();
+      const selectedPath = await window.dashtop.selectProjectsBasePath(
+        sourcePathInput.value || settings.projectsBasePath
+      );
+      if (selectedPath) {
+        sourcePathInput.value = selectedPath;
+      }
+    } catch (selectError) {
+      error.textContent = selectError.message;
+      error.hidden = false;
+    }
+  });
+
+  sourcePathControl.append(sourcePathInput, sourcePathBrowseButton);
+  sourcePathLabel.append(sourcePathControl);
 
   const gitUrlLabel = document.createElement("label");
   gitUrlLabel.textContent = "Git URL";
