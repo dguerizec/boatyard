@@ -2355,6 +2355,101 @@ function createGlobalHawserSettingsForm({ settings, onSubmit }) {
   return shell;
 }
 
+function createGlobalPasswordManagerSettingsForm({ settings, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page password-manager-settings";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Password manager";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Optional local autofill for webapp panes.";
+  heading.append(headingTitle, headingCopy);
+
+  const disclaimer = document.createElement("div");
+  disclaimer.className = "password-manager-disclaimer";
+  disclaimer.innerHTML = `
+    <strong>Security disclaimer</strong>
+    <span>Dashtop will store passwords locally, encrypted for the current OS user. This is a minimal convenience feature for trusted local use, not a hardened replacement for a dedicated password manager.</span>
+  `;
+
+  const enableLabel = document.createElement("label");
+  enableLabel.className = "switch-row";
+
+  const enableCopy = document.createElement("span");
+  enableCopy.className = "switch-copy";
+  enableCopy.innerHTML = "<strong>Enable local password manager</strong><small>Autofill and save credentials for webapp login forms after confirmation.</small>";
+
+  const enableSwitch = document.createElement("input");
+  enableSwitch.name = "passwordManagerEnabled";
+  enableSwitch.type = "checkbox";
+  enableSwitch.checked = settings.passwordManagerEnabled === true;
+
+  const switchTrack = document.createElement("span");
+  switchTrack.className = "switch-track";
+  switchTrack.setAttribute("aria-hidden", "true");
+  enableLabel.append(enableCopy, enableSwitch, switchTrack);
+
+  const acceptLabel = document.createElement("label");
+  acceptLabel.className = "checkbox-row";
+
+  const acceptCheckbox = document.createElement("input");
+  acceptCheckbox.name = "passwordManagerDisclaimerAccepted";
+  acceptCheckbox.type = "checkbox";
+  acceptCheckbox.checked = settings.passwordManagerDisclaimerAccepted === true;
+
+  const acceptCopy = document.createElement("span");
+  acceptCopy.textContent = "I understand this is a minimal local password manager and accept the risk.";
+  acceptLabel.append(acceptCheckbox, acceptCopy);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save password settings";
+
+  actions.append(submitButton);
+  form.append(heading, disclaimer, enableLabel, acceptLabel, error, actions);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    if (enableSwitch.checked && !acceptCheckbox.checked) {
+      error.textContent = "Accept the security disclaimer before enabling the password manager.";
+      error.hidden = false;
+      return;
+    }
+
+    try {
+      await onSubmit({
+        passwordManagerEnabled: enableSwitch.checked,
+        passwordManagerDisclaimerAccepted: acceptCheckbox.checked
+      });
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  return shell;
+}
+
 function createGlobalWidgetsSettingsView() {
   const shell = document.createElement("section");
   shell.className = "project-form-page widgets-settings-page";
@@ -2433,6 +2528,12 @@ function renderGlobalSettingsPage() {
       renderGlobalSettingsPage();
     }
   }), createGlobalHawserSettingsForm({
+    settings: getSettings(),
+    onSubmit: async (values) => {
+      state = await window.dashtop.updateSettings(values);
+      renderGlobalSettingsPage();
+    }
+  }), createGlobalPasswordManagerSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
       state = await window.dashtop.updateSettings(values);

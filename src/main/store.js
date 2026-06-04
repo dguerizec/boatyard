@@ -29,6 +29,8 @@ function createDefaultState() {
       blurWebAppOverlays: true,
       hawserApiUrl: DEFAULT_HAWSER_API_URL,
       hawserToken: "",
+      passwordManagerEnabled: false,
+      passwordManagerDisclaimerAccepted: false,
       widgetRailWidth: 340
     },
     projects: [],
@@ -41,6 +43,7 @@ function createDefaultState() {
       projectId: null
     },
     webApps: {},
+    passwordVault: {},
     paneLayouts: {},
     widgetLayouts: {}
   };
@@ -182,8 +185,36 @@ function normalizeSettings(settings = {}) {
     blurWebAppOverlays: source.blurWebAppOverlays !== false,
     hawserApiUrl: normalizeOptionalUrl(source.hawserApiUrl) || DEFAULT_HAWSER_API_URL,
     hawserToken: normalizeText(source.hawserToken),
+    passwordManagerEnabled: source.passwordManagerEnabled === true && source.passwordManagerDisclaimerAccepted === true,
+    passwordManagerDisclaimerAccepted: source.passwordManagerDisclaimerAccepted === true,
     widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340)
   };
+}
+
+function normalizePasswordVault(vault = {}) {
+  if (!vault || typeof vault !== "object" || Array.isArray(vault)) {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [origin, entry] of Object.entries(vault)) {
+    const source = entry && typeof entry === "object" ? entry : {};
+    const normalizedOrigin = normalizeText(origin);
+    const username = normalizeText(source.username);
+    const encryptedPassword = normalizeText(source.encryptedPassword);
+
+    if (!normalizedOrigin || !username || !encryptedPassword) {
+      continue;
+    }
+
+    normalized[normalizedOrigin] = {
+      username,
+      encryptedPassword,
+      updatedAt: normalizeText(source.updatedAt)
+    };
+  }
+
+  return normalized;
 }
 
 function normalizeNavigationState(navigation = {}) {
@@ -480,6 +511,7 @@ class ProjectStore {
         window: normalizeWindowState(parsed.window),
         navigation: normalizeNavigationState(parsed.navigation),
         webApps: normalizeWebAppState(parsed.webApps),
+        passwordVault: normalizePasswordVault(parsed.passwordVault),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts)
       };
@@ -548,6 +580,34 @@ class ProjectStore {
 
     this.save();
     return structuredClone(this.state.webApps[String(key)] || null);
+  }
+
+  getPasswordCredential(origin) {
+    return structuredClone(this.state.passwordVault[normalizeText(origin)] || null);
+  }
+
+  updatePasswordCredential(origin, credential) {
+    const normalizedOrigin = normalizeText(origin);
+    const source = credential && typeof credential === "object" ? credential : {};
+    const username = normalizeText(source.username);
+    const encryptedPassword = normalizeText(source.encryptedPassword);
+
+    if (!normalizedOrigin) {
+      throw new Error("Password origin is required.");
+    }
+
+    if (!username || !encryptedPassword) {
+      delete this.state.passwordVault[normalizedOrigin];
+    } else {
+      this.state.passwordVault[normalizedOrigin] = {
+        username,
+        encryptedPassword,
+        updatedAt: new Date().toISOString()
+      };
+    }
+
+    this.save();
+    return this.getPasswordCredential(normalizedOrigin);
   }
 
   getPaneLayout(projectId) {
@@ -658,6 +718,7 @@ module.exports = {
   normalizeSlug,
   deriveRepoUrl,
   normalizeSettings,
+  normalizePasswordVault,
   normalizeNavigationState,
   normalizeWebAppState,
   normalizeWindowBounds,

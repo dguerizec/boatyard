@@ -394,6 +394,36 @@ button {
   width: 100%;
 }
 
+.password-manager-disclaimer,
+.checkbox-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(244, 185, 66, 0.34);
+  border-radius: 6px;
+  background: rgba(244, 185, 66, 0.08);
+}
+
+.password-manager-disclaimer strong {
+  color: #f8d487;
+}
+
+.password-manager-disclaimer span,
+.checkbox-row span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.checkbox-row {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
+.checkbox-row input {
+  margin-top: 2px;
+}
+
 .installed-widget-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));

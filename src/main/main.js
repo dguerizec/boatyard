@@ -5,6 +5,7 @@ const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, dialog, ipcMain, shell } = require("electron");
 const { getHawserWidgetData } = require("./hawserService");
+const { PasswordManager } = require("./passwordManager");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
 
@@ -14,6 +15,7 @@ const WEBAPP_SESSION_PARTITION = "persist:dashtop-webapps";
 let mainWindow = null;
 let store = null;
 let terminalService = null;
+let passwordManager = null;
 let saveWindowStateTimer = null;
 const webAppViews = new Map();
 let activeWebAppKey = null;
@@ -136,6 +138,7 @@ function ensureWebAppView(key) {
       contextIsolation: true,
       nodeIntegration: false,
       partition: WEBAPP_SESSION_PARTITION,
+      preload: path.join(__dirname, "webappPreload.js"),
       sandbox: true
     }
   });
@@ -340,6 +343,14 @@ function registerIpcHandlers() {
   ipcMain.handle("state:get", () => store.getState());
 
   ipcMain.handle("settings:update", (_event, patch) => {
+    if (
+      patch?.passwordManagerEnabled === true &&
+      patch?.passwordManagerDisclaimerAccepted === true &&
+      !passwordManager.getStatus().encryptionAvailable
+    ) {
+      throw new Error("Electron safeStorage is unavailable on this system.");
+    }
+
     return store.updateSettings(patch);
   });
 
@@ -423,6 +434,18 @@ function registerIpcHandlers() {
     return getHawserWidgetData(project, state.settings);
   });
 
+  ipcMain.handle("password-manager:status", () => {
+    return passwordManager.getStatus();
+  });
+
+  ipcMain.handle("password-manager:get-credential", (_event, url) => {
+    return passwordManager.getCredential(url);
+  });
+
+  ipcMain.handle("password-manager:save-credential", (_event, credential) => {
+    return passwordManager.saveCredential(credential);
+  });
+
   ipcMain.handle("webapp:show", (_event, webApp) => {
     showWebApp(webApp);
   });
@@ -459,6 +482,21 @@ function registerIpcHandlers() {
 app.whenReady().then(() => {
   store = new ProjectStore(getStorePath());
   store.load();
+  passwordManager = new PasswordManager({
+    store,
+    confirmSave: async ({ origin, username, isUpdate }) => {
+      const result = await dialog.showMessageBox(mainWindow, {
+        type: "question",
+        buttons: [isUpdate ? "Update password" : "Save password", "Cancel"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "Dashtop password manager",
+        message: `${isUpdate ? "Update" : "Save"} password for ${origin}?`,
+        detail: `Username: ${username}\n\nDashtop stores this password encrypted for the current OS user. This is a minimal local password manager, not a hardened replacement for a dedicated password manager.`
+      });
+      return result.response === 0;
+    }
+  });
   terminalService = new TerminalService({
     getProject: (projectId) => store.getState().projects.find((project) => project.id === projectId),
     sendToRenderer: (channel, payload) => {

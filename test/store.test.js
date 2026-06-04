@@ -16,6 +16,7 @@ const {
   normalizeProject,
   normalizeProjectUrls,
   normalizeNavigationState,
+  normalizePasswordVault,
   normalizeSettings,
   normalizeSlug,
   deriveRepoUrl,
@@ -160,6 +161,8 @@ test("normalizeSettings keeps global settings defaults", () => {
     blurWebAppOverlays: true,
     hawserApiUrl: "http://127.0.0.1:60082/",
     hawserToken: "",
+    passwordManagerEnabled: false,
+    passwordManagerDisclaimerAccepted: false,
     widgetRailWidth: 340
   });
   assert.deepEqual(normalizeSettings({
@@ -167,13 +170,41 @@ test("normalizeSettings keeps global settings defaults", () => {
     blurWebAppOverlays: false,
     hawserApiUrl: "localhost:60082",
     hawserToken: "  test-token  ",
+    passwordManagerEnabled: true,
+    passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 120
   }), {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
     hawserApiUrl: "http://localhost:60082/",
     hawserToken: "test-token",
+    passwordManagerEnabled: true,
+    passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 240
+  });
+  assert.equal(normalizeSettings({
+    passwordManagerEnabled: true,
+    passwordManagerDisclaimerAccepted: false
+  }).passwordManagerEnabled, false);
+});
+
+test("normalizePasswordVault keeps encrypted credentials by origin", () => {
+  assert.deepEqual(normalizePasswordVault({
+    "https://example.com": {
+      username: " user@example.com ",
+      encryptedPassword: " encrypted ",
+      updatedAt: "2026-06-04T00:00:00.000Z"
+    },
+    "https://empty.test": {
+      username: "",
+      encryptedPassword: "encrypted"
+    }
+  }), {
+    "https://example.com": {
+      username: "user@example.com",
+      encryptedPassword: "encrypted",
+      updatedAt: "2026-06-04T00:00:00.000Z"
+    }
   });
 });
 
@@ -447,7 +478,9 @@ test("ProjectStore persists global settings", () => {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
     hawserApiUrl: "http://127.0.0.1:60082",
-    hawserToken: "test-token"
+    hawserToken: "test-token",
+    passwordManagerEnabled: true,
+    passwordManagerDisclaimerAccepted: true
   });
 
   assert.deepEqual(state.settings, {
@@ -455,6 +488,8 @@ test("ProjectStore persists global settings", () => {
     blurWebAppOverlays: false,
     hawserApiUrl: "http://127.0.0.1:60082/",
     hawserToken: "test-token",
+    passwordManagerEnabled: true,
+    passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 340
   });
 
