@@ -474,7 +474,7 @@ function createHawserWidget(project) {
 
   const footer = document.createElement("p");
   footer.className = "hawser-widget-footer";
-  footer.textContent = "Waiting for Hawser.";
+  footer.hidden = true;
 
   card.append(header, metrics, list, footer);
 
@@ -523,12 +523,12 @@ function createHawserWidget(project) {
         value.textContent = String(data.counts?.[key] || 0);
       }
       renderMessages(data);
-      footer.textContent = data.error
-        ? data.error
-        : `${data.project || "unknown"} / ${data.source}`;
+      footer.hidden = !data.error;
+      footer.textContent = data.error || "";
     } catch (error) {
       status.textContent = "Error";
       status.classList.add("offline");
+      footer.hidden = false;
       footer.textContent = error.message;
     }
   }
