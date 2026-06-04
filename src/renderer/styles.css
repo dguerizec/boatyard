@@ -357,6 +357,19 @@ button {
   grid-column: 1 / -1;
 }
 
+.danger-zone {
+  border-color: rgba(224, 108, 117, 0.64);
+}
+
+.danger-zone .form-heading h3 {
+  color: #ffd7db;
+}
+
+.danger-zone-action {
+  display: grid;
+  gap: 14px;
+}
+
 .installed-widget-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));

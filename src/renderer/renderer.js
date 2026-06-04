@@ -2908,6 +2908,74 @@ function createProjectUrlsForm({ project, onSubmit }) {
   return shell;
 }
 
+function createProjectDangerZone({ project, onUnregister }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page danger-zone";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Danger zone";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Unregister this project from Dashtop without deleting files on disk.";
+  heading.append(headingTitle, headingCopy);
+
+  const form = document.createElement("form");
+  form.className = "danger-zone-action";
+
+  const label = document.createElement("label");
+  label.textContent = `Type ${project.name} to confirm`;
+
+  const confirmInput = document.createElement("input");
+  confirmInput.name = "projectName";
+  confirmInput.type = "text";
+  confirmInput.autocomplete = "off";
+  label.append(confirmInput);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const unregisterButton = document.createElement("button");
+  unregisterButton.className = "danger-button";
+  unregisterButton.type = "submit";
+  unregisterButton.textContent = "Unregister project";
+  unregisterButton.disabled = true;
+
+  confirmInput.addEventListener("input", () => {
+    unregisterButton.disabled = confirmInput.value !== project.name;
+  });
+
+  actions.append(unregisterButton);
+  form.append(label, error, actions);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    if (confirmInput.value !== project.name) {
+      unregisterButton.disabled = true;
+      return;
+    }
+
+    try {
+      await onUnregister();
+    } catch (unregisterError) {
+      error.textContent = unregisterError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(heading, form);
+  return shell;
+}
+
 function renderCreateProjectPage() {
   visibleWebAppHosts = new Map();
   invokeWebApp("hideWebApp");
@@ -2978,6 +3046,12 @@ function renderEditProjectPage(project) {
     onSubmit: async (urls) => {
       state = await window.dashtop.updateProject(project.id, { urls });
       reloadProjectSettings(project.id);
+    }
+  }), createProjectDangerZone({
+    project,
+    onUnregister: async () => {
+      state = await window.dashtop.removeProject(project.id);
+      selectGlobal();
     }
   }));
 }
