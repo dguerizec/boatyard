@@ -9,6 +9,7 @@ const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
 
 const execFileAsync = promisify(execFile);
+const WEBAPP_SESSION_PARTITION = "persist:dashtop-webapps";
 
 let mainWindow = null;
 let store = null;
@@ -134,6 +135,7 @@ function ensureWebAppView(key) {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      partition: WEBAPP_SESSION_PARTITION,
       sandbox: true
     }
   });
