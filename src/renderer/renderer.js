@@ -921,12 +921,13 @@ async function moveWidgetToGridPosition(project, widgetId, position, columnCount
   return true;
 }
 
-function attachWidgetGridDropHandlers(widgetRail, project, layout, columnCount) {
+function attachWidgetGridDropHandlers(widgetRail, project, columnCount) {
   widgetRail.addEventListener("dragover", (event) => {
     if (!draggedWidgetId) {
       return;
     }
 
+    const layout = getProjectWidgetLayout(project, columnCount);
     const size = layout.sizes[draggedWidgetId];
     if (!size) {
       return;
@@ -956,6 +957,7 @@ function attachWidgetGridDropHandlers(widgetRail, project, layout, columnCount) 
 
   widgetRail.addEventListener("drop", async (event) => {
     const widgetId = event.dataTransfer.getData("text/plain") || draggedWidgetId;
+    const layout = getProjectWidgetLayout(project, columnCount);
     const size = layout.sizes[widgetId];
     clearWidgetDropPreview(widgetRail);
 
@@ -2139,7 +2141,7 @@ function renderProjectDashboard(project) {
       createProjectWidget(project, definition, widgetLayout, widgetGridColumns)
     ))
   );
-  attachWidgetGridDropHandlers(widgetRail, project, widgetLayout, widgetGridColumns);
+  attachWidgetGridDropHandlers(widgetRail, project, widgetGridColumns);
 
   dashboardGrid.append(widgetRail, createWidgetRailResizer(), createPaneLayout(project, getProjectPaneLayout(project)));
 }
