@@ -64,6 +64,16 @@ function deriveRepoUrl(gitUrl) {
   return "";
 }
 
+function deriveProjectNameFromPath(sourcePath) {
+  const segments = String(sourcePath || "")
+    .trim()
+    .replace(/[/\\]+$/g, "")
+    .split(/[/\\]+/)
+    .filter(Boolean);
+
+  return segments.at(-1) || "";
+}
+
 let state = { projects: [] };
 let currentView = "global";
 let currentProjectId = null;
@@ -2659,7 +2669,29 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     hawserMainSessionInput.dataset.edited = "true";
   });
 
+  function applySourcePathIdentity(sourcePath) {
+    const projectName = deriveProjectNameFromPath(sourcePath);
+
+    if (!projectName) {
+      return;
+    }
+
+    if (!nameInput.value.trim()) {
+      nameInput.value = projectName;
+    }
+
+    if (!slugInput.value.trim()) {
+      slugInput.value = slugify(nameInput.value);
+    }
+
+    if (!hawserMainSessionInput.value.trim() && !hawserMainSessionInput.dataset.edited) {
+      hawserMainSessionInput.value = slugInput.value ? `${slugInput.value}:main` : "";
+    }
+  }
+
   async function applySourcePathInspection(sourcePath) {
+    applySourcePathIdentity(sourcePath);
+
     const inspected = await window.dashtop.inspectSourcePath(sourcePath);
 
     if (inspected?.gitUrl) {
@@ -2672,6 +2704,23 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       repoUrlInput.value = deriveRepoUrl(inspected.gitUrl);
     }
   }
+
+  sourcePathInput.addEventListener("change", async () => {
+    const sourcePath = sourcePathInput.value;
+    if (!sourcePath.trim()) {
+      return;
+    }
+
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await applySourcePathInspection(sourcePath);
+    } catch (inspectionError) {
+      error.textContent = inspectionError.message;
+      error.hidden = false;
+    }
+  });
 
   const error = document.createElement("p");
   error.className = "form-error";
