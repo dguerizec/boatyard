@@ -996,17 +996,21 @@ function createProjectWidget(project, definition, layout, columnCount) {
       }
     });
 
-    const resizeHandle = document.createElement("button");
-    resizeHandle.className = "widget-resize-handle";
-    resizeHandle.type = "button";
-    resizeHandle.title = "Resize widget";
-    resizeHandle.setAttribute("aria-label", "Resize widget");
-    resizeHandle.addEventListener("pointerdown", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      startWidgetResize(event, project, definition, layout, size, columnCount);
-    });
-    card.append(resizeHandle);
+    const resizeDirections = ["n", "e", "s", "w", "ne", "se", "sw", "nw"];
+    for (const direction of resizeDirections) {
+      const resizeHandle = document.createElement("button");
+      resizeHandle.className = `widget-resize-handle ${direction}`;
+      resizeHandle.type = "button";
+      resizeHandle.draggable = false;
+      resizeHandle.title = "Resize widget";
+      resizeHandle.setAttribute("aria-label", `Resize ${definition.name} ${direction}`);
+      resizeHandle.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        startWidgetResize(event, project, definition, layout, size, columnCount, direction);
+      });
+      card.append(resizeHandle);
+    }
 
     const removeButton = document.createElement("button");
     removeButton.className = "widget-remove-button";
@@ -1025,34 +1029,78 @@ function createProjectWidget(project, definition, layout, columnCount) {
   return card;
 }
 
-function startWidgetResize(event, project, definition, layout, startSize, columnCount) {
+function startWidgetResize(event, project, definition, layout, startSize, columnCount, direction) {
   const spec = getWidgetLayoutSpec(definition);
   const startX = event.clientX;
   const startY = event.clientY;
+  const startPosition = layout.positions[definition.id] || { x: 0, y: 0 };
   const rail = event.currentTarget.closest(".project-widget-rail");
   const railWidth = rail?.getBoundingClientRect().width || WIDGET_GRID_MIN_COLUMN_WIDTH;
   const columnWidth = (railWidth - WIDGET_GRID_GAP * (columnCount - 1)) / columnCount;
   const columnStep = Math.max(1, columnWidth + WIDGET_GRID_GAP);
   const rowStep = WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP;
   const maxColumns = Math.min(columnCount, spec.max.columns);
+  const canResizeNorth = direction.includes("n");
+  const canResizeEast = direction.includes("e");
+  const canResizeSouth = direction.includes("s");
+  const canResizeWest = direction.includes("w");
+
+  function getNextGeometry(deltaColumns, deltaRows) {
+    let nextX = startPosition.x;
+    let nextY = startPosition.y;
+    let nextColumns = startSize.columns;
+    let nextRows = startSize.rows;
+
+    if (canResizeWest) {
+      const right = startPosition.x + startSize.columns;
+      nextX = clamp(startPosition.x + deltaColumns, Math.max(0, right - maxColumns), right - spec.min.columns);
+      nextColumns = right - nextX;
+    } else if (canResizeEast) {
+      nextColumns = clamp(
+        startSize.columns + deltaColumns,
+        spec.min.columns,
+        Math.min(maxColumns, columnCount - startPosition.x)
+      );
+    }
+
+    if (canResizeNorth) {
+      const bottom = startPosition.y + startSize.rows;
+      nextY = clamp(startPosition.y + deltaRows, Math.max(0, bottom - spec.max.rows), bottom - spec.min.rows);
+      nextRows = bottom - nextY;
+    } else if (canResizeSouth) {
+      nextRows = clamp(startSize.rows + deltaRows, spec.min.rows, spec.max.rows);
+    }
+
+    return {
+      position: {
+        x: nextX,
+        y: nextY
+      },
+      size: {
+        columns: nextColumns,
+        rows: nextRows
+      }
+    };
+  }
 
   function onPointerMove(moveEvent) {
     const deltaColumns = Math.round((moveEvent.clientX - startX) / columnStep);
     const deltaRows = Math.round((moveEvent.clientY - startY) / rowStep);
-    const nextSize = {
-      columns: clamp(startSize.columns + deltaColumns, spec.min.columns, maxColumns),
-      rows: clamp(startSize.rows + deltaRows, spec.min.rows, spec.max.rows)
-    };
+    const nextGeometry = getNextGeometry(deltaColumns, deltaRows);
     const nextSizes = {
       ...layout.sizes,
-      [definition.id]: nextSize
+      [definition.id]: nextGeometry.size
+    };
+    const nextPositions = {
+      ...layout.positions,
+      [definition.id]: nextGeometry.position
     };
 
     if (!isWidgetAreaAvailable({
       widgetId: definition.id,
-      position: layout.positions[definition.id],
-      size: nextSize,
-      positions: layout.positions,
+      position: nextGeometry.position,
+      size: nextGeometry.size,
+      positions: nextPositions,
       sizes: nextSizes,
       columnCount
     })) {
@@ -1061,6 +1109,7 @@ function startWidgetResize(event, project, definition, layout, startSize, column
 
     widgetLayoutsByProject.set(project.id, {
       ...layout,
+      positions: nextPositions,
       sizes: nextSizes
     });
     renderProjectDashboard(project);

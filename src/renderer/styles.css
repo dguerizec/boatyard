@@ -632,28 +632,89 @@ button {
 
 .widget-resize-handle {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
-  width: 18px;
-  height: 18px;
-  min-height: 18px;
+  z-index: 4;
   padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.36);
-  border-radius: 4px;
-  background:
-    linear-gradient(135deg, transparent 0 45%, rgba(148, 163, 184, 0.75) 46% 54%, transparent 55%),
-    rgba(15, 23, 32, 0.95);
-  cursor: nwse-resize;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .widget-resize-handle:hover,
 .widget-resize-handle:focus-visible {
-  border-color: rgba(65, 184, 131, 0.7);
+  background: rgba(65, 184, 131, 0.22);
   outline: none;
+}
+
+.widget-resize-handle.n,
+.widget-resize-handle.s {
+  left: 22px;
+  right: 22px;
+  height: 10px;
+  min-height: 10px;
+  cursor: ns-resize;
+}
+
+.widget-resize-handle.n {
+  top: 0;
+}
+
+.widget-resize-handle.s {
+  bottom: 0;
+}
+
+.widget-resize-handle.e,
+.widget-resize-handle.w {
+  top: 22px;
+  bottom: 22px;
+  width: 10px;
+  min-height: 0;
+  cursor: ew-resize;
+}
+
+.widget-resize-handle.e {
+  right: 0;
+}
+
+.widget-resize-handle.w {
+  left: 0;
+}
+
+.widget-resize-handle.ne,
+.widget-resize-handle.se,
+.widget-resize-handle.sw,
+.widget-resize-handle.nw {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+}
+
+.widget-resize-handle.ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.widget-resize-handle.se {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+
+.widget-resize-handle.sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.widget-resize-handle.nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
 }
 
 .widget-remove-button {
   position: absolute;
+  z-index: 6;
   top: 8px;
   right: 8px;
   width: 24px;
