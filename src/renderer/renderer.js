@@ -1034,6 +1034,7 @@ function startWidgetResize(event, project, definition, layout, startSize, column
   const startX = event.clientX;
   const startY = event.clientY;
   const startPosition = layout.positions[definition.id] || { x: 0, y: 0 };
+  const card = event.currentTarget.closest(".widget-card");
   const rail = event.currentTarget.closest(".project-widget-rail");
   const railWidth = rail?.getBoundingClientRect().width || WIDGET_GRID_MIN_COLUMN_WIDTH;
   const columnWidth = (railWidth - WIDGET_GRID_GAP * (columnCount - 1)) / columnCount;
@@ -1044,6 +1045,7 @@ function startWidgetResize(event, project, definition, layout, startSize, column
   const canResizeEast = direction.includes("e");
   const canResizeSouth = direction.includes("s");
   const canResizeWest = direction.includes("w");
+  let lastGeometryKey = `${startPosition.x}:${startPosition.y}:${startSize.columns}:${startSize.rows}`;
 
   function getNextGeometry(deltaColumns, deltaRows) {
     let nextX = startPosition.x;
@@ -1087,6 +1089,17 @@ function startWidgetResize(event, project, definition, layout, startSize, column
     const deltaColumns = Math.round((moveEvent.clientX - startX) / columnStep);
     const deltaRows = Math.round((moveEvent.clientY - startY) / rowStep);
     const nextGeometry = getNextGeometry(deltaColumns, deltaRows);
+    const nextGeometryKey = [
+      nextGeometry.position.x,
+      nextGeometry.position.y,
+      nextGeometry.size.columns,
+      nextGeometry.size.rows
+    ].join(":");
+
+    if (nextGeometryKey === lastGeometryKey) {
+      return;
+    }
+
     const nextSizes = {
       ...layout.sizes,
       [definition.id]: nextGeometry.size
@@ -1107,12 +1120,17 @@ function startWidgetResize(event, project, definition, layout, startSize, column
       return;
     }
 
+    lastGeometryKey = nextGeometryKey;
     widgetLayoutsByProject.set(project.id, {
       ...layout,
       positions: nextPositions,
       sizes: nextSizes
     });
-    renderProjectDashboard(project);
+
+    if (card) {
+      card.style.gridColumn = `${nextGeometry.position.x + 1} / span ${nextGeometry.size.columns}`;
+      card.style.gridRow = `${nextGeometry.position.y + 2} / span ${nextGeometry.size.rows}`;
+    }
   }
 
   async function onPointerUp() {
