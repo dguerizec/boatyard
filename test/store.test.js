@@ -251,14 +251,36 @@ test("normalizePaneLayouts drops invalid layouts", () => {
 test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
   assert.deepEqual(normalizeWidgetLayout({
     order: ["project-summary", "", "twicc-sessions", "project-summary"],
+    sizes: {
+      "project-summary": {
+        columns: 2.4,
+        rows: 1
+      },
+      "twicc-sessions": {
+        columns: 0,
+        rows: "3"
+      },
+      ignored: null
+    },
     locked: false
   }), {
     order: ["project-summary", "twicc-sessions"],
+    sizes: {
+      "project-summary": {
+        columns: 2,
+        rows: 1
+      },
+      "twicc-sessions": {
+        columns: 1,
+        rows: 3
+      }
+    },
     locked: false
   });
 
   assert.deepEqual(normalizeWidgetLayout(), {
     order: [],
+    sizes: {},
     locked: true
   });
 });
@@ -268,11 +290,23 @@ test("normalizeWidgetLayouts drops invalid containers", () => {
   assert.deepEqual(normalizeWidgetLayouts({
     "project-id": {
       order: ["discord"],
+      sizes: {
+        discord: {
+          columns: 1,
+          rows: 2
+        }
+      },
       locked: false
     }
   }), {
     "project-id": {
       order: ["discord"],
+      sizes: {
+        discord: {
+          columns: 1,
+          rows: 2
+        }
+      },
       locked: false
     }
   });
@@ -413,6 +447,12 @@ test("ProjectStore persists widget layouts", () => {
   store.load();
   const layout = store.updateWidgetLayout("project-id", {
     order: ["twicc-sessions", "project-summary", "twicc-sessions"],
+    sizes: {
+      "twicc-sessions": {
+        columns: 2,
+        rows: 3
+      }
+    },
     locked: false
   });
 
@@ -421,6 +461,12 @@ test("ProjectStore persists widget layouts", () => {
 
   assert.deepEqual(layout, {
     order: ["twicc-sessions", "project-summary"],
+    sizes: {
+      "twicc-sessions": {
+        columns: 2,
+        rows: 3
+      }
+    },
     locked: false
   });
   assert.deepEqual(state.widgetLayouts["project-id"], layout);

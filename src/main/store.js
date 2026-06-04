@@ -280,9 +280,30 @@ function normalizeWidgetLayout(layout = {}) {
           return true;
         })
     : [];
+  const rawSizes = source.sizes && typeof source.sizes === "object" && !Array.isArray(source.sizes)
+    ? source.sizes
+    : {};
+  const sizes = {};
+
+  for (const [widgetId, size] of Object.entries(rawSizes)) {
+    if (!size || typeof size !== "object") {
+      continue;
+    }
+
+    const columns = Number(size.columns);
+    const rows = Number(size.rows);
+
+    if (Number.isFinite(columns) && Number.isFinite(rows)) {
+      sizes[String(widgetId)] = {
+        columns: Math.max(1, Math.round(columns)),
+        rows: Math.max(1, Math.round(rows))
+      };
+    }
+  }
 
   return {
     order,
+    sizes,
     locked: source.locked !== false
   };
 }

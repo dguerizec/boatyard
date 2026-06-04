@@ -17,6 +17,9 @@ const DEFAULT_TWICC_URL = "http://localhost:3500";
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const MIN_WEBAPP_AREA_WIDTH = 420;
 const WIDGET_RAIL_RESIZER_WIDTH = 6;
+const WIDGET_GRID_MIN_COLUMN_WIDTH = 150;
+const WIDGET_GRID_ROW_HEIGHT = 84;
+const WIDGET_GRID_GAP = 12;
 
 function slugify(value) {
   return String(value || "")
@@ -140,6 +143,11 @@ const BUILTIN_PROJECT_WIDGETS = [
   {
     id: "project-summary",
     title: "Project",
+    layout: {
+      default: { columns: 2, rows: 2 },
+      min: { columns: 1, rows: 2 },
+      max: { columns: 3, rows: 3 }
+    },
     create: (project) => ({
       eyebrow: "Project",
       title: project.name,
@@ -150,6 +158,11 @@ const BUILTIN_PROJECT_WIDGETS = [
   {
     id: "project-preview",
     title: "Project preview",
+    layout: {
+      default: { columns: 2, rows: 2 },
+      min: { columns: 1, rows: 2 },
+      max: { columns: 3, rows: 3 }
+    },
     create: (project) => ({
       eyebrow: "Preview",
       title: "Project preview",
@@ -169,6 +182,11 @@ const BUILTIN_PROJECT_WIDGETS = [
     id: "twicc-sessions",
     title: "Twicc",
     requires: [{ type: "projectField", key: "twiccUrl" }],
+    layout: {
+      default: { columns: 2, rows: 2 },
+      min: { columns: 1, rows: 2 },
+      max: { columns: 4, rows: 4 }
+    },
     create: () => ({
       eyebrow: "Sessions",
       title: "Twicc",
@@ -180,6 +198,11 @@ const BUILTIN_PROJECT_WIDGETS = [
     id: "project-shell",
     title: "Project shell",
     requires: [{ type: "projectField", key: "sourcePath" }],
+    layout: {
+      default: { columns: 2, rows: 2 },
+      min: { columns: 1, rows: 2 },
+      max: { columns: 4, rows: 4 }
+    },
     create: () => ({
       eyebrow: "Terminal",
       title: "Project shell",
@@ -190,6 +213,11 @@ const BUILTIN_PROJECT_WIDGETS = [
   {
     id: "discord",
     title: "Discord",
+    layout: {
+      default: { columns: 2, rows: 2 },
+      min: { columns: 1, rows: 2 },
+      max: { columns: 4, rows: 4 }
+    },
     create: () => ({
       eyebrow: "Comms",
       title: "Discord",
@@ -203,6 +231,7 @@ function normalizeWidgetLayoutForProject(project) {
   const persisted = widgetLayoutsByProject.get(project.id) || {};
   const knownIds = BUILTIN_PROJECT_WIDGETS.map((definition) => definition.id);
   const knownIdSet = new Set(knownIds);
+  const definitionsById = new Map(BUILTIN_PROJECT_WIDGETS.map((definition) => [definition.id, definition]));
   const seenIds = new Set();
   const order = Array.isArray(persisted.order)
     ? persisted.order
@@ -222,10 +251,65 @@ function normalizeWidgetLayoutForProject(project) {
       order.push(id);
     }
   }
+  const sizes = {};
+
+  for (const id of order) {
+    const definition = definitionsById.get(id);
+    sizes[id] = clampWidgetGridSize(definition, persisted.sizes?.[id]);
+  }
 
   return {
     order,
+    sizes,
     locked: persisted.locked !== false
+  };
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getWidgetLayoutSpec(definition) {
+  const layout = definition.layout || {};
+  const defaultSize = layout.default || { columns: 1, rows: 2 };
+  const minSize = layout.min || { columns: 1, rows: 1 };
+  const maxSize = layout.max || { columns: 4, rows: 6 };
+
+  return {
+    default: defaultSize,
+    min: minSize,
+    max: maxSize
+  };
+}
+
+function clampWidgetGridSize(definition, size) {
+  const spec = getWidgetLayoutSpec(definition);
+  const source = size && typeof size === "object" ? size : spec.default;
+  const columns = Number(source.columns);
+  const rows = Number(source.rows);
+
+  return {
+    columns: clamp(
+      Number.isFinite(columns) ? Math.round(columns) : spec.default.columns,
+      spec.min.columns,
+      spec.max.columns
+    ),
+    rows: clamp(
+      Number.isFinite(rows) ? Math.round(rows) : spec.default.rows,
+      spec.min.rows,
+      spec.max.rows
+    )
+  };
+}
+
+function getWidgetGridColumnCount(widgetRailWidth) {
+  return Math.max(1, Math.floor((widgetRailWidth + WIDGET_GRID_GAP) / (WIDGET_GRID_MIN_COLUMN_WIDTH + WIDGET_GRID_GAP)));
+}
+
+function fitWidgetSizeToGrid(size, columnCount) {
+  return {
+    columns: Math.min(columnCount, size.columns),
+    rows: size.rows
   };
 }
 
@@ -282,10 +366,13 @@ async function reorderProjectWidgets(project, sourceId, targetId) {
   renderProjectDashboard(project);
 }
 
-function createProjectWidget(project, definition, layout) {
+function createProjectWidget(project, definition, layout, columnCount) {
   const cardConfig = definition.create(project);
   const card = createCard(cardConfig);
+  const size = fitWidgetSizeToGrid(layout.sizes[definition.id], columnCount);
   card.dataset.widgetId = definition.id;
+  card.style.gridColumn = `span ${size.columns}`;
+  card.style.gridRow = `span ${size.rows}`;
 
   if (!layout.locked) {
     card.draggable = true;
@@ -325,9 +412,60 @@ function createProjectWidget(project, definition, layout) {
 
       await reorderProjectWidgets(project, sourceId, definition.id);
     });
+
+    const resizeHandle = document.createElement("button");
+    resizeHandle.className = "widget-resize-handle";
+    resizeHandle.type = "button";
+    resizeHandle.title = "Resize widget";
+    resizeHandle.setAttribute("aria-label", "Resize widget");
+    resizeHandle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      startWidgetResize(event, project, definition, layout, size, columnCount);
+    });
+    card.append(resizeHandle);
   }
 
   return card;
+}
+
+function startWidgetResize(event, project, definition, layout, startSize, columnCount) {
+  const spec = getWidgetLayoutSpec(definition);
+  const startX = event.clientX;
+  const startY = event.clientY;
+  const rail = event.currentTarget.closest(".project-widget-rail");
+  const railWidth = rail?.getBoundingClientRect().width || WIDGET_GRID_MIN_COLUMN_WIDTH;
+  const columnWidth = (railWidth - WIDGET_GRID_GAP * (columnCount - 1)) / columnCount;
+  const columnStep = Math.max(1, columnWidth + WIDGET_GRID_GAP);
+  const rowStep = WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP;
+  const maxColumns = Math.min(columnCount, spec.max.columns);
+
+  function onPointerMove(moveEvent) {
+    const deltaColumns = Math.round((moveEvent.clientX - startX) / columnStep);
+    const deltaRows = Math.round((moveEvent.clientY - startY) / rowStep);
+    const nextSize = {
+      columns: clamp(startSize.columns + deltaColumns, spec.min.columns, maxColumns),
+      rows: clamp(startSize.rows + deltaRows, spec.min.rows, spec.max.rows)
+    };
+
+    widgetLayoutsByProject.set(project.id, {
+      ...layout,
+      sizes: {
+        ...layout.sizes,
+        [definition.id]: nextSize
+      }
+    });
+    renderProjectDashboard(project);
+  }
+
+  async function onPointerUp() {
+    window.removeEventListener("pointermove", onPointerMove);
+    window.removeEventListener("pointerup", onPointerUp);
+    await persistWidgetLayout(project);
+  }
+
+  window.addEventListener("pointermove", onPointerMove);
+  window.addEventListener("pointerup", onPointerUp, { once: true });
 }
 
 function createWidgetRailHeader(project, layout) {
@@ -350,14 +488,6 @@ function createWidgetRailHeader(project, layout) {
     {
       label: "Add widget",
       text: "+"
-    },
-    {
-      label: "List widgets",
-      text: "≡"
-    },
-    {
-      label: "Install widgets",
-      text: "↓"
     }
   ];
 
@@ -1171,14 +1301,19 @@ function renderProjectDashboard(project) {
   dashboardGrid.style.gridTemplateColumns = `${widgetRailWidth}px ${WIDGET_RAIL_RESIZER_WIDTH}px minmax(${MIN_WEBAPP_AREA_WIDTH}px, 1fr)`;
   visibleWebAppHosts = new Map();
 
+  const widgetGridColumns = getWidgetGridColumnCount(widgetRailWidth);
   const widgetLayout = getProjectWidgetLayout(project);
   const widgetRail = document.createElement("aside");
   widgetRail.className = "project-widget-rail";
   widgetRail.classList.toggle("editing", !widgetLayout.locked);
+  widgetRail.style.setProperty("--widget-grid-columns", String(widgetGridColumns));
+  widgetRail.style.setProperty("--widget-grid-row-height", `${WIDGET_GRID_ROW_HEIGHT}px`);
 
   widgetRail.append(
     createWidgetRailHeader(project, widgetLayout),
-    ...getOrderedWidgetDefinitions(widgetLayout).map((definition) => createProjectWidget(project, definition, widgetLayout))
+    ...getOrderedWidgetDefinitions(widgetLayout).map((definition) => (
+      createProjectWidget(project, definition, widgetLayout, widgetGridColumns)
+    ))
   );
 
   dashboardGrid.append(widgetRail, createWidgetRailResizer(), createPaneLayout(project, getProjectPaneLayout(project)));

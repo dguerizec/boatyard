@@ -366,6 +366,9 @@ button {
 
 .project-widget-rail {
   display: grid;
+  grid-template-columns: repeat(var(--widget-grid-columns, 1), minmax(0, 1fr));
+  grid-auto-rows: var(--widget-grid-row-height, 84px);
+  grid-auto-flow: dense;
   align-content: start;
   gap: 12px;
   min-width: 0;
@@ -379,6 +382,7 @@ button {
   position: sticky;
   top: 0;
   z-index: 3;
+  grid-column: 1 / -1;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -452,8 +456,9 @@ button {
 }
 
 .widget-card {
+  position: relative;
   min-width: 0;
-  min-height: 180px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -480,6 +485,28 @@ button {
 .widget-card.drag-over {
   border-color: rgba(65, 184, 131, 0.9);
   box-shadow: inset 0 0 0 1px rgba(65, 184, 131, 0.35), var(--shadow);
+}
+
+.widget-resize-handle {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.36);
+  border-radius: 4px;
+  background:
+    linear-gradient(135deg, transparent 0 45%, rgba(148, 163, 184, 0.75) 46% 54%, transparent 55%),
+    rgba(15, 23, 32, 0.95);
+  cursor: nwse-resize;
+}
+
+.widget-resize-handle:hover,
+.widget-resize-handle:focus-visible {
+  border-color: rgba(65, 184, 131, 0.7);
+  outline: none;
 }
 
 .widget-content {
