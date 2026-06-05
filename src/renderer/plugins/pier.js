@@ -50,7 +50,7 @@
           id: "dashtop.pier.preview",
           webAppId: "preview",
           key: "preview",
-          title: "Preview",
+          title: "Pier",
           kind: "wcv",
           scope: "project",
           resolveUrl({ project, projectConfig }) {
