@@ -97,9 +97,14 @@
     return widgets.get(String(id || "")) || null;
   }
 
+  function unregister(id) {
+    return widgets.delete(String(id || ""));
+  }
+
   globalScope.DashtopWidgetRegistry = Object.freeze({
     register,
     list,
     get,
+    unregister,
   });
 })(window);

@@ -402,6 +402,14 @@ function registerIpcHandlers() {
     return store.removeProject(id);
   });
 
+  ipcMain.handle("plugins:enabled:update", (_event, pluginId, enabled) => {
+    return store.updatePluginEnabled(pluginId, enabled);
+  });
+
+  ipcMain.handle("project-plugin-config:update", (_event, projectId, pluginId, patch) => {
+    return store.updateProjectPluginConfig(projectId, pluginId, patch);
+  });
+
   ipcMain.handle("pane-layout:update", (_event, projectId, layout) => {
     return store.updatePaneLayout(projectId, layout);
   });

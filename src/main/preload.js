@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("dashtop", {
   updateProject: (id, patch) => ipcRenderer.invoke("projects:update", id, patch),
   reorderProjects: (ids) => ipcRenderer.invoke("projects:reorder", ids),
   removeProject: (id) => ipcRenderer.invoke("projects:remove", id),
+  updatePluginEnabled: (pluginId, enabled) => ipcRenderer.invoke("plugins:enabled:update", pluginId, enabled),
+  updateProjectPluginConfig: (projectId, pluginId, patch) => ipcRenderer.invoke("project-plugin-config:update", projectId, pluginId, patch),
   updatePaneLayout: (projectId, layout) => ipcRenderer.invoke("pane-layout:update", projectId, layout),
   updateWidgetLayout: (projectId, layout) => ipcRenderer.invoke("widget-layout:update", projectId, layout),
   listTerminalTabs: (projectId) => ipcRenderer.invoke("terminal:tabs", projectId),

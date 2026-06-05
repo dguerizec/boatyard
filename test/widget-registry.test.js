@@ -84,3 +84,17 @@ test("Widget registry rejects invalid and duplicate widgets", () => {
     /already registered/,
   );
 });
+
+test("Widget registry unregisters widgets", () => {
+  const registry = createRegistry();
+
+  registry.register({
+    id: "temporary",
+    name: "Temporary",
+    create: () => ({}),
+  });
+
+  assert.equal(registry.get("temporary").name, "Temporary");
+  assert.equal(registry.unregister("temporary"), true);
+  assert.equal(registry.get("temporary"), null);
+});

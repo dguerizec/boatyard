@@ -119,6 +119,50 @@ function getCurrentProject() {
   return getProjects().find((project) => project.id === currentProjectId) || null;
 }
 
+function getProjectPluginConfig(projectId, pluginId) {
+  return state.pluginConfig?.projects?.[projectId]?.[pluginId] || {};
+}
+
+function getPluginPaneDefinitions(filter = {}) {
+  return window.DashtopPluginRegistry?.listPanes(filter) || [];
+}
+
+function getPluginProjectSettingsSections() {
+  return window.DashtopPluginRegistry?.listProjectSettingsSections() || [];
+}
+
+function getPluginEnabledState() {
+  return state.plugins?.enabled || {};
+}
+
+function getPierPreviewUrlFromPluginConfig(pluginConfig = {}) {
+  return pluginConfig["dashtop.pier"]?.pierPreviewUrl || "";
+}
+
+function normalizeSubmittedProjectPluginConfig(project, pluginConfig = {}) {
+  const normalized = {};
+
+  for (const [pluginId, config] of Object.entries(pluginConfig)) {
+    normalized[pluginId] = { ...config };
+  }
+
+  if (project && normalized["dashtop.pier"]) {
+    normalized["dashtop.pier"].pierPreviewUrl = project.previewUrl || "";
+  }
+
+  return normalized;
+}
+
+async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
+  let nextState = state;
+
+  for (const [pluginId, config] of Object.entries(pluginConfig)) {
+    nextState = await window.dashtop.updateProjectPluginConfig(projectId, pluginId, config);
+  }
+
+  return nextState;
+}
+
 function isRestorableView(view) {
   return ["global", "global-settings", "project", "project-edit"].includes(view);
 }
@@ -624,35 +668,6 @@ function registerBuiltinProjectWidgets() {
         title: project.name,
         body: project.sourcePath || project.slug,
         meta: "Active workspace"
-      })
-    },
-    {
-      id: "project-preview",
-      name: "Project preview",
-      title: "Project preview",
-      scope: "project",
-      category: "Project",
-      status: "stable",
-      defaultVisible: false,
-      description: "Links to the project's main preview URL when one is configured.",
-      layout: {
-        default: { columns: 2, rows: 2 },
-        min: { columns: 1, rows: 2 },
-        max: { columns: 3, rows: 3 }
-      },
-      create: (project) => ({
-        eyebrow: "Preview",
-        title: "Project preview",
-        body: project.previewUrl
-          ? "Project preview is available as a webapp tab in the project pane."
-          : "No preview URL configured for this project.",
-        meta: project.previewUrl || "Optional",
-        action: project.previewUrl
-          ? {
-              label: "Open URL",
-              onClick: () => window.dashtop.openExternal(project.previewUrl)
-            }
-          : null
       })
     },
     {
@@ -1563,12 +1578,18 @@ function getProjectWebApps(project, paneId) {
     });
   }
 
-  if (project.previewUrl) {
+  for (const pluginPane of getPluginPaneDefinitions({ scope: "project", kind: "wcv" })) {
+    const projectPluginConfig = getProjectPluginConfig(project.id, pluginPane.pluginId);
+    const url = pluginPane.resolveUrl({ project, projectConfig: projectPluginConfig });
+    if (!url) {
+      continue;
+    }
+
     webApps.push({
-      id: "preview",
-      label: "Preview",
-      key: `${paneId}:preview`,
-      url: project.previewUrl
+      id: pluginPane.webAppId,
+      label: pluginPane.title,
+      key: `${paneId}:${pluginPane.key}`,
+      url
     });
   }
 
@@ -2544,6 +2565,96 @@ function createGlobalWidgetsSettingsView() {
   return shell;
 }
 
+function createGlobalPluginsSettingsView() {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page plugins-settings-page";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Plugins";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Installed plugins and their Dashtop contributions.";
+  heading.append(headingTitle, headingCopy);
+
+  const list = document.createElement("div");
+  list.className = "installed-plugin-list";
+
+  for (const plugin of window.DashtopPluginRegistry?.list() || []) {
+    const status = window.DashtopPluginRegistry.getStatus(plugin.id);
+    const item = document.createElement("article");
+    item.className = "installed-plugin-item";
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "installed-widget-title";
+
+    const title = document.createElement("h4");
+    title.textContent = plugin.name;
+
+    const statusBadge = document.createElement("span");
+    statusBadge.className = `plugin-status ${status?.state || "unknown"}`;
+    statusBadge.textContent = status?.state || "unknown";
+
+    titleRow.append(title, statusBadge);
+
+    const description = document.createElement("p");
+    description.textContent = status?.summary || plugin.description || "No plugin status provided.";
+
+    const meta = document.createElement("div");
+    meta.className = "installed-widget-meta";
+
+    const contributionCounts = [
+      ["widgets", plugin.contributes?.widgets?.length || 0],
+      ["panes", plugin.contributes?.panes?.length || 0],
+      ["project settings", plugin.contributes?.projectSettings?.length || 0],
+      ["services", plugin.contributes?.services?.length || 0],
+      ["tools", plugin.contributes?.tools?.length || 0]
+    ];
+
+    for (const value of [plugin.id, `v${plugin.version}`, ...contributionCounts.map(([label, count]) => `${count} ${label}`)]) {
+      const chip = document.createElement("span");
+      chip.textContent = value;
+      meta.append(chip);
+    }
+
+    const controls = document.createElement("label");
+    controls.className = "plugin-toggle-row";
+
+    const controlCopy = document.createElement("span");
+    controlCopy.textContent = plugin.enabled ? "Enabled" : "Disabled";
+
+    const toggle = document.createElement("input");
+    toggle.type = "checkbox";
+    toggle.checked = plugin.enabled !== false;
+    toggle.addEventListener("change", async () => {
+      state = await window.dashtop.updatePluginEnabled(plugin.id, toggle.checked);
+      window.DashtopPluginRegistry.setEnabled(plugin.id, toggle.checked);
+      renderGlobalSettingsPage();
+    });
+
+    const switchTrack = document.createElement("span");
+    switchTrack.className = "switch-track";
+    switchTrack.setAttribute("aria-hidden", "true");
+
+    controls.append(controlCopy, toggle, switchTrack);
+    titleRow.append(controls);
+    item.append(titleRow, description, meta);
+    list.append(item);
+  }
+
+  if (!list.children.length) {
+    const empty = document.createElement("p");
+    empty.className = "settings-empty-state";
+    empty.textContent = "No plugins installed.";
+    list.append(empty);
+  }
+
+  shell.append(heading, list);
+  return shell;
+}
+
 function renderGlobalSettingsPage() {
   closeWidgetAddMenu();
   visibleWebAppHosts = new Map();
@@ -2580,7 +2691,7 @@ function renderGlobalSettingsPage() {
       state = await window.dashtop.updateSettings(values);
       renderGlobalSettingsPage();
     }
-  }), createGlobalWidgetsSettingsView());
+  }), createGlobalPluginsSettingsView(), createGlobalWidgetsSettingsView());
 }
 
 function renderProjectDashboard(project) {
@@ -2784,16 +2895,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   devBranchInput.value = initialValues.devBranch || "";
   devBranchLabel.append(devBranchInput);
 
-  const previewUrlLabel = document.createElement("label");
-  previewUrlLabel.textContent = "Preview URL";
-
-  const previewUrlInput = document.createElement("input");
-  previewUrlInput.name = "previewUrl";
-  previewUrlInput.type = "text";
-  previewUrlInput.placeholder = "http://localhost:5173";
-  previewUrlInput.value = initialValues.previewUrl || "";
-  previewUrlLabel.append(previewUrlInput);
-
   const twiccUrlLabel = document.createElement("label");
   twiccUrlLabel.textContent = "Twicc URL";
 
@@ -2962,6 +3063,8 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   error.setAttribute("role", "alert");
   error.hidden = true;
 
+  const pluginSettings = createProjectPluginSettingsControls(initialValues);
+
   const actions = document.createElement("div");
   actions.className = "form-actions";
 
@@ -2985,7 +3088,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     gitUrlLabel,
     repoUrlLabel,
     devBranchLabel,
-    previewUrlLabel,
+    ...pluginSettings.controls,
     twiccUrlLabel,
     hawserMainSessionLabel,
     error,
@@ -3005,7 +3108,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
         gitUrl: gitUrlInput.value,
         repoUrl: repoUrlInput.value,
         devBranch: devBranchInput.value,
-        previewUrl: previewUrlInput.value,
+        pluginConfig: pluginSettings.readValues(),
         twiccUrl: twiccUrlInput.value,
         hawserMainSession: hawserMainSessionInput.value
       });
@@ -3055,6 +3158,61 @@ function createProjectUrlRow(entry = {}) {
 
   row.append(idInput, labelInput, urlInput, removeButton);
   return row;
+}
+
+function createProjectPluginSettingsControls(initialValues = {}) {
+  const controls = [];
+  const sections = [];
+
+  for (const section of getPluginProjectSettingsSections()) {
+    const projectPluginConfig = initialValues.id
+      ? getProjectPluginConfig(initialValues.id, section.pluginId)
+      : {};
+    const inputs = new Map();
+    const wrapper = document.createElement("div");
+    wrapper.className = "plugin-project-settings-section";
+
+    const heading = document.createElement("div");
+    heading.className = "form-heading";
+
+    const title = document.createElement("h3");
+    title.textContent = section.title;
+    heading.append(title);
+    wrapper.append(heading);
+
+    for (const field of section.fields) {
+      const label = document.createElement("label");
+      label.textContent = field.label;
+
+      const input = document.createElement("input");
+      input.name = field.key;
+      input.type = field.type || "text";
+      input.autocomplete = "off";
+      input.placeholder = field.placeholder || "";
+      input.value = projectPluginConfig[field.key] || initialValues[field.legacyProjectKey] || initialValues[field.key] || "";
+      label.append(input);
+      inputs.set(field.key, input);
+      wrapper.append(label);
+    }
+
+    sections.push({ pluginId: section.pluginId, inputs });
+    controls.push(wrapper);
+  }
+
+  return {
+    controls,
+    readValues() {
+      const values = {};
+      for (const section of sections) {
+        values[section.pluginId] = {};
+        for (const [key, input] of section.inputs) {
+          values[section.pluginId][key] = input.value;
+        }
+      }
+
+      return values;
+    }
+  };
 }
 
 function readProjectUrlRows(list) {
@@ -3226,6 +3384,7 @@ function renderCreateProjectPage() {
     initialValues: {},
     onCancel: () => restoreReturnView(),
     onSubmit: async (values) => {
+      const previewUrl = getPierPreviewUrlFromPluginConfig(values.pluginConfig);
       state = await window.dashtop.addProject({
         name: values.name,
         slug: values.slug,
@@ -3233,12 +3392,16 @@ function renderCreateProjectPage() {
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
         devBranch: values.devBranch,
-        previewUrl: values.previewUrl,
+        previewUrl,
         twiccUrl: values.twiccUrl,
         hawserMainSession: values.hawserMainSession,
         isOpen: false
       });
       const project = state.projects[state.projects.length - 1];
+      state = await persistProjectPluginConfig(
+        project.id,
+        normalizeSubmittedProjectPluginConfig(project, values.pluginConfig)
+      );
       selectProject(project.id);
     }
   }));
@@ -3261,6 +3424,7 @@ function renderEditProjectPage(project) {
     initialValues: project,
     onCancel: () => selectProject(project.id),
     onSubmit: async (values) => {
+      const previewUrl = getPierPreviewUrlFromPluginConfig(values.pluginConfig);
       state = await window.dashtop.updateProject(project.id, {
         name: values.name,
         slug: values.slug,
@@ -3268,10 +3432,15 @@ function renderEditProjectPage(project) {
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
         devBranch: values.devBranch,
-        previewUrl: values.previewUrl,
+        previewUrl,
         twiccUrl: values.twiccUrl,
         hawserMainSession: values.hawserMainSession
       });
+      const updatedProject = state.projects.find((item) => item.id === project.id);
+      state = await persistProjectPluginConfig(
+        project.id,
+        normalizeSubmittedProjectPluginConfig(updatedProject, values.pluginConfig)
+      );
       reloadProjectSettings(project.id);
     }
   }), createProjectUrlsForm({
@@ -3578,6 +3747,7 @@ function render() {
 
 async function loadState() {
   state = await window.dashtop.getState();
+  window.DashtopPluginRegistry?.applyEnabledState(getPluginEnabledState());
   currentWebAppUrlsByKey.clear();
   for (const [key, webApp] of Object.entries(state.webApps || {})) {
     if (webApp.url) {

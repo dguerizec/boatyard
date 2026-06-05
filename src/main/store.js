@@ -44,6 +44,13 @@ function createDefaultState() {
     },
     webApps: {},
     passwordVault: {},
+    plugins: {
+      enabled: {}
+    },
+    pluginConfig: {
+      global: {},
+      projects: {}
+    },
     paneLayouts: {},
     widgetLayouts: {}
   };
@@ -411,6 +418,110 @@ function normalizeWidgetLayouts(widgetLayouts = {}) {
   return normalized;
 }
 
+function normalizePluginConfigObject(config = {}) {
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    return {};
+  }
+
+  const normalized = {};
+  for (const [key, value] of Object.entries(config)) {
+    const normalizedKey = normalizeText(key);
+    if (!normalizedKey) {
+      continue;
+    }
+
+    if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+      normalized[normalizedKey] = value;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizePluginConfig(pluginConfig = {}, projects = []) {
+  const source = pluginConfig && typeof pluginConfig === "object" && !Array.isArray(pluginConfig)
+    ? pluginConfig
+    : {};
+  const normalized = {
+    global: {},
+    projects: {}
+  };
+
+  const globalConfig = source.global && typeof source.global === "object" && !Array.isArray(source.global)
+    ? source.global
+    : {};
+  for (const [pluginId, config] of Object.entries(globalConfig)) {
+    const normalizedPluginId = normalizeText(pluginId);
+    const normalizedConfig = normalizePluginConfigObject(config);
+    if (normalizedPluginId && Object.keys(normalizedConfig).length) {
+      normalized.global[normalizedPluginId] = normalizedConfig;
+    }
+  }
+
+  const projectConfig = source.projects && typeof source.projects === "object" && !Array.isArray(source.projects)
+    ? source.projects
+    : {};
+  const projectIds = new Set(projects.map((project) => project.id));
+
+  for (const [projectId, pluginConfigs] of Object.entries(projectConfig)) {
+    const normalizedProjectId = normalizeText(projectId);
+    if (!projectIds.has(normalizedProjectId) || !pluginConfigs || typeof pluginConfigs !== "object" || Array.isArray(pluginConfigs)) {
+      continue;
+    }
+
+    for (const [pluginId, config] of Object.entries(pluginConfigs)) {
+      const normalizedPluginId = normalizeText(pluginId);
+      const normalizedConfig = normalizePluginConfigObject(config);
+      if (!normalizedPluginId || !Object.keys(normalizedConfig).length) {
+        continue;
+      }
+
+      normalized.projects[normalizedProjectId] = {
+        ...(normalized.projects[normalizedProjectId] || {}),
+        [normalizedPluginId]: normalizedConfig
+      };
+    }
+  }
+
+  for (const project of projects) {
+    if (!project.previewUrl) {
+      continue;
+    }
+
+    const pierConfig = normalized.projects[project.id]?.["dashtop.pier"] || {};
+    if (!normalizeText(pierConfig.pierPreviewUrl)) {
+      normalized.projects[project.id] = {
+        ...(normalized.projects[project.id] || {}),
+        "dashtop.pier": {
+          ...pierConfig,
+          pierPreviewUrl: project.previewUrl
+        }
+      };
+    }
+  }
+
+  return normalized;
+}
+
+function normalizePluginsState(plugins = {}) {
+  const source = plugins && typeof plugins === "object" && !Array.isArray(plugins)
+    ? plugins
+    : {};
+  const enabledSource = source.enabled && typeof source.enabled === "object" && !Array.isArray(source.enabled)
+    ? source.enabled
+    : {};
+  const enabled = {};
+
+  for (const [pluginId, value] of Object.entries(enabledSource)) {
+    const normalizedPluginId = normalizeText(pluginId);
+    if (normalizedPluginId && value === false) {
+      enabled[normalizedPluginId] = false;
+    }
+  }
+
+  return { enabled };
+}
+
 function normalizeProjectUrls(urls = []) {
   if (!Array.isArray(urls)) {
     return [];
@@ -505,13 +616,16 @@ class ProjectStore {
         : Array.isArray(parsed.apps)
           ? parsed.apps
           : [];
+      const normalizedProjects = projects.map((project, index) => normalizeProject(project, index));
       this.state = {
         settings: normalizeSettings(parsed.settings),
-        projects: projects.map((project, index) => normalizeProject(project, index)),
+        projects: normalizedProjects,
         window: normalizeWindowState(parsed.window),
         navigation: normalizeNavigationState(parsed.navigation),
         webApps: normalizeWebAppState(parsed.webApps),
         passwordVault: normalizePasswordVault(parsed.passwordVault),
+        plugins: normalizePluginsState(parsed.plugins),
+        pluginConfig: normalizePluginConfig(parsed.pluginConfig, normalizedProjects),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts)
       };
@@ -637,6 +751,64 @@ class ProjectStore {
     return this.getWidgetLayout(projectId);
   }
 
+  updatePluginEnabled(pluginId, enabled) {
+    const normalizedPluginId = normalizeText(pluginId);
+
+    if (!normalizedPluginId) {
+      throw new Error("Plugin id is required.");
+    }
+
+    if (enabled === false) {
+      this.state.plugins.enabled[normalizedPluginId] = false;
+    } else {
+      delete this.state.plugins.enabled[normalizedPluginId];
+    }
+
+    this.save();
+    return this.getState();
+  }
+
+  getProjectPluginConfig(projectId, pluginId) {
+    return structuredClone(this.state.pluginConfig.projects[String(projectId)]?.[String(pluginId)] || {});
+  }
+
+  updateProjectPluginConfig(projectId, pluginId, patch) {
+    const normalizedProjectId = normalizeText(projectId);
+    const normalizedPluginId = normalizeText(pluginId);
+
+    if (!this.state.projects.some((project) => project.id === normalizedProjectId)) {
+      throw new Error(`Unknown project: ${normalizedProjectId}`);
+    }
+
+    if (!normalizedPluginId) {
+      throw new Error("Plugin id is required.");
+    }
+
+    const current = this.state.pluginConfig.projects[normalizedProjectId]?.[normalizedPluginId] || {};
+    const normalized = normalizePluginConfigObject({
+      ...current,
+      ...patch
+    });
+
+    if (!Object.keys(normalized).length) {
+      if (this.state.pluginConfig.projects[normalizedProjectId]) {
+        delete this.state.pluginConfig.projects[normalizedProjectId][normalizedPluginId];
+      }
+    } else {
+      this.state.pluginConfig.projects[normalizedProjectId] = {
+        ...(this.state.pluginConfig.projects[normalizedProjectId] || {}),
+        [normalizedPluginId]: normalized
+      };
+    }
+
+    if (this.state.pluginConfig.projects[normalizedProjectId] && !Object.keys(this.state.pluginConfig.projects[normalizedProjectId]).length) {
+      delete this.state.pluginConfig.projects[normalizedProjectId];
+    }
+
+    this.save();
+    return this.getState();
+  }
+
   addProject(project) {
     const normalized = normalizeProject(
       {
@@ -647,6 +819,7 @@ class ProjectStore {
       this.state.projects.length
     );
     this.state.projects.push(normalized);
+    this.state.pluginConfig = normalizePluginConfig(this.state.pluginConfig, this.state.projects);
     this.save();
     return this.getState();
   }
@@ -665,6 +838,7 @@ class ProjectStore {
       id: current.id,
       bounds: patch.bounds ? normalizeBounds(patch.bounds, current.bounds) : current.bounds
     }, index);
+    this.state.pluginConfig = normalizePluginConfig(this.state.pluginConfig, this.state.projects);
     this.save();
     return this.getState();
   }
@@ -689,6 +863,7 @@ class ProjectStore {
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
     delete this.state.paneLayouts[projectId];
     delete this.state.widgetLayouts[projectId];
+    delete this.state.pluginConfig.projects[projectId];
     if (this.state.navigation.projectId === projectId) {
       this.state.navigation = normalizeNavigationState({ view: "global" });
     }
@@ -718,6 +893,8 @@ module.exports = {
   normalizeSlug,
   deriveRepoUrl,
   normalizeSettings,
+  normalizePluginsState,
+  normalizePluginConfig,
   normalizePasswordVault,
   normalizeNavigationState,
   normalizeWebAppState,

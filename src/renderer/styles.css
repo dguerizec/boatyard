@@ -353,10 +353,6 @@ button {
   max-width: 100%;
 }
 
-.widgets-settings-page {
-  grid-column: 1 / -1;
-}
-
 .danger-zone {
   border-color: rgba(185, 28, 28, 0.72);
 }
@@ -424,20 +420,26 @@ button {
   margin-top: 2px;
 }
 
-.installed-widget-list {
+.installed-widget-list,
+.installed-plugin-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
 }
 
-.installed-widget-item {
+.installed-widget-item,
+.installed-plugin-item {
   min-width: 0;
   display: grid;
-  gap: 10px;
-  padding: 14px;
+  gap: 8px;
+  padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 6px;
   background: rgba(15, 23, 32, 0.66);
+}
+
+.installed-plugin-item {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .installed-widget-title {
@@ -453,24 +455,27 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 15px;
+  font-size: 13px;
 }
 
-.installed-widget-item p {
+.installed-widget-item p,
+.installed-plugin-item p {
   color: #c3ccd5;
+  font-size: 12px;
   line-height: 1.4;
 }
 
 .widget-status,
+.plugin-status,
 .installed-widget-meta span {
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
+  min-height: 18px;
+  padding: 0 6px;
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -485,10 +490,72 @@ button {
   color: #fde68a;
 }
 
+.plugin-status.ready {
+  border-color: rgba(65, 184, 131, 0.52);
+  color: #8ee7bb;
+}
+
+.plugin-status.unavailable,
+.plugin-status.error,
+.plugin-status.disabled {
+  border-color: rgba(248, 113, 113, 0.52);
+  color: #fca5a5;
+}
+
+.plugin-status.notConfigured,
+.plugin-status.degraded,
+.plugin-status.unknown {
+  border-color: rgba(250, 204, 21, 0.5);
+  color: #fde68a;
+}
+
 .installed-widget-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 4px;
+}
+
+.plugin-toggle-row {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 8px;
+  justify-self: end;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.plugin-toggle-row input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.plugin-toggle-row .switch-track {
+  width: 42px;
+  height: 24px;
+}
+
+.plugin-toggle-row .switch-track::after {
+  width: 18px;
+  height: 18px;
+}
+
+.plugin-toggle-row input:checked + .switch-track {
+  border-color: rgba(65, 184, 131, 0.65);
+  background: rgba(65, 184, 131, 0.22);
+}
+
+.plugin-toggle-row input:checked + .switch-track::after {
+  background: var(--accent);
+  transform: translateX(18px);
+}
+
+.plugin-toggle-row input:focus-visible + .switch-track {
+  outline: 2px solid rgba(65, 184, 131, 0.35);
 }
 
 .project-workbench {
@@ -1348,6 +1415,11 @@ button {
 .form-heading h3 {
   font-size: 22px;
   line-height: 1.25;
+}
+
+.plugin-project-settings-section {
+  display: grid;
+  gap: 16px;
 }
 
 .project-form label {
