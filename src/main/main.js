@@ -8,7 +8,7 @@ const { getHawserWidgetData } = require("./hawserService");
 const { PasswordManager } = require("./passwordManager");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
-const { inspectTwiccProject } = require("./twiccService");
+const { createTwiccProject, inspectTwiccProject } = require("./twiccService");
 
 const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:dashtop-webapps";
@@ -126,6 +126,7 @@ async function inspectSourcePath(sourcePath) {
   return {
     gitUrl,
     repoUrl: deriveRepoUrl(gitUrl),
+    twiccMatchType: twiccProject?.matchType || "",
     twiccUrl: twiccProject?.url || ""
   };
 }
@@ -379,6 +380,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("projects:inspect-source-path", (_event, sourcePath) => {
     return inspectSourcePath(sourcePath);
+  });
+
+  ipcMain.handle("projects:create-twicc-project", async (_event, sourcePath) => {
+    return createTwiccProject(sourcePath, { execFileAsync });
   });
 
   ipcMain.handle("projects:add", (_event, projectConfig) => {

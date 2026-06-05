@@ -4,7 +4,9 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   buildTwiccProjectUrl,
+  createTwiccProject,
   findTwiccProjectForPath,
+  findTwiccProjectMatchForPath,
   loadTwiccProjects
 } = require("../src/main/twiccService");
 
@@ -41,6 +43,36 @@ test("findTwiccProjectForPath falls back to the deepest parent path", () => {
   ];
 
   assert.equal(findTwiccProjectForPath(projects, "/workspace/project/packages/app/src")?.id, "nested");
+});
+
+test("findTwiccProjectMatchForPath reports exact and parent matches", () => {
+  const projects = [
+    {
+      id: "parent",
+      directory: "/workspace/project",
+      git_root: null
+    },
+    {
+      id: "nested",
+      directory: "/workspace/project/packages/app",
+      git_root: "/workspace/project/packages/app"
+    }
+  ];
+
+  assert.deepEqual(
+    findTwiccProjectMatchForPath(projects, "/workspace/project/packages/app"),
+    {
+      project: projects[1],
+      matchType: "exact"
+    }
+  );
+  assert.deepEqual(
+    findTwiccProjectMatchForPath(projects, "/workspace/project/packages/app/src"),
+    {
+      project: projects[1],
+      matchType: "parent"
+    }
+  );
 });
 
 test("buildTwiccProjectUrl points to the project route", () => {
@@ -81,4 +113,36 @@ test("loadTwiccProjects can feed source path URL detection", async () => {
     buildTwiccProjectUrl(project.id),
     "http://localhost:3500/project/-workspace-projects-app"
   );
+});
+
+test("createTwiccProject registers the source path and returns the exact project", async () => {
+  const calls = [];
+  const result = await createTwiccProject("/workspace/projects/app", {
+    execFileAsync: async (command, args) => {
+      calls.push({ command, args });
+      if (args[0] === "create-project") {
+        return { stdout: "" };
+      }
+      return {
+        stdout: JSON.stringify([{
+          id: "-workspace-projects-app",
+          directory: "/workspace/projects/app",
+          git_root: "/workspace/projects/app"
+        }])
+      };
+    }
+  });
+
+  assert.deepEqual(calls, [
+    {
+      command: "twicc",
+      args: ["create-project", "/workspace/projects/app"]
+    },
+    {
+      command: "twicc",
+      args: ["projects", "--limit", "1000", "--include-archived"]
+    }
+  ]);
+  assert.equal(result.matchType, "exact");
+  assert.equal(result.url, "http://localhost:3500/project/-workspace-projects-app");
 });

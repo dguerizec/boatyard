@@ -1386,6 +1386,32 @@ button {
   white-space: nowrap;
 }
 
+.field-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(235, 190, 84, 0.3);
+  border-radius: 6px;
+  background: rgba(235, 190, 84, 0.09);
+  color: #f1dca4;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  text-transform: none;
+}
+
+.field-action[hidden] {
+  display: none;
+}
+
+.field-action .secondary-button {
+  min-height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
 .switch-row {
   display: flex;
   align-items: center;

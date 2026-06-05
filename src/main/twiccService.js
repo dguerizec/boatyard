@@ -20,6 +20,10 @@ function getProjectPaths(project) {
 }
 
 function findTwiccProjectForPath(projects, sourcePath) {
+  return findTwiccProjectMatchForPath(projects, sourcePath)?.project || null;
+}
+
+function findTwiccProjectMatchForPath(projects, sourcePath) {
   if (!Array.isArray(projects)) {
     return null;
   }
@@ -31,7 +35,10 @@ function findTwiccProjectForPath(projects, sourcePath) {
 
   const exactMatch = projects.find((project) => getProjectPaths(project).includes(normalizedSourcePath));
   if (exactMatch) {
-    return exactMatch;
+    return {
+      project: exactMatch,
+      matchType: "exact"
+    };
   }
 
   return projects
@@ -42,7 +49,11 @@ function findTwiccProjectForPath(projects, sourcePath) {
         .sort((left, right) => right.length - left.length)[0] || ""
     }))
     .filter((match) => match.matchedPath)
-    .sort((left, right) => right.matchedPath.length - left.matchedPath.length)[0]?.project || null;
+    .sort((left, right) => right.matchedPath.length - left.matchedPath.length)
+    .map((match) => ({
+      project: match.project,
+      matchType: "parent"
+    }))[0] || null;
 }
 
 function buildTwiccProjectUrl(projectId, baseUrl = DEFAULT_TWICC_BASE_URL) {
@@ -77,18 +88,35 @@ async function loadTwiccProjects({ execFileAsync }) {
 
 async function inspectTwiccProject(sourcePath, options) {
   const projects = await loadTwiccProjects(options);
-  const project = findTwiccProjectForPath(projects, sourcePath);
-  return project?.id
+  const match = findTwiccProjectMatchForPath(projects, sourcePath);
+  return match?.project?.id
     ? {
-        id: project.id,
-        url: buildTwiccProjectUrl(project.id)
+        id: match.project.id,
+        matchType: match.matchType,
+        url: buildTwiccProjectUrl(match.project.id)
       }
     : null;
 }
 
+async function createTwiccProject(sourcePath, { execFileAsync }) {
+  const normalizedSourcePath = normalizePathForMatch(sourcePath);
+  if (!normalizedSourcePath) {
+    throw new Error("Source path is required to create a TwiCC project.");
+  }
+
+  await execFileAsync("twicc", ["create-project", normalizedSourcePath], {
+    timeout: 30000,
+    windowsHide: true
+  });
+
+  return inspectTwiccProject(normalizedSourcePath, { execFileAsync });
+}
+
 module.exports = {
   buildTwiccProjectUrl,
+  createTwiccProject,
   findTwiccProjectForPath,
+  findTwiccProjectMatchForPath,
   inspectTwiccProject,
   loadTwiccProjects
 };

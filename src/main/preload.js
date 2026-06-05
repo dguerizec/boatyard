@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("dashtop", {
   updateNavigation: (navigation) => ipcRenderer.invoke("navigation:update", navigation),
   selectProjectsBasePath: (currentPath) => ipcRenderer.invoke("settings:select-projects-base-path", currentPath),
   inspectSourcePath: (sourcePath) => ipcRenderer.invoke("projects:inspect-source-path", sourcePath),
+  createTwiccProject: (sourcePath) => ipcRenderer.invoke("projects:create-twicc-project", sourcePath),
   addProject: (project) => ipcRenderer.invoke("projects:add", project),
   updateProject: (id, patch) => ipcRenderer.invoke("projects:update", id, patch),
   reorderProjects: (ids) => ipcRenderer.invoke("projects:reorder", ids),

@@ -2804,6 +2804,21 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   twiccUrlInput.value = initialValues.twiccUrl || "";
   twiccUrlLabel.append(twiccUrlInput);
 
+  const twiccProjectPrompt = document.createElement("div");
+  twiccProjectPrompt.className = "field-action";
+  twiccProjectPrompt.hidden = true;
+
+  const twiccProjectPromptText = document.createElement("span");
+  twiccProjectPromptText.textContent = "TwiCC project not found. Create it?";
+
+  const twiccProjectCreateButton = document.createElement("button");
+  twiccProjectCreateButton.className = "secondary-button";
+  twiccProjectCreateButton.type = "button";
+  twiccProjectCreateButton.textContent = "Create";
+
+  twiccProjectPrompt.append(twiccProjectPromptText, twiccProjectCreateButton);
+  twiccUrlLabel.append(twiccProjectPrompt);
+
   const hawserMainSessionLabel = document.createElement("label");
   hawserMainSessionLabel.textContent = "Hawser main session";
 
@@ -2843,6 +2858,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
   twiccUrlInput.addEventListener("input", () => {
     twiccUrlInput.dataset.edited = "true";
+    twiccProjectPrompt.hidden = true;
   });
 
   hawserMainSessionInput.addEventListener("input", () => {
@@ -2872,6 +2888,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
   async function applySourcePathInspection(sourcePath) {
     applySourcePathIdentity(sourcePath);
+    twiccProjectPrompt.hidden = true;
 
     const inspected = await window.dashtop.inspectSourcePath(sourcePath);
 
@@ -2888,10 +2905,40 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     const canReplaceTwiccUrl = !twiccUrlInput.dataset.edited ||
       !twiccUrlInput.value.trim() ||
       twiccUrlInput.value.trim() === DEFAULT_TWICC_URL;
-    if (inspected?.twiccUrl && canReplaceTwiccUrl) {
+    if (inspected?.twiccUrl && inspected.twiccMatchType === "exact" && canReplaceTwiccUrl) {
       twiccUrlInput.value = inspected.twiccUrl;
+    } else if (inspected?.twiccMatchType === "parent" && canReplaceTwiccUrl) {
+      twiccUrlInput.value = "";
+      twiccProjectPrompt.hidden = false;
     }
   }
+
+  twiccProjectCreateButton.addEventListener("click", async () => {
+    const sourcePath = sourcePathInput.value.trim();
+    if (!sourcePath) {
+      return;
+    }
+
+    error.textContent = "";
+    error.hidden = true;
+    twiccProjectCreateButton.disabled = true;
+    twiccProjectCreateButton.textContent = "Creating...";
+
+    try {
+      const created = await window.dashtop.createTwiccProject(sourcePath);
+      if (created?.url) {
+        twiccUrlInput.value = created.url;
+        twiccUrlInput.dataset.edited = "true";
+        twiccProjectPrompt.hidden = true;
+      }
+    } catch (createError) {
+      error.textContent = createError.message;
+      error.hidden = false;
+    } finally {
+      twiccProjectCreateButton.disabled = false;
+      twiccProjectCreateButton.textContent = "Create";
+    }
+  });
 
   sourcePathInput.addEventListener("change", async () => {
     const sourcePath = sourcePathInput.value;
