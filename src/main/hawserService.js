@@ -41,6 +41,7 @@ function getMessagePreview(message) {
 function normalizeMessage(message, projectName) {
   const direction = message.to_project === projectName ? "in" : "out";
   const envelope = parseEnvelope(message.body);
+  const twiccSessionId = envelope?.codex_session_id || envelope?.runtime_session_id || "";
 
   return {
     id: message.id,
@@ -56,6 +57,7 @@ function normalizeMessage(message, projectName) {
     createdAt: message.created_at || "",
     startedAt: message.started_at || "",
     preview: getMessagePreview(message),
+    twiccSessionId,
     worktree: envelope?.worktree || null
   };
 }
@@ -159,6 +161,7 @@ async function getHawserWidgetData(project, settings = {}) {
 module.exports = {
   DEFAULT_HAWSER_API_URL,
   getHawserWidgetData,
+  normalizeMessage,
   parseHawserProjectName,
   parseHawserSessionName,
   summarizeMessages

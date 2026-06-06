@@ -9,6 +9,7 @@ const vm = require("node:vm");
 function loadRendererPluginEnvironment() {
   const context = {
     console,
+    URL,
     window: {
       dashtop: {
         openExternal: () => {},
@@ -61,14 +62,29 @@ test("Built-in plugins register Twicc, Pier, and Hawser contributions", () => {
   assert.equal(registry.getService("dashtop.hawser.api").version, "0.1.0");
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.id).sort()),
-    ["dashtop.pier.preview", "dashtop.twicc.pane"]
+    ["dashtop.hawser.pane", "dashtop.pier.preview", "dashtop.twicc.pane"]
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.key).sort()),
-    ["pier", "twicc-plugin"]
+    ["hawser", "pier", "twicc-plugin"]
   );
   assert.deepEqual(
     plain(registry.listGlobalSettingsSections().map((section) => section.id).sort()),
     ["dashtop.hawser.global", "dashtop.pier.global", "dashtop.twicc.global"]
+  );
+});
+
+test("Twicc service resolves session URLs from the configured project URL", () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+
+  assert.equal(
+    registry.getService("dashtop.twicc.api").getSessionUrl({}, "session-1", {
+      pluginConfig: {
+        twiccProjectUrl: "http://localhost:3500/project/dashtop"
+      }
+    }),
+    "http://localhost:3500/project/dashtop/session/session-1"
   );
 });

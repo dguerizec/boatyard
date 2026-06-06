@@ -612,6 +612,16 @@ function createHawserWidget(project, options = {}) {
         : message.preview || "No preview.";
 
       row.append(subject, meta, preview);
+
+      if (message.twiccSessionUrl && typeof options.onOpenMessage === "function") {
+        const twiccButton = document.createElement("button");
+        twiccButton.className = "hawser-message-link";
+        twiccButton.type = "button";
+        twiccButton.textContent = "Open Twicc session";
+        twiccButton.addEventListener("click", () => options.onOpenMessage(message));
+        row.append(twiccButton);
+      }
+
       list.append(row);
     }
   }
@@ -1209,7 +1219,8 @@ function createProjectWidget(project, definition, layout, columnCount) {
     projectId: project.id,
     project,
     pluginConfig: definition.pluginId ? getProjectPluginConfig(project.id, definition.pluginId) : {},
-    globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {}
+    globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {},
+    allProjectPluginConfig: state.pluginConfig?.projects?.[project.id] || {}
   };
   const card = definition.createElement ? definition.createElement(project, props) : createCard(definition.create(project, props));
   const size = fitWidgetSizeToGrid(layout.sizes[definition.id], columnCount);
@@ -1595,7 +1606,7 @@ function getProjectWebApps(project, paneId) {
   for (const projectUrl of project.urls || []) {
     webApps.push({
       id: `url:${projectUrl.id}`,
-      label: projectUrl.label,
+      label: `URL: ${projectUrl.label}`,
       key: `${paneId}:url:${projectUrl.id}`,
       url: projectUrl.url
     });
@@ -1666,6 +1677,75 @@ function selectWebApp(project, paneNode, webApp) {
   persistPaneLayout(project);
   renderProjectDashboard(project);
 }
+
+function findFirstPaneNode(node) {
+  if (!node) {
+    return null;
+  }
+
+  if (node.type === "pane") {
+    return node;
+  }
+
+  return findFirstPaneNode(node.first) || findFirstPaneNode(node.second);
+}
+
+function findPaneNodeBySelectedWebApp(node, webAppId) {
+  if (!node) {
+    return null;
+  }
+
+  if (node.type === "pane") {
+    const selectedWebAppId =
+      selectedWebAppByPane.get(node.id) ||
+      node.selectedWebAppId ||
+      null;
+    return selectedWebAppId === webAppId ? node : null;
+  }
+
+  return findPaneNodeBySelectedWebApp(node.first, webAppId) || findPaneNodeBySelectedWebApp(node.second, webAppId);
+}
+
+function openProjectWebApp(projectId, webAppId, url = "") {
+  const project = getProjects().find((candidate) => candidate.id === projectId);
+  if (!project) {
+    return false;
+  }
+
+  const layout = getProjectPaneLayout(project);
+  const paneNode = findPaneNodeBySelectedWebApp(layout, webAppId) || findFirstPaneNode(layout);
+  if (!paneNode) {
+    return false;
+  }
+
+  const webApp = getProjectWebApps(project, paneNode.id).find((candidate) => candidate.id === webAppId);
+  if (!webApp) {
+    return false;
+  }
+
+  selectedWebAppByPane.set(paneNode.id, webApp.id);
+  paneNode.selectedWebAppId = webApp.id;
+  selectedWebAppByProject.set(project.id, webApp.id);
+
+  if (url) {
+    currentWebAppUrlsByKey.set(webApp.key, url);
+  }
+
+  persistPaneLayout(project);
+  renderProjectDashboard(project);
+
+  if (url) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => invokeWebApp("navigateWebApp", webApp.key, "open", url));
+    });
+  }
+
+  return true;
+}
+
+window.DashtopPaneNavigation = Object.freeze({
+  openProjectWebApp
+});
 
 function closeWebAppTabMenu() {
   if (!openWebAppTabMenu) {

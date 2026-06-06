@@ -16,6 +16,24 @@
     return options.pluginConfig?.twiccProjectUrl || "";
   }
 
+  function resolveSessionUrl(project, sessionId, options = {}) {
+    const projectUrl = resolveProjectUrl(project, options);
+    const id = String(sessionId || "").trim();
+    if (!projectUrl || !id) {
+      return "";
+    }
+
+    try {
+      const parsed = new URL(projectUrl);
+      parsed.pathname = `${parsed.pathname.replace(/\/+$/g, "")}/session/${encodeURIComponent(id)}`;
+      parsed.search = "";
+      parsed.hash = "";
+      return parsed.toString();
+    } catch {
+      return "";
+    }
+  }
+
   function createTwiccService() {
     return Object.freeze({
       version: "0.1.0",
@@ -23,6 +41,7 @@
         return normalizeBaseUrl(options.globalPluginConfig?.twiccBaseUrl);
       },
       getProjectUrl: resolveProjectUrl,
+      getSessionUrl: resolveSessionUrl,
       openProject(project, options = {}) {
         const url = resolveProjectUrl(project, options);
         return url ? globalScope.dashtop.openExternal(url) : null;

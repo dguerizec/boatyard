@@ -3,6 +3,7 @@
 (function registerHawserPlugin(globalScope) {
   const registry = globalScope.DashtopPluginRegistry;
   const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
+  const DEFAULT_HAWSER_WEB_URL = "http://localhost:60082";
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
@@ -18,8 +19,34 @@
     return slug ? `${slug}:${branch}` : "";
   }
 
+  function getDefaultProjectUrl(project = {}) {
+    const slug = String(project.slug || "").trim();
+    return slug ? `${DEFAULT_HAWSER_WEB_URL}/#/projects/${encodeURIComponent(slug)}` : "";
+  }
+
   function resolveMainSession(project, options = {}) {
     return options.pluginConfig?.hawserMainSession || getDefaultMainSession(project);
+  }
+
+  function resolveProjectUrl(project, options = {}) {
+    return options.pluginConfig?.hawserProjectUrl || getDefaultProjectUrl(project);
+  }
+
+  function addTwiccSessionUrls(project, data, options = {}) {
+    const twicc = registry.getService("dashtop.twicc.api");
+    if (!twicc || !Array.isArray(data?.messages)) {
+      return data;
+    }
+
+    return {
+      ...data,
+      messages: data.messages.map((message) => ({
+        ...message,
+        twiccSessionUrl: twicc.getSessionUrl?.(project, message.twiccSessionId, {
+          pluginConfig: options.twiccProjectConfig
+        }) || ""
+      }))
+    };
   }
 
   function createHawserService() {
@@ -29,8 +56,9 @@
         return normalizeApiUrl(options.globalPluginConfig?.hawserApiUrl);
       },
       getMainSession: resolveMainSession,
-      getWidgetData(project, options = {}) {
-        return globalScope.dashtop.getHawserWidgetDataForConfig(
+      getProjectUrl: resolveProjectUrl,
+      async getWidgetData(project, options = {}) {
+        const data = await globalScope.dashtop.getHawserWidgetDataForConfig(
           project.id,
           {
             hawserMainSession: resolveMainSession(project, options)
@@ -40,6 +68,7 @@
             hawserToken: options.globalPluginConfig?.hawserToken
           }
         );
+        return addTwiccSessionUrls(project, data, options);
       }
     });
   }
@@ -51,6 +80,7 @@
 
     const fields = event.fields;
     fields?.setDefaultValue("hawserMainSession", getDefaultMainSession(event.coreFields));
+    fields?.setDefaultValue("hawserProjectUrl", getDefaultProjectUrl(event.coreFields));
   }
 
   registry.register(
@@ -61,6 +91,7 @@
       apiVersion: "0.1",
       contributes: {
         widgets: ["dashtop.hawser.inbox"],
+        panes: ["dashtop.hawser.pane"],
         globalSettings: ["dashtop.hawser.global"],
         projectSettings: ["dashtop.hawser.project"],
         services: ["dashtop.hawser.api"]
@@ -68,6 +99,7 @@
       permissions: [
         "projectConfig:read",
         "projectConfig:write",
+        "pane:wcv",
         "service:provide"
       ]
     },
@@ -115,8 +147,30 @@
               defaultValue({ project }) {
                 return getDefaultMainSession(project);
               }
+            },
+            {
+              key: "hawserProjectUrl",
+              label: "Hawser project URL",
+              type: "text",
+              valueType: "url",
+              placeholder: `${DEFAULT_HAWSER_WEB_URL}/#/projects/project`,
+              defaultValue({ project }) {
+                return getDefaultProjectUrl(project);
+              }
             }
           ]
+        });
+
+        ctx.panes.register({
+          id: "dashtop.hawser.pane",
+          webAppId: "hawser",
+          key: "hawser",
+          title: "Hawser",
+          kind: "wcv",
+          scope: "project",
+          resolveUrl({ project, projectConfig }) {
+            return hawserService.getProjectUrl(project, { pluginConfig: projectConfig });
+          }
         });
 
         ctx.widgets.register({
@@ -141,8 +195,14 @@
               }),
               loadData: () => hawserService.getWidgetData(project, {
                 pluginConfig: props.pluginConfig,
-                globalPluginConfig: props.globalPluginConfig
-              })
+                globalPluginConfig: props.globalPluginConfig,
+                twiccProjectConfig: props.allProjectPluginConfig?.["dashtop.twicc"] || {}
+              }),
+              onOpenMessage(message) {
+                if (message.twiccSessionUrl) {
+                  globalScope.DashtopPaneNavigation.openProjectWebApp(project.id, "hawser", message.twiccSessionUrl);
+                }
+              }
             });
           }
         });

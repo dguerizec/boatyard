@@ -91,7 +91,7 @@ Implemented built-in plugins:
 
 - `dashtop.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
 - `dashtop.twicc`: Twicc pane, global/project settings, project creation action, and service.
-- `dashtop.hawser`: Hawser inbox widget, global/project settings, and service.
+- `dashtop.hawser`: Hawser pane, inbox widget, global/project settings, and service.
 
 ## Development
 
