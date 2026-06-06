@@ -41,7 +41,7 @@ function getMessagePreview(message) {
 function normalizeMessage(message, projectName) {
   const direction = message.to_project === projectName ? "in" : "out";
   const envelope = parseEnvelope(message.body);
-  const twiccSessionId = envelope?.codex_session_id || envelope?.runtime_session_id || "";
+  const twiccSessionId = envelope?.twicc_session_id || envelope?.codex_session_id || envelope?.runtime_session_id || "";
 
   return {
     id: message.id,
@@ -70,6 +70,10 @@ function summarizeMessages(messages) {
   };
 }
 
+function shouldShowWidgetMessage(message) {
+  return ["unread", "processing"].includes(message.status) || Boolean(message.twiccSessionId);
+}
+
 async function fetchHawserJson(pathname, settings = {}) {
   const token = String(settings.hawserToken || "").trim();
 
@@ -93,21 +97,23 @@ async function fetchHawserJson(pathname, settings = {}) {
 async function getHawserWidgetDataFromHttp(projectName, project = {}, settings = {}) {
   const sessionName = parseHawserSessionName(project);
   const inboxParams = new URLSearchParams({ all: "true" });
+  const sentParams = new URLSearchParams({ all: "true" });
 
   if (sessionName) {
     inboxParams.set("session", sessionName);
+    sentParams.set("session", sessionName);
   }
 
   const [projectInfo, inbox, sent] = await Promise.all([
     fetchHawserJson(`/api/projects/${encodeURIComponent(projectName)}`, settings),
     fetchHawserJson(`/api/projects/${encodeURIComponent(projectName)}/inbox?${inboxParams.toString()}`, settings),
-    fetchHawserJson(`/api/projects/${encodeURIComponent(projectName)}/sent`, settings)
+    fetchHawserJson(`/api/projects/${encodeURIComponent(projectName)}/sent?${sentParams.toString()}`, settings)
   ]);
   const messages = [...inbox, ...sent]
     .map((message) => normalizeMessage(message, projectName))
-    .filter((message) => message.status === "unread" || message.status === "processing")
+    .filter(shouldShowWidgetMessage)
     .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
-    .slice(0, 12);
+    .slice(0, 40);
 
   return {
     project: projectName,
@@ -164,5 +170,6 @@ module.exports = {
   normalizeMessage,
   parseHawserProjectName,
   parseHawserSessionName,
+  shouldShowWidgetMessage,
   summarizeMessages
 };

@@ -1259,6 +1259,7 @@ button {
   gap: 12px;
   padding: 14px;
   overflow: hidden;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
 
 .hawser-widget-header {
@@ -1336,8 +1337,10 @@ button {
 .hawser-message-list {
   min-height: 0;
   display: grid;
+  align-content: start;
   gap: 6px;
-  overflow: hidden;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .hawser-message-row {

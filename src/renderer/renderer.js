@@ -596,7 +596,7 @@ function createHawserWidget(project, options = {}) {
       return;
     }
 
-    for (const message of data.messages.slice(0, 5)) {
+    for (const message of data.messages) {
       const row = document.createElement("div");
       row.className = `hawser-message-row ${message.status}`;
 
@@ -1732,7 +1732,7 @@ function openProjectWebApp(projectId, webAppId, url = "") {
   }
 
   persistPaneLayout(project);
-  renderProjectDashboard(project);
+  renderProjectPaneArea(project);
 
   if (url) {
     requestAnimationFrame(() => {
@@ -2851,6 +2851,29 @@ function renderProjectDashboard(project) {
   attachWidgetGridDropHandlers(widgetRail, project, widgetGridColumns);
 
   dashboardGrid.append(widgetRail, createWidgetRailResizer(), createPaneLayout(project, getProjectPaneLayout(project)));
+}
+
+function renderProjectPaneArea(project) {
+  if (
+    currentView !== "project" ||
+    currentProjectId !== project.id ||
+    !dashboardGrid.classList.contains("project-workbench")
+  ) {
+    renderProjectDashboard(project);
+    return;
+  }
+
+  closeWebAppTabMenu();
+  visibleWebAppHosts = new Map();
+  const paneLayoutElement = createPaneLayout(project, getProjectPaneLayout(project));
+  const currentPaneLayoutElement = dashboardGrid.lastElementChild;
+
+  if (!currentPaneLayoutElement || currentPaneLayoutElement.classList.contains("project-widget-rail")) {
+    renderProjectDashboard(project);
+    return;
+  }
+
+  currentPaneLayoutElement.replaceWith(paneLayoutElement);
 }
 
 function clampWidgetRailWidth(width) {

@@ -6,6 +6,7 @@ const {
   normalizeMessage,
   parseHawserProjectName,
   parseHawserSessionName,
+  shouldShowWidgetMessage,
   summarizeMessages
 } = require("../src/main/hawserService");
 
@@ -65,11 +66,25 @@ test("normalizeMessage extracts the Twicc session id from Hawser envelopes", () 
   assert.equal(normalizeMessage({
     id: "message-1",
     body: JSON.stringify({
+      twicc_session_id: "019e9d00-6985-7ce0-b903-ba343e968483",
       codex_session_id: "019e8578-4195-7553-9d18-1e01bf765656",
       runtime_session_id: "7e521d86-db79-4112-b498-8e99ce969c5c",
       content: "Done."
     }),
     from_project: "hawser",
     to_project: "dashtop"
-  }, "dashtop").twiccSessionId, "019e8578-4195-7553-9d18-1e01bf765656");
+  }, "dashtop").twiccSessionId, "019e9d00-6985-7ce0-b903-ba343e968483");
+});
+
+test("shouldShowWidgetMessage keeps read messages with Twicc sessions", () => {
+  assert.equal(shouldShowWidgetMessage({
+    kind: "reply",
+    status: "done",
+    twiccSessionId: "019e8578-4195-7553-9d18-1e01bf765656"
+  }), true);
+  assert.equal(shouldShowWidgetMessage({
+    kind: "reply",
+    status: "done",
+    twiccSessionId: ""
+  }), false);
 });
