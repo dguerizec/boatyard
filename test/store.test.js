@@ -7,7 +7,6 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   ProjectStore,
-  DEFAULT_TWICC_URL,
   normalizeBounds,
   normalizePaneLayoutNode,
   normalizePaneLayouts,
@@ -62,7 +61,6 @@ test("normalizeProject derives project tool defaults", () => {
     repoUrl: "https://github.com/owner/repo",
     devBranch: "",
     previewUrl: "http://localhost:5173/",
-    twiccUrl: normalizeUrl(DEFAULT_TWICC_URL),
     hawserMainSession: "dashtop:main",
     urls: [],
     bounds: {
@@ -315,14 +313,14 @@ test("normalizePaneLayouts drops invalid layouts", () => {
 
 test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
   assert.deepEqual(normalizeWidgetLayout({
-    order: ["project-summary", "", "twicc-sessions", "project-summary", "pier-urls", "project-preview"],
+    order: ["project-summary", "", "project-shell", "project-summary", "pier-urls", "project-preview"],
     hidden: ["discord", "", "discord", "project-preview"],
     sizes: {
       "project-summary": {
         columns: 2.4,
         rows: 1
       },
-      "twicc-sessions": {
+      "project-shell": {
         columns: 0,
         rows: "3"
       },
@@ -337,7 +335,7 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         x: 2.4,
         y: 1
       },
-      "twicc-sessions": {
+      "project-shell": {
         x: -3,
         y: "4"
       },
@@ -349,14 +347,14 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
     },
     locked: false
   }), {
-    order: ["project-summary", "twicc-sessions", "dashtop.pier.urls"],
+    order: ["project-summary", "project-shell", "dashtop.pier.urls"],
     hidden: ["discord", "dashtop.pier.urls"],
     sizes: {
       "project-summary": {
         columns: 2,
         rows: 1
       },
-      "twicc-sessions": {
+      "project-shell": {
         columns: 1,
         rows: 3
       },
@@ -370,7 +368,7 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         x: 2,
         y: 1
       },
-      "twicc-sessions": {
+      "project-shell": {
         x: 0,
         y: 4
       },
@@ -446,7 +444,6 @@ test("ProjectStore persists configured projects", () => {
   assert.equal(state.projects[0].name, "Status");
   assert.equal(state.projects[0].slug, "status");
   assert.equal(state.projects[0].previewUrl, "https://status.example.com/");
-  assert.equal(state.projects[0].twiccUrl, normalizeUrl(DEFAULT_TWICC_URL));
   assert.equal(state.projects[0].hawserMainSession, "status:main");
 
   const reloaded = new ProjectStore(filePath);
@@ -627,16 +624,16 @@ test("ProjectStore persists widget layouts", () => {
 
   store.load();
   const layout = store.updateWidgetLayout("project-id", {
-    order: ["twicc-sessions", "project-summary", "twicc-sessions"],
+    order: ["project-shell", "project-summary", "project-shell"],
     hidden: ["discord", "discord"],
     sizes: {
-      "twicc-sessions": {
+      "project-shell": {
         columns: 2,
         rows: 3
       }
     },
     positions: {
-      "twicc-sessions": {
+      "project-shell": {
         x: 1,
         y: 2
       }
@@ -648,16 +645,16 @@ test("ProjectStore persists widget layouts", () => {
   const state = reloaded.load();
 
   assert.deepEqual(layout, {
-    order: ["twicc-sessions", "project-summary"],
+    order: ["project-shell", "project-summary"],
     hidden: ["discord"],
     sizes: {
-      "twicc-sessions": {
+      "project-shell": {
         columns: 2,
         rows: 3
       }
     },
     positions: {
-      "twicc-sessions": {
+      "project-shell": {
         x: 1,
         y: 2
       }
@@ -678,7 +675,6 @@ test("ProjectStore migrates preview URLs into Pier plugin config", () => {
         name: "Project",
         slug: "project",
         previewUrl: "localhost:5173",
-        twiccUrl: DEFAULT_TWICC_URL,
         hawserMainSession: "project:main"
       }
     ]
@@ -876,6 +872,5 @@ test("ProjectStore migrates legacy apps state to projects", () => {
   assert.deepEqual(state.projects.map((project) => project.id), ["legacy-id"]);
   assert.equal(state.projects[0].slug, "legacy");
   assert.equal(state.projects[0].previewUrl, "https://legacy.example.test/");
-  assert.equal(state.projects[0].twiccUrl, normalizeUrl(DEFAULT_TWICC_URL));
   assert.equal(state.projects[0].hawserMainSession, "legacy:main");
 });

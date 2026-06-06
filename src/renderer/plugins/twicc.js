@@ -13,7 +13,7 @@
   }
 
   function resolveProjectUrl(project, options = {}) {
-    return options.pluginConfig?.twiccProjectUrl || project.twiccUrl || "";
+    return options.pluginConfig?.twiccProjectUrl || "";
   }
 
   function createTwiccService() {
@@ -40,8 +40,8 @@
       return;
     }
 
-    if (inspected.twiccUrl && inspected.twiccMatchType === "exact") {
-      fields.setValue("twiccProjectUrl", inspected.twiccUrl);
+    if (inspected.twiccProjectUrl && inspected.twiccMatchType === "exact") {
+      fields.setValue("twiccProjectUrl", inspected.twiccProjectUrl);
     } else if (inspected.twiccMatchType === "parent") {
       fields.setValue("twiccProjectUrl", "");
     }

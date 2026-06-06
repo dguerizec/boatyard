@@ -18,7 +18,6 @@ const DEFAULT_WINDOW_BOUNDS = {
   height: 820
 };
 
-const DEFAULT_TWICC_URL = "http://localhost:3500";
 const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const LEGACY_WIDGET_IDS = new Map([
@@ -587,7 +586,6 @@ function normalizeProject(project, index = 0) {
 
   const slug = normalizeSlug(project.slug, name);
   const previewUrl = normalizeOptionalUrl(project.previewUrl || project.url);
-  const twiccUrl = normalizeUrl(project.twiccUrl || DEFAULT_TWICC_URL);
   const gitUrl = normalizeText(project.gitUrl);
   const repoUrl = normalizeOptionalUrl(project.repoUrl) || deriveRepoUrl(gitUrl);
 
@@ -600,7 +598,6 @@ function normalizeProject(project, index = 0) {
     repoUrl,
     devBranch: normalizeText(project.devBranch),
     previewUrl,
-    twiccUrl,
     hawserMainSession: normalizeRequiredText(project.hawserMainSession || `${slug}:main`, "Hawser main session"),
     urls: normalizeProjectUrls(project.urls),
     bounds: normalizeBounds(project.bounds, {
@@ -921,7 +918,6 @@ class ProjectStore {
 module.exports = {
   DEFAULT_BOUNDS,
   DEFAULT_WINDOW_BOUNDS,
-  DEFAULT_TWICC_URL,
   normalizeBounds,
   normalizePaneLayoutNode,
   normalizePaneLayouts,

@@ -127,7 +127,7 @@ async function inspectSourcePath(sourcePath) {
     gitUrl,
     repoUrl: deriveRepoUrl(gitUrl),
     twiccMatchType: twiccProject?.matchType || "",
-    twiccUrl: twiccProject?.url || ""
+    twiccProjectUrl: twiccProject?.url || ""
   };
 }
 

@@ -13,7 +13,6 @@ const workspaceKicker = document.querySelector("#workspace-kicker");
 const workspaceTitle = document.querySelector("#workspace-title");
 const workspaceSummary = document.querySelector("#workspace-summary");
 
-const DEFAULT_TWICC_URL = "http://localhost:3500";
 const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const MIN_WEBAPP_AREA_WIDTH = 420;
@@ -686,28 +685,6 @@ function registerBuiltinProjectWidgets() {
         title: project.name,
         body: project.sourcePath || project.slug,
         meta: "Active workspace"
-      })
-    },
-    {
-      id: "twicc-sessions",
-      name: "Twicc",
-      title: "Twicc",
-      scope: "project",
-      category: "Developer tools",
-      status: "experimental",
-      defaultVisible: false,
-      description: "Shows project sessions from Twicc.",
-      requires: [{ type: "projectField", key: "twiccUrl" }],
-      layout: {
-        default: { columns: 2, rows: 2 },
-        min: { columns: 1, rows: 2 },
-        max: { columns: 4, rows: 4 }
-      },
-      create: () => ({
-        eyebrow: "Sessions",
-        title: "Twicc",
-        body: "Placeholder for sessions linked to this project.",
-        meta: "Contextual widget"
       })
     },
     {
@@ -3021,31 +2998,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   devBranchInput.value = initialValues.devBranch || "";
   devBranchLabel.append(devBranchInput);
 
-  const twiccUrlLabel = document.createElement("label");
-  twiccUrlLabel.textContent = "Twicc URL";
-
-  const twiccUrlInput = document.createElement("input");
-  twiccUrlInput.name = "twiccUrl";
-  twiccUrlInput.type = "text";
-  twiccUrlInput.placeholder = DEFAULT_TWICC_URL;
-  twiccUrlInput.value = initialValues.twiccUrl || "";
-  twiccUrlLabel.append(twiccUrlInput);
-
-  const twiccProjectPrompt = document.createElement("div");
-  twiccProjectPrompt.className = "field-action";
-  twiccProjectPrompt.hidden = true;
-
-  const twiccProjectPromptText = document.createElement("span");
-  twiccProjectPromptText.textContent = "TwiCC project not found. Create it?";
-
-  const twiccProjectCreateButton = document.createElement("button");
-  twiccProjectCreateButton.className = "secondary-button";
-  twiccProjectCreateButton.type = "button";
-  twiccProjectCreateButton.textContent = "Create";
-
-  twiccProjectPrompt.append(twiccProjectPromptText, twiccProjectCreateButton);
-  twiccUrlLabel.append(twiccProjectPrompt);
-
   const hawserMainSessionLabel = document.createElement("label");
   hawserMainSessionLabel.textContent = "Hawser main session";
 
@@ -3063,7 +3015,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     gitUrl: gitUrlInput,
     repoUrl: repoUrlInput,
     devBranch: devBranchInput,
-    twiccUrl: twiccUrlInput,
     hawserMainSession: hawserMainSessionInput
   };
 
@@ -3158,16 +3109,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     });
   });
 
-  twiccUrlInput.addEventListener("input", () => {
-    markCoreFieldEdited("twiccUrl");
-    twiccProjectPrompt.hidden = true;
-    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
-      field: "twiccUrl",
-      value: twiccUrlInput.value,
-      source: "user"
-    });
-  });
-
   hawserMainSessionInput.addEventListener("input", () => {
     markCoreFieldEdited("hawserMainSession");
     emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
@@ -3221,7 +3162,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
   async function applySourcePathInspection(sourcePath) {
     applySourcePathIdentity(sourcePath);
-    twiccProjectPrompt.hidden = true;
 
     const inspected = await window.dashtop.inspectSourcePath(sourcePath);
 
@@ -3233,16 +3173,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       setCoreFieldValue("repoUrl", inspected.repoUrl, { source: "inspection" });
     } else if (inspected?.gitUrl && !repoUrlInput.dataset.edited) {
       setCoreFieldValue("repoUrl", deriveRepoUrl(inspected.gitUrl), { ifUnedited: true, source: "inspection" });
-    }
-
-    const canReplaceTwiccUrl = !twiccUrlInput.dataset.edited ||
-      !twiccUrlInput.value.trim() ||
-      twiccUrlInput.value.trim() === DEFAULT_TWICC_URL;
-    if (inspected?.twiccUrl && inspected.twiccMatchType === "exact" && canReplaceTwiccUrl) {
-      setCoreFieldValue("twiccUrl", inspected.twiccUrl, { source: "inspection" });
-    } else if (inspected?.twiccMatchType === "parent" && canReplaceTwiccUrl) {
-      setCoreFieldValue("twiccUrl", "", { source: "inspection" });
-      twiccProjectPrompt.hidden = false;
     }
 
     emitProjectFormEvent("dashtop.projectForm.sourcePathInspected", {
@@ -3261,39 +3191,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       })
     });
   }
-
-  twiccProjectCreateButton.addEventListener("click", async () => {
-    const sourcePath = sourcePathInput.value.trim();
-    if (!sourcePath) {
-      return;
-    }
-
-    error.textContent = "";
-    error.hidden = true;
-    twiccProjectCreateButton.disabled = true;
-    twiccProjectCreateButton.textContent = "Creating...";
-
-    try {
-      const created = await window.dashtop.createTwiccProject(sourcePath);
-      if (created?.url) {
-        setCoreFieldValue("twiccUrl", created.url, { markEdited: true, source: "twiccProjectCreated" });
-        twiccProjectPrompt.hidden = true;
-        emitProjectFormEvent("dashtop.projectForm.sourcePathInspected", {
-          sourcePath,
-          inspected: {
-            twiccUrl: created.url,
-            twiccMatchType: "exact"
-          }
-        });
-      }
-    } catch (createError) {
-      error.textContent = createError.message;
-      error.hidden = false;
-    } finally {
-      twiccProjectCreateButton.disabled = false;
-      twiccProjectCreateButton.textContent = "Create";
-    }
-  });
 
   sourcePathInput.addEventListener("change", async () => {
     const sourcePath = sourcePathInput.value;
@@ -3343,7 +3240,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     repoUrlLabel,
     devBranchLabel,
     ...pluginSettings.controls,
-    twiccUrlLabel,
     hawserMainSessionLabel,
     error,
     actions
@@ -3363,7 +3259,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
         repoUrl: repoUrlInput.value,
         devBranch: devBranchInput.value,
         pluginConfig: pluginSettings.readValues(),
-        twiccUrl: twiccUrlInput.value,
         hawserMainSession: hawserMainSessionInput.value
       });
     } catch (submitError) {
@@ -3677,7 +3572,6 @@ function renderCreateProjectPage() {
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
         devBranch: values.devBranch,
-        twiccUrl: values.twiccUrl,
         hawserMainSession: values.hawserMainSession,
         isOpen: false
       });
@@ -3715,7 +3609,6 @@ function renderEditProjectPage(project) {
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
         devBranch: values.devBranch,
-        twiccUrl: values.twiccUrl,
         hawserMainSession: values.hawserMainSession
       });
       state = await persistProjectPluginConfig(
