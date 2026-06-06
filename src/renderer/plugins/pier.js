@@ -311,8 +311,7 @@
             {
               key: "pierProjectName",
               label: "Pier project",
-              type: "text",
-              placeholder: "jobo"
+              type: "text"
             }
           ]
         });
