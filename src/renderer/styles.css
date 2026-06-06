@@ -457,6 +457,7 @@ button {
   margin-left: auto;
 }
 
+.plugin-settings-button,
 .plugin-reload-button {
   min-height: 24px;
   border: 1px solid var(--line);
@@ -467,6 +468,12 @@ button {
   font-size: 10px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.plugin-settings-button {
+  width: 28px;
+  padding: 0;
+  font-size: 13px;
 }
 
 .plugin-reload-button:disabled {
@@ -583,10 +590,8 @@ button {
 
 .plugin-global-settings-form {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
-  align-items: end;
-  gap: 8px;
-  max-width: 620px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
 }
 
 .plugin-global-settings-form label {
@@ -607,12 +612,45 @@ button {
 }
 
 .plugin-global-settings-form .form-actions {
-  justify-content: start;
+  justify-content: end;
 }
 
 .plugin-global-settings-form .primary-button {
   min-height: 40px;
   white-space: nowrap;
+}
+
+.plugin-settings-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.plugin-settings-dialog::backdrop {
+  background: rgba(3, 7, 12, 0.72);
+}
+
+.plugin-settings-dialog-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.plugin-settings-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plugin-settings-dialog-header h3 {
+  margin: 0;
+  font-size: 18px;
 }
 
 .project-workbench {

@@ -2571,6 +2571,17 @@ function createGlobalPluginsSettingsView() {
 
     controls.append(controlCopy, toggle, switchTrack);
 
+    const settingsButton = document.createElement("button");
+    settingsButton.className = "plugin-settings-button";
+    settingsButton.type = "button";
+    settingsButton.title = `${plugin.name} settings`;
+    settingsButton.setAttribute("aria-label", `${plugin.name} settings`);
+    settingsButton.textContent = "⚙";
+    settingsButton.hidden = !globalSettingsSections.length;
+    settingsButton.addEventListener("click", () => {
+      openGlobalPluginSettingsDialog(plugin, globalSettingsSections);
+    });
+
     const reloadButton = document.createElement("button");
     reloadButton.className = "plugin-reload-button";
     reloadButton.type = "button";
@@ -2587,14 +2598,10 @@ function createGlobalPluginsSettingsView() {
 
     const titleActions = document.createElement("div");
     titleActions.className = "installed-plugin-actions";
-    titleActions.append(reloadButton, controls);
+    titleActions.append(settingsButton, reloadButton, controls);
 
     titleRow.append(titleActions);
     item.append(titleRow, description, meta);
-
-    for (const section of globalSettingsSections) {
-      item.append(createGlobalPluginSettingsForm(section));
-    }
 
     list.append(item);
   }
@@ -2610,7 +2617,46 @@ function createGlobalPluginsSettingsView() {
   return shell;
 }
 
-function createGlobalPluginSettingsForm(section) {
+function openGlobalPluginSettingsDialog(plugin, sections) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "plugin-settings-dialog";
+
+  const panel = document.createElement("div");
+  panel.className = "plugin-settings-dialog-panel";
+
+  const header = document.createElement("header");
+  header.className = "plugin-settings-dialog-header";
+
+  const title = document.createElement("h3");
+  title.textContent = `${plugin.name} settings`;
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "icon-button";
+  closeButton.type = "button";
+  closeButton.title = "Close";
+  closeButton.setAttribute("aria-label", "Close");
+  closeButton.textContent = "X";
+  closeButton.addEventListener("click", () => dialog.close());
+
+  header.append(title, closeButton);
+  panel.append(header);
+
+  for (const section of sections) {
+    panel.append(createGlobalPluginSettingsForm(section, {
+      onSaved() {
+        dialog.close();
+        renderGlobalSettingsPage();
+      }
+    }));
+  }
+
+  dialog.append(panel);
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
+function createGlobalPluginSettingsForm(section, options = {}) {
   const form = document.createElement("form");
   form.className = "plugin-global-settings-form";
 
@@ -2659,7 +2705,11 @@ function createGlobalPluginSettingsForm(section) {
       }
 
       state = await window.dashtop.updateGlobalPluginConfig(section.pluginId, values);
-      renderGlobalSettingsPage();
+      if (typeof options.onSaved === "function") {
+        options.onSaved();
+      } else {
+        renderGlobalSettingsPage();
+      }
     } catch (submitError) {
       error.textContent = submitError.message;
       error.hidden = false;
