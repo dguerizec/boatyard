@@ -160,21 +160,9 @@ async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
 }
 
 function readPluginSettingsFieldValue(field, input) {
-  const rawValue = input.value.trim() || input.dataset.defaultValue || "";
-
-  if (!rawValue) {
-    if (field.required) {
-      throw new Error(`${field.label} is required.`);
-    }
-
-    return "";
-  }
-
-  if (field.valueType === "url") {
-    return normalizeAddressInput(rawValue);
-  }
-
-  return rawValue;
+  return window.DashtopPluginSettingsFields.readFieldValue(field, input, {
+    normalizeUrl: normalizeAddressInput
+  });
 }
 
 function isRestorableView(view) {
@@ -3265,12 +3253,10 @@ function createProjectPluginSettingsControls(initialValues = {}, options = {}) {
       input.name = field.key;
       input.type = field.type || "text";
       input.autocomplete = "off";
-      const defaultValue = typeof field.defaultValue === "function"
-        ? field.defaultValue({
-            project: initialValues,
-            coreFields: options.readCoreProjectFields?.() || {}
-          })
-        : field.defaultValue;
+      const defaultValue = window.DashtopPluginSettingsFields.resolveFieldDefault(field, {
+        project: initialValues,
+        coreFields: options.readCoreProjectFields?.() || {}
+      });
       input.dataset.defaultValue = String(defaultValue || "");
       input.placeholder = input.dataset.defaultValue || field.placeholder || "";
       input.value = projectPluginConfig[field.key] || "";
