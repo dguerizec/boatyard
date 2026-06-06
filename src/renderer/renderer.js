@@ -23,6 +23,10 @@ const WIDGET_GRID_MAX_COLUMN_WIDTH = 220;
 const WIDGET_GRID_ROW_HEIGHT = 84;
 const WIDGET_GRID_GAP = 12;
 const WIDGET_GRID_HORIZONTAL_PADDING = 18;
+const LEGACY_WIDGET_IDS = new Map([
+  ["project-preview", "dashtop.pier.urls"],
+  ["pier-urls", "dashtop.pier.urls"]
+]);
 
 function slugify(value) {
   return String(value || "")
@@ -773,6 +777,29 @@ function getProjectWidgetDefinitions() {
   return getInstalledWidgets({ scope: "project" });
 }
 
+function normalizeWidgetId(widgetId) {
+  const id = String(widgetId || "").trim();
+  return LEGACY_WIDGET_IDS.get(id) || id;
+}
+
+function getMigratedWidgetEntry(entries = {}, widgetId) {
+  if (!entries || typeof entries !== "object") {
+    return null;
+  }
+
+  if (entries[widgetId]) {
+    return entries[widgetId];
+  }
+
+  for (const [legacyId, nextId] of LEGACY_WIDGET_IDS) {
+    if (nextId === widgetId && entries[legacyId]) {
+      return entries[legacyId];
+    }
+  }
+
+  return null;
+}
+
 function normalizeWidgetLayoutForProject(project, columnCount = null) {
   const persisted = widgetLayoutsByProject.get(project.id) || {};
   const widgetDefinitions = getProjectWidgetDefinitions();
@@ -780,11 +807,11 @@ function normalizeWidgetLayoutForProject(project, columnCount = null) {
   const knownIdSet = new Set(knownIds);
   const definitionsById = new Map(widgetDefinitions.map((definition) => [definition.id, definition]));
   const persistedOrderIdSet = new Set(Array.isArray(persisted.order)
-    ? persisted.order.map((id) => String(id || "").trim()).filter((id) => knownIdSet.has(id))
+    ? persisted.order.map(normalizeWidgetId).filter((id) => knownIdSet.has(id))
     : []);
   const hidden = Array.isArray(persisted.hidden)
     ? persisted.hidden
-        .map((id) => String(id || "").trim())
+        .map(normalizeWidgetId)
         .filter((id, index, ids) => knownIdSet.has(id) && ids.indexOf(id) === index)
     : [];
 
@@ -802,7 +829,7 @@ function normalizeWidgetLayoutForProject(project, columnCount = null) {
   const seenIds = new Set();
   const order = Array.isArray(persisted.order)
     ? persisted.order
-        .map((id) => String(id || "").trim())
+        .map(normalizeWidgetId)
         .filter((id) => {
           if (!knownIdSet.has(id) || hiddenIdSet.has(id) || seenIds.has(id)) {
             return false;
@@ -823,12 +850,12 @@ function normalizeWidgetLayoutForProject(project, columnCount = null) {
 
   for (const id of order) {
     const definition = definitionsById.get(id);
-    const size = clampWidgetGridSize(definition, persisted.sizes?.[id]);
+    const size = clampWidgetGridSize(definition, getMigratedWidgetEntry(persisted.sizes, id));
     sizes[id] = columnCount ? fitWidgetSizeToGrid(size, columnCount) : size;
   }
 
   for (const id of order) {
-    const persistedPosition = normalizeWidgetGridPosition(persisted.positions?.[id]);
+    const persistedPosition = normalizeWidgetGridPosition(getMigratedWidgetEntry(persisted.positions, id));
     const position = persistedPosition && isWidgetAreaAvailable({
       widgetId: id,
       position: persistedPosition,

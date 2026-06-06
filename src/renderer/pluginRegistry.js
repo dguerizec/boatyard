@@ -21,6 +21,12 @@
     return id;
   }
 
+  function requireNamespacedContributionId(pluginId, id, label) {
+    if (id !== pluginId && !id.startsWith(`${pluginId}.`)) {
+      throw new Error(`${label} ${id} must be prefixed with plugin id ${pluginId}.`);
+    }
+  }
+
   function normalizeManifest(manifest) {
     if (!manifest || typeof manifest !== "object") {
       throw new Error("Plugin manifest must be an object.");
@@ -48,6 +54,7 @@
     }
 
     const id = requireId(definition.id, "Pane");
+    requireNamespacedContributionId(pluginId, id, "Pane");
     const title = normalizeText(definition.title || definition.name);
     const kind = normalizeText(definition.kind || "wcv");
 
@@ -85,6 +92,7 @@
     }
 
     const id = requireId(section.id, `${kind} settings section`);
+    requireNamespacedContributionId(pluginId, id, `${kind} settings section`);
     const title = normalizeText(section.title || section.name);
     const fields = Array.isArray(section.fields)
       ? section.fields.map((field) => ({
@@ -178,6 +186,8 @@
             throw new Error("Widget registry is unavailable.");
           }
 
+          const widgetId = requireId(definition?.id, "Widget");
+          requireNamespacedContributionId(pluginId, widgetId, "Widget");
           const registered = globalScope.DashtopWidgetRegistry.register({
             ...definition,
             provider: manifest.name,

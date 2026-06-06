@@ -270,6 +270,22 @@ interface PluginContext {
 Dashtop MAY expose different context subsets to main-process, renderer, and
 sandboxed surfaces.
 
+## Contribution IDs
+
+Every contribution id registered by a plugin MUST be namespaced by that plugin
+id. A contribution id is valid when it is exactly the plugin id or starts with
+`<pluginId>.`.
+
+Examples for plugin `dashtop.pier`:
+
+- `dashtop.pier.urls`
+- `dashtop.pier.preview`
+- `dashtop.pier.global`
+- `dashtop.pier.project`
+
+This prevents collisions between third-party plugins and lets Dashtop remove all
+contributions from one plugin during disable, reload, update, or uninstall.
+
 ## Configuration
 
 Plugins MAY define global and project configuration. Configuration is
@@ -367,8 +383,8 @@ ctx.widgets.register({
     min: { columns: 1, rows: 2 },
     max: { columns: 4, rows: 8 }
   },
-  render(container, props) {
-    return renderHawserWidget(container, props);
+  createElement(project, props) {
+    return createHawserWidget(project, props);
   }
 });
 ```

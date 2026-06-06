@@ -135,3 +135,26 @@ test("Plugin registry rejects invalid and duplicate contributions", () => {
   );
   assert.throws(() => registry.setEnabled("vendor.bad", true), /must provide resolveUrl/);
 });
+
+test("Plugin registry requires namespaced contribution ids", () => {
+  const registry = createRegistry();
+
+  registry.register(
+    { id: "vendor.plugin", name: "Plugin" },
+    {
+      activate(ctx) {
+        ctx.widgets.register({
+          id: "unscoped-widget",
+          name: "Unscoped",
+          create: () => ({}),
+        });
+      },
+    },
+  );
+
+  assert.throws(
+    () => registry.setEnabled("vendor.plugin", true),
+    /must be prefixed with plugin id vendor\.plugin/,
+  );
+  assert.equal(registry.getStatus("vendor.plugin").state, "error");
+});

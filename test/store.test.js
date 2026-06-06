@@ -315,8 +315,8 @@ test("normalizePaneLayouts drops invalid layouts", () => {
 
 test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
   assert.deepEqual(normalizeWidgetLayout({
-    order: ["project-summary", "", "twicc-sessions", "project-summary"],
-    hidden: ["discord", "", "discord"],
+    order: ["project-summary", "", "twicc-sessions", "project-summary", "pier-urls", "project-preview"],
+    hidden: ["discord", "", "discord", "project-preview"],
     sizes: {
       "project-summary": {
         columns: 2.4,
@@ -325,6 +325,10 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
       "twicc-sessions": {
         columns: 0,
         rows: "3"
+      },
+      "pier-urls": {
+        columns: 2,
+        rows: 2
       },
       ignored: null
     },
@@ -337,12 +341,16 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         x: -3,
         y: "4"
       },
+      "project-preview": {
+        x: 1,
+        y: 2
+      },
       ignored: null
     },
     locked: false
   }), {
-    order: ["project-summary", "twicc-sessions"],
-    hidden: ["discord"],
+    order: ["project-summary", "twicc-sessions", "dashtop.pier.urls"],
+    hidden: ["discord", "dashtop.pier.urls"],
     sizes: {
       "project-summary": {
         columns: 2,
@@ -351,6 +359,10 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
       "twicc-sessions": {
         columns: 1,
         rows: 3
+      },
+      "dashtop.pier.urls": {
+        columns: 2,
+        rows: 2
       }
     },
     positions: {
@@ -361,6 +373,10 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
       "twicc-sessions": {
         x: 0,
         y: 4
+      },
+      "dashtop.pier.urls": {
+        x: 1,
+        y: 2
       }
     },
     locked: false

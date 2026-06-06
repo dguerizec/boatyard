@@ -21,6 +21,10 @@ const DEFAULT_WINDOW_BOUNDS = {
 const DEFAULT_TWICC_URL = "http://localhost:3500";
 const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
 const MIN_WIDGET_RAIL_WIDTH = 240;
+const LEGACY_WIDGET_IDS = new Map([
+  ["project-preview", "dashtop.pier.urls"],
+  ["pier-urls", "dashtop.pier.urls"]
+]);
 
 function createDefaultState() {
   return {
@@ -329,10 +333,11 @@ function normalizePaneLayouts(paneLayouts = {}) {
 
 function normalizeWidgetLayout(layout = {}) {
   const source = layout && typeof layout === "object" ? layout : {};
+  const normalizeWidgetId = (id) => LEGACY_WIDGET_IDS.get(String(id || "").trim()) || String(id || "").trim();
   const seenIds = new Set();
   const order = Array.isArray(source.order)
     ? source.order
-        .map((id) => String(id || "").trim())
+        .map(normalizeWidgetId)
         .filter((id) => {
           if (!id || seenIds.has(id)) {
             return false;
@@ -345,7 +350,7 @@ function normalizeWidgetLayout(layout = {}) {
   const seenHiddenIds = new Set();
   const hidden = Array.isArray(source.hidden)
     ? source.hidden
-        .map((id) => String(id || "").trim())
+        .map(normalizeWidgetId)
         .filter((id) => {
           if (!id || seenHiddenIds.has(id)) {
             return false;
@@ -373,7 +378,7 @@ function normalizeWidgetLayout(layout = {}) {
     const rows = Number(size.rows);
 
     if (Number.isFinite(columns) && Number.isFinite(rows)) {
-      sizes[String(widgetId)] = {
+      sizes[normalizeWidgetId(widgetId)] = {
         columns: Math.max(1, Math.round(columns)),
         rows: Math.max(1, Math.round(rows))
       };
@@ -389,7 +394,7 @@ function normalizeWidgetLayout(layout = {}) {
     const y = Number(position.y);
 
     if (Number.isFinite(x) && Number.isFinite(y)) {
-      positions[String(widgetId)] = {
+      positions[normalizeWidgetId(widgetId)] = {
         x: Math.max(0, Math.round(x)),
         y: Math.max(0, Math.round(y))
       };

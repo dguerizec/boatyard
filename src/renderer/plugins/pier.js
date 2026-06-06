@@ -231,7 +231,7 @@
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
-        widgets: ["pier-urls"],
+        widgets: ["dashtop.pier.urls"],
         panes: ["dashtop.pier.preview"],
         globalSettings: ["dashtop.pier.global"],
         projectSettings: ["dashtop.pier.project"]
@@ -297,7 +297,7 @@
         });
 
         ctx.widgets.register({
-          id: "pier-urls",
+          id: "dashtop.pier.urls",
           name: "Pier URLs",
           title: "Pier URLs",
           scope: "project",
