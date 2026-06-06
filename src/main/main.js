@@ -406,6 +406,10 @@ function registerIpcHandlers() {
     return store.updatePluginEnabled(pluginId, enabled);
   });
 
+  ipcMain.handle("global-plugin-config:update", (_event, pluginId, patch) => {
+    return store.updateGlobalPluginConfig(pluginId, patch);
+  });
+
   ipcMain.handle("project-plugin-config:update", (_event, projectId, pluginId, patch) => {
     return store.updateProjectPluginConfig(projectId, pluginId, patch);
   });
@@ -498,6 +502,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("webapp:restore", () => {
     restoreWebApps();
+  });
+
+  ipcMain.handle("clipboard:write-text", (_event, text) => {
+    clipboard.writeText(String(text || ""));
   });
 
   ipcMain.handle("shell:open-external", (_event, url) => {

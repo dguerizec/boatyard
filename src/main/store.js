@@ -430,7 +430,12 @@ function normalizePluginConfigObject(config = {}) {
       continue;
     }
 
-    if (value === null || ["string", "number", "boolean"].includes(typeof value)) {
+    if (typeof value === "string") {
+      const normalizedValue = normalizeText(value);
+      if (normalizedValue) {
+        normalized[normalizedKey] = normalizedValue;
+      }
+    } else if (["number", "boolean"].includes(typeof value)) {
       normalized[normalizedKey] = value;
     }
   }
@@ -438,7 +443,7 @@ function normalizePluginConfigObject(config = {}) {
   return normalized;
 }
 
-function normalizePluginConfig(pluginConfig = {}, projects = []) {
+function normalizePluginConfig(pluginConfig = {}, projects = [], { migrateLegacyPreview = false } = {}) {
   const source = pluginConfig && typeof pluginConfig === "object" && !Array.isArray(pluginConfig)
     ? pluginConfig
     : {};
@@ -483,20 +488,22 @@ function normalizePluginConfig(pluginConfig = {}, projects = []) {
     }
   }
 
-  for (const project of projects) {
-    if (!project.previewUrl) {
-      continue;
-    }
+  if (migrateLegacyPreview) {
+    for (const project of projects) {
+      if (!project.previewUrl) {
+        continue;
+      }
 
-    const pierConfig = normalized.projects[project.id]?.["dashtop.pier"] || {};
-    if (!normalizeText(pierConfig.pierPreviewUrl)) {
-      normalized.projects[project.id] = {
-        ...(normalized.projects[project.id] || {}),
-        "dashtop.pier": {
-          ...pierConfig,
-          pierPreviewUrl: project.previewUrl
-        }
-      };
+      const pierConfig = normalized.projects[project.id]?.["dashtop.pier"] || {};
+      if (!normalizeText(pierConfig.pierPreviewUrl)) {
+        normalized.projects[project.id] = {
+          ...(normalized.projects[project.id] || {}),
+          "dashtop.pier": {
+            ...pierConfig,
+            pierPreviewUrl: project.previewUrl
+          }
+        };
+      }
     }
   }
 
@@ -625,7 +632,7 @@ class ProjectStore {
         webApps: normalizeWebAppState(parsed.webApps),
         passwordVault: normalizePasswordVault(parsed.passwordVault),
         plugins: normalizePluginsState(parsed.plugins),
-        pluginConfig: normalizePluginConfig(parsed.pluginConfig, normalizedProjects),
+        pluginConfig: normalizePluginConfig(parsed.pluginConfig, normalizedProjects, { migrateLegacyPreview: true }),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts)
       };
@@ -762,6 +769,33 @@ class ProjectStore {
       this.state.plugins.enabled[normalizedPluginId] = false;
     } else {
       delete this.state.plugins.enabled[normalizedPluginId];
+    }
+
+    this.save();
+    return this.getState();
+  }
+
+  getGlobalPluginConfig(pluginId) {
+    return structuredClone(this.state.pluginConfig.global[String(pluginId)] || {});
+  }
+
+  updateGlobalPluginConfig(pluginId, patch) {
+    const normalizedPluginId = normalizeText(pluginId);
+
+    if (!normalizedPluginId) {
+      throw new Error("Plugin id is required.");
+    }
+
+    const current = this.state.pluginConfig.global[normalizedPluginId] || {};
+    const normalized = normalizePluginConfigObject({
+      ...current,
+      ...patch
+    });
+
+    if (!Object.keys(normalized).length) {
+      delete this.state.pluginConfig.global[normalizedPluginId];
+    } else {
+      this.state.pluginConfig.global[normalizedPluginId] = normalized;
     }
 
     this.save();

@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("dashtop", {
   reorderProjects: (ids) => ipcRenderer.invoke("projects:reorder", ids),
   removeProject: (id) => ipcRenderer.invoke("projects:remove", id),
   updatePluginEnabled: (pluginId, enabled) => ipcRenderer.invoke("plugins:enabled:update", pluginId, enabled),
+  updateGlobalPluginConfig: (pluginId, patch) => ipcRenderer.invoke("global-plugin-config:update", pluginId, patch),
   updateProjectPluginConfig: (projectId, pluginId, patch) => ipcRenderer.invoke("project-plugin-config:update", projectId, pluginId, patch),
   updatePaneLayout: (projectId, layout) => ipcRenderer.invoke("pane-layout:update", projectId, layout),
   updateWidgetLayout: (projectId, layout) => ipcRenderer.invoke("widget-layout:update", projectId, layout),
@@ -49,5 +50,6 @@ contextBridge.exposeInMainWorld("dashtop", {
     ipcRenderer.on("webapp:url-changed", listener);
     return () => ipcRenderer.removeListener("webapp:url-changed", listener);
   },
+  writeClipboardText: (text) => ipcRenderer.invoke("clipboard:write-text", text),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url)
 });

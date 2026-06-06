@@ -70,5 +70,5 @@ npm run smoke
 ## Current Limitations
 
 - Dashtop is still a prototype and has no packaged installer.
-- Widget plugins are local built-ins for now; third-party widget installation is not implemented yet.
+- Plugins are local built-ins for now; third-party plugin installation is not implemented yet.
 - Hawser integration is read-only and requires an API URL/token configured in global settings.

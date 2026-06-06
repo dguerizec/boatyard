@@ -119,6 +119,13 @@ visible in plugin management UI, but Dashtop MUST NOT activate them or publish
 their widgets, panes, settings sections, services, tools, actions, or event
 subscriptions.
 
+Dashtop SHOULD expose basic plugin management for installed plugins:
+
+- enable and disable,
+- runtime status and diagnostics,
+- reload,
+- future install, update, and uninstall actions.
+
 Runtime entrypoints MAY export:
 
 ```js
@@ -270,6 +277,23 @@ user-editable and SHOULD be schema-backed.
 
 Global configuration applies to the plugin across Dashtop. Project
 configuration applies to one project.
+
+Dashtop stores plugin configuration under plugin namespaces:
+
+```js
+{
+  pluginConfig: {
+    global: {
+      "vendor.plugin": {}
+    },
+    projects: {
+      "project-id": {
+        "vendor.plugin": {}
+      }
+    }
+  }
+}
+```
 
 ```js
 ctx.settings.registerProjectSection({
@@ -618,7 +642,12 @@ The Pier plugin owns Pier detection and configuration.
 Contributions:
 
 - project settings for `pierPreviewUrl` or `pierBaseUrl`,
-- WCV pane named `Preview`.
+- WCV pane named `Pier`.
+
+Legacy project `previewUrl` values MAY be migrated into
+`pluginConfig.projects[projectId]["dashtop.pier"].pierPreviewUrl`, but runtime
+Pier contributions SHOULD read from Pier plugin config rather than from the
+deprecated project root field.
 
 The plugin MAY expose preview-related tools later, but it does not need to do
 so for the pane contribution.

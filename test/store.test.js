@@ -435,7 +435,10 @@ test("ProjectStore persists configured projects", () => {
 
   const reloaded = new ProjectStore(filePath);
   const reloadedState = reloaded.load();
-  assert.deepEqual(reloadedState, state);
+  assert.deepEqual(reloadedState.projects, state.projects);
+  assert.deepEqual(reloadedState.pluginConfig.projects[state.projects[0].id]["dashtop.pier"], {
+    pierPreviewUrl: "https://status.example.com/"
+  });
 });
 
 test("ProjectStore persists window state", () => {
@@ -704,6 +707,54 @@ test("ProjectStore persists and removes project plugin config", () => {
   assert.equal(state.pluginConfig.projects[projectId], undefined);
 });
 
+test("ProjectStore persists global plugin config", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  const state = store.updateGlobalPluginConfig("dashtop.pier", {
+    baseUrl: "http://localhost:5173/"
+  });
+
+  assert.deepEqual(state.pluginConfig.global["dashtop.pier"], {
+    baseUrl: "http://localhost:5173/"
+  });
+
+  const reloaded = new ProjectStore(filePath);
+  assert.deepEqual(
+    reloaded.load().pluginConfig.global["dashtop.pier"],
+    { baseUrl: "http://localhost:5173/" }
+  );
+});
+
+test("ProjectStore does not rehydrate Pier config from legacy preview after load", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  let state = store.addProject({
+    name: "Project",
+    sourcePath: "/tmp/project",
+    previewUrl: "project.example.test"
+  });
+  const projectId = state.projects[0].id;
+  assert.equal(state.pluginConfig.projects[projectId], undefined);
+
+  state = store.updateProjectPluginConfig(projectId, "dashtop.pier", {
+    pierPreviewUrl: ""
+  });
+  assert.equal(state.pluginConfig.projects[projectId], undefined);
+
+  state = store.updateProject(projectId, {
+    name: "Project",
+    sourcePath: "/tmp/project"
+  });
+  assert.equal(state.projects[0].previewUrl, "https://project.example.test/");
+  assert.equal(state.pluginConfig.projects[projectId], undefined);
+});
+
 test("ProjectStore reorders projects", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
   const filePath = path.join(directory, "state.json");
@@ -778,7 +829,11 @@ test("ProjectStore persists project updates and removals", () => {
   }]);
 
   const reloaded = new ProjectStore(filePath);
-  assert.deepEqual(reloaded.load(), moved);
+  const reloadedState = reloaded.load();
+  assert.deepEqual(reloadedState.projects, moved.projects);
+  assert.deepEqual(reloadedState.pluginConfig.projects[id]["dashtop.pier"], {
+    pierPreviewUrl: "https://project.example.test/"
+  });
 
   const removed = reloaded.removeProject(id);
   assert.equal(removed.webApps[`${id}:twicc`], undefined);

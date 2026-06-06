@@ -2,9 +2,197 @@
 
 (function registerPierPlugin(globalScope) {
   const registry = globalScope.DashtopPluginRegistry;
+  const DEFAULT_PIER_API_URL = "http://127.0.0.1:60080";
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
+  }
+
+  function normalizePath(value) {
+    return String(value || "").replace(/[/\\]+$/g, "");
+  }
+
+  function normalizeApiUrl(value) {
+    return String(value || DEFAULT_PIER_API_URL).replace(/\/+$/g, "");
+  }
+
+  function findPierProject(project, pierProjects, config = {}) {
+    const configuredName = String(config.pierProjectName || "").trim();
+    if (configuredName) {
+      return pierProjects.find((candidate) => candidate.name === configuredName) || { name: configuredName };
+    }
+
+    const sourcePath = normalizePath(project.sourcePath);
+    if (!sourcePath) {
+      return null;
+    }
+
+    return pierProjects
+      .filter((candidate) => {
+        const repoPath = normalizePath(candidate.repo_path);
+        return repoPath && (sourcePath === repoPath || sourcePath.startsWith(`${repoPath}/`));
+      })
+      .sort((left, right) => normalizePath(right.repo_path).length - normalizePath(left.repo_path).length)[0] || null;
+  }
+
+  function getDefaultWorkloadUrl(workload) {
+    const urls = Array.isArray(workload.urls) ? workload.urls : [];
+    return urls.find((entry) => entry.default)?.url || urls[0]?.url || workload.url || "";
+  }
+
+  async function fetchPierUrls(project, props) {
+    const apiUrl = normalizeApiUrl(props.globalPluginConfig?.pierApiUrl);
+    const [projectsResponse, workloadsResponse] = await Promise.all([
+      fetch(`${apiUrl}/api/v1/projects`),
+      fetch(`${apiUrl}/api/v1/workloads`)
+    ]);
+
+    if (!projectsResponse.ok) {
+      throw new Error(`Pier projects API returned ${projectsResponse.status}.`);
+    }
+
+    if (!workloadsResponse.ok) {
+      throw new Error(`Pier workloads API returned ${workloadsResponse.status}.`);
+    }
+
+    const pierProjects = await projectsResponse.json();
+    const workloads = await workloadsResponse.json();
+    const pierProject = findPierProject(project, Array.isArray(pierProjects) ? pierProjects : [], props.pluginConfig);
+    const pierProjectName = pierProject?.name || "";
+
+    if (!pierProjectName) {
+      return [];
+    }
+
+    return (Array.isArray(workloads) ? workloads : [])
+      .filter((workload) => workload.project === pierProjectName)
+      .filter((workload) => workload.status === "running")
+      .map((workload) => ({
+        project: workload.project,
+        slug: workload.slug || workload.branch || "main",
+        url: getDefaultWorkloadUrl(workload),
+        worktreePath: workload.worktree_path || ""
+      }))
+      .filter((entry) => entry.url);
+  }
+
+  async function stopPierWorkload(entry, props) {
+    const apiUrl = normalizeApiUrl(props.globalPluginConfig?.pierApiUrl);
+    const response = await fetch(
+      `${apiUrl}/api/v1/workloads/${encodeURIComponent(entry.project)}/${encodeURIComponent(entry.slug)}/down`,
+      { method: "POST" }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Pier stop returned ${response.status}.`);
+    }
+  }
+
+  async function copyText(value) {
+    if (globalScope.dashtop?.writeClipboardText) {
+      await globalScope.dashtop.writeClipboardText(value);
+      return;
+    }
+
+    await navigator.clipboard.writeText(value);
+  }
+
+  function renderPierUrlRows(list, urls, props, onRefresh, onError) {
+    list.innerHTML = "";
+
+    for (const entry of urls) {
+      const link = document.createElement("a");
+      link.className = "pier-url-link";
+      link.href = entry.url;
+      link.textContent = entry.url;
+      link.title = entry.url;
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        globalScope.dashtop.openExternal(entry.url);
+      });
+
+      const pathButton = document.createElement("button");
+      pathButton.className = "pier-path-button";
+      pathButton.type = "button";
+      pathButton.textContent = entry.worktreePath || "No worktree path";
+      pathButton.title = entry.worktreePath ? `Copy ${entry.worktreePath}` : "";
+      pathButton.disabled = !entry.worktreePath;
+      pathButton.addEventListener("click", async () => {
+        try {
+          await copyText(entry.worktreePath);
+        } catch (error) {
+          onError(error);
+        }
+      });
+
+      const stopButton = document.createElement("button");
+      stopButton.className = "pier-stop-button";
+      stopButton.type = "button";
+      stopButton.textContent = "Stop";
+      stopButton.addEventListener("click", async () => {
+        stopButton.disabled = true;
+        stopButton.textContent = "Stopping";
+        try {
+          await stopPierWorkload(entry, props);
+          await onRefresh();
+        } catch (error) {
+          stopButton.disabled = false;
+          stopButton.textContent = "Stop";
+          onError(error);
+        }
+      });
+
+      const row = document.createElement("div");
+      row.className = "pier-url-row";
+      row.append(link, pathButton, stopButton);
+      list.append(row);
+    }
+  }
+
+  function createPierWidget(project, props = {}) {
+    const card = document.createElement("article");
+    card.className = "widget-card pier-widget-card";
+
+    const content = document.createElement("div");
+    content.className = "widget-content pier-widget-content";
+
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "widget-eyebrow";
+    eyebrow.textContent = "Pier";
+
+    const body = document.createElement("p");
+    body.className = "pier-widget-status";
+    body.textContent = "Loading.";
+
+    content.append(eyebrow, body);
+
+    const list = document.createElement("div");
+    list.className = "pier-url-list";
+    content.append(list);
+
+    async function load() {
+      body.hidden = false;
+      body.textContent = "Loading.";
+      list.innerHTML = "";
+
+      try {
+        const urls = await fetchPierUrls(project, props);
+        body.hidden = urls.length > 0;
+        body.textContent = urls.length ? "" : "No running worktree.";
+        renderPierUrlRows(list, urls, props, load, (error) => {
+          body.hidden = false;
+          body.textContent = error.message;
+        });
+      } catch (error) {
+        body.hidden = false;
+        body.textContent = error.message;
+      }
+    }
+
+    load();
+
+    card.append(content);
+    return card;
   }
 
   registry.register(
@@ -38,10 +226,17 @@
           fields: [
             {
               key: "pierPreviewUrl",
-              label: "Preview URL",
+              label: "Preview URL override",
               type: "text",
+              valueType: "url",
               placeholder: "http://localhost:5173",
               legacyProjectKey: "previewUrl"
+            },
+            {
+              key: "pierProjectName",
+              label: "Pier project",
+              type: "text",
+              placeholder: "jobo"
             }
           ]
         });
@@ -53,8 +248,8 @@
           title: "Pier",
           kind: "wcv",
           scope: "project",
-          resolveUrl({ project, projectConfig }) {
-            return projectConfig.pierPreviewUrl || project.previewUrl || "";
+          resolveUrl({ projectConfig }) {
+            return projectConfig.pierPreviewUrl || "";
           }
         });
 
@@ -66,26 +261,13 @@
           category: "Project",
           status: "stable",
           defaultVisible: false,
-          description: "Links to the project's main preview URL when one is configured.",
+          description: "Lists running Pier worktree URLs for the project.",
           layout: {
             default: { columns: 2, rows: 2 },
             min: { columns: 1, rows: 2 },
             max: { columns: 3, rows: 3 }
           },
-          create: (project) => ({
-            eyebrow: "Preview",
-            title: "Project preview",
-            body: project.previewUrl
-              ? "Project preview is available as a webapp tab in the project pane."
-              : "No preview URL configured for this project.",
-            meta: project.previewUrl || "Optional",
-            action: project.previewUrl
-              ? {
-                  label: "Open URL",
-                  onClick: () => globalScope.dashtop.openExternal(project.previewUrl)
-                }
-              : null
-          })
+          createElement: createPierWidget
         });
       }
     }

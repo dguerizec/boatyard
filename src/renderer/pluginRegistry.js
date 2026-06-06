@@ -91,7 +91,9 @@
           key: requireId(field.key, "Project settings field"),
           label: normalizeText(field.label || field.title || field.key),
           type: normalizeText(field.type || "text"),
-          placeholder: normalizeText(field.placeholder)
+          valueType: normalizeText(field.valueType || field.type || "text"),
+          placeholder: normalizeText(field.placeholder),
+          required: field.required === true
         }))
       : [];
 
@@ -159,8 +161,9 @@
           }
 
           const registered = globalScope.DashtopWidgetRegistry.register({
+            ...definition,
             provider: manifest.name,
-            ...definition
+            pluginId
           });
           widgetsByPlugin.set(pluginId, [
             ...(widgetsByPlugin.get(pluginId) || []),
@@ -200,12 +203,24 @@
 
     statuses.set(plugin.manifest.id, { state: "activating", summary: "", details: {}, actions: [] });
     const context = createContext(plugin.manifest);
-    if (typeof plugin.runtime.activate === "function") {
-      plugin.runtime.activate(context);
-    } else {
-      context.status.set({ state: "ready" });
+    try {
+      if (typeof plugin.runtime.activate === "function") {
+        plugin.runtime.activate(context);
+      } else {
+        context.status.set({ state: "ready" });
+      }
+      plugin.active = true;
+    } catch (error) {
+      removePluginContributions(plugin.manifest.id);
+      plugin.active = false;
+      statuses.set(plugin.manifest.id, {
+        state: "error",
+        summary: error.message,
+        details: {},
+        actions: []
+      });
+      throw error;
     }
-    plugin.active = true;
   }
 
   function deactivatePlugin(plugin) {
@@ -283,6 +298,30 @@
     };
   }
 
+  function reload(pluginId) {
+    const plugin = plugins.get(String(pluginId || ""));
+    if (!plugin) {
+      throw new Error(`Unknown plugin: ${pluginId}`);
+    }
+
+    if (!plugin.enabled) {
+      return {
+        ...plugin.manifest,
+        enabled: plugin.enabled,
+        active: plugin.active
+      };
+    }
+
+    deactivatePlugin(plugin);
+    plugin.enabled = true;
+    activatePlugin(plugin);
+    return {
+      ...plugin.manifest,
+      enabled: plugin.enabled,
+      active: plugin.active
+    };
+  }
+
   function applyEnabledState(enabledByPlugin = {}) {
     for (const plugin of plugins.values()) {
       setEnabled(plugin.manifest.id, enabledByPlugin[plugin.manifest.id] !== false);
@@ -307,6 +346,7 @@
     register,
     list,
     setEnabled,
+    reload,
     applyEnabledState,
     listPanes,
     listProjectSettingsSections,

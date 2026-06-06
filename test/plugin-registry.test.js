@@ -37,6 +37,7 @@ function plain(value) {
 
 test("Plugin registry activates plugins and records contributions", () => {
   const { pluginRegistry: registry, widgetRegistry } = createEnvironment();
+  let activateCount = 0;
 
   registry.register(
     {
@@ -47,6 +48,7 @@ test("Plugin registry activates plugins and records contributions", () => {
     },
     {
       activate(ctx) {
+        activateCount += 1;
         ctx.status.set({ state: "ready", summary: "Preview ready" });
         ctx.settings.registerProjectSection({
           id: "vendor.preview.project",
@@ -85,6 +87,10 @@ test("Plugin registry activates plugins and records contributions", () => {
   assert.equal(registry.listProjectSettingsSections()[0].fields[0].key, "previewUrl");
   assert.equal(registry.listPanes({ kind: "wcv" })[0].webAppId, "preview");
   assert.equal(widgetRegistry.get("vendor.preview.widget").name, "Preview");
+
+  registry.reload("vendor.preview");
+  assert.equal(activateCount, 2);
+  assert.equal(registry.getStatus("vendor.preview").summary, "Preview ready");
 
   registry.setEnabled("vendor.preview", false);
 

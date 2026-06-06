@@ -123,6 +123,10 @@ function getProjectPluginConfig(projectId, pluginId) {
   return state.pluginConfig?.projects?.[projectId]?.[pluginId] || {};
 }
 
+function getGlobalPluginConfig(pluginId) {
+  return state.pluginConfig?.global?.[pluginId] || {};
+}
+
 function getPluginPaneDefinitions(filter = {}) {
   return window.DashtopPluginRegistry?.listPanes(filter) || [];
 }
@@ -135,22 +139,10 @@ function getPluginEnabledState() {
   return state.plugins?.enabled || {};
 }
 
-function getPierPreviewUrlFromPluginConfig(pluginConfig = {}) {
-  return pluginConfig["dashtop.pier"]?.pierPreviewUrl || "";
-}
-
-function normalizeSubmittedProjectPluginConfig(project, pluginConfig = {}) {
-  const normalized = {};
-
-  for (const [pluginId, config] of Object.entries(pluginConfig)) {
-    normalized[pluginId] = { ...config };
-  }
-
-  if (project && normalized["dashtop.pier"]) {
-    normalized["dashtop.pier"].pierPreviewUrl = project.previewUrl || "";
-  }
-
-  return normalized;
+function getProjectSummaryTarget(project) {
+  return project.sourcePath ||
+    getProjectPluginConfig(project.id, "dashtop.pier").pierPreviewUrl ||
+    project.slug;
 }
 
 async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
@@ -1214,7 +1206,13 @@ function attachWidgetGridDropHandlers(widgetRail, project, columnCount) {
 }
 
 function createProjectWidget(project, definition, layout, columnCount) {
-  const card = definition.createElement ? definition.createElement(project) : createCard(definition.create(project));
+  const props = {
+    projectId: project.id,
+    project,
+    pluginConfig: definition.pluginId ? getProjectPluginConfig(project.id, definition.pluginId) : {},
+    globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {}
+  };
+  const card = definition.createElement ? definition.createElement(project, props) : createCard(definition.create(project, props));
   const size = fitWidgetSizeToGrid(layout.sizes[definition.id], columnCount);
   const position = layout.positions[definition.id] || { x: 0, y: 0 };
   card.dataset.widgetId = definition.id;
@@ -2639,7 +2637,26 @@ function createGlobalPluginsSettingsView() {
     switchTrack.setAttribute("aria-hidden", "true");
 
     controls.append(controlCopy, toggle, switchTrack);
-    titleRow.append(controls);
+
+    const reloadButton = document.createElement("button");
+    reloadButton.className = "plugin-reload-button";
+    reloadButton.type = "button";
+    reloadButton.textContent = "Reload";
+    reloadButton.disabled = plugin.enabled === false;
+    reloadButton.addEventListener("click", () => {
+      try {
+        window.DashtopPluginRegistry.reload(plugin.id);
+      } catch (error) {
+        console.error(`Could not reload plugin ${plugin.id}:`, error);
+      }
+      renderGlobalSettingsPage();
+    });
+
+    const titleActions = document.createElement("div");
+    titleActions.className = "installed-plugin-actions";
+    titleActions.append(reloadButton, controls);
+
+    titleRow.append(titleActions);
     item.append(titleRow, description, meta);
     list.append(item);
   }
@@ -2702,7 +2719,7 @@ function renderProjectDashboard(project) {
   workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Project";
   workspaceTitle.textContent = project.name;
-  workspaceSummary.textContent = project.sourcePath || project.previewUrl || project.slug;
+  workspaceSummary.textContent = getProjectSummaryTarget(project);
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-workbench";
   dashboardGrid.style.gridTemplateColumns = `${widgetRailWidth}px ${WIDGET_RAIL_RESIZER_WIDTH}px minmax(${MIN_WEBAPP_AREA_WIDTH}px, 1fr)`;
@@ -3164,6 +3181,24 @@ function createProjectPluginSettingsControls(initialValues = {}) {
   const controls = [];
   const sections = [];
 
+  function readFieldValue(field, input) {
+    const rawValue = input.value.trim();
+
+    if (!rawValue) {
+      if (field.required) {
+        throw new Error(`${field.label} is required.`);
+      }
+
+      return "";
+    }
+
+    if (field.valueType === "url") {
+      return normalizeAddressInput(rawValue);
+    }
+
+    return rawValue;
+  }
+
   for (const section of getPluginProjectSettingsSections()) {
     const projectPluginConfig = initialValues.id
       ? getProjectPluginConfig(initialValues.id, section.pluginId)
@@ -3189,9 +3224,9 @@ function createProjectPluginSettingsControls(initialValues = {}) {
       input.type = field.type || "text";
       input.autocomplete = "off";
       input.placeholder = field.placeholder || "";
-      input.value = projectPluginConfig[field.key] || initialValues[field.legacyProjectKey] || initialValues[field.key] || "";
+      input.value = projectPluginConfig[field.key] || initialValues[field.legacyProjectKey] || "";
       label.append(input);
-      inputs.set(field.key, input);
+      inputs.set(field.key, { field, input });
       wrapper.append(label);
     }
 
@@ -3205,8 +3240,8 @@ function createProjectPluginSettingsControls(initialValues = {}) {
       const values = {};
       for (const section of sections) {
         values[section.pluginId] = {};
-        for (const [key, input] of section.inputs) {
-          values[section.pluginId][key] = input.value;
+        for (const [key, { field, input }] of section.inputs) {
+          values[section.pluginId][key] = readFieldValue(field, input);
         }
       }
 
@@ -3384,7 +3419,6 @@ function renderCreateProjectPage() {
     initialValues: {},
     onCancel: () => restoreReturnView(),
     onSubmit: async (values) => {
-      const previewUrl = getPierPreviewUrlFromPluginConfig(values.pluginConfig);
       state = await window.dashtop.addProject({
         name: values.name,
         slug: values.slug,
@@ -3392,7 +3426,6 @@ function renderCreateProjectPage() {
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
         devBranch: values.devBranch,
-        previewUrl,
         twiccUrl: values.twiccUrl,
         hawserMainSession: values.hawserMainSession,
         isOpen: false
@@ -3400,7 +3433,7 @@ function renderCreateProjectPage() {
       const project = state.projects[state.projects.length - 1];
       state = await persistProjectPluginConfig(
         project.id,
-        normalizeSubmittedProjectPluginConfig(project, values.pluginConfig)
+        values.pluginConfig
       );
       selectProject(project.id);
     }
@@ -3424,7 +3457,6 @@ function renderEditProjectPage(project) {
     initialValues: project,
     onCancel: () => selectProject(project.id),
     onSubmit: async (values) => {
-      const previewUrl = getPierPreviewUrlFromPluginConfig(values.pluginConfig);
       state = await window.dashtop.updateProject(project.id, {
         name: values.name,
         slug: values.slug,
@@ -3432,14 +3464,12 @@ function renderEditProjectPage(project) {
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
         devBranch: values.devBranch,
-        previewUrl,
         twiccUrl: values.twiccUrl,
         hawserMainSession: values.hawserMainSession
       });
-      const updatedProject = state.projects.find((item) => item.id === project.id);
       state = await persistProjectPluginConfig(
         project.id,
-        normalizeSubmittedProjectPluginConfig(updatedProject, values.pluginConfig)
+        values.pluginConfig
       );
       reloadProjectSettings(project.id);
     }
