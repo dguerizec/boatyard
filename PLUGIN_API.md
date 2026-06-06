@@ -639,9 +639,10 @@ The Twicc plugin owns Twicc detection and install logic.
 
 Contributions:
 
-- project settings section with `twiccUrl`,
+- global settings section with `twiccBaseUrl`,
+- project settings section with `twiccProjectUrl`,
 - WCV pane named `Twicc`,
-- service `dashtop.twicc/api`,
+- service `dashtop.twicc.api`,
 - tools such as `twicc.listProjects` and `twicc.createSession`,
 - status actions such as `dashtop.twicc.install`.
 

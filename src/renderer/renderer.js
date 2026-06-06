@@ -1610,7 +1610,7 @@ function getProjectWebApps(project, paneId) {
   const webApps = [
     {
       id: "twicc",
-      label: "Twicc",
+      label: "Twicc legacy",
       key: `${paneId}:twicc`,
       url: project.twiccUrl || DEFAULT_TWICC_URL
     }
