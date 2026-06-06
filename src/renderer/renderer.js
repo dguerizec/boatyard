@@ -1607,14 +1607,7 @@ function createWidgetRailHeader(project, layout, columnCount) {
 }
 
 function getProjectWebApps(project, paneId) {
-  const webApps = [
-    {
-      id: "twicc",
-      label: "Twicc legacy",
-      key: `${paneId}:twicc`,
-      url: project.twiccUrl || DEFAULT_TWICC_URL
-    }
-  ];
+  const webApps = [];
 
   if (project.sourcePath) {
     webApps.push({
