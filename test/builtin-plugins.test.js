@@ -58,6 +58,10 @@ test("Built-in plugins register Twicc and Pier contributions", () => {
     ["dashtop.pier.preview", "dashtop.twicc.pane"]
   );
   assert.deepEqual(
+    plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.key).sort()),
+    ["pier", "twicc-plugin"]
+  );
+  assert.deepEqual(
     plain(registry.listGlobalSettingsSections().map((section) => section.id).sort()),
     ["dashtop.pier.global", "dashtop.twicc.global"]
   );

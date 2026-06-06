@@ -107,8 +107,8 @@
 
         ctx.panes.register({
           id: "dashtop.twicc.pane",
-          webAppId: "twicc",
-          key: "twicc",
+          webAppId: "twicc-plugin",
+          key: "twicc-plugin",
           title: "Twicc",
           kind: "wcv",
           scope: "project",
