@@ -195,7 +195,7 @@ test("Plugin registry emits scoped plugin events and cleans handlers", () => {
     {
       activate(ctx) {
         ctx.events.on("projectForm.sourcePathInspected", (event) => {
-          received.push(event.fields.getValue("url"));
+          received.push(`${event.fields.getValue("url")}:${event.coreFields.slug}`);
         });
       },
     },
@@ -207,10 +207,13 @@ test("Plugin registry emits scoped plugin events and cleans handlers", () => {
       fields: {
         getValue: (key) => `${pluginId}:${key}`,
       },
+      coreFields: {
+        slug: "project-slug",
+      },
     }),
   });
 
-  assert.deepEqual(received, ["vendor.events:url"]);
+  assert.deepEqual(received, ["vendor.events:url:project-slug"]);
 
   registry.setEnabled("vendor.events", false);
   registry.emit("projectForm.sourcePathInspected", {
@@ -221,5 +224,5 @@ test("Plugin registry emits scoped plugin events and cleans handlers", () => {
     }),
   });
 
-  assert.deepEqual(received, ["vendor.events:url"]);
+  assert.deepEqual(received, ["vendor.events:url:project-slug"]);
 });

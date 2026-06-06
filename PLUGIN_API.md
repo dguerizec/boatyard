@@ -541,12 +541,21 @@ const dispose = ctx.events.on("dashtop.projectForm.sourcePathInspected", (event)
     event.fields.setValue("twiccProjectUrl", event.inspected.twiccUrl);
   }
 });
+
+ctx.events.on("dashtop.projectForm.coreFieldChanged", (event) => {
+  console.log(event.field, event.value, event.coreFields);
+});
 ```
 
 `dashtop.projectForm.sourcePathInspected` is emitted when the project form
 inspects a source path. Plugin handlers receive their own scoped field API, so a
 plugin can update its own project settings fields without accessing another
 plugin's fields.
+
+`dashtop.projectForm.coreFieldChanged` is emitted when a core project field
+changes in the project form. The payload includes `field`, `value`, `source`,
+and `coreFields` with the current `name`, `slug`, `sourcePath`, `gitUrl`,
+`repoUrl`, `devBranch`, `twiccUrl`, and `hawserMainSession` values.
 
 Dashtop events SHOULD be typed and versioned. Plugin events SHOULD be
 namespaced by plugin id.

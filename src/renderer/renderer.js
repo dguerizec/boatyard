@@ -2983,7 +2983,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
         sourcePathInput.value || settings.projectsBasePath
       );
       if (selectedPath) {
-        sourcePathInput.value = selectedPath;
+        setCoreFieldValue("sourcePath", selectedPath, { markEdited: true, source: "browse" });
         await applySourcePathInspection(selectedPath);
       }
     } catch (selectError) {
@@ -3063,40 +3063,143 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   hawserMainSessionInput.value = initialValues.hawserMainSession || "";
   hawserMainSessionLabel.append(hawserMainSessionInput);
 
+  const coreInputs = {
+    name: nameInput,
+    slug: slugInput,
+    sourcePath: sourcePathInput,
+    gitUrl: gitUrlInput,
+    repoUrl: repoUrlInput,
+    devBranch: devBranchInput,
+    twiccUrl: twiccUrlInput,
+    hawserMainSession: hawserMainSessionInput
+  };
+
+  function readCoreProjectFields() {
+    return Object.fromEntries(
+      Object.entries(coreInputs).map(([key, input]) => [key, input.value])
+    );
+  }
+
+  function setCoreFieldValue(key, value, options = {}) {
+    const input = coreInputs[key];
+    if (!input) {
+      return false;
+    }
+
+    if (options.ifUnedited && input.dataset.edited) {
+      return false;
+    }
+
+    const nextValue = String(value || "");
+    if (input.value === nextValue) {
+      return false;
+    }
+
+    input.value = nextValue;
+    if (options.markEdited) {
+      input.dataset.edited = "true";
+    }
+    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+      field: key,
+      value: nextValue,
+      source: options.source || "core"
+    });
+    return true;
+  }
+
+  function markCoreFieldEdited(key) {
+    const input = coreInputs[key];
+    if (input) {
+      input.dataset.edited = "true";
+    }
+  }
+
   nameInput.addEventListener("input", () => {
+    markCoreFieldEdited("name");
+    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+      field: "name",
+      value: nameInput.value,
+      source: "user"
+    });
+
     if (!slugInput.dataset.edited) {
       const nextSlug = slugify(nameInput.value);
-      slugInput.value = nextSlug;
-      hawserMainSessionInput.value = nextSlug ? `${nextSlug}:main` : "";
+      setCoreFieldValue("slug", nextSlug, { source: "derived" });
+      setCoreFieldValue("hawserMainSession", nextSlug ? `${nextSlug}:main` : "", { ifUnedited: true, source: "derived" });
     }
   });
 
   slugInput.addEventListener("input", () => {
-    slugInput.dataset.edited = "true";
+    markCoreFieldEdited("slug");
+    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+      field: "slug",
+      value: slugInput.value,
+      source: "user"
+    });
 
     if (!hawserMainSessionInput.dataset.edited) {
       const nextSlug = slugify(slugInput.value);
-      hawserMainSessionInput.value = nextSlug ? `${nextSlug}:main` : "";
+      setCoreFieldValue("hawserMainSession", nextSlug ? `${nextSlug}:main` : "", { ifUnedited: true, source: "derived" });
     }
   });
 
   gitUrlInput.addEventListener("input", () => {
+    markCoreFieldEdited("gitUrl");
+    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+      field: "gitUrl",
+      value: gitUrlInput.value,
+      source: "user"
+    });
+
     if (!repoUrlInput.dataset.edited) {
-      repoUrlInput.value = deriveRepoUrl(gitUrlInput.value);
+      setCoreFieldValue("repoUrl", deriveRepoUrl(gitUrlInput.value), { ifUnedited: true, source: "derived" });
     }
   });
 
   repoUrlInput.addEventListener("input", () => {
-    repoUrlInput.dataset.edited = "true";
+    markCoreFieldEdited("repoUrl");
+    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+      field: "repoUrl",
+      value: repoUrlInput.value,
+      source: "user"
+    });
   });
 
   twiccUrlInput.addEventListener("input", () => {
-    twiccUrlInput.dataset.edited = "true";
+    markCoreFieldEdited("twiccUrl");
     twiccProjectPrompt.hidden = true;
+    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+      field: "twiccUrl",
+      value: twiccUrlInput.value,
+      source: "user"
+    });
   });
 
   hawserMainSessionInput.addEventListener("input", () => {
-    hawserMainSessionInput.dataset.edited = "true";
+    markCoreFieldEdited("hawserMainSession");
+    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+      field: "hawserMainSession",
+      value: hawserMainSessionInput.value,
+      source: "user"
+    });
+  });
+
+  sourcePathInput.addEventListener("input", () => {
+    markCoreFieldEdited("sourcePath");
+    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+      field: "sourcePath",
+      value: sourcePathInput.value,
+      source: "user"
+    });
+  });
+
+  devBranchInput.addEventListener("input", () => {
+    markCoreFieldEdited("devBranch");
+    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+      field: "devBranch",
+      value: devBranchInput.value,
+      source: "user"
+    });
   });
 
   function applySourcePathIdentity(sourcePath) {
@@ -3108,15 +3211,18 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     }
 
     if (!nameInput.value.trim()) {
-      nameInput.value = projectName;
+      setCoreFieldValue("name", projectName, { source: "sourcePath" });
     }
 
     if (!slugInput.value.trim()) {
-      slugInput.value = projectSlug || slugify(nameInput.value);
+      setCoreFieldValue("slug", projectSlug || slugify(nameInput.value), { source: "sourcePath" });
     }
 
     if (!hawserMainSessionInput.value.trim() && !hawserMainSessionInput.dataset.edited) {
-      hawserMainSessionInput.value = slugInput.value ? `${slugInput.value}:main` : "";
+      setCoreFieldValue("hawserMainSession", slugInput.value ? `${slugInput.value}:main` : "", {
+        ifUnedited: true,
+        source: "sourcePath"
+      });
     }
   }
 
@@ -3127,22 +3233,22 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     const inspected = await window.dashtop.inspectSourcePath(sourcePath);
 
     if (inspected?.gitUrl) {
-      gitUrlInput.value = inspected.gitUrl;
+      setCoreFieldValue("gitUrl", inspected.gitUrl, { source: "inspection" });
     }
 
     if (inspected?.repoUrl) {
-      repoUrlInput.value = inspected.repoUrl;
+      setCoreFieldValue("repoUrl", inspected.repoUrl, { source: "inspection" });
     } else if (inspected?.gitUrl && !repoUrlInput.dataset.edited) {
-      repoUrlInput.value = deriveRepoUrl(inspected.gitUrl);
+      setCoreFieldValue("repoUrl", deriveRepoUrl(inspected.gitUrl), { ifUnedited: true, source: "inspection" });
     }
 
     const canReplaceTwiccUrl = !twiccUrlInput.dataset.edited ||
       !twiccUrlInput.value.trim() ||
       twiccUrlInput.value.trim() === DEFAULT_TWICC_URL;
     if (inspected?.twiccUrl && inspected.twiccMatchType === "exact" && canReplaceTwiccUrl) {
-      twiccUrlInput.value = inspected.twiccUrl;
+      setCoreFieldValue("twiccUrl", inspected.twiccUrl, { source: "inspection" });
     } else if (inspected?.twiccMatchType === "parent" && canReplaceTwiccUrl) {
-      twiccUrlInput.value = "";
+      setCoreFieldValue("twiccUrl", "", { source: "inspection" });
       twiccProjectPrompt.hidden = false;
     }
 
@@ -3157,6 +3263,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       ...payload,
       projectId: initialValues.id || "",
       forPlugin: (pluginId) => ({
+        coreFields: readCoreProjectFields(),
         fields: pluginSettings.createFieldApi(pluginId)
       })
     });
@@ -3176,8 +3283,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     try {
       const created = await window.dashtop.createTwiccProject(sourcePath);
       if (created?.url) {
-        twiccUrlInput.value = created.url;
-        twiccUrlInput.dataset.edited = "true";
+        setCoreFieldValue("twiccUrl", created.url, { markEdited: true, source: "twiccProjectCreated" });
         twiccProjectPrompt.hidden = true;
         emitProjectFormEvent("dashtop.projectForm.sourcePathInspected", {
           sourcePath,
