@@ -36,7 +36,13 @@
     const currentValue = fields?.getValue("twiccProjectUrl") || "";
     const canReplace = !fields?.isEdited("twiccProjectUrl") || !currentValue.trim();
 
-    if (!fields || !canReplace) {
+    if (!fields) {
+      return;
+    }
+
+    fields.setActionVisible("twiccProjectUrl", false);
+
+    if (!canReplace) {
       return;
     }
 
@@ -44,6 +50,7 @@
       fields.setValue("twiccProjectUrl", inspected.twiccProjectUrl);
     } else if (inspected.twiccMatchType === "parent") {
       fields.setValue("twiccProjectUrl", "");
+      fields.setActionVisible("twiccProjectUrl", true);
     }
   }
 
@@ -100,7 +107,26 @@
               label: "Twicc project URL",
               type: "text",
               valueType: "url",
-              placeholder: `${DEFAULT_TWICC_URL}/project/example`
+              placeholder: `${DEFAULT_TWICC_URL}/project/example`,
+              action: {
+                label: "Create",
+                pendingLabel: "Creating...",
+                message: "TwiCC project not found. Create it?",
+                async run({ coreFields, fields }) {
+                  const sourcePath = String(coreFields.sourcePath || "").trim();
+                  if (!sourcePath) {
+                    throw new Error("Source path is required to create a TwiCC project.");
+                  }
+
+                  const created = await globalScope.dashtop.createTwiccProject(sourcePath);
+                  if (!created?.url) {
+                    throw new Error("TwiCC project was created but no URL was returned.");
+                  }
+
+                  fields.setValue("twiccProjectUrl", created.url, { markEdited: true });
+                  fields.setActionVisible("twiccProjectUrl", false);
+                }
+              }
             }
           ]
         });

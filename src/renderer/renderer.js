@@ -3214,7 +3214,13 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   error.setAttribute("role", "alert");
   error.hidden = true;
 
-  const pluginSettings = createProjectPluginSettingsControls(initialValues);
+  const pluginSettings = createProjectPluginSettingsControls(initialValues, {
+    readCoreProjectFields,
+    setError(message) {
+      error.textContent = message || "";
+      error.hidden = !message;
+    }
+  });
 
   const actions = document.createElement("div");
   actions.className = "form-actions";
@@ -3309,7 +3315,7 @@ function createProjectUrlRow(entry = {}) {
   return row;
 }
 
-function createProjectPluginSettingsControls(initialValues = {}) {
+function createProjectPluginSettingsControls(initialValues = {}, options = {}) {
   const controls = [];
   const sections = [];
 
@@ -3343,7 +3349,50 @@ function createProjectPluginSettingsControls(initialValues = {}) {
         input.dataset.edited = "true";
       });
       label.append(input);
-      inputs.set(field.key, { field, input });
+      const fieldState = { field, input, action: null };
+
+      if (field.action) {
+        const action = document.createElement("div");
+        action.className = "field-action";
+        action.hidden = field.action.hidden !== false;
+
+        const actionMessage = document.createElement("span");
+        actionMessage.textContent = field.action.message || "";
+
+        const actionButton = document.createElement("button");
+        actionButton.className = "secondary-button";
+        actionButton.type = "button";
+        actionButton.textContent = field.action.label || "Run";
+        actionButton.addEventListener("click", async () => {
+          if (typeof field.action.run !== "function") {
+            return;
+          }
+
+          options.setError?.("");
+          actionButton.disabled = true;
+          const originalLabel = actionButton.textContent;
+          actionButton.textContent = field.action.pendingLabel || "Working...";
+
+          try {
+            await field.action.run({
+              project: initialValues,
+              coreFields: options.readCoreProjectFields?.() || {},
+              fields: createPluginFieldApi(inputs)
+            });
+          } catch (actionError) {
+            options.setError?.(actionError.message);
+          } finally {
+            actionButton.disabled = false;
+            actionButton.textContent = originalLabel;
+          }
+        });
+
+        action.append(actionMessage, actionButton);
+        label.append(action);
+        fieldState.action = { element: action, message: actionMessage, button: actionButton };
+      }
+
+      inputs.set(field.key, fieldState);
       wrapper.append(label);
     }
 
@@ -3367,33 +3416,54 @@ function createProjectPluginSettingsControls(initialValues = {}) {
     createFieldApi(pluginId) {
       const section = sections.find((entry) => entry.pluginId === pluginId);
       const inputs = section?.inputs || new Map();
-
-      return Object.freeze({
-        getValue(key) {
-          return inputs.get(key)?.input.value || "";
-        },
-        setValue(key, value, options = {}) {
-          const input = inputs.get(key)?.input;
-          if (!input) {
-            return false;
-          }
-
-          if (options.ifUnedited && input.dataset.edited) {
-            return false;
-          }
-
-          input.value = String(value || "");
-          if (options.markEdited) {
-            input.dataset.edited = "true";
-          }
-          return true;
-        },
-        isEdited(key) {
-          return inputs.get(key)?.input.dataset.edited === "true";
-        }
-      });
+      return createPluginFieldApi(inputs);
     }
   };
+}
+
+function createPluginFieldApi(inputs) {
+  return Object.freeze({
+    getValue(key) {
+      return inputs.get(key)?.input.value || "";
+    },
+    setValue(key, value, options = {}) {
+      const input = inputs.get(key)?.input;
+      if (!input) {
+        return false;
+      }
+
+      if (options.ifUnedited && input.dataset.edited) {
+        return false;
+      }
+
+      input.value = String(value || "");
+      if (options.markEdited) {
+        input.dataset.edited = "true";
+      }
+      return true;
+    },
+    isEdited(key) {
+      return inputs.get(key)?.input.dataset.edited === "true";
+    },
+    setActionVisible(key, visible) {
+      const action = inputs.get(key)?.action;
+      if (!action) {
+        return false;
+      }
+
+      action.element.hidden = !visible;
+      return true;
+    },
+    setActionMessage(key, message) {
+      const action = inputs.get(key)?.action;
+      if (!action) {
+        return false;
+      }
+
+      action.message.textContent = String(message || "");
+      return true;
+    }
+  });
 }
 
 function readProjectUrlRows(list) {
