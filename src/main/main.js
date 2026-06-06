@@ -3,7 +3,7 @@
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
-const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
 const { getHawserWidgetData } = require("./hawserService");
 const { PasswordManager } = require("./passwordManager");
 const { ProjectStore, deriveRepoUrl } = require("./store");
@@ -131,6 +131,75 @@ async function inspectSourcePath(sourcePath) {
   };
 }
 
+function createWebAppContextMenu(webContents, params) {
+  const template = [];
+
+  if (params.isEditable) {
+    template.push(
+      { role: "undo", enabled: params.editFlags?.canUndo },
+      { role: "redo", enabled: params.editFlags?.canRedo },
+      { type: "separator" },
+      { role: "cut", enabled: params.editFlags?.canCut },
+      { role: "copy", enabled: params.editFlags?.canCopy },
+      { role: "paste", enabled: params.editFlags?.canPaste },
+      { role: "delete", enabled: params.editFlags?.canDelete },
+      { type: "separator" },
+      { role: "selectAll", enabled: params.editFlags?.canSelectAll }
+    );
+  } else if (params.selectionText) {
+    template.push({ role: "copy" });
+  }
+
+  if (params.linkURL) {
+    if (template.length) {
+      template.push({ type: "separator" });
+    }
+    template.push(
+      {
+        label: "Open link in browser",
+        click: () => shell.openExternal(params.linkURL)
+      },
+      {
+        label: "Copy link address",
+        click: () => clipboard.writeText(params.linkURL)
+      }
+    );
+  }
+
+  if (template.length) {
+    template.push({ type: "separator" });
+  }
+
+  template.push(
+    {
+      label: "Back",
+      enabled: webContents.canGoBack(),
+      click: () => webContents.goBack()
+    },
+    {
+      label: "Forward",
+      enabled: webContents.canGoForward(),
+      click: () => webContents.goForward()
+    },
+    {
+      label: "Reload",
+      click: () => webContents.reload()
+    }
+  );
+
+  if (!app.isPackaged) {
+    template.push(
+      { type: "separator" },
+      {
+        label: "Inspect element",
+        click: () => webContents.inspectElement(params.x, params.y)
+      }
+    );
+  }
+
+  return Menu.buildFromTemplate(template);
+}
+
 function ensureWebAppView(key) {
   const existing = webAppViews.get(key);
   if (existing) {
@@ -150,6 +219,11 @@ function ensureWebAppView(key) {
   view.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
+  });
+  view.webContents.on("context-menu", (_event, params) => {
+    createWebAppContextMenu(view.webContents, params).popup({
+      window: mainWindow || undefined
+    });
   });
   view.webContents.on("did-navigate", (_event, url) => {
     persistWebAppUrl(key, url);
