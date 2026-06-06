@@ -2688,7 +2688,7 @@ function createGlobalPluginSettingsForm(section, options = {}) {
   const submitButton = document.createElement("button");
   submitButton.className = "primary-button";
   submitButton.type = "submit";
-  submitButton.textContent = `Save ${section.title}`;
+  submitButton.textContent = "Save";
 
   actions.append(submitButton);
   form.append(error, actions);
