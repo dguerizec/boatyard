@@ -1338,9 +1338,24 @@ button {
   min-height: 0;
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 10px;
   overflow-y: auto;
   padding-right: 2px;
+}
+
+.hawser-message-section {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.hawser-message-section h4 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .hawser-message-row {
@@ -1380,6 +1395,20 @@ button {
   border-color: rgba(65, 184, 131, 0.9);
   background: rgba(65, 184, 131, 0.22);
   outline: none;
+}
+
+.hawser-message-pending {
+  justify-self: start;
+  min-width: 0;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 5px;
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
 }
 
 .hawser-message-row strong,

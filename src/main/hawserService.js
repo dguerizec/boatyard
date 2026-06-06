@@ -78,13 +78,22 @@ function getMessageSessionTarget(message = {}) {
 function summarizeMessages(messages) {
   return {
     unread: messages.filter((message) => message.direction === "in" && message.status === "unread").length,
-    processing: messages.filter((message) => message.kind === "task" && message.status === "processing").length,
+    queued: messages.filter(isQueuedRemoteMessage).length,
+    processing: messages.filter(isRunningTask).length,
     activeTasks: messages.filter(isActiveTask).length
   };
 }
 
+function isQueuedRemoteMessage(message) {
+  return message.direction === "out" && message.status === "unread";
+}
+
+function isRunningTask(message) {
+  return message.kind === "task" && message.status === "processing";
+}
+
 function isActiveTask(message) {
-  return message.kind === "task" && ["unread", "processing"].includes(message.status);
+  return message.kind === "task" && (message.status === "unread" || isRunningTask(message));
 }
 
 function shouldShowWidgetMessage(message) {
@@ -208,7 +217,7 @@ async function getHawserWidgetDataFromHttp(projectName, project = {}, settings =
     sentParams.set("session", sessionName);
   }
 
-  const [projectInfo, inbox, sent] = await Promise.all([
+  const [, inbox, sent] = await Promise.all([
     fetchHawserJson(`/api/projects/${encodeURIComponent(projectName)}`, settings),
     fetchHawserJson(`/api/projects/${encodeURIComponent(projectName)}/inbox?${inboxParams.toString()}`, settings),
     fetchHawserJson(`/api/projects/${encodeURIComponent(projectName)}/sent?${sentParams.toString()}`, settings)
@@ -226,8 +235,9 @@ async function getHawserWidgetDataFromHttp(projectName, project = {}, settings =
     source: "http",
     live: true,
     counts: {
-      unread: projectInfo.pending_message_count || 0,
-      processing: projectInfo.processing_message_count || 0,
+      unread: normalizedMessages.filter((message) => message.direction === "in" && message.status === "unread").length,
+      queued: normalizedMessages.filter(isQueuedRemoteMessage).length,
+      processing: normalizedMessages.filter(isRunningTask).length,
       activeTasks: normalizedMessages.filter(isActiveTask).length
     },
     messages
@@ -244,6 +254,7 @@ async function getHawserWidgetData(project, settings = {}) {
       live: false,
       counts: {
         unread: 0,
+        queued: 0,
         processing: 0,
         activeTasks: 0
       },
@@ -261,6 +272,7 @@ async function getHawserWidgetData(project, settings = {}) {
       live: false,
       counts: {
         unread: 0,
+        queued: 0,
         processing: 0,
         activeTasks: 0
       },
@@ -277,6 +289,8 @@ module.exports = {
   getMessageSessionTarget,
   getTwiccSessionIdFromRefs,
   isActiveTask,
+  isQueuedRemoteMessage,
+  isRunningTask,
   normalizeMessage,
   parseHawserProjectName,
   parseHawserSessionName,

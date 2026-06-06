@@ -556,8 +556,8 @@ function createHawserWidget(project, options = {}) {
 
   const metricEntries = [
     ["unread", "Unread"],
-    ["processing", "Processing"],
-    ["activeTasks", "Tasks"]
+    ["queued", "Queued"],
+    ["processing", "Running"]
   ];
   const metricValues = new Map();
 
@@ -585,45 +585,77 @@ function createHawserWidget(project, options = {}) {
 
   card.append(header, metrics, list, footer);
 
+  function isActiveHawserMessage(message) {
+    return ["unread", "processing"].includes(message.status);
+  }
+
+  function isPendingHawserSession(message) {
+    return message.kind === "task" && isActiveHawserMessage(message) && !message.twiccSessionUrl;
+  }
+
+  function createHawserMessageRow(message) {
+    const row = document.createElement("div");
+    row.className = `hawser-message-row ${message.status}`;
+
+    const subject = document.createElement("strong");
+    subject.textContent = message.subject;
+
+    const meta = document.createElement("span");
+    meta.textContent = `${message.kind} / ${message.status} / ${formatHawserEndpoint(message)}`;
+
+    const preview = document.createElement("small");
+    preview.textContent = message.worktree?.state
+      ? `${message.worktree.kind || "worktree"} / ${message.worktree.state}`
+      : message.preview || "No preview.";
+
+    row.append(subject, meta, preview);
+
+    if (message.twiccSessionUrl && typeof options.onOpenMessage === "function") {
+      const twiccButton = document.createElement("button");
+      twiccButton.className = "hawser-message-link";
+      twiccButton.type = "button";
+      twiccButton.textContent = "Open Twicc session";
+      twiccButton.addEventListener("click", () => options.onOpenMessage(message));
+      row.append(twiccButton);
+    } else if (isPendingHawserSession(message)) {
+      const pending = document.createElement("span");
+      pending.className = "hawser-message-pending";
+      pending.textContent = "Session pending";
+      row.append(pending);
+    }
+
+    return row;
+  }
+
+  function appendMessageSection(title, messages) {
+    if (!messages.length) {
+      return;
+    }
+
+    const section = document.createElement("section");
+    section.className = "hawser-message-section";
+
+    const heading = document.createElement("h4");
+    heading.textContent = title;
+    section.append(heading, ...messages.map(createHawserMessageRow));
+    list.append(section);
+  }
+
   function renderMessages(data) {
     list.innerHTML = "";
 
     if (!data.messages.length) {
       const empty = document.createElement("p");
       empty.className = "hawser-message-empty";
-      empty.textContent = "No active inbox or tasks.";
+      empty.textContent = "No active inbox or linked sessions.";
       list.append(empty);
       return;
     }
 
-    for (const message of data.messages) {
-      const row = document.createElement("div");
-      row.className = `hawser-message-row ${message.status}`;
-
-      const subject = document.createElement("strong");
-      subject.textContent = message.subject;
-
-      const meta = document.createElement("span");
-      meta.textContent = `${message.kind} / ${message.status} / ${formatHawserEndpoint(message)}`;
-
-      const preview = document.createElement("small");
-      preview.textContent = message.worktree?.state
-        ? `${message.worktree.kind || "worktree"} / ${message.worktree.state}`
-        : message.preview || "No preview.";
-
-      row.append(subject, meta, preview);
-
-      if (message.twiccSessionUrl && typeof options.onOpenMessage === "function") {
-        const twiccButton = document.createElement("button");
-        twiccButton.className = "hawser-message-link";
-        twiccButton.type = "button";
-        twiccButton.textContent = "Open Twicc session";
-        twiccButton.addEventListener("click", () => options.onOpenMessage(message));
-        row.append(twiccButton);
-      }
-
-      list.append(row);
-    }
+    const activeMessages = data.messages.filter(isActiveHawserMessage);
+    const historyMessages = data.messages.filter((message) => !isActiveHawserMessage(message));
+    appendMessageSection("Active", activeMessages);
+    appendMessageSection("History", historyMessages);
   }
 
   async function refresh() {

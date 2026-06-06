@@ -7,6 +7,8 @@ const {
   getMessageSessionTarget,
   getTwiccSessionIdFromRefs,
   isActiveTask,
+  isQueuedRemoteMessage,
+  isRunningTask,
   normalizeMessage,
   parseHawserProjectName,
   parseHawserSessionName,
@@ -61,17 +63,43 @@ test("summarizeMessages counts inbox and active Hawser tasks", () => {
     }
   ]), {
     unread: 1,
+    queued: 1,
     processing: 1,
     activeTasks: 2
   });
 });
 
-test("isActiveTask excludes read tasks that remain visible for Twicc links", () => {
+test("message state predicates distinguish remote queued, running, and history messages", () => {
+  assert.equal(isQueuedRemoteMessage({
+    direction: "out",
+    kind: "task",
+    status: "unread"
+  }), true);
+  assert.equal(isQueuedRemoteMessage({
+    direction: "in",
+    kind: "reply",
+    status: "unread"
+  }), false);
+  assert.equal(isRunningTask({
+    kind: "task",
+    status: "processing"
+  }), true);
   assert.equal(isActiveTask({
     kind: "task",
     status: "processing",
     twiccSessionId: "019e8578-4195-7553-9d18-1e01bf765656"
   }), true);
+  assert.equal(isQueuedRemoteMessage({
+    direction: "out",
+    kind: "task",
+    status: "done",
+    twiccSessionId: "019e8578-4195-7553-9d18-1e01bf765656"
+  }), false);
+  assert.equal(isRunningTask({
+    kind: "task",
+    status: "done",
+    twiccSessionId: "019e8578-4195-7553-9d18-1e01bf765656"
+  }), false);
   assert.equal(isActiveTask({
     kind: "task",
     status: "done",
