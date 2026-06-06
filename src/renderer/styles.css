@@ -596,6 +596,8 @@ button {
 
 .plugin-global-settings-form label {
   min-width: 0;
+  display: grid;
+  gap: 6px;
   color: var(--muted);
   font-size: 10px;
   font-weight: 800;
@@ -603,7 +605,9 @@ button {
 }
 
 .plugin-global-settings-form input {
-  margin-top: 6px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0;
 }
 
 .plugin-global-settings-form .form-error {
@@ -621,7 +625,7 @@ button {
 }
 
 .plugin-settings-dialog {
-  width: min(520px, calc(100vw - 32px));
+  width: min(560px, calc(100vw - 32px));
   max-height: calc(100vh - 48px);
   padding: 0;
   border: 1px solid var(--line);
