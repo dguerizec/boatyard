@@ -143,7 +143,10 @@
       const pathButton = document.createElement("button");
       pathButton.className = "pier-path-button";
       pathButton.type = "button";
-      pathButton.textContent = entry.worktreePath || "No worktree path";
+      const pathText = document.createElement("span");
+      pathText.className = "pier-path-text";
+      pathText.textContent = entry.worktreePath || "No worktree path";
+      pathButton.append(pathText);
       pathButton.title = entry.worktreePath ? `Copy ${entry.worktreePath}` : "";
       pathButton.disabled = !entry.worktreePath;
       pathButton.addEventListener("click", async () => {

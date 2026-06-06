@@ -1103,6 +1103,12 @@ button {
   white-space: nowrap;
 }
 
+.pier-path-text {
+  display: inline;
+  direction: ltr;
+  unicode-bidi: plaintext;
+}
+
 .pier-path-button:not(:disabled) {
   cursor: pointer;
 }
