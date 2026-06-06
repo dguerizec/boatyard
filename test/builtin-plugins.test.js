@@ -12,7 +12,11 @@ function loadRendererPluginEnvironment() {
     window: {
       dashtop: {
         openExternal: () => {},
-        writeClipboardText: () => {}
+        writeClipboardText: () => {},
+        getHawserWidgetDataForConfig: async () => ({})
+      },
+      DashtopHawserUI: {
+        createWidget: () => ({})
       },
       setInterval: () => 0,
       clearInterval: () => {}
@@ -34,7 +38,8 @@ function loadRendererPluginEnvironment() {
     "../src/renderer/widgetRegistry.js",
     "../src/renderer/pluginRegistry.js",
     "../src/renderer/plugins/twicc.js",
-    "../src/renderer/plugins/pier.js"
+    "../src/renderer/plugins/pier.js",
+    "../src/renderer/plugins/hawser.js"
   ]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, file), "utf8"), context);
   }
@@ -46,13 +51,14 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-test("Built-in plugins register Twicc and Pier contributions", () => {
+test("Built-in plugins register Twicc, Pier, and Hawser contributions", () => {
   const registry = loadRendererPluginEnvironment();
 
   registry.applyEnabledState({});
 
   assert.equal(registry.getService("dashtop.twicc.api").version, "0.1.0");
   assert.equal(typeof registry.getService("dashtop.pier").listProjectWorkloads, "function");
+  assert.equal(registry.getService("dashtop.hawser.api").version, "0.1.0");
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.id).sort()),
     ["dashtop.pier.preview", "dashtop.twicc.pane"]
@@ -63,6 +69,6 @@ test("Built-in plugins register Twicc and Pier contributions", () => {
   );
   assert.deepEqual(
     plain(registry.listGlobalSettingsSections().map((section) => section.id).sort()),
-    ["dashtop.pier.global", "dashtop.twicc.global"]
+    ["dashtop.hawser.global", "dashtop.pier.global", "dashtop.twicc.global"]
   );
 });

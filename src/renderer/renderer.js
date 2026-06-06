@@ -13,7 +13,6 @@ const workspaceKicker = document.querySelector("#workspace-kicker");
 const workspaceTitle = document.querySelector("#workspace-title");
 const workspaceSummary = document.querySelector("#workspace-summary");
 
-const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const MIN_WEBAPP_AREA_WIDTH = 420;
 const WIDGET_RAIL_RESIZER_WIDTH = 6;
@@ -111,8 +110,6 @@ function getSettings() {
   return {
     projectsBasePath: "",
     blurWebAppOverlays: true,
-    hawserApiUrl: DEFAULT_HAWSER_API_URL,
-    hawserToken: "",
     widgetRailWidth: 340,
     ...(state.settings || {})
   };
@@ -163,7 +160,7 @@ async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
 }
 
 function readPluginSettingsFieldValue(field, input) {
-  const rawValue = input.value.trim();
+  const rawValue = input.value.trim() || input.dataset.defaultValue || "";
 
   if (!rawValue) {
     if (field.required) {
@@ -541,7 +538,8 @@ function formatHawserEndpoint(message) {
   return `to ${message.toProject || "?"}${message.toSession ? `:${message.toSession}` : ""}`;
 }
 
-function createHawserWidget(project) {
+function createHawserWidget(project, options = {}) {
+  const loadData = options.loadData;
   const card = document.createElement("article");
   card.className = "widget-card hawser-widget";
 
@@ -552,10 +550,10 @@ function createHawserWidget(project) {
   title.className = "hawser-widget-title";
 
   const titleText = document.createElement("h3");
-  titleText.textContent = "Hawser";
+  titleText.textContent = options.title || "Hawser";
 
   const subtitle = document.createElement("small");
-  subtitle.textContent = project.hawserMainSession || `${project.slug}:main`;
+  subtitle.textContent = options.subtitle || `${project.slug}:main`;
 
   title.append(titleText, subtitle);
 
@@ -637,7 +635,7 @@ function createHawserWidget(project) {
     }
 
     try {
-      const data = await window.dashtop.getHawserWidgetData(project.id);
+      const data = await loadData(project);
       status.textContent = data.live ? "Live" : "Offline";
       status.classList.toggle("offline", !data.live);
       for (const [key, value] of metricValues) {
@@ -658,6 +656,10 @@ function createHawserWidget(project) {
   queueMicrotask(refresh);
   return card;
 }
+
+window.DashtopHawserUI = Object.freeze({
+  createWidget: createHawserWidget
+});
 
 function registerBuiltinProjectWidgets() {
   const registry = window.DashtopWidgetRegistry;
@@ -702,23 +704,6 @@ function registerBuiltinProjectWidgets() {
         max: { columns: 4, rows: 8 }
       },
       createElement: (project) => createTerminalWidget(project)
-    },
-    {
-      id: "hawser-inbox",
-      name: "Hawser",
-      title: "Hawser",
-      scope: "project",
-      category: "Developer tools",
-      status: "experimental",
-      defaultVisible: false,
-      description: "Shows Hawser inbox counts and active task status for the project.",
-      requires: [{ type: "projectField", key: "hawserMainSession" }],
-      layout: {
-        default: { columns: 2, rows: 3 },
-        min: { columns: 2, rows: 2 },
-        max: { columns: 4, rows: 6 }
-      },
-      createElement: (project) => createHawserWidget(project)
     },
     {
       id: "discord",
@@ -2195,9 +2180,9 @@ function renderGlobalDashboard() {
     }),
     createCard({
       eyebrow: "Inbox",
-      title: "Hawser",
+      title: "Inbox",
       body: "Placeholder for cross-project messages and active requests.",
-      meta: "API widget target"
+      meta: "Plugin widget target"
     })
   );
 }
@@ -2349,80 +2334,6 @@ function createGlobalPresentationSettingsForm({ settings, onSubmit }) {
     try {
       await onSubmit({
         blurWebAppOverlays: blurSwitch.checked
-      });
-    } catch (submitError) {
-      error.textContent = submitError.message;
-      error.hidden = false;
-    }
-  });
-
-  shell.append(form);
-  return shell;
-}
-
-function createGlobalHawserSettingsForm({ settings, onSubmit }) {
-  const shell = document.createElement("section");
-  shell.className = "project-form-page";
-
-  const form = document.createElement("form");
-  form.className = "project-form";
-
-  const heading = document.createElement("div");
-  heading.className = "form-heading";
-
-  const headingTitle = document.createElement("h3");
-  headingTitle.textContent = "Hawser";
-
-  const headingCopy = document.createElement("p");
-  headingCopy.textContent = "Configure the Hawser API used by project widgets.";
-  heading.append(headingTitle, headingCopy);
-
-  const apiUrlLabel = document.createElement("label");
-  apiUrlLabel.textContent = "API URL";
-
-  const apiUrlInput = document.createElement("input");
-  apiUrlInput.name = "hawserApiUrl";
-  apiUrlInput.type = "text";
-  apiUrlInput.autocomplete = "off";
-  apiUrlInput.placeholder = DEFAULT_HAWSER_API_URL;
-  apiUrlInput.value = settings.hawserApiUrl || DEFAULT_HAWSER_API_URL;
-  apiUrlLabel.append(apiUrlInput);
-
-  const tokenLabel = document.createElement("label");
-  tokenLabel.textContent = "API token";
-
-  const tokenInput = document.createElement("input");
-  tokenInput.name = "hawserToken";
-  tokenInput.type = "password";
-  tokenInput.autocomplete = "off";
-  tokenInput.value = settings.hawserToken || "";
-  tokenLabel.append(tokenInput);
-
-  const error = document.createElement("p");
-  error.className = "form-error";
-  error.setAttribute("role", "alert");
-  error.hidden = true;
-
-  const actions = document.createElement("div");
-  actions.className = "form-actions";
-
-  const submitButton = document.createElement("button");
-  submitButton.className = "primary-button";
-  submitButton.type = "submit";
-  submitButton.textContent = "Save Hawser";
-
-  actions.append(submitButton);
-  form.append(heading, apiUrlLabel, tokenLabel, error, actions);
-
-  form.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    error.textContent = "";
-    error.hidden = true;
-
-    try {
-      await onSubmit({
-        hawserApiUrl: apiUrlInput.value,
-        hawserToken: tokenInput.value
       });
     } catch (submitError) {
       error.textContent = submitError.message;
@@ -2782,12 +2693,6 @@ function renderGlobalSettingsPage() {
       state = await window.dashtop.updateSettings(values);
       renderGlobalSettingsPage();
     }
-  }), createGlobalHawserSettingsForm({
-    settings: getSettings(),
-    onSubmit: async (values) => {
-      state = await window.dashtop.updateSettings(values);
-      renderGlobalSettingsPage();
-    }
   }), createGlobalPasswordManagerSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
@@ -2998,24 +2903,13 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   devBranchInput.value = initialValues.devBranch || "";
   devBranchLabel.append(devBranchInput);
 
-  const hawserMainSessionLabel = document.createElement("label");
-  hawserMainSessionLabel.textContent = "Hawser main session";
-
-  const hawserMainSessionInput = document.createElement("input");
-  hawserMainSessionInput.name = "hawserMainSession";
-  hawserMainSessionInput.type = "text";
-  hawserMainSessionInput.required = true;
-  hawserMainSessionInput.value = initialValues.hawserMainSession || "";
-  hawserMainSessionLabel.append(hawserMainSessionInput);
-
   const coreInputs = {
     name: nameInput,
     slug: slugInput,
     sourcePath: sourcePathInput,
     gitUrl: gitUrlInput,
     repoUrl: repoUrlInput,
-    devBranch: devBranchInput,
-    hawserMainSession: hawserMainSessionInput
+    devBranch: devBranchInput
   };
 
   function readCoreProjectFields() {
@@ -3069,7 +2963,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     if (!slugInput.dataset.edited) {
       const nextSlug = slugify(nameInput.value);
       setCoreFieldValue("slug", nextSlug, { source: "derived" });
-      setCoreFieldValue("hawserMainSession", nextSlug ? `${nextSlug}:main` : "", { ifUnedited: true, source: "derived" });
     }
   });
 
@@ -3081,10 +2974,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       source: "user"
     });
 
-    if (!hawserMainSessionInput.dataset.edited) {
-      const nextSlug = slugify(slugInput.value);
-      setCoreFieldValue("hawserMainSession", nextSlug ? `${nextSlug}:main` : "", { ifUnedited: true, source: "derived" });
-    }
   });
 
   gitUrlInput.addEventListener("input", () => {
@@ -3105,15 +2994,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
       field: "repoUrl",
       value: repoUrlInput.value,
-      source: "user"
-    });
-  });
-
-  hawserMainSessionInput.addEventListener("input", () => {
-    markCoreFieldEdited("hawserMainSession");
-    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
-      field: "hawserMainSession",
-      value: hawserMainSessionInput.value,
       source: "user"
     });
   });
@@ -3152,12 +3032,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       setCoreFieldValue("slug", projectSlug || slugify(nameInput.value), { source: "sourcePath" });
     }
 
-    if (!hawserMainSessionInput.value.trim() && !hawserMainSessionInput.dataset.edited) {
-      setCoreFieldValue("hawserMainSession", slugInput.value ? `${slugInput.value}:main` : "", {
-        ifUnedited: true,
-        source: "sourcePath"
-      });
-    }
   }
 
   async function applySourcePathInspection(sourcePath) {
@@ -3246,7 +3120,6 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     repoUrlLabel,
     devBranchLabel,
     ...pluginSettings.controls,
-    hawserMainSessionLabel,
     error,
     actions
   );
@@ -3264,8 +3137,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
         gitUrl: gitUrlInput.value,
         repoUrl: repoUrlInput.value,
         devBranch: devBranchInput.value,
-        pluginConfig: pluginSettings.readValues(),
-        hawserMainSession: hawserMainSessionInput.value
+        pluginConfig: pluginSettings.readValues()
       });
     } catch (submitError) {
       error.textContent = submitError.message;
@@ -3343,7 +3215,14 @@ function createProjectPluginSettingsControls(initialValues = {}, options = {}) {
       input.name = field.key;
       input.type = field.type || "text";
       input.autocomplete = "off";
-      input.placeholder = field.placeholder || "";
+      const defaultValue = typeof field.defaultValue === "function"
+        ? field.defaultValue({
+            project: initialValues,
+            coreFields: options.readCoreProjectFields?.() || {}
+          })
+        : field.defaultValue;
+      input.dataset.defaultValue = String(defaultValue || "");
+      input.placeholder = input.dataset.defaultValue || field.placeholder || "";
       input.value = projectPluginConfig[field.key] || "";
       input.addEventListener("input", () => {
         input.dataset.edited = "true";
@@ -3444,6 +3323,17 @@ function createPluginFieldApi(inputs) {
     },
     isEdited(key) {
       return inputs.get(key)?.input.dataset.edited === "true";
+    },
+    setDefaultValue(key, value) {
+      const input = inputs.get(key)?.input;
+      if (!input) {
+        return false;
+      }
+
+      const nextValue = String(value || "");
+      input.dataset.defaultValue = nextValue;
+      input.placeholder = nextValue || inputs.get(key)?.field.placeholder || "";
+      return true;
     },
     setActionVisible(key, visible) {
       const action = inputs.get(key)?.action;
@@ -3642,7 +3532,6 @@ function renderCreateProjectPage() {
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
         devBranch: values.devBranch,
-        hawserMainSession: values.hawserMainSession,
         isOpen: false
       });
       const project = state.projects[state.projects.length - 1];
@@ -3678,8 +3567,7 @@ function renderEditProjectPage(project) {
         sourcePath: values.sourcePath,
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
-        devBranch: values.devBranch,
-        hawserMainSession: values.hawserMainSession
+        devBranch: values.devBranch
       });
       state = await persistProjectPluginConfig(
         project.id,

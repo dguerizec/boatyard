@@ -18,7 +18,6 @@ const DEFAULT_WINDOW_BOUNDS = {
   height: 820
 };
 
-const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-preview", "dashtop.pier.urls"],
@@ -30,8 +29,6 @@ function createDefaultState() {
     settings: {
       projectsBasePath: "",
       blurWebAppOverlays: true,
-      hawserApiUrl: DEFAULT_HAWSER_API_URL,
-      hawserToken: "",
       passwordManagerEnabled: false,
       passwordManagerDisclaimerAccepted: false,
       widgetRailWidth: 340
@@ -83,16 +80,6 @@ function normalizeUrl(rawUrl) {
 function normalizeOptionalUrl(rawUrl) {
   const trimmed = String(rawUrl || "").trim();
   return trimmed ? normalizeUrl(trimmed) : "";
-}
-
-function normalizeRequiredText(value, fieldName) {
-  const trimmed = String(value || "").trim();
-
-  if (!trimmed) {
-    throw new Error(`${fieldName} is required.`);
-  }
-
-  return trimmed;
 }
 
 function normalizeText(value) {
@@ -193,8 +180,6 @@ function normalizeSettings(settings = {}) {
   return {
     projectsBasePath: normalizeText(source.projectsBasePath),
     blurWebAppOverlays: source.blurWebAppOverlays !== false,
-    hawserApiUrl: normalizeOptionalUrl(source.hawserApiUrl) || DEFAULT_HAWSER_API_URL,
-    hawserToken: normalizeText(source.hawserToken),
     passwordManagerEnabled: source.passwordManagerEnabled === true && source.passwordManagerDisclaimerAccepted === true,
     passwordManagerDisclaimerAccepted: source.passwordManagerDisclaimerAccepted === true,
     widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340)
@@ -598,7 +583,6 @@ function normalizeProject(project, index = 0) {
     repoUrl,
     devBranch: normalizeText(project.devBranch),
     previewUrl,
-    hawserMainSession: normalizeRequiredText(project.hawserMainSession || `${slug}:main`, "Hawser main session"),
     urls: normalizeProjectUrls(project.urls),
     bounds: normalizeBounds(project.bounds, {
       x: 48 + index * 32,

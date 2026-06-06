@@ -458,10 +458,16 @@ function registerIpcHandlers() {
     return clipboard.readText("selection");
   });
 
-  ipcMain.handle("hawser:widget-data", (_event, projectId) => {
+  ipcMain.handle("hawser:widget-data-for-config", (_event, projectId, projectConfig = {}, globalConfig = {}) => {
     const state = store.getState();
     const project = state.projects.find((item) => item.id === String(projectId || ""));
-    return getHawserWidgetData(project, state.settings);
+    return getHawserWidgetData({
+      ...project,
+      hawserMainSession: projectConfig.hawserMainSession
+    }, {
+      hawserApiUrl: globalConfig.hawserApiUrl,
+      hawserToken: globalConfig.hawserToken
+    });
   });
 
   ipcMain.handle("password-manager:status", () => {

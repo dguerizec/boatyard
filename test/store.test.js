@@ -61,7 +61,6 @@ test("normalizeProject derives project tool defaults", () => {
     repoUrl: "https://github.com/owner/repo",
     devBranch: "",
     previewUrl: "http://localhost:5173/",
-    hawserMainSession: "dashtop:main",
     urls: [],
     bounds: {
       x: 48,
@@ -157,8 +156,6 @@ test("normalizeSettings keeps global settings defaults", () => {
   assert.deepEqual(normalizeSettings(), {
     projectsBasePath: "",
     blurWebAppOverlays: true,
-    hawserApiUrl: "http://127.0.0.1:60082/",
-    hawserToken: "",
     passwordManagerEnabled: false,
     passwordManagerDisclaimerAccepted: false,
     widgetRailWidth: 340
@@ -166,16 +163,12 @@ test("normalizeSettings keeps global settings defaults", () => {
   assert.deepEqual(normalizeSettings({
     projectsBasePath: "  /workspace/projects  ",
     blurWebAppOverlays: false,
-    hawserApiUrl: "localhost:60082",
-    hawserToken: "  test-token  ",
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 120
   }), {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
-    hawserApiUrl: "http://localhost:60082/",
-    hawserToken: "test-token",
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 240
@@ -444,7 +437,6 @@ test("ProjectStore persists configured projects", () => {
   assert.equal(state.projects[0].name, "Status");
   assert.equal(state.projects[0].slug, "status");
   assert.equal(state.projects[0].previewUrl, "https://status.example.com/");
-  assert.equal(state.projects[0].hawserMainSession, "status:main");
 
   const reloaded = new ProjectStore(filePath);
   const reloadedState = reloaded.load();
@@ -493,8 +485,6 @@ test("ProjectStore persists global settings", () => {
   const state = store.updateSettings({
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
-    hawserApiUrl: "http://127.0.0.1:60082",
-    hawserToken: "test-token",
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true
   });
@@ -502,8 +492,6 @@ test("ProjectStore persists global settings", () => {
   assert.deepEqual(state.settings, {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
-    hawserApiUrl: "http://127.0.0.1:60082/",
-    hawserToken: "test-token",
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 340
@@ -674,8 +662,7 @@ test("ProjectStore migrates preview URLs into Pier plugin config", () => {
         id: "project-id",
         name: "Project",
         slug: "project",
-        previewUrl: "localhost:5173",
-        hawserMainSession: "project:main"
+        previewUrl: "localhost:5173"
       }
     ]
   }));
@@ -872,5 +859,4 @@ test("ProjectStore migrates legacy apps state to projects", () => {
   assert.deepEqual(state.projects.map((project) => project.id), ["legacy-id"]);
   assert.equal(state.projects[0].slug, "legacy");
   assert.equal(state.projects[0].previewUrl, "https://legacy.example.test/");
-  assert.equal(state.projects[0].hawserMainSession, "legacy:main");
 });
