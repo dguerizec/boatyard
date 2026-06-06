@@ -532,16 +532,21 @@ confirmation before invoking sensitive tools.
 
 ## Events
 
-Plugins MAY subscribe to Dashtop events and publish plugin events.
+Plugins MAY subscribe to Dashtop events. Future versions MAY allow plugins to
+publish plugin events.
 
 ```js
-const dispose = ctx.events.on("project:activeChanged", ({ projectId }) => {});
-
-ctx.events.emit("dashtop.hawser:inboxUpdated", {
-  projectId,
-  count
+const dispose = ctx.events.on("dashtop.projectForm.sourcePathInspected", (event) => {
+  if (event.inspected?.twiccUrl) {
+    event.fields.setValue("twiccProjectUrl", event.inspected.twiccUrl);
+  }
 });
 ```
+
+`dashtop.projectForm.sourcePathInspected` is emitted when the project form
+inspects a source path. Plugin handlers receive their own scoped field API, so a
+plugin can update its own project settings fields without accessing another
+plugin's fields.
 
 Dashtop events SHOULD be typed and versioned. Plugin events SHOULD be
 namespaced by plugin id.

@@ -185,3 +185,41 @@ test("Plugin registry requires namespaced service ids", () => {
     /must be prefixed with plugin id vendor\.service/,
   );
 });
+
+test("Plugin registry emits scoped plugin events and cleans handlers", () => {
+  const registry = createRegistry();
+  const received = [];
+
+  registry.register(
+    { id: "vendor.events", name: "Events" },
+    {
+      activate(ctx) {
+        ctx.events.on("projectForm.sourcePathInspected", (event) => {
+          received.push(event.fields.getValue("url"));
+        });
+      },
+    },
+  );
+
+  registry.setEnabled("vendor.events", true);
+  registry.emit("projectForm.sourcePathInspected", {
+    forPlugin: (pluginId) => ({
+      fields: {
+        getValue: (key) => `${pluginId}:${key}`,
+      },
+    }),
+  });
+
+  assert.deepEqual(received, ["vendor.events:url"]);
+
+  registry.setEnabled("vendor.events", false);
+  registry.emit("projectForm.sourcePathInspected", {
+    forPlugin: () => ({
+      fields: {
+        getValue: () => "stale",
+      },
+    }),
+  });
+
+  assert.deepEqual(received, ["vendor.events:url"]);
+});

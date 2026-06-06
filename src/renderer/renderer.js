@@ -3145,6 +3145,21 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       twiccUrlInput.value = "";
       twiccProjectPrompt.hidden = false;
     }
+
+    emitProjectFormEvent("dashtop.projectForm.sourcePathInspected", {
+      sourcePath,
+      inspected
+    });
+  }
+
+  function emitProjectFormEvent(eventName, payload) {
+    window.DashtopPluginRegistry?.emit(eventName, {
+      ...payload,
+      projectId: initialValues.id || "",
+      forPlugin: (pluginId) => ({
+        fields: pluginSettings.createFieldApi(pluginId)
+      })
+    });
   }
 
   twiccProjectCreateButton.addEventListener("click", async () => {
@@ -3164,6 +3179,13 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
         twiccUrlInput.value = created.url;
         twiccUrlInput.dataset.edited = "true";
         twiccProjectPrompt.hidden = true;
+        emitProjectFormEvent("dashtop.projectForm.sourcePathInspected", {
+          sourcePath,
+          inspected: {
+            twiccUrl: created.url,
+            twiccMatchType: "exact"
+          }
+        });
       }
     } catch (createError) {
       error.textContent = createError.message;
@@ -3323,6 +3345,9 @@ function createProjectPluginSettingsControls(initialValues = {}) {
       input.autocomplete = "off";
       input.placeholder = field.placeholder || "";
       input.value = projectPluginConfig[field.key] || "";
+      input.addEventListener("input", () => {
+        input.dataset.edited = "true";
+      });
       label.append(input);
       inputs.set(field.key, { field, input });
       wrapper.append(label);
@@ -3344,6 +3369,35 @@ function createProjectPluginSettingsControls(initialValues = {}) {
       }
 
       return values;
+    },
+    createFieldApi(pluginId) {
+      const section = sections.find((entry) => entry.pluginId === pluginId);
+      const inputs = section?.inputs || new Map();
+
+      return Object.freeze({
+        getValue(key) {
+          return inputs.get(key)?.input.value || "";
+        },
+        setValue(key, value, options = {}) {
+          const input = inputs.get(key)?.input;
+          if (!input) {
+            return false;
+          }
+
+          if (options.ifUnedited && input.dataset.edited) {
+            return false;
+          }
+
+          input.value = String(value || "");
+          if (options.markEdited) {
+            input.dataset.edited = "true";
+          }
+          return true;
+        },
+        isEdited(key) {
+          return inputs.get(key)?.input.dataset.edited === "true";
+        }
+      });
     }
   };
 }

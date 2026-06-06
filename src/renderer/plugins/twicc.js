@@ -30,6 +30,23 @@
     });
   }
 
+  function syncProjectUrlField(event) {
+    const fields = event.fields;
+    const inspected = event.inspected || {};
+    const currentValue = fields?.getValue("twiccProjectUrl") || "";
+    const canReplace = !fields?.isEdited("twiccProjectUrl") || !currentValue.trim();
+
+    if (!fields || !canReplace) {
+      return;
+    }
+
+    if (inspected.twiccUrl && inspected.twiccMatchType === "exact") {
+      fields.setValue("twiccProjectUrl", inspected.twiccUrl);
+    } else if (inspected.twiccMatchType === "parent") {
+      fields.setValue("twiccProjectUrl", "");
+    }
+  }
+
   registry.register(
     {
       id: "dashtop.twicc",
@@ -53,6 +70,7 @@
       activate(ctx) {
         const twiccService = createTwiccService();
         ctx.services.provide("dashtop.twicc.api", twiccService);
+        ctx.events.on("dashtop.projectForm.sourcePathInspected", syncProjectUrlField);
 
         ctx.status.set({
           state: "ready",

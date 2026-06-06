@@ -8,6 +8,7 @@
   const projectSettingsSections = new Map();
   const services = new Map();
   const widgetsByPlugin = new Map();
+  const eventHandlers = new Map();
 
   function normalizeText(value) {
     return String(value || "").trim();
@@ -231,6 +232,27 @@
             pluginId: service.pluginId
           }));
         }
+      }),
+      events: Object.freeze({
+        on(eventName, handler) {
+          const name = requireId(eventName, "Event");
+          if (typeof handler !== "function") {
+            throw new Error(`Event ${name} handler must be a function.`);
+          }
+
+          const nextHandlers = [
+            ...(eventHandlers.get(name) || []),
+            { pluginId, handler }
+          ];
+          eventHandlers.set(name, nextHandlers);
+
+          return () => {
+            eventHandlers.set(
+              name,
+              (eventHandlers.get(name) || []).filter((entry) => entry.handler !== handler)
+            );
+          };
+        }
       })
     });
   }
@@ -257,6 +279,15 @@
     for (const [serviceId, service] of services) {
       if (service.pluginId === pluginId) {
         services.delete(serviceId);
+      }
+    }
+
+    for (const [eventName, handlers] of eventHandlers) {
+      const remainingHandlers = handlers.filter((handler) => handler.pluginId !== pluginId);
+      if (remainingHandlers.length) {
+        eventHandlers.set(eventName, remainingHandlers);
+      } else {
+        eventHandlers.delete(eventName);
       }
     }
 
@@ -425,6 +456,20 @@
     }));
   }
 
+  function emit(eventName, payload = {}) {
+    const name = String(eventName || "").trim();
+    if (!name) {
+      return;
+    }
+
+    for (const { pluginId, handler } of eventHandlers.get(name) || []) {
+      const scopedPayload = typeof payload.forPlugin === "function"
+        ? { ...payload, ...payload.forPlugin(pluginId) }
+        : payload;
+      handler(scopedPayload);
+    }
+  }
+
   function getStatus(pluginId) {
     return statuses.get(String(pluginId || "")) || null;
   }
@@ -440,6 +485,7 @@
     listProjectSettingsSections,
     getService,
     listServices,
+    emit,
     getStatus
   });
 })(window);
