@@ -4,6 +4,7 @@
   const plugins = new Map();
   const statuses = new Map();
   const panes = new Map();
+  const globalSettingsSections = new Map();
   const projectSettingsSections = new Map();
   const widgetsByPlugin = new Map();
 
@@ -78,12 +79,12 @@
     };
   }
 
-  function normalizeProjectSettingsSection(pluginId, section) {
+  function normalizeSettingsSection(pluginId, section, kind) {
     if (!section || typeof section !== "object") {
-      throw new Error(`Plugin ${pluginId} project settings section must be an object.`);
+      throw new Error(`Plugin ${pluginId} ${kind} settings section must be an object.`);
     }
 
-    const id = requireId(section.id, "Project settings section");
+    const id = requireId(section.id, `${kind} settings section`);
     const title = normalizeText(section.title || section.name);
     const fields = Array.isArray(section.fields)
       ? section.fields.map((field) => ({
@@ -98,11 +99,11 @@
       : [];
 
     if (!title) {
-      throw new Error(`Project settings section ${id} title is required.`);
+      throw new Error(`${kind} settings section ${id} title is required.`);
     }
 
     if (!fields.length) {
-      throw new Error(`Project settings section ${id} must provide fields.`);
+      throw new Error(`${kind} settings section ${id} must provide fields.`);
     }
 
     return {
@@ -112,6 +113,14 @@
       title,
       fields
     };
+  }
+
+  function normalizeGlobalSettingsSection(pluginId, section) {
+    return normalizeSettingsSection(pluginId, section, "Global");
+  }
+
+  function normalizeProjectSettingsSection(pluginId, section) {
+    return normalizeSettingsSection(pluginId, section, "Project");
   }
 
   function createContext(manifest) {
@@ -144,6 +153,15 @@
         }
       }),
       settings: Object.freeze({
+        registerGlobalSection(section) {
+          const normalized = normalizeGlobalSettingsSection(pluginId, section);
+          if (globalSettingsSections.has(normalized.id)) {
+            throw new Error(`Global settings section already registered: ${normalized.id}`);
+          }
+
+          globalSettingsSections.set(normalized.id, normalized);
+          return normalized;
+        },
         registerProjectSection(section) {
           const normalized = normalizeProjectSettingsSection(pluginId, section);
           if (projectSettingsSections.has(normalized.id)) {
@@ -179,6 +197,12 @@
     for (const [paneId, pane] of panes) {
       if (pane.pluginId === pluginId) {
         panes.delete(paneId);
+      }
+    }
+
+    for (const [sectionId, section] of globalSettingsSections) {
+      if (section.pluginId === pluginId) {
+        globalSettingsSections.delete(sectionId);
       }
     }
 
@@ -334,6 +358,10 @@
       .filter((pane) => !filter.kind || pane.kind === filter.kind);
   }
 
+  function listGlobalSettingsSections() {
+    return [...globalSettingsSections.values()];
+  }
+
   function listProjectSettingsSections() {
     return [...projectSettingsSections.values()];
   }
@@ -349,6 +377,7 @@
     reload,
     applyEnabledState,
     listPanes,
+    listGlobalSettingsSections,
     listProjectSettingsSections,
     getStatus
   });

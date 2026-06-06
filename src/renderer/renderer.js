@@ -135,6 +135,10 @@ function getPluginProjectSettingsSections() {
   return window.DashtopPluginRegistry?.listProjectSettingsSections() || [];
 }
 
+function getPluginGlobalSettingsSections() {
+  return window.DashtopPluginRegistry?.listGlobalSettingsSections() || [];
+}
+
 function getPluginEnabledState() {
   return state.plugins?.enabled || {};
 }
@@ -153,6 +157,24 @@ async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
   }
 
   return nextState;
+}
+
+function readPluginSettingsFieldValue(field, input) {
+  const rawValue = input.value.trim();
+
+  if (!rawValue) {
+    if (field.required) {
+      throw new Error(`${field.label} is required.`);
+    }
+
+    return "";
+  }
+
+  if (field.valueType === "url") {
+    return normalizeAddressInput(rawValue);
+  }
+
+  return rawValue;
 }
 
 function isRestorableView(view) {
@@ -2582,6 +2604,8 @@ function createGlobalPluginsSettingsView() {
 
   for (const plugin of window.DashtopPluginRegistry?.list() || []) {
     const status = window.DashtopPluginRegistry.getStatus(plugin.id);
+    const globalSettingsSections = getPluginGlobalSettingsSections()
+      .filter((section) => section.pluginId === plugin.id);
     const item = document.createElement("article");
     item.className = "installed-plugin-item";
 
@@ -2606,6 +2630,7 @@ function createGlobalPluginsSettingsView() {
     const contributionCounts = [
       ["widgets", plugin.contributes?.widgets?.length || 0],
       ["panes", plugin.contributes?.panes?.length || 0],
+      ["global settings", plugin.contributes?.globalSettings?.length || globalSettingsSections.length],
       ["project settings", plugin.contributes?.projectSettings?.length || 0],
       ["services", plugin.contributes?.services?.length || 0],
       ["tools", plugin.contributes?.tools?.length || 0]
@@ -2658,6 +2683,11 @@ function createGlobalPluginsSettingsView() {
 
     titleRow.append(titleActions);
     item.append(titleRow, description, meta);
+
+    for (const section of globalSettingsSections) {
+      item.append(createGlobalPluginSettingsForm(section));
+    }
+
     list.append(item);
   }
 
@@ -2670,6 +2700,65 @@ function createGlobalPluginsSettingsView() {
 
   shell.append(heading, list);
   return shell;
+}
+
+function createGlobalPluginSettingsForm(section) {
+  const form = document.createElement("form");
+  form.className = "plugin-global-settings-form";
+
+  const pluginConfig = getGlobalPluginConfig(section.pluginId);
+  const inputs = new Map();
+
+  for (const field of section.fields) {
+    const label = document.createElement("label");
+    label.textContent = field.label;
+
+    const input = document.createElement("input");
+    input.name = field.key;
+    input.type = field.type || "text";
+    input.autocomplete = "off";
+    input.placeholder = field.placeholder || "";
+    input.value = pluginConfig[field.key] || field.defaultValue || "";
+    label.append(input);
+    inputs.set(field.key, { field, input });
+    form.append(label);
+  }
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = `Save ${section.title}`;
+
+  actions.append(submitButton);
+  form.append(error, actions);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.hidden = true;
+    error.textContent = "";
+
+    try {
+      const values = {};
+      for (const [key, { field, input }] of inputs) {
+        values[key] = readPluginSettingsFieldValue(field, input);
+      }
+
+      state = await window.dashtop.updateGlobalPluginConfig(section.pluginId, values);
+      renderGlobalSettingsPage();
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  return form;
 }
 
 function renderGlobalSettingsPage() {
@@ -3181,24 +3270,6 @@ function createProjectPluginSettingsControls(initialValues = {}) {
   const controls = [];
   const sections = [];
 
-  function readFieldValue(field, input) {
-    const rawValue = input.value.trim();
-
-    if (!rawValue) {
-      if (field.required) {
-        throw new Error(`${field.label} is required.`);
-      }
-
-      return "";
-    }
-
-    if (field.valueType === "url") {
-      return normalizeAddressInput(rawValue);
-    }
-
-    return rawValue;
-  }
-
   for (const section of getPluginProjectSettingsSections()) {
     const projectPluginConfig = initialValues.id
       ? getProjectPluginConfig(initialValues.id, section.pluginId)
@@ -3224,7 +3295,7 @@ function createProjectPluginSettingsControls(initialValues = {}) {
       input.type = field.type || "text";
       input.autocomplete = "off";
       input.placeholder = field.placeholder || "";
-      input.value = projectPluginConfig[field.key] || initialValues[field.legacyProjectKey] || "";
+      input.value = projectPluginConfig[field.key] || "";
       label.append(input);
       inputs.set(field.key, { field, input });
       wrapper.append(label);
@@ -3241,7 +3312,7 @@ function createProjectPluginSettingsControls(initialValues = {}) {
       for (const section of sections) {
         values[section.pluginId] = {};
         for (const [key, { field, input }] of section.inputs) {
-          values[section.pluginId][key] = readFieldValue(field, input);
+          values[section.pluginId][key] = readPluginSettingsFieldValue(field, input);
         }
       }
 

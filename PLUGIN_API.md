@@ -296,19 +296,32 @@ Dashtop stores plugin configuration under plugin namespaces:
 ```
 
 ```js
+ctx.settings.registerGlobalSection({
+  id: "dashtop.twicc.global",
+  title: "Twicc",
+  fields: [
+    {
+      key: "twiccApiUrl",
+      label: "Twicc API URL",
+      type: "text",
+      valueType: "url",
+      placeholder: "http://localhost:3500"
+    }
+  ]
+});
+
 ctx.settings.registerProjectSection({
   id: "dashtop.twicc.project",
   title: "Twicc",
-  schema: {
-    type: "object",
-    properties: {
-      twiccUrl: {
-        type: "string",
-        title: "Twicc URL",
-        default: "http://localhost:5173"
-      }
+  fields: [
+    {
+      key: "twiccProjectUrl",
+      label: "Twicc project URL",
+      type: "text",
+      valueType: "url",
+      placeholder: "http://localhost:3500/project/example"
     }
-  }
+  ]
 });
 ```
 
@@ -641,13 +654,15 @@ The Pier plugin owns Pier detection and configuration.
 
 Contributions:
 
-- project settings for `pierPreviewUrl` or `pierBaseUrl`,
+- global settings for `pierApiUrl`,
+- project settings for `pierPreviewUrl` override and `pierProjectName`,
 - WCV pane named `Pier`.
+- project widget listing running Pier workload URLs and worktree paths.
 
 Legacy project `previewUrl` values MAY be migrated into
-`pluginConfig.projects[projectId]["dashtop.pier"].pierPreviewUrl`, but runtime
-Pier contributions SHOULD read from Pier plugin config rather than from the
-deprecated project root field.
+`pluginConfig.projects[projectId]["dashtop.pier"].pierPreviewUrl` at store load
+time only. Runtime Pier contributions MUST read from Pier plugin config and the
+Pier API, not from the deprecated project root `previewUrl` field.
 
 The plugin MAY expose preview-related tools later, but it does not need to do
 so for the pane contribution.

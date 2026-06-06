@@ -156,21 +156,36 @@
     const content = document.createElement("div");
     content.className = "widget-content pier-widget-content";
 
+    const header = document.createElement("div");
+    header.className = "pier-widget-header";
+
     const eyebrow = document.createElement("p");
     eyebrow.className = "widget-eyebrow";
     eyebrow.textContent = "Pier";
+
+    const refreshButton = document.createElement("button");
+    refreshButton.className = "pier-refresh-button";
+    refreshButton.type = "button";
+    refreshButton.textContent = "Refresh";
+
+    header.append(eyebrow, refreshButton);
 
     const body = document.createElement("p");
     body.className = "pier-widget-status";
     body.textContent = "Loading.";
 
-    content.append(eyebrow, body);
+    content.append(header, body);
 
     const list = document.createElement("div");
     list.className = "pier-url-list";
     content.append(list);
 
     async function load() {
+      if (!card.isConnected && card.parentElement) {
+        return;
+      }
+
+      refreshButton.disabled = true;
       body.hidden = false;
       body.textContent = "Loading.";
       list.innerHTML = "";
@@ -186,10 +201,24 @@
       } catch (error) {
         body.hidden = false;
         body.textContent = error.message;
+      } finally {
+        refreshButton.disabled = false;
       }
     }
 
+    refreshButton.addEventListener("click", () => {
+      load();
+    });
+
     load();
+    const refreshInterval = globalScope.setInterval(() => {
+      if (!card.isConnected) {
+        globalScope.clearInterval(refreshInterval);
+        return;
+      }
+
+      load();
+    }, 10000);
 
     card.append(content);
     return card;
@@ -202,8 +231,9 @@
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
-        widgets: ["project-preview"],
+        widgets: ["pier-urls"],
         panes: ["dashtop.pier.preview"],
+        globalSettings: ["dashtop.pier.global"],
         projectSettings: ["dashtop.pier.project"]
       },
       permissions: [
@@ -217,7 +247,21 @@
       activate(ctx) {
         ctx.status.set({
           state: "ready",
-          summary: "Pier preview integration is available"
+          summary: "Pier integration is available"
+        });
+
+        ctx.settings.registerGlobalSection({
+          id: "dashtop.pier.global",
+          title: "Pier",
+          fields: [
+            {
+              key: "pierApiUrl",
+              label: "Pier API URL",
+              type: "text",
+              valueType: "url",
+              placeholder: DEFAULT_PIER_API_URL
+            }
+          ]
         });
 
         ctx.settings.registerProjectSection({
@@ -229,8 +273,7 @@
               label: "Preview URL override",
               type: "text",
               valueType: "url",
-              placeholder: "http://localhost:5173",
-              legacyProjectKey: "previewUrl"
+              placeholder: "http://localhost:5173"
             },
             {
               key: "pierProjectName",
@@ -243,8 +286,8 @@
 
         ctx.panes.register({
           id: "dashtop.pier.preview",
-          webAppId: "preview",
-          key: "preview",
+          webAppId: "pier",
+          key: "pier",
           title: "Pier",
           kind: "wcv",
           scope: "project",
@@ -254,9 +297,9 @@
         });
 
         ctx.widgets.register({
-          id: "project-preview",
-          name: "Project preview",
-          title: "Project preview",
+          id: "pier-urls",
+          name: "Pier URLs",
+          title: "Pier URLs",
           scope: "project",
           category: "Project",
           status: "stable",

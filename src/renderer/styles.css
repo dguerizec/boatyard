@@ -581,6 +581,40 @@ button {
   outline: 2px solid rgba(65, 184, 131, 0.35);
 }
 
+.plugin-global-settings-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+  max-width: 620px;
+}
+
+.plugin-global-settings-form label {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.plugin-global-settings-form input {
+  margin-top: 6px;
+}
+
+.plugin-global-settings-form .form-error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.plugin-global-settings-form .form-actions {
+  justify-content: start;
+}
+
+.plugin-global-settings-form .primary-button {
+  min-height: 40px;
+  white-space: nowrap;
+}
+
 .project-workbench {
   display: grid;
   grid-template-columns: 340px 6px minmax(420px, 1fr);
@@ -938,6 +972,36 @@ button {
   align-content: start;
   min-height: 0;
   overflow: hidden;
+}
+
+.pier-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.pier-refresh-button {
+  min-height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(32, 40, 51, 0.72);
+  color: var(--text);
+  padding: 0 8px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.pier-refresh-button:hover,
+.pier-refresh-button:focus-visible {
+  border-color: rgba(65, 184, 131, 0.7);
+  outline: none;
+}
+
+.pier-refresh-button:disabled {
+  opacity: 0.55;
 }
 
 .pier-widget-card h3 {

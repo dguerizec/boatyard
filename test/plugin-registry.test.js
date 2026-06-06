@@ -50,6 +50,16 @@ test("Plugin registry activates plugins and records contributions", () => {
       activate(ctx) {
         activateCount += 1;
         ctx.status.set({ state: "ready", summary: "Preview ready" });
+        ctx.settings.registerGlobalSection({
+          id: "vendor.preview.global",
+          title: "Preview",
+          fields: [
+            {
+              key: "apiUrl",
+              label: "API URL",
+            },
+          ],
+        });
         ctx.settings.registerProjectSection({
           id: "vendor.preview.project",
           title: "Preview",
@@ -78,12 +88,14 @@ test("Plugin registry activates plugins and records contributions", () => {
   );
 
   assert.equal(registry.getStatus("vendor.preview").state, "disabled");
+  assert.deepEqual(plain(registry.listGlobalSettingsSections()), []);
   assert.deepEqual(plain(registry.listProjectSettingsSections()), []);
 
   registry.setEnabled("vendor.preview", true);
 
   assert.deepEqual(plain(registry.list().map((plugin) => plugin.id)), ["vendor.preview"]);
   assert.equal(registry.getStatus("vendor.preview").summary, "Preview ready");
+  assert.equal(registry.listGlobalSettingsSections()[0].fields[0].key, "apiUrl");
   assert.equal(registry.listProjectSettingsSections()[0].fields[0].key, "previewUrl");
   assert.equal(registry.listPanes({ kind: "wcv" })[0].webAppId, "preview");
   assert.equal(widgetRegistry.get("vendor.preview.widget").name, "Preview");
@@ -95,6 +107,7 @@ test("Plugin registry activates plugins and records contributions", () => {
   registry.setEnabled("vendor.preview", false);
 
   assert.equal(registry.getStatus("vendor.preview").state, "disabled");
+  assert.deepEqual(plain(registry.listGlobalSettingsSections()), []);
   assert.deepEqual(plain(registry.listProjectSettingsSections()), []);
   assert.deepEqual(plain(registry.listPanes({ kind: "wcv" })), []);
   assert.equal(widgetRegistry.get("vendor.preview.widget"), null);
