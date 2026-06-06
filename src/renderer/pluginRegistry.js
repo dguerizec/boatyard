@@ -6,6 +6,7 @@
   const panes = new Map();
   const globalSettingsSections = new Map();
   const projectSettingsSections = new Map();
+  const services = new Map();
   const widgetsByPlugin = new Map();
 
   function normalizeText(value) {
@@ -199,6 +200,37 @@
           ]);
           return registered;
         }
+      }),
+      services: Object.freeze({
+        provide(serviceId, implementation) {
+          const id = requireId(serviceId, "Service");
+          requireNamespacedContributionId(pluginId, id, "Service");
+
+          if (!implementation || typeof implementation !== "object") {
+            throw new Error(`Service ${id} implementation must be an object.`);
+          }
+
+          if (services.has(id)) {
+            throw new Error(`Service already registered: ${id}`);
+          }
+
+          const service = Object.freeze({
+            id,
+            pluginId,
+            implementation
+          });
+          services.set(id, service);
+          return implementation;
+        },
+        get(serviceId) {
+          return services.get(String(serviceId || ""))?.implementation || null;
+        },
+        list() {
+          return [...services.values()].map((service) => ({
+            id: service.id,
+            pluginId: service.pluginId
+          }));
+        }
       })
     });
   }
@@ -219,6 +251,12 @@
     for (const [sectionId, section] of projectSettingsSections) {
       if (section.pluginId === pluginId) {
         projectSettingsSections.delete(sectionId);
+      }
+    }
+
+    for (const [serviceId, service] of services) {
+      if (service.pluginId === pluginId) {
+        services.delete(serviceId);
       }
     }
 
@@ -376,6 +414,17 @@
     return [...projectSettingsSections.values()];
   }
 
+  function getService(serviceId) {
+    return services.get(String(serviceId || ""))?.implementation || null;
+  }
+
+  function listServices() {
+    return [...services.values()].map((service) => ({
+      id: service.id,
+      pluginId: service.pluginId
+    }));
+  }
+
   function getStatus(pluginId) {
     return statuses.get(String(pluginId || "")) || null;
   }
@@ -389,6 +438,8 @@
     listPanes,
     listGlobalSettingsSections,
     listProjectSettingsSections,
+    getService,
+    listServices,
     getStatus
   });
 })(window);

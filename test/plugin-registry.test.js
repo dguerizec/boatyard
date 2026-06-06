@@ -83,6 +83,9 @@ test("Plugin registry activates plugins and records contributions", () => {
           name: "Preview",
           create: () => ({}),
         });
+        ctx.services.provide("vendor.preview", {
+          ping: () => "pong",
+        });
       },
     },
   );
@@ -90,6 +93,7 @@ test("Plugin registry activates plugins and records contributions", () => {
   assert.equal(registry.getStatus("vendor.preview").state, "disabled");
   assert.deepEqual(plain(registry.listGlobalSettingsSections()), []);
   assert.deepEqual(plain(registry.listProjectSettingsSections()), []);
+  assert.deepEqual(plain(registry.listServices()), []);
 
   registry.setEnabled("vendor.preview", true);
 
@@ -99,10 +103,13 @@ test("Plugin registry activates plugins and records contributions", () => {
   assert.equal(registry.listProjectSettingsSections()[0].fields[0].key, "previewUrl");
   assert.equal(registry.listPanes({ kind: "wcv" })[0].webAppId, "preview");
   assert.equal(widgetRegistry.get("vendor.preview.widget").name, "Preview");
+  assert.equal(registry.getService("vendor.preview").ping(), "pong");
+  assert.deepEqual(plain(registry.listServices()), [{ id: "vendor.preview", pluginId: "vendor.preview" }]);
 
   registry.reload("vendor.preview");
   assert.equal(activateCount, 2);
   assert.equal(registry.getStatus("vendor.preview").summary, "Preview ready");
+  assert.equal(registry.getService("vendor.preview").ping(), "pong");
 
   registry.setEnabled("vendor.preview", false);
 
@@ -111,6 +118,8 @@ test("Plugin registry activates plugins and records contributions", () => {
   assert.deepEqual(plain(registry.listProjectSettingsSections()), []);
   assert.deepEqual(plain(registry.listPanes({ kind: "wcv" })), []);
   assert.equal(widgetRegistry.get("vendor.preview.widget"), null);
+  assert.equal(registry.getService("vendor.preview"), null);
+  assert.deepEqual(plain(registry.listServices()), []);
 });
 
 test("Plugin registry rejects invalid and duplicate contributions", () => {
@@ -157,4 +166,22 @@ test("Plugin registry requires namespaced contribution ids", () => {
     /must be prefixed with plugin id vendor\.plugin/,
   );
   assert.equal(registry.getStatus("vendor.plugin").state, "error");
+});
+
+test("Plugin registry requires namespaced service ids", () => {
+  const registry = createRegistry();
+
+  registry.register(
+    { id: "vendor.service", name: "Service" },
+    {
+      activate(ctx) {
+        ctx.services.provide("unscoped-service", {});
+      },
+    },
+  );
+
+  assert.throws(
+    () => registry.setEnabled("vendor.service", true),
+    /must be prefixed with plugin id vendor\.service/,
+  );
 });

@@ -40,8 +40,22 @@
     return urls.find((entry) => entry.default)?.url || urls[0]?.url || workload.url || "";
   }
 
-  async function fetchPierUrls(project, props) {
-    const apiUrl = normalizeApiUrl(props.globalPluginConfig?.pierApiUrl);
+  function getPierApiUrl(options = {}) {
+    return normalizeApiUrl(options.globalPluginConfig?.pierApiUrl);
+  }
+
+  async function fetchPierJson(path, options = {}, fetchOptions = {}) {
+    const response = await fetch(`${getPierApiUrl(options)}${path}`, fetchOptions);
+
+    if (!response.ok) {
+      throw new Error(`Pier API returned ${response.status}.`);
+    }
+
+    return response.json();
+  }
+
+  async function listProjectWorkloads(project, options = {}) {
+    const apiUrl = getPierApiUrl(options);
     const [projectsResponse, workloadsResponse] = await Promise.all([
       fetch(`${apiUrl}/api/v1/projects`),
       fetch(`${apiUrl}/api/v1/workloads`)
@@ -57,7 +71,7 @@
 
     const pierProjects = await projectsResponse.json();
     const workloads = await workloadsResponse.json();
-    const pierProject = findPierProject(project, Array.isArray(pierProjects) ? pierProjects : [], props.pluginConfig);
+    const pierProject = findPierProject(project, Array.isArray(pierProjects) ? pierProjects : [], options.pluginConfig);
     const pierProjectName = pierProject?.name || "";
 
     if (!pierProjectName) {
@@ -76,16 +90,31 @@
       .filter((entry) => entry.url);
   }
 
-  async function stopPierWorkload(entry, props) {
-    const apiUrl = normalizeApiUrl(props.globalPluginConfig?.pierApiUrl);
-    const response = await fetch(
-      `${apiUrl}/api/v1/workloads/${encodeURIComponent(entry.project)}/${encodeURIComponent(entry.slug)}/down`,
-      { method: "POST" }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Pier stop returned ${response.status}.`);
-    }
+  function createPierService() {
+    return Object.freeze({
+      listProjectWorkloads,
+      down(workload, options = {}) {
+        return fetchPierJson(
+          `/api/v1/workloads/${encodeURIComponent(workload.project)}/${encodeURIComponent(workload.slug)}/down`,
+          options,
+          { method: "POST" }
+        );
+      },
+      up(workload, options = {}) {
+        return fetchPierJson(
+          `/api/v1/workloads/${encodeURIComponent(workload.project)}/${encodeURIComponent(workload.slug)}/up`,
+          options,
+          {
+            method: "POST",
+            body: workload.worktreePath ? JSON.stringify({ worktree_path: workload.worktreePath }) : undefined,
+            headers: workload.worktreePath ? { "Content-Type": "application/json" } : undefined
+          }
+        );
+      },
+      openUrl(url) {
+        return globalScope.dashtop.openExternal(url);
+      }
+    });
   }
 
   async function copyText(value) {
@@ -97,7 +126,7 @@
     await navigator.clipboard.writeText(value);
   }
 
-  function renderPierUrlRows(list, urls, props, onRefresh, onError) {
+  function renderPierUrlRows(list, urls, props, service, onRefresh, onError) {
     list.innerHTML = "";
 
     for (const entry of urls) {
@@ -108,7 +137,7 @@
       link.title = entry.url;
       link.addEventListener("click", (event) => {
         event.preventDefault();
-        globalScope.dashtop.openExternal(entry.url);
+        service.openUrl(entry.url);
       });
 
       const pathButton = document.createElement("button");
@@ -133,7 +162,7 @@
         stopButton.disabled = true;
         stopButton.textContent = "Stopping";
         try {
-          await stopPierWorkload(entry, props);
+          await service.down(entry, props);
           await onRefresh();
         } catch (error) {
           stopButton.disabled = false;
@@ -149,7 +178,7 @@
     }
   }
 
-  function createPierWidget(project, props = {}) {
+  function createPierWidget(project, props = {}, service) {
     const card = document.createElement("article");
     card.className = "widget-card pier-widget-card";
 
@@ -191,10 +220,10 @@
       list.innerHTML = "";
 
       try {
-        const urls = await fetchPierUrls(project, props);
+        const urls = await service.listProjectWorkloads(project, props);
         body.hidden = urls.length > 0;
         body.textContent = urls.length ? "" : "No running worktree.";
-        renderPierUrlRows(list, urls, props, load, (error) => {
+        renderPierUrlRows(list, urls, props, service, load, (error) => {
           body.hidden = false;
           body.textContent = error.message;
         });
@@ -234,13 +263,15 @@
         widgets: ["dashtop.pier.urls"],
         panes: ["dashtop.pier.preview"],
         globalSettings: ["dashtop.pier.global"],
-        projectSettings: ["dashtop.pier.project"]
+        projectSettings: ["dashtop.pier.project"],
+        services: ["dashtop.pier"]
       },
       permissions: [
         "projectConfig:read",
         "projectConfig:write",
         "pane:wcv",
-        "widget:provide"
+        "widget:provide",
+        "service:provide"
       ]
     },
     {
@@ -249,6 +280,8 @@
           state: "ready",
           summary: "Pier integration is available"
         });
+        const pierService = createPierService();
+        ctx.services.provide("dashtop.pier", pierService);
 
         ctx.settings.registerGlobalSection({
           id: "dashtop.pier.global",
@@ -310,7 +343,7 @@
             min: { columns: 1, rows: 2 },
             max: { columns: 3, rows: 3 }
           },
-          createElement: createPierWidget
+          createElement: (project, props) => createPierWidget(project, props, pierService)
         });
       }
     }

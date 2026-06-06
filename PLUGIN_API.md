@@ -445,34 +445,32 @@ Services are plugin-to-plugin APIs. They are meant for in-process integration
 between plugins.
 
 ```js
-ctx.services.provide("dashtop.twicc/api", {
+ctx.services.provide("dashtop.twicc.api", {
   version: "1.0.0",
   async listProjects() {},
   async createSession(input) {}
 });
 ```
 
-Consumers request services by id and version.
+Consumers request services by id. Missing optional services return `null`.
 
 ```js
-const twicc = await ctx.services.get("dashtop.twicc/api", {
-  version: "^1.0.0",
-  optional: true
-});
+const twicc = ctx.services.get("dashtop.twicc.api");
 
 if (twicc) {
   await twicc.createSession({ projectId, prompt });
 }
 ```
 
-Services SHOULD be versioned. Plugins SHOULD use optional service dependencies
-when the integration is additive.
+Services SHOULD expose a `version` field when they have an external consumer.
+Plugins SHOULD treat service integrations as optional unless the manifest
+declares a hard dependency.
 
-Dashtop SHOULD provide availability events:
+Future Dashtop versions SHOULD provide availability events:
 
 ```js
-ctx.services.onAvailable("dashtop.twicc/api", async (twicc) => {});
-ctx.services.onUnavailable("dashtop.twicc/api", () => {});
+ctx.services.onAvailable("dashtop.twicc.api", async (twicc) => {});
+ctx.services.onUnavailable("dashtop.twicc.api", () => {});
 ```
 
 ## Tools
@@ -659,7 +657,7 @@ Contributions:
 
 - global or project settings for Hawser main session,
 - project widget for inbox/task status,
-- optional service consumption of `dashtop.twicc/api`.
+- optional service consumption of `dashtop.twicc.api`.
 
 The Hawser widget SHOULD continue to work in a reduced mode when the Twicc
 service is unavailable.
@@ -674,6 +672,7 @@ Contributions:
 - project settings for `pierPreviewUrl` override and `pierProjectName`,
 - WCV pane named `Pier`.
 - project widget listing running Pier workload URLs and worktree paths.
+- service `dashtop.pier` exposing Pier workload operations.
 
 Legacy project `previewUrl` values MAY be migrated into
 `pluginConfig.projects[projectId]["dashtop.pier"].pierPreviewUrl` at store load
