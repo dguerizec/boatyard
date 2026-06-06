@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
+const { resolveFieldDefault } = require("../src/renderer/pluginSettingsFields");
 
 function loadRendererPluginEnvironment() {
   const context = {
@@ -87,4 +88,50 @@ test("Twicc service resolves session URLs from the configured project URL", () =
     }),
     "http://localhost:3500/project/dashtop/session/session-1"
   );
+});
+
+test("Pier project settings derive defaults from project identity", () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+  const pierSection = registry
+    .listProjectSettingsSections()
+    .find((section) => section.id === "dashtop.pier.project");
+  const fields = Object.fromEntries(pierSection.fields.map((field) => [field.key, field]));
+
+  assert.equal(
+    resolveFieldDefault(fields.pierProjectName, {
+      project: { slug: "Jobo", devBranch: "main" }
+    }),
+    "jobo"
+  );
+  assert.equal(
+    resolveFieldDefault(fields.pierPreviewUrl, {
+      project: { slug: "Jobo", devBranch: "feature/demo" }
+    }),
+    "http://feature-demo.jobo.test/"
+  );
+
+  const updatedDefaults = {};
+  registry.emit("dashtop.projectForm.coreFieldChanged", {
+    field: "devBranch",
+    coreFields: {
+      slug: "DashTop",
+      devBranch: "release/MVP"
+    },
+    forPlugin: (pluginId) => ({
+      fields: {
+        setDefaultValue(key, value) {
+          if (pluginId === "dashtop.pier") {
+            updatedDefaults[key] = value;
+          }
+        }
+      }
+    })
+  });
+
+  assert.deepEqual(updatedDefaults, {
+    pierProjectName: "dashtop",
+    pierPreviewUrl: "http://release-mvp.dashtop.test/"
+  });
 });

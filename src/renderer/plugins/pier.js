@@ -40,6 +40,24 @@
     return urls.find((entry) => entry.default)?.url || urls[0]?.url || workload.url || "";
   }
 
+  function normalizeHostnameLabel(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  function getDefaultPierProjectName(project = {}) {
+    return normalizeHostnameLabel(project.slug);
+  }
+
+  function getDefaultPreviewUrl(project = {}) {
+    const projectName = getDefaultPierProjectName(project);
+    const branch = normalizeHostnameLabel(project.devBranch || "main");
+    return projectName && branch ? `http://${branch}.${projectName}.test/` : "";
+  }
+
   function getPierApiUrl(options = {}) {
     return normalizeApiUrl(options.globalPluginConfig?.pierApiUrl);
   }
@@ -256,6 +274,16 @@
     return card;
   }
 
+  function syncProjectDefaults(event) {
+    if (!["slug", "devBranch"].includes(event.field)) {
+      return;
+    }
+
+    const fields = event.fields;
+    fields?.setDefaultValue("pierProjectName", getDefaultPierProjectName(event.coreFields));
+    fields?.setDefaultValue("pierPreviewUrl", getDefaultPreviewUrl(event.coreFields));
+  }
+
   registry.register(
     {
       id: "dashtop.pier",
@@ -285,6 +313,7 @@
         });
         const pierService = createPierService();
         ctx.services.provide("dashtop.pier", pierService);
+        ctx.events.on("dashtop.projectForm.coreFieldChanged", syncProjectDefaults);
 
         ctx.settings.registerGlobalSection({
           id: "dashtop.pier.global",
@@ -309,12 +338,19 @@
               label: "Preview URL override",
               type: "text",
               valueType: "url",
-              placeholder: "http://localhost:5173"
+              placeholder: "http://main.project.test/",
+              defaultValue({ project }) {
+                return getDefaultPreviewUrl(project);
+              }
             },
             {
               key: "pierProjectName",
               label: "Pier project",
-              type: "text"
+              type: "text",
+              placeholder: "project",
+              defaultValue({ project }) {
+                return getDefaultPierProjectName(project);
+              }
             }
           ]
         });
