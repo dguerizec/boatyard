@@ -24,14 +24,16 @@
       columns: 1,
       rows: 2,
     });
-    return {
+    const normalized = {
       default: defaultSize,
       min: normalizeGridSize(layout.min, { columns: 1, rows: 1 }),
-      max: normalizeGridSize(layout.max, {
-        columns: Math.max(defaultSize.columns, 4),
-        rows: Math.max(defaultSize.rows, 6),
-      }),
     };
+
+    if (layout.max) {
+      normalized.max = normalizeGridSize(layout.max, defaultSize);
+    }
+
+    return normalized;
   }
 
   function normalizeWidgetDefinition(definition) {

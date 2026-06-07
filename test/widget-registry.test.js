@@ -45,8 +45,7 @@ test("Widget registry normalizes and filters definitions", () => {
 
   assert.deepEqual(plain(first.layout), {
     default: { columns: 2, rows: 3 },
-    min: { columns: 1, rows: 1 },
-    max: { columns: 4, rows: 6 },
+    min: { columns: 1, rows: 1 }
   });
   assert.equal(first.status, "stable");
   assert.equal(registry.get("project-terminal").name, "Terminal");
@@ -58,6 +57,26 @@ test("Widget registry normalizes and filters definitions", () => {
     plain(registry.list({ status: "experimental" }).map((widget) => widget.id)),
     ["global-usage"],
   );
+});
+
+test("Widget registry keeps explicit max sizes only", () => {
+  const registry = createRegistry();
+  const unlimited = registry.register({
+    id: "unlimited",
+    name: "Unlimited",
+    create: () => ({})
+  });
+  const limited = registry.register({
+    id: "limited",
+    name: "Limited",
+    layout: {
+      max: { columns: 6, rows: 8 }
+    },
+    create: () => ({})
+  });
+
+  assert.equal(unlimited.layout.max, undefined);
+  assert.deepEqual(plain(limited.layout.max), { columns: 6, rows: 8 });
 });
 
 test("Widget registry rejects invalid and duplicate widgets", () => {
