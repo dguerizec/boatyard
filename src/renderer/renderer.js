@@ -19,7 +19,7 @@ const WIDGET_GRID_MIN_COLUMN_WIDTH = 100;
 const WIDGET_GRID_MAX_COLUMN_WIDTH = 200;
 const WIDGET_GRID_ROW_HEIGHT = 84;
 const WIDGET_GRID_GAP = 12;
-const WIDGET_GRID_SCROLL_GUARD = 16;
+const WIDGET_GRID_SCROLL_GUARD = 10;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-preview", "dashtop.pier.urls"],
   ["pier-urls", "dashtop.pier.urls"]
@@ -925,29 +925,31 @@ function getWidgetRailColumnCount(widgetRail) {
   return getWidgetGridColumnCount(widgetRail?.getBoundingClientRect().width || WIDGET_GRID_MAX_COLUMN_WIDTH);
 }
 
-function getWidgetGridMaxRowsSouth(widgetRail, card) {
-  if (!widgetRail || !card) {
-    return Number.POSITIVE_INFINITY;
+function getWidgetGridTrackSpec(widgetRail) {
+  if (!widgetRail) {
+    return {
+      rowHeight: WIDGET_GRID_ROW_HEIGHT,
+      rowCount: 1
+    };
   }
 
-  const railRect = widgetRail.getBoundingClientRect();
-  const cardRect = card.getBoundingClientRect();
-  const railBottom = railRect.top + widgetRail.clientHeight;
-  const availableHeight = railBottom - WIDGET_GRID_SCROLL_GUARD - cardRect.top;
+  const styles = window.getComputedStyle(widgetRail);
+  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+  const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+  const availableHeight = Math.max(
+    WIDGET_GRID_ROW_HEIGHT,
+    widgetRail.clientHeight - paddingTop - paddingBottom - WIDGET_GRID_SCROLL_GUARD
+  );
+  const rowCount = Math.max(
+    1,
+    Math.floor((availableHeight + WIDGET_GRID_GAP) / (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP))
+  );
+  const rowHeight = Math.max(
+    1,
+    (availableHeight - WIDGET_GRID_GAP * Math.max(0, rowCount - 1)) / rowCount
+  );
 
-  return Math.max(1, Math.floor((availableHeight + WIDGET_GRID_GAP) / (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP)));
-}
-
-function getWidgetGridMaxRowsNorth(widgetRail, card, positionY = 0) {
-  if (!widgetRail || !card) {
-    return Number.POSITIVE_INFINITY;
-  }
-
-  const cardRect = card.getBoundingClientRect();
-  const firstWidgetRowTop = cardRect.top - Math.max(0, positionY) * (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP);
-  const availableHeight = cardRect.bottom - firstWidgetRowTop - WIDGET_GRID_SCROLL_GUARD;
-
-  return Math.max(1, Math.floor((availableHeight + WIDGET_GRID_GAP) / (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP)));
+  return { rowHeight, rowCount };
 }
 
 function fitWidgetSizeToGrid(size, columnCount) {
@@ -959,9 +961,12 @@ function fitWidgetSizeToGrid(size, columnCount) {
 
 function applyWidgetGridLayout(widgetRail, project, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const layout = getProjectWidgetLayout(project, columnCount, widgetPaneId);
+  const trackSpec = getWidgetGridTrackSpec(widgetRail);
   widgetRail.dataset.widgetGridColumns = String(columnCount);
+  widgetRail.dataset.widgetGridRows = String(trackSpec.rowCount);
+  widgetRail.dataset.widgetGridRowHeight = String(trackSpec.rowHeight);
   widgetRail.style.setProperty("--widget-grid-columns", String(columnCount));
-  widgetRail.style.setProperty("--widget-grid-row-height", `${WIDGET_GRID_ROW_HEIGHT}px`);
+  widgetRail.style.setProperty("--widget-grid-row-height", `${trackSpec.rowHeight}px`);
 
   for (const card of widgetRail.querySelectorAll(".widget-card")) {
     const widgetId = card.dataset.widgetId;
@@ -1143,12 +1148,13 @@ function getWidgetGridPositionFromPointer(event, rail, columnCount, size) {
   const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
   const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
   const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+  const rowHeight = Number(rail.dataset.widgetGridRowHeight) || WIDGET_GRID_ROW_HEIGHT;
   const contentWidth = Math.max(1, rail.clientWidth - paddingLeft - paddingRight);
   const columnWidth = (contentWidth - WIDGET_GRID_GAP * (columnCount - 1)) / columnCount;
   const x = Math.floor((event.clientX - rect.left - paddingLeft) / (columnWidth + WIDGET_GRID_GAP));
   const y = Math.floor(
-    (event.clientY - rect.top - paddingTop - WIDGET_GRID_ROW_HEIGHT - WIDGET_GRID_GAP) /
-      (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP)
+    (event.clientY - rect.top - paddingTop - rowHeight - WIDGET_GRID_GAP) /
+      (rowHeight + WIDGET_GRID_GAP)
   );
 
   return {
@@ -1344,7 +1350,8 @@ function startWidgetResize(event, project, definition, layout, startSize, column
   const railWidth = rail?.getBoundingClientRect().width || WIDGET_GRID_MIN_COLUMN_WIDTH;
   const columnWidth = (railWidth - WIDGET_GRID_GAP * (columnCount - 1)) / columnCount;
   const columnStep = Math.max(1, columnWidth + WIDGET_GRID_GAP);
-  const rowStep = WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP;
+  const trackSpec = getWidgetGridTrackSpec(rail);
+  const rowStep = trackSpec.rowHeight + WIDGET_GRID_GAP;
   const maxColumns = Math.min(columnCount, spec.max.columns);
   const canResizeNorth = direction.includes("n");
   const canResizeEast = direction.includes("e");
@@ -1372,11 +1379,11 @@ function startWidgetResize(event, project, definition, layout, startSize, column
 
     if (canResizeNorth) {
       const bottom = startPosition.y + startSize.rows;
-      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, getWidgetGridMaxRowsNorth(rail, card, startPosition.y)));
+      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, trackSpec.rowCount - 1));
       nextY = clamp(startPosition.y + deltaRows, Math.max(0, bottom - maxRows), bottom - spec.min.rows);
       nextRows = bottom - nextY;
     } else if (canResizeSouth) {
-      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, getWidgetGridMaxRowsSouth(rail, card)));
+      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, trackSpec.rowCount - 1 - startPosition.y));
       nextRows = clamp(startSize.rows + deltaRows, spec.min.rows, maxRows);
     }
 
@@ -1849,10 +1856,7 @@ function createWidgetPaneSurface(project, widgetPane) {
     }
 
     const width = rail.getBoundingClientRect().width || fallbackWidth;
-    const nextColumnCount = getWidgetGridColumnCount(width);
-    if (nextColumnCount !== getWidgetRailColumnCount(rail)) {
-      applyWidgetGridLayout(rail, project, nextColumnCount, widgetPane.id);
-    }
+    applyWidgetGridLayout(rail, project, getWidgetGridColumnCount(width), widgetPane.id);
   });
   resizeObserver.observe(rail);
 
