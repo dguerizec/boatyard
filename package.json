@@ -11,7 +11,9 @@
     "lint": "node scripts/check-js.mjs",
     "test": "node --test",
     "package": "electron-builder --dir",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "dist:linux": "electron-builder --linux AppImage --x64",
+    "dist:mac": "electron-builder --mac dmg zip --x64"
   },
   "keywords": [
     "electron",
@@ -46,6 +48,23 @@
       "target": [
         {
           "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64"
           ]
