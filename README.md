@@ -53,6 +53,22 @@ Most configuration is available inside the app:
 
 Set `DASHTOP_STATE_PATH` to force a specific state file.
 
+## Packaging
+
+Dashtop uses `electron-builder` for local packaging.
+
+```sh
+make package
+```
+
+`make package` runs lint and tests, then creates an unpacked Linux app under `dist/linux-unpacked`.
+
+```sh
+make dist
+```
+
+`make dist` runs lint and tests, then creates a Linux AppImage under `dist/`.
+
 ## Plugin API
 
 Plugins are registered in the renderer through `window.DashtopPluginRegistry.register(manifest, runtime)`.
@@ -110,6 +126,5 @@ npm run smoke
 
 ## Current Limitations
 
-- Dashtop is still a prototype and has no packaged installer.
 - Plugins are local built-ins for now; third-party plugin installation is not implemented yet.
 - Plugin APIs are still versioned as `0.1` and can change while the contract is being hardened.

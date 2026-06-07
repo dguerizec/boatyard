@@ -1,4 +1,4 @@
-.PHONY: build install run
+.PHONY: build dist install package run
 
 install:
 	npm install
@@ -9,3 +9,9 @@ run:
 build:
 	npm run lint
 	npm test
+
+package: build
+	npm run package
+
+dist: build
+	npm run dist
