@@ -19,7 +19,7 @@ const WIDGET_GRID_MIN_COLUMN_WIDTH = 100;
 const WIDGET_GRID_MAX_COLUMN_WIDTH = 200;
 const WIDGET_GRID_ROW_HEIGHT = 84;
 const WIDGET_GRID_GAP = 12;
-const WIDGET_GRID_SCROLL_GUARD = 8;
+const WIDGET_GRID_SCROLL_GUARD = 16;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-preview", "dashtop.pier.urls"],
   ["pier-urls", "dashtop.pier.urls"]
@@ -932,7 +932,8 @@ function getWidgetGridMaxRowsSouth(widgetRail, card) {
 
   const railRect = widgetRail.getBoundingClientRect();
   const cardRect = card.getBoundingClientRect();
-  const availableHeight = railRect.bottom - WIDGET_GRID_SCROLL_GUARD - cardRect.top;
+  const railBottom = railRect.top + widgetRail.clientHeight;
+  const availableHeight = railBottom - WIDGET_GRID_SCROLL_GUARD - cardRect.top;
 
   return Math.max(1, Math.floor((availableHeight + WIDGET_GRID_GAP) / (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP)));
 }
