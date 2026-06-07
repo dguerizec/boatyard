@@ -930,11 +930,9 @@ function getWidgetGridMaxRowsSouth(widgetRail, card) {
     return Number.POSITIVE_INFINITY;
   }
 
-  const styles = window.getComputedStyle(widgetRail);
-  const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
   const railRect = widgetRail.getBoundingClientRect();
   const cardRect = card.getBoundingClientRect();
-  const availableHeight = railRect.bottom - paddingBottom - WIDGET_GRID_SCROLL_GUARD - cardRect.top;
+  const availableHeight = railRect.bottom - WIDGET_GRID_SCROLL_GUARD - cardRect.top;
 
   return Math.max(1, Math.floor((availableHeight + WIDGET_GRID_GAP) / (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP)));
 }
