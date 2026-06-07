@@ -183,9 +183,8 @@
           defaultVisible: false,
           description: "Shows Hawser inbox counts and active task status for the project.",
           layout: {
-            default: { columns: 2, rows: 3 },
-            min: { columns: 2, rows: 2 },
-            max: { columns: 4, rows: 6 }
+            default: { columns: 3, rows: 3 },
+            min: { columns: 3, rows: 3 }
           },
           createElement(project, props = {}) {
             return globalScope.DashtopHawserUI.createWidget(project, {

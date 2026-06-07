@@ -406,9 +406,8 @@
           defaultVisible: false,
           description: "Lists running Pier worktree URLs for the project.",
           layout: {
-            default: { columns: 2, rows: 2 },
-            min: { columns: 1, rows: 2 },
-            max: { columns: 3, rows: 3 }
+            default: { columns: 3, rows: 2 },
+            min: { columns: 3, rows: 2 }
           },
           createElement: (project, props) => createPierWidget(project, props, pierService)
         });

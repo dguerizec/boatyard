@@ -877,12 +877,15 @@ function getWidgetLayoutSpec(definition) {
   const layout = definition.layout || {};
   const defaultSize = layout.default || { columns: 1, rows: 2 };
   const minSize = layout.min || { columns: 1, rows: 1 };
-  const maxSize = layout.max || { columns: 4, rows: 6 };
+  const maxSize = layout.max || {};
 
   return {
     default: defaultSize,
     min: minSize,
-    max: maxSize
+    max: {
+      columns: Number.isFinite(Number(maxSize.columns)) ? Number(maxSize.columns) : Number.POSITIVE_INFINITY,
+      rows: Number.isFinite(Number(maxSize.rows)) ? Number(maxSize.rows) : Number.POSITIVE_INFINITY
+    }
   };
 }
 
