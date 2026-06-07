@@ -19,6 +19,7 @@ const WIDGET_GRID_MIN_COLUMN_WIDTH = 100;
 const WIDGET_GRID_MAX_COLUMN_WIDTH = 200;
 const WIDGET_GRID_ROW_HEIGHT = 84;
 const WIDGET_GRID_GAP = 12;
+const WIDGET_GRID_SCROLL_GUARD = 8;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-preview", "dashtop.pier.urls"],
   ["pier-urls", "dashtop.pier.urls"]
@@ -924,6 +925,20 @@ function getWidgetRailColumnCount(widgetRail) {
   return getWidgetGridColumnCount(widgetRail?.getBoundingClientRect().width || WIDGET_GRID_MAX_COLUMN_WIDTH);
 }
 
+function getWidgetGridMaxRowsForPosition(widgetRail, positionY = 0) {
+  if (!widgetRail) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const styles = window.getComputedStyle(widgetRail);
+  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+  const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+  const availableHeight = widgetRail.clientHeight - paddingTop - paddingBottom - WIDGET_GRID_SCROLL_GUARD;
+  const trackCount = Math.floor((availableHeight + WIDGET_GRID_GAP) / (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP));
+
+  return Math.max(1, trackCount - Math.max(0, positionY) - 1);
+}
+
 function fitWidgetSizeToGrid(size, columnCount) {
   return {
     columns: Math.min(columnCount, size.columns),
@@ -1346,10 +1361,12 @@ function startWidgetResize(event, project, definition, layout, startSize, column
 
     if (canResizeNorth) {
       const bottom = startPosition.y + startSize.rows;
-      nextY = clamp(startPosition.y + deltaRows, Math.max(0, bottom - spec.max.rows), bottom - spec.min.rows);
+      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, getWidgetGridMaxRowsForPosition(rail, 0)));
+      nextY = clamp(startPosition.y + deltaRows, Math.max(0, bottom - maxRows), bottom - spec.min.rows);
       nextRows = bottom - nextY;
     } else if (canResizeSouth) {
-      nextRows = clamp(startSize.rows + deltaRows, spec.min.rows, spec.max.rows);
+      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, getWidgetGridMaxRowsForPosition(rail, startPosition.y)));
+      nextRows = clamp(startSize.rows + deltaRows, spec.min.rows, maxRows);
     }
 
     return {
