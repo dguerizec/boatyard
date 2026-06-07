@@ -700,26 +700,6 @@ function registerBuiltinProjectWidgets() {
 
   [
     {
-      id: "project-summary",
-      name: "Project summary",
-      title: "Project",
-      scope: "project",
-      category: "Project",
-      status: "stable",
-      description: "Displays the selected project's identity and source path.",
-      layout: {
-        default: { columns: 2, rows: 2 },
-        min: { columns: 1, rows: 2 },
-        max: { columns: 3, rows: 3 }
-      },
-      create: (project) => ({
-        eyebrow: "Project",
-        title: project.name,
-        body: project.sourcePath || project.slug,
-        meta: "Active workspace"
-      })
-    },
-    {
       id: "project-shell",
       name: "Terminal",
       title: "Terminal",
@@ -734,27 +714,6 @@ function registerBuiltinProjectWidgets() {
         max: { columns: 4, rows: 8 }
       },
       createElement: (project) => createTerminalWidget(project)
-    },
-    {
-      id: "discord",
-      name: "Discord",
-      title: "Discord",
-      scope: "project",
-      category: "Communication",
-      status: "experimental",
-      defaultVisible: false,
-      description: "Shows project communication and activity feed placeholders.",
-      layout: {
-        default: { columns: 2, rows: 2 },
-        min: { columns: 1, rows: 2 },
-        max: { columns: 4, rows: 4 }
-      },
-      create: () => ({
-        eyebrow: "Comms",
-        title: "Discord",
-        body: "Placeholder for the project channel or activity feed.",
-        meta: "Contextual widget"
-      })
     }
   ].forEach((definition) => registry.register(definition));
 }

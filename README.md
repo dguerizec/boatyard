@@ -11,7 +11,7 @@ It is organized around a global workspace, a project switcher, project-scoped wi
 - Persist app state across restarts, including the last active page, window bounds, widget layouts, pane splits, loaded webapp URLs, and widget rail width.
 - Open project webapps in Electron `WebContentsView` panes with navigation controls, editable URL bar, tab picker, split panes, close panes, and persisted pane layouts.
 - Manage a freeform widget grid with lock/unlock, drag-and-drop placement, resize handles, trash dropzone, and opt-in widget installation per project.
-- Use built-in project widgets for project summary and persistent tmux terminal tabs.
+- Use built-in project widgets for persistent tmux terminal tabs.
 - Extend projects with built-in plugins for Pier, Twicc, and Hawser panes, widgets, settings, and services.
 - Configure global settings for projects base path, webapp overlay blur, password handling, plugins, and installed widgets.
 
