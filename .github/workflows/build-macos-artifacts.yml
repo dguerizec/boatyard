@@ -1,27 +1,28 @@
-name: Build artifacts
+name: Build macOS artifacts
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish artifacts to"
-        required: false
+        description: "Release tag to attach macOS artifacts to"
+        required: true
         type: string
 
 permissions:
   contents: write
 
 jobs:
-  linux:
-    name: Linux AppImage
-    runs-on: ubuntu-latest
+  mac:
+    name: macOS DMG and zip
+    runs-on: macos-13
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag }}
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -38,46 +39,30 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Build Linux artifact
-        run: npm run dist:linux
+      - name: Build macOS artifacts
+        run: npm run dist:mac
 
-      - name: Upload Linux artifact
+      - name: Upload macOS artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: dashtop-linux-x64
+          name: dashtop-macos-x64
           path: |
-            dist/*.AppImage
-            dist/latest-linux.yml
+            dist/*.dmg
+            dist/*.zip
+            dist/latest-mac.yml
           if-no-files-found: error
 
-  release:
-    name: GitHub Release
-    runs-on: ubuntu-latest
-    needs:
-      - linux
-    if: github.ref_type == 'tag' || inputs.tag != ''
-
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: release-artifacts
-
-      - name: Publish release
+      - name: Publish macOS artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
           tag="${{ inputs.tag }}"
-          if [ -z "$tag" ]; then
-            tag="${GITHUB_REF_NAME}"
-          fi
-
-          mapfile -t files < <(find release-artifacts -type f \( -name "*.AppImage" -o -name "*.dmg" -o -name "*.zip" -o -name "latest-*.yml" \) -print | sort)
+          mapfile -t files < <(find dist -maxdepth 1 -type f \( -name "*.dmg" -o -name "*.zip" -o -name "latest-mac.yml" \) -print | sort)
 
           if [ "${#files[@]}" -eq 0 ]; then
-            echo "No release files found."
+            echo "No macOS release files found."
             exit 1
           fi
 
