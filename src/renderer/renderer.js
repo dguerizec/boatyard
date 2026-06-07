@@ -925,18 +925,30 @@ function getWidgetRailColumnCount(widgetRail) {
   return getWidgetGridColumnCount(widgetRail?.getBoundingClientRect().width || WIDGET_GRID_MAX_COLUMN_WIDTH);
 }
 
-function getWidgetGridMaxRowsForPosition(widgetRail, positionY = 0) {
-  if (!widgetRail) {
+function getWidgetGridMaxRowsSouth(widgetRail, card) {
+  if (!widgetRail || !card) {
     return Number.POSITIVE_INFINITY;
   }
 
   const styles = window.getComputedStyle(widgetRail);
-  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
   const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
-  const availableHeight = widgetRail.clientHeight - paddingTop - paddingBottom - WIDGET_GRID_SCROLL_GUARD;
-  const trackCount = Math.floor((availableHeight + WIDGET_GRID_GAP) / (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP));
+  const railRect = widgetRail.getBoundingClientRect();
+  const cardRect = card.getBoundingClientRect();
+  const availableHeight = railRect.bottom - paddingBottom - WIDGET_GRID_SCROLL_GUARD - cardRect.top;
 
-  return Math.max(1, trackCount - Math.max(0, positionY) - 1);
+  return Math.max(1, Math.floor((availableHeight + WIDGET_GRID_GAP) / (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP)));
+}
+
+function getWidgetGridMaxRowsNorth(widgetRail, card, positionY = 0) {
+  if (!widgetRail || !card) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const cardRect = card.getBoundingClientRect();
+  const firstWidgetRowTop = cardRect.top - Math.max(0, positionY) * (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP);
+  const availableHeight = cardRect.bottom - firstWidgetRowTop - WIDGET_GRID_SCROLL_GUARD;
+
+  return Math.max(1, Math.floor((availableHeight + WIDGET_GRID_GAP) / (WIDGET_GRID_ROW_HEIGHT + WIDGET_GRID_GAP)));
 }
 
 function fitWidgetSizeToGrid(size, columnCount) {
@@ -1361,11 +1373,11 @@ function startWidgetResize(event, project, definition, layout, startSize, column
 
     if (canResizeNorth) {
       const bottom = startPosition.y + startSize.rows;
-      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, getWidgetGridMaxRowsForPosition(rail, 0)));
+      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, getWidgetGridMaxRowsNorth(rail, card, startPosition.y)));
       nextY = clamp(startPosition.y + deltaRows, Math.max(0, bottom - maxRows), bottom - spec.min.rows);
       nextRows = bottom - nextY;
     } else if (canResizeSouth) {
-      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, getWidgetGridMaxRowsForPosition(rail, startPosition.y)));
+      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, getWidgetGridMaxRowsSouth(rail, card)));
       nextRows = clamp(startSize.rows + deltaRows, spec.min.rows, maxRows);
     }
 
