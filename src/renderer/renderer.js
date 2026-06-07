@@ -709,8 +709,7 @@ function registerBuiltinProjectWidgets() {
       requires: [{ type: "projectField", key: "sourcePath" }],
       layout: {
         default: { columns: 4, rows: 5 },
-        min: { columns: 2, rows: 3 },
-        max: { columns: 4, rows: 8 }
+        min: { columns: 2, rows: 3 }
       },
       createElement: (project) => createTerminalWidget(project)
     }
