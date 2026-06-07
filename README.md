@@ -6,10 +6,10 @@ It is organized around a global workspace, a project switcher, project-scoped wi
 
 ## Features
 
-- Register projects with source path, git/repository URLs, development branch, and custom provider URLs.
+- Register projects with source path, git/repository URLs, development branch, custom provider URLs, and named widget panes.
 - Reorder projects in the sidebar and unregister projects from Dashtop without deleting files on disk.
-- Persist app state across restarts, including the last active page, window bounds, widget layouts, pane splits, loaded webapp URLs, and widget rail width.
-- Open project webapps in Electron `WebContentsView` panes with navigation controls, editable URL bar, tab picker, split panes, close panes, and persisted pane layouts.
+- Persist app state across restarts, including the last active page, window bounds, widget pane layouts, pane splits, and loaded webapp URLs.
+- Open project webapps and widget grids in panes with navigation controls, editable URL bar for webapps, tab picker, split panes, close panes, and persisted pane layouts.
 - Manage a freeform widget grid with lock/unlock, drag-and-drop placement, resize handles, trash dropzone, and opt-in widget installation per project.
 - Use built-in project widgets for persistent tmux terminal tabs.
 - Extend projects with built-in plugins for Pier, Twicc, and Hawser panes, widgets, settings, and services.

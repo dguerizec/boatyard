@@ -12,6 +12,7 @@ const {
   normalizePaneLayouts,
   normalizeWidgetLayout,
   normalizeWidgetLayouts,
+  normalizeProjectWidgetPanes,
   normalizeProject,
   normalizeProjectUrls,
   normalizeNavigationState,
@@ -62,6 +63,10 @@ test("normalizeProject derives project tool defaults", () => {
     devBranch: "",
     previewUrl: "http://localhost:5173/",
     urls: [],
+    widgetPanes: [{
+      id: "widgets-0",
+      label: "Widgets"
+    }],
     bounds: {
       x: 48,
       y: 92,
@@ -112,6 +117,35 @@ test("normalizeProjectUrls keeps provider urls with stable ids", () => {
 
   assert.throws(() => normalizeProjectUrls([{ label: "DNS", url: "" }]), /URL is required/);
   assert.throws(() => normalizeProjectUrls([{ label: "", url: "example.com" }]), /URL label is required/);
+});
+
+test("normalizeProjectWidgetPanes keeps named widget panes with stable ids", () => {
+  assert.deepEqual(normalizeProjectWidgetPanes([
+    {
+      label: "Left widgets"
+    },
+    {
+      id: "ops",
+      label: "Ops"
+    },
+    {
+      label: ""
+    }
+  ]), [
+    {
+      id: "left-widgets",
+      label: "Left widgets"
+    },
+    {
+      id: "ops",
+      label: "Ops"
+    }
+  ]);
+
+  assert.deepEqual(normalizeProjectWidgetPanes([]), [{
+    id: "widgets-0",
+    label: "Widgets"
+  }]);
 });
 
 test("normalizeBounds clamps dimensions", () => {
@@ -403,21 +437,25 @@ test("normalizeWidgetLayouts drops invalid containers", () => {
     }
   }), {
     "project-id": {
-      order: ["discord"],
-      hidden: [],
-      sizes: {
-        discord: {
-          columns: 1,
-          rows: 2
+      panes: {
+        "widgets-0": {
+          order: ["discord"],
+          hidden: [],
+          sizes: {
+            discord: {
+              columns: 1,
+              rows: 2
+            }
+          },
+          positions: {
+            discord: {
+              x: 1,
+              y: 2
+            }
+          },
+          locked: false
         }
-      },
-      positions: {
-        discord: {
-          x: 1,
-          y: 2
-        }
-      },
-      locked: false
+      }
     }
   });
 });
@@ -633,21 +671,25 @@ test("ProjectStore persists widget layouts", () => {
   const state = reloaded.load();
 
   assert.deepEqual(layout, {
-    order: ["project-shell", "project-summary"],
-    hidden: ["discord"],
-    sizes: {
-      "project-shell": {
-        columns: 2,
-        rows: 3
+    panes: {
+      "widgets-0": {
+        order: ["project-shell", "project-summary"],
+        hidden: ["discord"],
+        sizes: {
+          "project-shell": {
+            columns: 2,
+            rows: 3
+          }
+        },
+        positions: {
+          "project-shell": {
+            x: 1,
+            y: 2
+          }
+        },
+        locked: false
       }
-    },
-    positions: {
-      "project-shell": {
-        x: 1,
-        y: 2
-      }
-    },
-    locked: false
+    }
   });
   assert.deepEqual(state.widgetLayouts["project-id"], layout);
   assert.deepEqual(reloaded.getWidgetLayout("project-id"), layout);

@@ -19,6 +19,7 @@ const DEFAULT_WINDOW_BOUNDS = {
 };
 
 const MIN_WIDGET_RAIL_WIDTH = 240;
+const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const LEGACY_WIDGET_IDS = new Map([
   ["project-preview", "dashtop.pier.urls"],
   ["pier-urls", "dashtop.pier.urls"]
@@ -401,10 +402,43 @@ function normalizeWidgetLayouts(widgetLayouts = {}) {
 
   const normalized = {};
   for (const [projectId, layout] of Object.entries(widgetLayouts)) {
-    normalized[String(projectId)] = normalizeWidgetLayout(layout);
+    normalized[String(projectId)] = normalizeProjectWidgetLayout(layout);
   }
 
   return normalized;
+}
+
+function normalizeProjectWidgetLayout(layout = {}) {
+  const source = layout && typeof layout === "object" && !Array.isArray(layout)
+    ? layout
+    : {};
+  const paneLayouts = source.panes && typeof source.panes === "object" && !Array.isArray(source.panes)
+    ? source.panes
+    : null;
+
+  if (!paneLayouts) {
+    return {
+      panes: {
+        [DEFAULT_WIDGET_PANE_ID]: normalizeWidgetLayout(source)
+      }
+    };
+  }
+
+  const normalizedPanes = {};
+  for (const [paneId, paneLayout] of Object.entries(paneLayouts)) {
+    const normalizedPaneId = normalizeText(paneId);
+    if (normalizedPaneId) {
+      normalizedPanes[normalizedPaneId] = normalizeWidgetLayout(paneLayout);
+    }
+  }
+
+  return {
+    panes: Object.keys(normalizedPanes).length
+      ? normalizedPanes
+      : {
+          [DEFAULT_WIDGET_PANE_ID]: normalizeWidgetLayout()
+        }
+  };
 }
 
 function normalizePluginConfigObject(config = {}) {
@@ -561,6 +595,40 @@ function normalizeProjectUrls(urls = []) {
     .filter(Boolean);
 }
 
+function normalizeProjectWidgetPanes(widgetPanes = []) {
+  const source = Array.isArray(widgetPanes) ? widgetPanes : [];
+  const seenIds = new Set();
+  const normalized = source
+    .map((entry, index) => {
+      const pane = entry && typeof entry === "object" ? entry : {};
+      const label = normalizeText(pane.label || pane.name);
+
+      if (!label) {
+        return null;
+      }
+
+      const baseId = normalizeText(pane.id) || slugify(label) || `widgets-${index}`;
+      let id = baseId;
+      let suffix = 2;
+
+      while (seenIds.has(id)) {
+        id = `${baseId}-${suffix}`;
+        suffix += 1;
+      }
+
+      seenIds.add(id);
+      return { id, label };
+    })
+    .filter(Boolean);
+
+  return normalized.length
+    ? normalized
+    : [{
+        id: DEFAULT_WIDGET_PANE_ID,
+        label: "Widgets"
+      }];
+}
+
 function normalizeProject(project, index = 0) {
   const id = String(project.id || crypto.randomUUID());
   const name = String(project.name || "").trim();
@@ -584,6 +652,7 @@ function normalizeProject(project, index = 0) {
     devBranch: normalizeText(project.devBranch),
     previewUrl,
     urls: normalizeProjectUrls(project.urls),
+    widgetPanes: normalizeProjectWidgetPanes(project.widgetPanes),
     bounds: normalizeBounds(project.bounds, {
       x: 48 + index * 32,
       y: 92 + index * 28,
@@ -739,7 +808,7 @@ class ProjectStore {
   }
 
   updateWidgetLayout(projectId, layout) {
-    this.state.widgetLayouts[String(projectId)] = normalizeWidgetLayout(layout);
+    this.state.widgetLayouts[String(projectId)] = normalizeProjectWidgetLayout(layout);
     this.save();
     return this.getWidgetLayout(projectId);
   }
@@ -907,6 +976,8 @@ module.exports = {
   normalizePaneLayouts,
   normalizeWidgetLayout,
   normalizeWidgetLayouts,
+  normalizeProjectWidgetLayout,
+  normalizeProjectWidgetPanes,
   normalizeProject,
   normalizeProjectUrls,
   normalizeSlug,

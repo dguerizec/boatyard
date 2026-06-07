@@ -14,13 +14,11 @@ const workspaceTitle = document.querySelector("#workspace-title");
 const workspaceSummary = document.querySelector("#workspace-summary");
 
 const MIN_WIDGET_RAIL_WIDTH = 240;
-const MIN_WEBAPP_AREA_WIDTH = 420;
-const WIDGET_RAIL_RESIZER_WIDTH = 6;
-const WIDGET_GRID_MIN_COLUMN_WIDTH = 150;
-const WIDGET_GRID_MAX_COLUMN_WIDTH = 220;
+const DEFAULT_WIDGET_PANE_ID = "widgets-0";
+const WIDGET_GRID_MIN_COLUMN_WIDTH = 100;
+const WIDGET_GRID_MAX_COLUMN_WIDTH = 200;
 const WIDGET_GRID_ROW_HEIGHT = 84;
 const WIDGET_GRID_GAP = 12;
-const WIDGET_GRID_HORIZONTAL_PADDING = 18;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-preview", "dashtop.pier.urls"],
   ["pier-urls", "dashtop.pier.urls"]
@@ -751,8 +749,43 @@ function getMigratedWidgetEntry(entries = {}, widgetId) {
   return null;
 }
 
-function normalizeWidgetLayoutForProject(project, columnCount = null) {
-  const persisted = widgetLayoutsByProject.get(project.id) || {};
+function getProjectWidgetPanes(project) {
+  const panes = Array.isArray(project.widgetPanes) ? project.widgetPanes : [];
+  return panes.length
+    ? panes
+    : [{
+        id: DEFAULT_WIDGET_PANE_ID,
+        label: "Widgets"
+      }];
+}
+
+function getPersistedWidgetPaneLayout(project, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
+  const persistedProjectLayout = widgetLayoutsByProject.get(project.id) || {};
+  if (persistedProjectLayout.panes && typeof persistedProjectLayout.panes === "object") {
+    return persistedProjectLayout.panes[widgetPaneId] || {};
+  }
+
+  return widgetPaneId === DEFAULT_WIDGET_PANE_ID ? persistedProjectLayout : {};
+}
+
+function setWidgetPaneLayout(project, widgetPaneId, layout) {
+  const persistedProjectLayout = widgetLayoutsByProject.get(project.id) || {};
+  const panes = persistedProjectLayout.panes && typeof persistedProjectLayout.panes === "object"
+    ? persistedProjectLayout.panes
+    : {
+        [DEFAULT_WIDGET_PANE_ID]: persistedProjectLayout
+      };
+
+  widgetLayoutsByProject.set(project.id, {
+    panes: {
+      ...panes,
+      [widgetPaneId]: layout
+    }
+  });
+}
+
+function normalizeWidgetLayoutForProject(project, columnCount = null, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
+  const persisted = getPersistedWidgetPaneLayout(project, widgetPaneId);
   const widgetDefinitions = getProjectWidgetDefinitions();
   const knownIds = widgetDefinitions.map((definition) => definition.id);
   const knownIdSet = new Set(knownIds);
@@ -874,17 +907,18 @@ function clampWidgetGridSize(definition, size) {
 }
 
 function getWidgetGridColumnCount(widgetRailWidth) {
-  const contentWidth = Math.max(1, widgetRailWidth - WIDGET_GRID_HORIZONTAL_PADDING);
-  const maxColumnsByMinStep = Math.max(
-    1,
-    Math.floor((contentWidth + WIDGET_GRID_GAP) / (WIDGET_GRID_MIN_COLUMN_WIDTH + WIDGET_GRID_GAP))
-  );
-  const minColumnsByMaxStep = Math.max(
-    1,
-    Math.ceil((contentWidth + WIDGET_GRID_GAP) / (WIDGET_GRID_MAX_COLUMN_WIDTH + WIDGET_GRID_GAP))
-  );
+  const width = Math.max(1, Math.round(widgetRailWidth || 0));
 
-  return Math.min(maxColumnsByMinStep, minColumnsByMaxStep);
+  return Math.max(1, Math.floor(width / WIDGET_GRID_MIN_COLUMN_WIDTH));
+}
+
+function getWidgetRailColumnCount(widgetRail) {
+  const stored = Number(widgetRail?.dataset.widgetGridColumns);
+  if (Number.isFinite(stored) && stored > 0) {
+    return Math.round(stored);
+  }
+
+  return getWidgetGridColumnCount(widgetRail?.getBoundingClientRect().width || WIDGET_GRID_MAX_COLUMN_WIDTH);
 }
 
 function fitWidgetSizeToGrid(size, columnCount) {
@@ -894,8 +928,9 @@ function fitWidgetSizeToGrid(size, columnCount) {
   };
 }
 
-function applyWidgetGridLayout(widgetRail, project, columnCount) {
-  const layout = getProjectWidgetLayout(project, columnCount);
+function applyWidgetGridLayout(widgetRail, project, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
+  const layout = getProjectWidgetLayout(project, columnCount, widgetPaneId);
+  widgetRail.dataset.widgetGridColumns = String(columnCount);
   widgetRail.style.setProperty("--widget-grid-columns", String(columnCount));
   widgetRail.style.setProperty("--widget-grid-row-height", `${WIDGET_GRID_ROW_HEIGHT}px`);
 
@@ -973,9 +1008,9 @@ function findAvailableWidgetPosition({ widgetId, size, positions, sizes, columnC
   };
 }
 
-function getProjectWidgetLayout(project, columnCount = null) {
-  const layout = normalizeWidgetLayoutForProject(project, columnCount);
-  widgetLayoutsByProject.set(project.id, layout);
+function getProjectWidgetLayout(project, columnCount = null, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
+  const layout = normalizeWidgetLayoutForProject(project, columnCount, widgetPaneId);
+  setWidgetPaneLayout(project, widgetPaneId, layout);
   return layout;
 }
 
@@ -1002,9 +1037,9 @@ function persistWidgetLayout(project) {
   });
 }
 
-async function toggleWidgetLayoutLock(project) {
-  const layout = getProjectWidgetLayout(project);
-  widgetLayoutsByProject.set(project.id, {
+async function toggleWidgetLayoutLock(project, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
+  const layout = getProjectWidgetLayout(project, null, widgetPaneId);
+  setWidgetPaneLayout(project, widgetPaneId, {
     ...layout,
     locked: !layout.locked
   });
@@ -1012,21 +1047,21 @@ async function toggleWidgetLayoutLock(project) {
   renderProjectDashboard(project);
 }
 
-async function removeProjectWidget(project, widgetId, columnCount) {
+async function removeProjectWidget(project, widgetId, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const definition = getWidgetDefinition(widgetId);
 
   if (!definition) {
     return false;
   }
 
-  const layout = getProjectWidgetLayout(project, columnCount);
+  const layout = getProjectWidgetLayout(project, columnCount, widgetPaneId);
   const hidden = [...new Set([...layout.hidden, widgetId])];
   const sizes = { ...layout.sizes };
   const positions = { ...layout.positions };
   delete sizes[widgetId];
   delete positions[widgetId];
 
-  widgetLayoutsByProject.set(project.id, {
+  setWidgetPaneLayout(project, widgetPaneId, {
     ...layout,
     order: layout.order.filter((id) => id !== widgetId),
     hidden,
@@ -1038,14 +1073,14 @@ async function removeProjectWidget(project, widgetId, columnCount) {
   return true;
 }
 
-async function addProjectWidget(project, widgetId, columnCount) {
+async function addProjectWidget(project, widgetId, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const definition = getWidgetDefinition(widgetId);
 
   if (!definition) {
     return false;
   }
 
-  const layout = getProjectWidgetLayout(project, columnCount);
+  const layout = getProjectWidgetLayout(project, columnCount, widgetPaneId);
   const size = fitWidgetSizeToGrid(clampWidgetGridSize(definition), columnCount);
   const hidden = layout.hidden.filter((id) => id !== widgetId);
   const positions = { ...layout.positions };
@@ -1061,7 +1096,7 @@ async function addProjectWidget(project, widgetId, columnCount) {
     columnCount
   });
 
-  widgetLayoutsByProject.set(project.id, {
+  setWidgetPaneLayout(project, widgetPaneId, {
     ...layout,
     order: [...layout.order.filter((id) => id !== widgetId), widgetId],
     hidden,
@@ -1122,14 +1157,14 @@ function clearWidgetDropPreview(widgetRail) {
   delete widgetRail.dataset.dropState;
 }
 
-async function moveWidgetToGridPosition(project, widgetId, position, columnCount) {
+async function moveWidgetToGridPosition(project, widgetId, position, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const definition = getWidgetDefinition(widgetId);
 
   if (!definition) {
     return false;
   }
 
-  const layout = getProjectWidgetLayout(project, columnCount);
+  const layout = getProjectWidgetLayout(project, columnCount, widgetPaneId);
   const size = layout.sizes[widgetId];
 
   if (!isWidgetAreaAvailable({
@@ -1143,7 +1178,7 @@ async function moveWidgetToGridPosition(project, widgetId, position, columnCount
     return false;
   }
 
-  widgetLayoutsByProject.set(project.id, {
+  setWidgetPaneLayout(project, widgetPaneId, {
     ...layout,
     positions: {
       ...layout.positions,
@@ -1155,27 +1190,28 @@ async function moveWidgetToGridPosition(project, widgetId, position, columnCount
   return true;
 }
 
-function attachWidgetGridDropHandlers(widgetRail, project, columnCount) {
+function attachWidgetGridDropHandlers(widgetRail, project, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   widgetRail.addEventListener("dragover", (event) => {
     if (!draggedWidgetId) {
       return;
     }
 
-    const layout = getProjectWidgetLayout(project, columnCount);
+    const currentColumnCount = getWidgetRailColumnCount(widgetRail) || columnCount;
+    const layout = getProjectWidgetLayout(project, currentColumnCount, widgetPaneId);
     const size = layout.sizes[draggedWidgetId];
     if (!size) {
       return;
     }
 
     event.preventDefault();
-    const position = getWidgetGridPositionFromPointer(event, widgetRail, columnCount, size);
+    const position = getWidgetGridPositionFromPointer(event, widgetRail, currentColumnCount, size);
     const available = isWidgetAreaAvailable({
       widgetId: draggedWidgetId,
       position,
       size,
       positions: layout.positions,
       sizes: layout.sizes,
-      columnCount
+      columnCount: currentColumnCount
     });
 
     event.dataTransfer.dropEffect = available ? "move" : "none";
@@ -1191,7 +1227,8 @@ function attachWidgetGridDropHandlers(widgetRail, project, columnCount) {
 
   widgetRail.addEventListener("drop", async (event) => {
     const widgetId = event.dataTransfer.getData("text/plain") || draggedWidgetId;
-    const layout = getProjectWidgetLayout(project, columnCount);
+    const currentColumnCount = getWidgetRailColumnCount(widgetRail) || columnCount;
+    const layout = getProjectWidgetLayout(project, currentColumnCount, widgetPaneId);
     const size = layout.sizes[widgetId];
     clearWidgetDropPreview(widgetRail);
 
@@ -1200,12 +1237,12 @@ function attachWidgetGridDropHandlers(widgetRail, project, columnCount) {
     }
 
     event.preventDefault();
-    const position = getWidgetGridPositionFromPointer(event, widgetRail, columnCount, size);
-    await moveWidgetToGridPosition(project, widgetId, position, columnCount);
+    const position = getWidgetGridPositionFromPointer(event, widgetRail, currentColumnCount, size);
+    await moveWidgetToGridPosition(project, widgetId, position, currentColumnCount, widgetPaneId);
   });
 }
 
-function createProjectWidget(project, definition, layout, columnCount) {
+function createProjectWidget(project, definition, layout, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const props = {
     projectId: project.id,
     project,
@@ -1255,7 +1292,11 @@ function createProjectWidget(project, definition, layout, columnCount) {
       resizeHandle.addEventListener("pointerdown", (event) => {
         event.preventDefault();
         event.stopPropagation();
-        startWidgetResize(event, project, definition, layout, size, columnCount, direction);
+        const rail = event.currentTarget.closest(".project-widget-rail");
+        const currentColumnCount = getWidgetRailColumnCount(rail) || columnCount;
+        const currentLayout = getProjectWidgetLayout(project, currentColumnCount, widgetPaneId);
+        const currentSize = currentLayout.sizes[definition.id] || size;
+        startWidgetResize(event, project, definition, currentLayout, currentSize, currentColumnCount, direction, widgetPaneId);
       });
       card.append(resizeHandle);
     }
@@ -1264,7 +1305,7 @@ function createProjectWidget(project, definition, layout, columnCount) {
   return card;
 }
 
-function startWidgetResize(event, project, definition, layout, startSize, columnCount, direction) {
+function startWidgetResize(event, project, definition, layout, startSize, columnCount, direction, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const spec = getWidgetLayoutSpec(definition);
   const startX = event.clientX;
   const startY = event.clientY;
@@ -1356,7 +1397,7 @@ function startWidgetResize(event, project, definition, layout, startSize, column
     }
 
     lastGeometryKey = nextGeometryKey;
-    widgetLayoutsByProject.set(project.id, {
+    setWidgetPaneLayout(project, widgetPaneId, {
       ...layout,
       positions: nextPositions,
       sizes: nextSizes
@@ -1388,7 +1429,7 @@ function closeWidgetAddMenu() {
   openWidgetAddMenu = null;
 }
 
-function openWidgetAddMenuFromButton(button, project, layout, columnCount) {
+function openWidgetAddMenuFromButton(button, project, layout, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   closeWidgetAddMenu();
 
   const hiddenDefinitions = layout.hidden
@@ -1425,7 +1466,7 @@ function openWidgetAddMenuFromButton(button, project, layout, columnCount) {
     item.append(name, meta);
     item.addEventListener("click", async () => {
       closeWidgetAddMenu();
-      await addProjectWidget(project, definition.id, columnCount);
+      await addProjectWidget(project, definition.id, columnCount, widgetPaneId);
     });
     menu.append(item);
   }
@@ -1460,7 +1501,7 @@ function openWidgetAddMenuFromButton(button, project, layout, columnCount) {
   menu.querySelector("button")?.focus();
 }
 
-function createWidgetTrashDropzone(project, columnCount) {
+function createWidgetTrashDropzone(project, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const dropzone = document.createElement("div");
   dropzone.className = "widget-trash-dropzone";
   dropzone.setAttribute("role", "button");
@@ -1497,18 +1538,19 @@ function createWidgetTrashDropzone(project, columnCount) {
     dropzone.classList.remove("drag-over");
     clearWidgetDropPreview(dropzone.closest(".project-widget-rail"));
     draggedWidgetId = null;
-    await removeProjectWidget(project, widgetId, columnCount);
+    const rail = dropzone.closest(".project-widget-rail");
+    await removeProjectWidget(project, widgetId, getWidgetRailColumnCount(rail) || columnCount, widgetPaneId);
   });
 
   return dropzone;
 }
 
-function createWidgetRailHeader(project, layout, columnCount) {
+function createWidgetRailHeader(project, widgetPane, layout, columnCount) {
   const header = document.createElement("header");
   header.className = "widget-rail-header";
 
   const title = document.createElement("h3");
-  title.textContent = project.name;
+  title.textContent = widgetPane.label;
 
   const actions = document.createElement("div");
   actions.className = "widget-rail-actions";
@@ -1518,18 +1560,23 @@ function createWidgetRailHeader(project, layout, columnCount) {
       label: layout.locked ? "Unlock widget layout" : "Lock widget layout",
       text: layout.locked ? "Edit" : "Lock",
       wide: true,
-      onClick: () => toggleWidgetLayoutLock(project)
+      onClick: () => toggleWidgetLayoutLock(project, widgetPane.id)
     }
   ];
 
-  const trashDropzone = !layout.locked ? createWidgetTrashDropzone(project, columnCount) : null;
+  const trashDropzone = !layout.locked ? createWidgetTrashDropzone(project, columnCount, widgetPane.id) : null;
 
   if (!layout.locked) {
     actionConfigs.push({
       label: "Add widget",
       text: "+",
       disabled: !layout.hidden.length,
-      onClick: (event) => openWidgetAddMenuFromButton(event.currentTarget, project, layout, columnCount)
+      onClick: (event) => {
+        const rail = event.currentTarget.closest(".project-widget-rail");
+        const currentColumnCount = getWidgetRailColumnCount(rail) || columnCount;
+        const currentLayout = getProjectWidgetLayout(project, currentColumnCount, widgetPane.id);
+        openWidgetAddMenuFromButton(event.currentTarget, project, currentLayout, currentColumnCount, widgetPane.id);
+      }
     });
   }
 
@@ -1559,7 +1606,13 @@ function createWidgetRailHeader(project, layout, columnCount) {
 }
 
 function getProjectWebApps(project, paneId) {
-  const webApps = [];
+  const webApps = getProjectWidgetPanes(project).map((widgetPane, index) => ({
+    id: `widgets:${widgetPane.id}`,
+    label: widgetPane.label || `Widgets ${index + 1}`,
+    key: `${paneId}:widgets:${widgetPane.id}`,
+    kind: "widgets",
+    widgetPane
+  }));
 
   if (project.sourcePath) {
     webApps.push({
@@ -1738,6 +1791,48 @@ window.DashtopPaneNavigation = Object.freeze({
   openProjectWebApp
 });
 
+function createWidgetPaneSurface(project, widgetPane) {
+  const rail = document.createElement("div");
+  rail.className = "project-widget-rail";
+  const fallbackWidth = Math.max(MIN_WIDGET_RAIL_WIDTH, Math.round((dashboardGrid.getBoundingClientRect().width || window.innerWidth) / 2));
+  const widgetGridColumns = getWidgetGridColumnCount(fallbackWidth);
+  const widgetLayout = getProjectWidgetLayout(project, widgetGridColumns, widgetPane.id);
+
+  rail.classList.toggle("editing", !widgetLayout.locked);
+  rail.dataset.widgetGridColumns = String(widgetGridColumns);
+  rail.style.setProperty("--widget-grid-columns", String(widgetGridColumns));
+  rail.style.setProperty("--widget-grid-row-height", `${WIDGET_GRID_ROW_HEIGHT}px`);
+
+  rail.append(
+    createWidgetRailHeader(project, widgetPane, widgetLayout, widgetGridColumns),
+    ...getOrderedWidgetDefinitions(widgetLayout).map((definition) => (
+      createProjectWidget(project, definition, widgetLayout, widgetGridColumns, widgetPane.id)
+    ))
+  );
+  attachWidgetGridDropHandlers(rail, project, widgetGridColumns, widgetPane.id);
+
+  const resizeObserver = new ResizeObserver(() => {
+    if (!rail.isConnected) {
+      resizeObserver.disconnect();
+      return;
+    }
+
+    const width = rail.getBoundingClientRect().width || fallbackWidth;
+    const nextColumnCount = getWidgetGridColumnCount(width);
+    if (nextColumnCount !== getWidgetRailColumnCount(rail)) {
+      applyWidgetGridLayout(rail, project, nextColumnCount, widgetPane.id);
+    }
+  });
+  resizeObserver.observe(rail);
+
+  requestAnimationFrame(() => {
+    const width = rail.getBoundingClientRect().width || fallbackWidth;
+    applyWidgetGridLayout(rail, project, getWidgetGridColumnCount(width), widgetPane.id);
+  });
+
+  return rail;
+}
+
 function closeWebAppTabMenu() {
   if (!openWebAppTabMenu) {
     return;
@@ -1811,8 +1906,10 @@ function createWebAppPane(project, paneNode) {
   const webApps = getProjectWebApps(project, paneNode.id);
   const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
   const isTerminalPane = selectedWebApp.kind === "terminal";
+  const isWidgetPane = selectedWebApp.kind === "widgets";
   const pane = document.createElement("section");
   pane.className = "webapp-pane";
+  pane.classList.toggle("widget-pane", isWidgetPane);
   pane.dataset.paneId = paneNode.id;
 
   const header = document.createElement("div");
@@ -1844,7 +1941,7 @@ function createWebAppPane(project, paneNode) {
 
   tabs.append(tabPickerButton);
 
-  if (!isTerminalPane) {
+  if (!isTerminalPane && !isWidgetPane) {
     const homeButton = document.createElement("button");
     homeButton.className = "webapp-tool-button";
     homeButton.type = "button";
@@ -1949,6 +2046,8 @@ function createWebAppPane(project, paneNode) {
       tagName: "div",
       className: "terminal-pane-surface terminal-widget"
     }));
+  } else if (isWidgetPane) {
+    host.append(createWidgetPaneSurface(project, selectedWebApp.widgetPane));
   } else {
     visibleWebAppHosts.set(paneNode.id, {
       webApp: selectedWebApp,
@@ -2814,34 +2913,16 @@ function renderGlobalSettingsPage() {
 function renderProjectDashboard(project) {
   closeWidgetAddMenu();
   detachProjectTerminal(project.id);
-  const settings = getSettings();
-  const widgetRailWidth = clampWidgetRailWidth(settings.widgetRailWidth);
   workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Project";
   workspaceTitle.textContent = project.name;
   workspaceSummary.textContent = getProjectSummaryTarget(project);
   dashboardGrid.innerHTML = "";
   dashboardGrid.className = "project-workbench";
-  dashboardGrid.style.gridTemplateColumns = `${widgetRailWidth}px ${WIDGET_RAIL_RESIZER_WIDTH}px minmax(${MIN_WEBAPP_AREA_WIDTH}px, 1fr)`;
+  dashboardGrid.style.gridTemplateColumns = "";
   visibleWebAppHosts = new Map();
 
-  const widgetGridColumns = getWidgetGridColumnCount(widgetRailWidth);
-  const widgetLayout = getProjectWidgetLayout(project, widgetGridColumns);
-  const widgetRail = document.createElement("aside");
-  widgetRail.className = "project-widget-rail";
-  widgetRail.classList.toggle("editing", !widgetLayout.locked);
-  widgetRail.style.setProperty("--widget-grid-columns", String(widgetGridColumns));
-  widgetRail.style.setProperty("--widget-grid-row-height", `${WIDGET_GRID_ROW_HEIGHT}px`);
-
-  widgetRail.append(
-    createWidgetRailHeader(project, widgetLayout, widgetGridColumns),
-    ...getOrderedWidgetDefinitions(widgetLayout).map((definition) => (
-      createProjectWidget(project, definition, widgetLayout, widgetGridColumns)
-    ))
-  );
-  attachWidgetGridDropHandlers(widgetRail, project, widgetGridColumns);
-
-  dashboardGrid.append(widgetRail, createWidgetRailResizer(), createPaneLayout(project, getProjectPaneLayout(project)));
+  dashboardGrid.append(createPaneLayout(project, getProjectPaneLayout(project)));
 }
 
 function renderProjectPaneArea(project) {
@@ -2859,67 +2940,12 @@ function renderProjectPaneArea(project) {
   const paneLayoutElement = createPaneLayout(project, getProjectPaneLayout(project));
   const currentPaneLayoutElement = dashboardGrid.lastElementChild;
 
-  if (!currentPaneLayoutElement || currentPaneLayoutElement.classList.contains("project-widget-rail")) {
+  if (!currentPaneLayoutElement) {
     renderProjectDashboard(project);
     return;
   }
 
   currentPaneLayoutElement.replaceWith(paneLayoutElement);
-}
-
-function clampWidgetRailWidth(width) {
-  const workbenchWidth = dashboardGrid.getBoundingClientRect().width || window.innerWidth;
-  const maxWidth = Math.max(
-    MIN_WIDGET_RAIL_WIDTH,
-    workbenchWidth - MIN_WEBAPP_AREA_WIDTH - WIDGET_RAIL_RESIZER_WIDTH
-  );
-  return Math.min(maxWidth, Math.max(MIN_WIDGET_RAIL_WIDTH, Math.round(width || 340)));
-}
-
-function createWidgetRailResizer() {
-  const resizer = document.createElement("div");
-  resizer.className = "widget-rail-resizer";
-  resizer.setAttribute("role", "separator");
-  resizer.setAttribute("aria-orientation", "vertical");
-  resizer.setAttribute("aria-label", "Resize widgets");
-
-  resizer.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = getSettings().widgetRailWidth;
-
-    function onPointerMove(moveEvent) {
-      const nextWidth = clampWidgetRailWidth(startWidth + moveEvent.clientX - startX);
-      const project = getCurrentProject();
-      state.settings = {
-        ...getSettings(),
-        widgetRailWidth: nextWidth
-      };
-      dashboardGrid.style.gridTemplateColumns = `${nextWidth}px ${WIDGET_RAIL_RESIZER_WIDTH}px minmax(${MIN_WEBAPP_AREA_WIDTH}px, 1fr)`;
-      const widgetRail = dashboardGrid.querySelector(".project-widget-rail");
-      if (project && widgetRail) {
-        applyWidgetGridLayout(widgetRail, project, getWidgetGridColumnCount(nextWidth));
-      }
-      queueWebAppSync();
-    }
-
-    async function onPointerUp() {
-      document.removeEventListener("pointermove", onPointerMove);
-      document.removeEventListener("pointerup", onPointerUp);
-      state = await window.dashtop.updateSettings({
-        widgetRailWidth: getSettings().widgetRailWidth
-      });
-      const project = getCurrentProject();
-      if (project) {
-        renderProjectDashboard(project);
-      }
-    }
-
-    document.addEventListener("pointermove", onPointerMove);
-    document.addEventListener("pointerup", onPointerUp);
-  });
-
-  return resizer;
 }
 
 function createProjectFormView({ title, submitLabel, initialValues, onSubmit, onCancel }) {
@@ -3319,6 +3345,38 @@ function createProjectUrlRow(entry = {}) {
   return row;
 }
 
+function createProjectWidgetPaneRow(entry = {}) {
+  const row = document.createElement("div");
+  row.className = "project-url-row";
+
+  const idInput = document.createElement("input");
+  idInput.name = "widgetPaneId";
+  idInput.type = "hidden";
+  idInput.value = entry.id || "";
+
+  const labelInput = document.createElement("input");
+  labelInput.name = "widgetPaneLabel";
+  labelInput.type = "text";
+  labelInput.autocomplete = "off";
+  labelInput.placeholder = "Widgets";
+  labelInput.value = entry.label || "";
+  labelInput.setAttribute("aria-label", "Widget pane name");
+
+  const spacer = document.createElement("div");
+  spacer.className = "project-url-spacer";
+
+  const removeButton = document.createElement("button");
+  removeButton.className = "project-url-remove";
+  removeButton.type = "button";
+  removeButton.title = "Remove widget pane";
+  removeButton.setAttribute("aria-label", "Remove widget pane");
+  removeButton.textContent = "X";
+  removeButton.addEventListener("click", () => row.remove());
+
+  row.append(idInput, labelInput, spacer, removeButton);
+  return row;
+}
+
 function createProjectPluginSettingsControls(initialValues = {}, options = {}) {
   const controls = [];
   const sections = [];
@@ -3496,6 +3554,15 @@ function readProjectUrlRows(list) {
     .filter((entry) => entry.id.trim() || entry.label.trim() || entry.url.trim());
 }
 
+function readProjectWidgetPaneRows(list) {
+  return [...list.querySelectorAll(".project-url-row")]
+    .map((row) => ({
+      id: row.querySelector('[name="widgetPaneId"]').value,
+      label: row.querySelector('[name="widgetPaneLabel"]').value
+    }))
+    .filter((entry) => entry.id.trim() || entry.label.trim());
+}
+
 function createProjectUrlsForm({ project, onSubmit }) {
   const shell = document.createElement("section");
   shell.className = "project-form-page";
@@ -3553,6 +3620,69 @@ function createProjectUrlsForm({ project, onSubmit }) {
 
     try {
       await onSubmit(readProjectUrlRows(list));
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  return shell;
+}
+
+function createProjectWidgetPanesForm({ project, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Widget panes";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Add named widget panes that should appear as pane tabs.";
+  heading.append(headingTitle, headingCopy);
+
+  const list = document.createElement("div");
+  list.className = "project-url-list";
+
+  for (const entry of getProjectWidgetPanes(project)) {
+    list.append(createProjectWidgetPaneRow(entry));
+  }
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const addButton = document.createElement("button");
+  addButton.className = "secondary-button";
+  addButton.type = "button";
+  addButton.textContent = "Add widget pane";
+  addButton.addEventListener("click", () => list.append(createProjectWidgetPaneRow()));
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save widget panes";
+
+  actions.append(addButton, submitButton);
+  form.append(heading, list, error, actions);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit(readProjectWidgetPaneRows(list));
     } catch (submitError) {
       error.textContent = submitError.message;
       error.hidden = false;
@@ -3709,6 +3839,12 @@ function renderEditProjectPage(project) {
     project,
     onSubmit: async (urls) => {
       state = await window.dashtop.updateProject(project.id, { urls });
+      reloadProjectSettings(project.id);
+    }
+  }), createProjectWidgetPanesForm({
+    project,
+    onSubmit: async (widgetPanes) => {
+      state = await window.dashtop.updateProject(project.id, { widgetPanes });
       reloadProjectSettings(project.id);
     }
   }), createProjectDangerZone({
