@@ -21,6 +21,12 @@ It is organized around a global workspace, a project switcher, project-scoped wi
 - npm
 - tmux, for the terminal widget
 
+Optional plugin dependencies:
+
+- [Twicc](https://github.com/twidi/twicc), for Twicc project/session panes, widgets, and project creation helpers.
+- [Pier](https://github.com/LeoPartt/pier), for Pier preview panes and URL widgets.
+- [Hawser](https://github.com/dguerizec/hawser), for Hawser inbox panes, widgets, and task/session links.
+
 ## Install
 
 ```sh
