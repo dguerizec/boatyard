@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("dashtop", {
   getHawserWidgetDataForConfig: (projectId, projectConfig, globalConfig) => (
     ipcRenderer.invoke("hawser:widget-data-for-config", projectId, projectConfig, globalConfig)
   ),
+  getHawserStatusForConfig: (globalConfig) => ipcRenderer.invoke("hawser:status-for-config", globalConfig),
   onTerminalData: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("terminal:data", listener);

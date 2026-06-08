@@ -2864,9 +2864,56 @@ function createGlobalPluginSettingsForm(section, options = {}) {
     input.type = field.type || "text";
     input.autocomplete = "off";
     input.placeholder = field.placeholder || "";
-    input.value = pluginConfig[field.key] || field.defaultValue || "";
+    input.readOnly = field.readOnly === true;
+    const defaultValue = window.DashtopPluginSettingsFields.resolveFieldDefault(field);
+    input.dataset.defaultValue = String(defaultValue || "");
+    input.value = pluginConfig[field.key] || input.dataset.defaultValue;
     label.append(input);
-    inputs.set(field.key, { field, input });
+    const fieldState = { field, input, action: null };
+
+    if (field.action) {
+      const action = document.createElement("div");
+      action.className = "field-action";
+      action.hidden = field.action.hidden !== false;
+
+      const actionMessage = document.createElement("span");
+      actionMessage.textContent = field.action.message || "";
+
+      const actionButton = document.createElement("button");
+      actionButton.className = "secondary-button";
+      actionButton.type = "button";
+      actionButton.textContent = field.action.label || "Run";
+      actionButton.addEventListener("click", async () => {
+        if (typeof field.action.run !== "function") {
+          return;
+        }
+
+        error.hidden = true;
+        error.textContent = "";
+        actionButton.disabled = true;
+        const originalLabel = actionButton.textContent;
+        actionButton.textContent = field.action.pendingLabel || "Working...";
+
+        try {
+          await field.action.run({
+            globalConfig: pluginConfig,
+            fields: createPluginFieldApi(inputs)
+          });
+        } catch (actionError) {
+          error.textContent = actionError.message;
+          error.hidden = false;
+        } finally {
+          actionButton.disabled = false;
+          actionButton.textContent = originalLabel;
+        }
+      });
+
+      action.append(actionMessage, actionButton);
+      label.append(action);
+      fieldState.action = { element: action, message: actionMessage, button: actionButton };
+    }
+
+    inputs.set(field.key, fieldState);
     form.append(label);
   }
 
@@ -2893,6 +2940,10 @@ function createGlobalPluginSettingsForm(section, options = {}) {
     try {
       const values = {};
       for (const [key, { field, input }] of inputs) {
+        if (field.persist === false) {
+          continue;
+        }
+
         values[key] = readPluginSettingsFieldValue(field, input);
       }
 
@@ -2942,6 +2993,12 @@ function renderGlobalSettingsPage() {
       renderGlobalSettingsPage();
     }
   }), createGlobalPluginsSettingsView(), createGlobalWidgetsSettingsView());
+
+  window.DashtopPluginRegistry?.emit("dashtop.globalSettings.opened", {
+    forPlugin: (pluginId) => ({
+      globalConfig: getGlobalPluginConfig(pluginId)
+    })
+  });
 }
 
 function renderProjectDashboard(project) {
@@ -4220,6 +4277,12 @@ window.dashtop.onTerminalExit(({ terminalId }) => {
   const projectSession = terminalWidgetsByProject.get(session.projectId);
   if (projectSession?.terminalId === terminalId) {
     terminalWidgetsByProject.delete(session.projectId);
+  }
+});
+
+window.addEventListener("dashtop:plugin-status-changed", () => {
+  if (currentView === "global-settings") {
+    renderGlobalSettingsPage();
   }
 });
 

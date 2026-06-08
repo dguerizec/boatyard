@@ -1,9 +1,110 @@
 "use strict";
 
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
+
 const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082";
+const execFileAsync = promisify(execFile);
 
 function getHawserApiUrl(settings = {}) {
   return String(settings.hawserApiUrl || DEFAULT_HAWSER_API_URL).replace(/\/+$/, "");
+}
+
+async function getHawserCliStatus(runCommand = execFileAsync) {
+  try {
+    const { stdout } = await runCommand("hawser", ["--version"], {
+      timeout: 2000,
+      windowsHide: true
+    });
+    return {
+      available: true,
+      version: String(stdout || "").trim()
+    };
+  } catch (error) {
+    return {
+      available: false,
+      error: error.code === "ENOENT" ? "Hawser CLI was not found in PATH." : error.message
+    };
+  }
+}
+
+async function getHawserStatus(settings = {}, options = {}) {
+  const apiUrl = getHawserApiUrl(settings);
+  const token = String(settings.hawserToken || "").trim();
+  const fetchImpl = options.fetchImpl || fetch;
+  const cli = await getHawserCliStatus(options.execFileAsync);
+  const headers = token
+    ? {
+        Authorization: `Bearer ${token}`
+      }
+    : {};
+
+  try {
+    const response = await fetchImpl(`${apiUrl}/api/health`, {
+      headers,
+      signal: AbortSignal.timeout(2000)
+    });
+
+    if (response.ok) {
+      const details = await response.json().catch(() => ({}));
+      return {
+        state: cli.available ? "ready" : "degraded",
+        summary: cli.available
+          ? "Hawser service is available."
+          : "Hawser service is available, but the Hawser CLI is not in PATH.",
+        details: {
+          apiUrl,
+          cliAvailable: cli.available,
+          cliVersion: cli.version || "",
+          cliError: cli.error || "",
+          ...details
+        }
+      };
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      return {
+        state: "notConfigured",
+        summary: token
+          ? "Hawser rejected the configured API token."
+          : "Hawser service is running. Configure the API token.",
+        details: {
+          apiUrl,
+          cliAvailable: cli.available,
+          cliVersion: cli.version || "",
+          cliError: cli.error || "",
+          status: response.status
+        }
+      };
+    }
+
+    return {
+      state: "degraded",
+      summary: `Hawser health check returned ${response.status}.`,
+      details: {
+        apiUrl,
+        cliAvailable: cli.available,
+        cliVersion: cli.version || "",
+        cliError: cli.error || "",
+        status: response.status
+      }
+    };
+  } catch (error) {
+    const summary = cli.available
+      ? "Hawser service is not available."
+      : "Hawser CLI was not found in PATH.";
+    return {
+      state: "unavailable",
+      summary,
+      details: {
+        apiUrl,
+        cliAvailable: cli.available,
+        cliVersion: cli.version || "",
+        cliError: cli.error || "",
+        error: error.message
+      }
+    };
+  }
 }
 
 function parseHawserProjectName(project = {}) {
@@ -285,7 +386,9 @@ async function getHawserWidgetData(project, settings = {}) {
 module.exports = {
   DEFAULT_HAWSER_API_URL,
   addSessionRefsToMessages,
+  getHawserCliStatus,
   getHawserWidgetData,
+  getHawserStatus,
   getMessageSessionTarget,
   getTwiccSessionIdFromRefs,
   isActiveTask,

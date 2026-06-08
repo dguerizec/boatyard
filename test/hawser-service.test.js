@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   addSessionRefsToMessages,
+  getHawserStatus,
   getMessageSessionTarget,
   getTwiccSessionIdFromRefs,
   isActiveTask,
@@ -16,6 +17,14 @@ const {
   summarizeMessages
 } = require("../src/main/hawserService");
 
+function makeResponse({ ok, status, body = {} }) {
+  return {
+    ok,
+    status,
+    json: async () => body
+  };
+}
+
 test("parseHawserProjectName derives the project from the configured main session", () => {
   assert.equal(parseHawserProjectName({
     slug: "fallback",
@@ -25,6 +34,53 @@ test("parseHawserProjectName derives the project from the configured main sessio
     slug: "fallback",
     hawserMainSession: ""
   }), "fallback");
+});
+
+test("getHawserStatus reports ready when CLI and service are available", async () => {
+  const status = await getHawserStatus({}, {
+    execFileAsync: async () => ({ stdout: "hawser 0.1.0\n" }),
+    fetchImpl: async () => makeResponse({
+      ok: true,
+      status: 200,
+      body: { ok: true }
+    })
+  });
+
+  assert.equal(status.state, "ready");
+  assert.equal(status.details.cliAvailable, true);
+  assert.equal(status.details.cliVersion, "hawser 0.1.0");
+  assert.equal(status.details.ok, true);
+});
+
+test("getHawserStatus reports unavailable when CLI and service are missing", async () => {
+  const missingCli = new Error("spawn hawser ENOENT");
+  missingCli.code = "ENOENT";
+  const status = await getHawserStatus({}, {
+    execFileAsync: async () => {
+      throw missingCli;
+    },
+    fetchImpl: async () => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:60082");
+    }
+  });
+
+  assert.equal(status.state, "unavailable");
+  assert.equal(status.summary, "Hawser CLI was not found in PATH.");
+  assert.equal(status.details.cliAvailable, false);
+});
+
+test("getHawserStatus asks for configuration when service rejects auth", async () => {
+  const status = await getHawserStatus({}, {
+    execFileAsync: async () => ({ stdout: "hawser 0.1.0\n" }),
+    fetchImpl: async () => makeResponse({
+      ok: false,
+      status: 401
+    })
+  });
+
+  assert.equal(status.state, "notConfigured");
+  assert.equal(status.summary, "Hawser service is running. Configure the API token.");
+  assert.equal(status.details.cliAvailable, true);
 });
 
 test("parseHawserSessionName derives the session from the configured main session", () => {

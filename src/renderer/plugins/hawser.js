@@ -4,6 +4,8 @@
   const registry = globalScope.DashtopPluginRegistry;
   const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
   const DEFAULT_HAWSER_WEB_URL = "http://localhost:60082";
+  const HAWSER_INSTALL_COMMAND = "bash <(curl -fsSL https://raw.githubusercontent.com/dguerizec/hawser/main/install.sh) && hawser service install";
+  const HAWSER_INSTALL_REQUIREMENTS = "Requires Linux x86_64, curl, bash, sha256sum, tar, and systemd --user.";
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
@@ -73,6 +75,25 @@
     });
   }
 
+  async function refreshHawserStatus(ctx, globalConfig = {}) {
+    if (typeof globalScope.dashtop.getHawserStatusForConfig !== "function") {
+      ctx.status.set({
+        state: "degraded",
+        summary: "Hawser status probe is unavailable."
+      });
+      return;
+    }
+
+    try {
+      ctx.status.set(await globalScope.dashtop.getHawserStatusForConfig(globalConfig));
+    } catch (error) {
+      ctx.status.set({
+        state: "unavailable",
+        summary: error.message
+      });
+    }
+  }
+
   function syncMainSessionField(event) {
     if (!["slug", "devBranch"].includes(event.field)) {
       return;
@@ -108,11 +129,15 @@
         const hawserService = createHawserService();
         ctx.services.provide("dashtop.hawser.api", hawserService);
         ctx.events.on("dashtop.projectForm.coreFieldChanged", syncMainSessionField);
+        ctx.events.on("dashtop.globalSettings.opened", (event) => {
+          refreshHawserStatus(ctx, event.globalConfig || {});
+        });
 
         ctx.status.set({
-          state: "ready",
-          summary: "Hawser integration is available"
+          state: "activating",
+          summary: "Checking Hawser availability..."
         });
+        refreshHawserStatus(ctx);
 
         ctx.settings.registerGlobalSection({
           id: "dashtop.hawser.global",
@@ -130,6 +155,26 @@
               label: "API token",
               type: "password",
               valueType: "text"
+            },
+            {
+              key: "hawserInstallCommand",
+              label: "Install command",
+              type: "text",
+              valueType: "text",
+              readOnly: true,
+              persist: false,
+              defaultValue: HAWSER_INSTALL_COMMAND,
+              action: {
+                label: "Copy",
+                pendingLabel: "Copying...",
+                message: `Use this if Hawser is not installed or the local service is unavailable. ${HAWSER_INSTALL_REQUIREMENTS}`,
+                hidden: false,
+                async run({ fields }) {
+                  const command = fields.getValue("hawserInstallCommand") || HAWSER_INSTALL_COMMAND;
+                  await globalScope.dashtop.writeClipboardText(command);
+                  fields.setActionMessage("hawserInstallCommand", "Install command copied.");
+                }
+              }
             }
           ]
         });

@@ -50,6 +50,24 @@
     };
   }
 
+  function publishStatus(pluginId, status) {
+    const currentStatus = statuses.get(pluginId) || null;
+    if (JSON.stringify(currentStatus) === JSON.stringify(status)) {
+      return;
+    }
+
+    statuses.set(pluginId, status);
+
+    if (typeof globalScope.dispatchEvent === "function" && typeof globalScope.CustomEvent === "function") {
+      globalScope.dispatchEvent(new globalScope.CustomEvent("dashtop:plugin-status-changed", {
+        detail: {
+          pluginId,
+          status
+        }
+      }));
+    }
+  }
+
   function normalizePaneDefinition(pluginId, definition) {
     if (!definition || typeof definition !== "object") {
       throw new Error(`Plugin ${pluginId} pane definition must be an object.`);
@@ -140,7 +158,7 @@
       plugin: manifest,
       status: Object.freeze({
         set(status) {
-          statuses.set(pluginId, {
+          publishStatus(pluginId, {
             state: normalizeText(status?.state || "ready"),
             summary: normalizeText(status?.summary),
             details: status?.details && typeof status.details === "object" ? { ...status.details } : {},

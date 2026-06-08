@@ -4,7 +4,7 @@ const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
-const { getHawserWidgetData } = require("./hawserService");
+const { getHawserStatus, getHawserWidgetData } = require("./hawserService");
 const { PasswordManager } = require("./passwordManager");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
@@ -539,6 +539,13 @@ function registerIpcHandlers() {
       ...project,
       hawserMainSession: projectConfig.hawserMainSession
     }, {
+      hawserApiUrl: globalConfig.hawserApiUrl,
+      hawserToken: globalConfig.hawserToken
+    });
+  });
+
+  ipcMain.handle("hawser:status-for-config", (_event, globalConfig = {}) => {
+    return getHawserStatus({
       hawserApiUrl: globalConfig.hawserApiUrl,
       hawserToken: globalConfig.hawserToken
     });

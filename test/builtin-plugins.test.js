@@ -15,6 +15,10 @@ function loadRendererPluginEnvironment() {
       dashtop: {
         openExternal: () => {},
         writeClipboardText: () => {},
+        getHawserStatusForConfig: async () => ({
+          state: "ready",
+          summary: "Hawser service is available."
+        }),
         getHawserWidgetDataForConfig: async () => ({})
       },
       DashtopHawserUI: {
@@ -88,6 +92,21 @@ test("Twicc service resolves session URLs from the configured project URL", () =
     }),
     "http://localhost:3500/project/dashtop/session/session-1"
   );
+});
+
+test("Hawser global settings expose a copyable install command", () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+  const hawserSection = registry
+    .listGlobalSettingsSections()
+    .find((section) => section.id === "dashtop.hawser.global");
+  const fields = Object.fromEntries(hawserSection.fields.map((field) => [field.key, field]));
+
+  assert.equal(fields.hawserInstallCommand.persist, false);
+  assert.equal(fields.hawserInstallCommand.readOnly, true);
+  assert.match(fields.hawserInstallCommand.defaultValue, /^bash <\(curl -fsSL https:\/\/raw\.githubusercontent\.com\/dguerizec\/hawser\/main\/install\.sh\)/);
+  assert.equal(fields.hawserInstallCommand.action.label, "Copy");
 });
 
 test("Pier project settings derive defaults from project identity", () => {
