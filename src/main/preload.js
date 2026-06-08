@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("dashtop", {
   updateWidgetLayout: (projectId, layout) => ipcRenderer.invoke("widget-layout:update", projectId, layout),
   listTerminalTabs: (projectId) => ipcRenderer.invoke("terminal:tabs", projectId),
   createTerminalTab: (projectId, name) => ipcRenderer.invoke("terminal:create-tab", projectId, name),
+  renameTerminalTab: (projectId, windowId, name) => ipcRenderer.invoke("terminal:rename-tab", projectId, windowId, name),
   closeTerminalTab: (projectId, windowId) => ipcRenderer.invoke("terminal:close-tab", projectId, windowId),
   attachTerminal: (projectId, windowId, size) => ipcRenderer.invoke("terminal:attach", projectId, windowId, size),
   writeTerminal: (terminalId, data) => ipcRenderer.invoke("terminal:write", terminalId, data),

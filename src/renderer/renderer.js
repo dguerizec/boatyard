@@ -357,6 +357,101 @@ function setTerminalStatus(card, message) {
   }
 }
 
+async function refreshProjectTerminalTabLabels(project) {
+  const tabs = await window.dashtop.listTerminalTabs(project.id);
+  const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
+
+  for (const session of terminalWidgetsBySurface.values()) {
+    if (session.projectId !== project.id || !session.card?.isConnected) {
+      continue;
+    }
+
+    for (const tabButton of session.card.querySelectorAll(".terminal-tab")) {
+      const tab = tabsById.get(tabButton.dataset.windowId);
+      if (tab) {
+        tabButton.textContent = tab.name || `shell ${tab.index}`;
+      }
+      tabButton.classList.toggle("active", tabButton.dataset.windowId === session.activeWindowId);
+    }
+  }
+}
+
+async function renameTerminalTab(project, tab, nextName) {
+  const currentName = tab.name || `shell ${tab.index}`;
+  const normalizedName = nextName.trim();
+  if (!normalizedName || normalizedName === currentName) {
+    return;
+  }
+
+  await window.dashtop.renameTerminalTab(project.id, tab.id, normalizedName);
+  await refreshProjectTerminalTabLabels(project);
+}
+
+function editTerminalTabName(project, card, tab, tabButton) {
+  const currentName = tab.name || `shell ${tab.index}`;
+  const editor = document.createElement("input");
+  editor.className = "terminal-tab terminal-tab-editor";
+  editor.type = "text";
+  editor.value = currentName;
+  editor.setAttribute("aria-label", "Shell name");
+
+  let finished = false;
+  const finish = async (shouldSave) => {
+    if (finished) {
+      return;
+    }
+    finished = true;
+
+    const nextName = editor.value;
+    editor.replaceWith(tabButton);
+    if (!shouldSave) {
+      return;
+    }
+
+    try {
+      await renameTerminalTab(project, tab, nextName);
+    } catch (error) {
+      setTerminalStatus(card, `Could not rename shell: ${error.message}`);
+    }
+  };
+
+  editor.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  editor.addEventListener("blur", () => finish(true));
+
+  tabButton.replaceWith(editor);
+  editor.focus();
+  editor.select();
+}
+
+function getTerminalSurfaceSession(card) {
+  return terminalWidgetsBySurface.get(getTerminalSurfaceId(card)) || null;
+}
+
+async function selectTerminalTab(project, card, tab) {
+  const session = getTerminalSurfaceSession(card);
+  const pendingWindowId = card.dataset.pendingTerminalWindowId;
+  if (session?.activeWindowId === tab.id || pendingWindowId === tab.id) {
+    return;
+  }
+
+  card.dataset.pendingTerminalWindowId = tab.id;
+  try {
+    await attachTerminalTab(project, card, tab.id);
+  } finally {
+    if (card.dataset.pendingTerminalWindowId === tab.id) {
+      delete card.dataset.pendingTerminalWindowId;
+    }
+  }
+}
+
 async function refreshTerminalTabs(project, card, activeWindowId = null) {
   const tabList = card.querySelector(".terminal-tabs");
   tabList.innerHTML = "";
@@ -372,7 +467,17 @@ async function refreshTerminalTabs(project, card, activeWindowId = null) {
       tabButton.type = "button";
       tabButton.dataset.windowId = tab.id;
       tabButton.textContent = tab.name || `shell ${tab.index}`;
-      tabButton.addEventListener("click", () => attachTerminalTab(project, card, tab.id));
+      tabButton.title = "Double-click to rename shell";
+      tabButton.addEventListener("click", () => {
+        selectTerminalTab(project, card, tab).catch((error) => {
+          setTerminalStatus(card, `Could not switch shell: ${error.message}`);
+        });
+      });
+      tabButton.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        editTerminalTabName(project, card, tab, tabButton);
+      });
       tabList.append(tabButton);
     }
 
@@ -534,6 +639,7 @@ async function attachTerminalTab(project, card, windowId) {
   resizeObserver.observe(viewport);
   terminalWidgetsBySurface.set(surfaceId, {
     projectId: project.id,
+    card,
     terminalId: attachResult.terminalId,
     activeWindowId: attachResult.tab.id,
     term,

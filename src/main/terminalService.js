@@ -146,6 +146,19 @@ class TerminalService {
     };
   }
 
+  async renameTab(projectId, windowId, name) {
+    const project = this.getProject(projectId);
+    await this.ensureProjectSession(project);
+    const nextName = String(name || "").trim();
+    if (!nextName) {
+      throw new Error("Shell name is required.");
+    }
+
+    await runTmux(["rename-window", "-t", String(windowId), nextName]);
+    const tabs = await this.listTabs(projectId);
+    return tabs.find((tab) => tab.id === windowId) || null;
+  }
+
   async closeTab(projectId, windowId) {
     const project = this.getProject(projectId);
     await this.ensureProjectSession(project);

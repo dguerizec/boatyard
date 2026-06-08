@@ -1257,6 +1257,15 @@ button {
   color: var(--text);
 }
 
+.terminal-tab-editor {
+  outline: none;
+}
+
+.terminal-tab-editor:focus {
+  border-color: rgba(65, 184, 131, 0.9);
+  color: var(--text);
+}
+
 .terminal-widget-actions {
   display: flex;
   gap: 4px;

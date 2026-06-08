@@ -508,6 +508,10 @@ function registerIpcHandlers() {
     return terminalService.createTab(projectId, name);
   });
 
+  ipcMain.handle("terminal:rename-tab", (_event, projectId, windowId, name) => {
+    return terminalService.renameTab(projectId, windowId, name);
+  });
+
   ipcMain.handle("terminal:close-tab", (_event, projectId, windowId) => {
     return terminalService.closeTab(projectId, windowId);
   });
