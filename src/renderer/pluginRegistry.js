@@ -4,6 +4,7 @@
   const plugins = new Map();
   const statuses = new Map();
   const panes = new Map();
+  const projectNavBadges = new Map();
   const globalSettingsSections = new Map();
   const projectSettingsSections = new Map();
   const services = new Map();
@@ -106,6 +107,25 @@
     };
   }
 
+  function normalizeProjectNavBadgeDefinition(pluginId, definition) {
+    if (!definition || typeof definition !== "object") {
+      throw new Error(`Plugin ${pluginId} project nav badge definition must be an object.`);
+    }
+
+    const id = requireId(definition.id, "Project nav badge");
+    requireNamespacedContributionId(pluginId, id, "Project nav badge");
+
+    if (typeof definition.render !== "function") {
+      throw new Error(`Project nav badge ${id} must provide render.`);
+    }
+
+    return {
+      ...definition,
+      id,
+      pluginId
+    };
+  }
+
   function normalizeSettingsSection(pluginId, section, kind) {
     if (!section || typeof section !== "object") {
       throw new Error(`Plugin ${pluginId} ${kind} settings section must be an object.`);
@@ -177,6 +197,17 @@
           }
 
           panes.set(normalized.id, normalized);
+          return normalized;
+        }
+      }),
+      projectNavBadges: Object.freeze({
+        register(definition) {
+          const normalized = normalizeProjectNavBadgeDefinition(pluginId, definition);
+          if (projectNavBadges.has(normalized.id)) {
+            throw new Error(`Project nav badge already registered: ${normalized.id}`);
+          }
+
+          projectNavBadges.set(normalized.id, normalized);
           return normalized;
         }
       }),
@@ -279,6 +310,12 @@
     for (const [paneId, pane] of panes) {
       if (pane.pluginId === pluginId) {
         panes.delete(paneId);
+      }
+    }
+
+    for (const [badgeId, badge] of projectNavBadges) {
+      if (badge.pluginId === pluginId) {
+        projectNavBadges.delete(badgeId);
       }
     }
 
@@ -455,6 +492,10 @@
       .filter((pane) => !filter.kind || pane.kind === filter.kind);
   }
 
+  function listProjectNavBadges() {
+    return [...projectNavBadges.values()];
+  }
+
   function listGlobalSettingsSections() {
     return [...globalSettingsSections.values()];
   }
@@ -499,6 +540,7 @@
     reload,
     applyEnabledState,
     listPanes,
+    listProjectNavBadges,
     listGlobalSettingsSections,
     listProjectSettingsSections,
     getService,

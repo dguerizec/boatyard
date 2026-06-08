@@ -78,6 +78,10 @@ test("Plugin registry activates plugins and records contributions", () => {
           kind: "wcv",
           resolveUrl: ({ project }) => project.previewUrl,
         });
+        ctx.projectNavBadges.register({
+          id: "vendor.preview.badge",
+          render: () => ({ nodeType: 1 }),
+        });
         ctx.widgets.register({
           id: "vendor.preview.widget",
           name: "Preview",
@@ -102,6 +106,7 @@ test("Plugin registry activates plugins and records contributions", () => {
   assert.equal(registry.listGlobalSettingsSections()[0].fields[0].key, "apiUrl");
   assert.equal(registry.listProjectSettingsSections()[0].fields[0].key, "previewUrl");
   assert.equal(registry.listPanes({ kind: "wcv" })[0].webAppId, "preview");
+  assert.equal(registry.listProjectNavBadges()[0].id, "vendor.preview.badge");
   assert.equal(widgetRegistry.get("vendor.preview.widget").name, "Preview");
   assert.equal(registry.getService("vendor.preview").ping(), "pong");
   assert.deepEqual(plain(registry.listServices()), [{ id: "vendor.preview", pluginId: "vendor.preview" }]);
@@ -117,9 +122,27 @@ test("Plugin registry activates plugins and records contributions", () => {
   assert.deepEqual(plain(registry.listGlobalSettingsSections()), []);
   assert.deepEqual(plain(registry.listProjectSettingsSections()), []);
   assert.deepEqual(plain(registry.listPanes({ kind: "wcv" })), []);
+  assert.deepEqual(plain(registry.listProjectNavBadges()), []);
   assert.equal(widgetRegistry.get("vendor.preview.widget"), null);
   assert.equal(registry.getService("vendor.preview"), null);
   assert.deepEqual(plain(registry.listServices()), []);
+});
+
+test("Plugin registry requires project nav badges to provide render", () => {
+  const registry = createRegistry();
+
+  registry.register(
+    { id: "vendor.badge", name: "Badge" },
+    {
+      activate(ctx) {
+        ctx.projectNavBadges.register({
+          id: "vendor.badge.status",
+        });
+      },
+    },
+  );
+
+  assert.throws(() => registry.setEnabled("vendor.badge", true), /must provide render/);
 });
 
 test("Plugin registry rejects invalid and duplicate contributions", () => {

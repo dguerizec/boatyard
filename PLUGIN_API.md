@@ -260,6 +260,7 @@ interface PluginContext {
   state: PluginStateApi;
   events: EventApi;
   services: PluginServiceApi;
+  projectNavBadges: ProjectNavBadgeContributionApi;
   tools: PluginToolApi;
   system: SystemApi;
   secrets: SecretApi;
@@ -400,6 +401,26 @@ Widget `props` SHOULD include:
 
 Widget renderers MUST return a disposable or cleanup callback when they attach
 listeners, timers, or external resources.
+
+## Project Navigation Badges
+
+Plugins MAY contribute compact badges for the project sidebar. Badges are
+renderer-side DOM contributions and SHOULD remain short enough to fit beside the
+project name.
+
+```js
+ctx.projectNavBadges.register({
+  id: "dashtop.twicc.projectStatus",
+  render({ project, projectConfig, globalConfig }) {
+    return createTwiccStatusBadge(project, projectConfig, globalConfig);
+  }
+});
+```
+
+The renderer calls `render` when the project list is rendered. `isActiveProject`
+is true when the project is currently focused in the main workbench. Plugins
+that change badge data asynchronously SHOULD notify the sidebar to re-render
+through the renderer event surface provided by their integration.
 
 ## Panes
 

@@ -7,7 +7,19 @@ const test = require("node:test");
 const vm = require("node:vm");
 const { resolveFieldDefault } = require("../src/renderer/pluginSettingsFields");
 
-function loadRendererPluginEnvironment() {
+function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
+  "twicc-project": {
+    state: "working",
+    count: 1,
+    sessions: [
+      {
+        id: "session-id",
+        title: "Working session",
+        state: "working"
+      }
+    ]
+  }
+}) {
   const context = {
     console,
     URL,
@@ -19,7 +31,8 @@ function loadRendererPluginEnvironment() {
           state: "ready",
           summary: "Hawser service is available."
         }),
-        getHawserWidgetDataForConfig: async () => ({})
+        getHawserWidgetDataForConfig: async () => ({}),
+        getTwiccProjectProcessStatuses: async () => twiccProjectProcessStatuses
       },
       DashtopHawserUI: {
         createWidget: () => ({})
@@ -74,6 +87,10 @@ test("Built-in plugins register Twicc, Pier, and Hawser contributions", () => {
     ["hawser", "pier", "twicc-plugin"]
   );
   assert.deepEqual(
+    plain(registry.listProjectNavBadges().map((badge) => badge.id).sort()),
+    ["dashtop.twicc.projectStatus"]
+  );
+  assert.deepEqual(
     plain(registry.listGlobalSettingsSections().map((section) => section.id).sort()),
     ["dashtop.hawser.global", "dashtop.pier.global", "dashtop.twicc.global"]
   );
@@ -92,6 +109,68 @@ test("Twicc service resolves session URLs from the configured project URL", () =
     }),
     "http://localhost:3500/project/dashtop/session/session-1"
   );
+});
+
+test("Twicc project nav badge matches the configured Twicc project URL", async () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const badge = registry
+    .listProjectNavBadges()
+    .find((candidate) => candidate.id === "dashtop.twicc.projectStatus");
+  const element = badge.render({
+    project: {
+      id: "dashtop-internal-id",
+      name: "Project"
+    },
+    projectConfig: {
+      twiccProjectUrl: "http://localhost:3500/project/twicc-project"
+    }
+  });
+
+  assert.equal(element.className, "project-nav-badge project-twicc-status working");
+  assert.equal(element.textContent, "Working");
+});
+
+test("Twicc done project nav badge stays visible for the active project", async () => {
+  const registry = loadRendererPluginEnvironment({
+    "twicc-project": {
+      state: "done",
+      count: 1,
+      sessions: [
+        {
+          id: "session-id",
+          title: "Finished session",
+          state: "done"
+        }
+      ]
+    }
+  });
+
+  registry.applyEnabledState({});
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const badge = registry
+    .listProjectNavBadges()
+    .find((candidate) => candidate.id === "dashtop.twicc.projectStatus");
+  const input = {
+    project: {
+      id: "dashtop-internal-id",
+      name: "Project"
+    },
+    projectConfig: {
+      twiccProjectUrl: "http://localhost:3500/project/twicc-project"
+    }
+  };
+
+  const inactiveElement = badge.render({ ...input, isActiveProject: false });
+  assert.equal(inactiveElement.className, "project-nav-badge project-twicc-status done");
+  assert.equal(inactiveElement.textContent, "Done");
+  const activeElement = badge.render({ ...input, isActiveProject: true });
+  assert.equal(activeElement.className, "project-nav-badge project-twicc-status done");
+  assert.equal(activeElement.textContent, "Done");
 });
 
 test("Hawser global settings expose a copyable install command", () => {

@@ -8,7 +8,7 @@ const { getHawserStatus, getHawserWidgetData } = require("./hawserService");
 const { PasswordManager } = require("./passwordManager");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
-const { createTwiccProject, inspectTwiccProject } = require("./twiccService");
+const { createTwiccProject, inspectTwiccProject, loadTwiccProjectProcessStatuses } = require("./twiccService");
 
 const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:dashtop-webapps";
@@ -458,6 +458,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("projects:create-twicc-project", async (_event, sourcePath) => {
     return createTwiccProject(sourcePath, { execFileAsync });
+  });
+
+  ipcMain.handle("twicc:project-process-statuses", async () => {
+    return loadTwiccProjectProcessStatuses({ execFileAsync });
   });
 
   ipcMain.handle("projects:add", (_event, projectConfig) => {

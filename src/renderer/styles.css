@@ -226,7 +226,7 @@ button {
   width: 100%;
   display: grid;
   gap: 3px;
-  padding: 10px 12px;
+  padding: 10px 42px 10px 12px;
   background: transparent;
   color: var(--text);
   border-color: transparent;
@@ -252,12 +252,54 @@ button {
   white-space: nowrap;
 }
 
+.project-nav-title {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+}
+
+.project-nav-name {
+  min-width: 0;
+  flex: 1;
+}
+
 .nav-item span {
   font-weight: 700;
 }
 
 .nav-item small {
   color: var(--muted);
+}
+
+.project-nav-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.project-twicc-status.working {
+  border-color: rgba(96, 165, 250, 0.55);
+  color: #93c5fd;
+}
+
+.project-twicc-status.input {
+  border-color: rgba(250, 204, 21, 0.58);
+  color: #fde68a;
+}
+
+.project-twicc-status.done {
+  border-color: rgba(65, 184, 131, 0.52);
+  color: #8ee7bb;
 }
 
 .global-settings-button,

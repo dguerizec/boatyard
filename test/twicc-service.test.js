@@ -7,6 +7,9 @@ const {
   createTwiccProject,
   findTwiccProjectForPath,
   findTwiccProjectMatchForPath,
+  getTwiccProjectProcessStatuses,
+  loadTwiccProcesses,
+  loadTwiccProjectProcessStatuses,
   loadTwiccProjects
 } = require("../src/main/twiccService");
 
@@ -94,6 +97,69 @@ test("loadTwiccProjects returns JSON projects from the CLI", async () => {
   });
 
   assert.deepEqual(projects, [{ id: "project", directory: "/workspace/project" }]);
+});
+
+test("loadTwiccProcesses returns JSON processes from the CLI", async () => {
+  const processes = await loadTwiccProcesses({
+    execFileAsync: async (command, args) => {
+      assert.equal(command, "twicc");
+      assert.deepEqual(args, ["processes", "--limit", "1000", "--include-hidden"]);
+      return {
+        stdout: JSON.stringify([{ project_id: "project", state: "assistant_turn" }])
+      };
+    }
+  });
+
+  assert.deepEqual(processes, [{ project_id: "project", state: "assistant_turn" }]);
+});
+
+test("getTwiccProjectProcessStatuses groups processes by project with state priority", () => {
+  const statuses = getTwiccProjectProcessStatuses([
+    {
+      project_id: "project-a",
+      session_id: "done-session",
+      session_title: "Finished task",
+      state: "user_turn",
+      last_state_change_at: "2026-06-08T12:00:00+00:00"
+    },
+    {
+      project_id: "project-a",
+      session_id: "input-session",
+      session_title: "Needs input",
+      state: "awaiting_user_input",
+      last_state_change_at: "2026-06-08T12:01:00+00:00"
+    },
+    {
+      project_id: "project-b",
+      session_id: "work-session",
+      session_title: "Working",
+      state: "assistant_turn"
+    }
+  ]);
+
+  assert.equal(statuses["project-a"].state, "input");
+  assert.equal(statuses["project-a"].count, 2);
+  assert.equal(statuses["project-a"].sessions[0].state, "done");
+  assert.equal(statuses["project-a"].sessions[1].state, "input");
+  assert.equal(statuses["project-b"].state, "working");
+});
+
+test("loadTwiccProjectProcessStatuses returns grouped process statuses", async () => {
+  const statuses = await loadTwiccProjectProcessStatuses({
+    execFileAsync: async () => ({
+      stdout: JSON.stringify([
+        {
+          project_id: "project",
+          session_id: "session",
+          session_title: "Done",
+          state: "user_turn"
+        }
+      ])
+    })
+  });
+
+  assert.equal(statuses.project.state, "done");
+  assert.equal(statuses.project.count, 1);
 });
 
 test("loadTwiccProjects can feed source path URL detection", async () => {

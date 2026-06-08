@@ -130,6 +130,10 @@ function getPluginPaneDefinitions(filter = {}) {
   return window.DashtopPluginRegistry?.listPanes(filter) || [];
 }
 
+function getPluginProjectNavBadgeDefinitions() {
+  return window.DashtopPluginRegistry?.listProjectNavBadges() || [];
+}
+
 function getPluginProjectSettingsSections() {
   return window.DashtopPluginRegistry?.listProjectSettingsSections() || [];
 }
@@ -146,6 +150,26 @@ function getProjectSummaryTarget(project) {
   return project.sourcePath ||
     getProjectPluginConfig(project.id, "dashtop.pier").pierPreviewUrl ||
     project.slug;
+}
+
+function renderProjectNavBadges(project, container, options = {}) {
+  for (const badge of getPluginProjectNavBadgeDefinitions()) {
+    try {
+      const element = badge.render({
+        project,
+        projectConfig: getProjectPluginConfig(project.id, badge.pluginId),
+        globalConfig: getGlobalPluginConfig(badge.pluginId),
+        isActiveProject: options.isActiveProject === true,
+        currentView
+      });
+
+      if (element && typeof element === "object" && typeof element.nodeType === "number") {
+        container.append(element);
+      }
+    } catch (error) {
+      console.error(`Could not render project nav badge ${badge.id}:`, error);
+    }
+  }
 }
 
 async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
@@ -4175,12 +4199,19 @@ function renderProjectList() {
     button.className = "nav-item";
     button.type = "button";
     button.classList.toggle("active", isActiveProject);
-    button.innerHTML = `
-      <span></span>
-      <small></small>
-    `;
-    button.querySelector("span").textContent = project.name;
-    button.querySelector("small").textContent = project.slug;
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "project-nav-title";
+    const projectName = document.createElement("span");
+    projectName.className = "project-nav-name";
+    projectName.textContent = project.name;
+    titleRow.append(projectName);
+
+    renderProjectNavBadges(project, titleRow, { isActiveProject });
+
+    const projectSlug = document.createElement("small");
+    projectSlug.textContent = project.slug;
+    button.append(titleRow, projectSlug);
     button.addEventListener("click", () => selectProject(project.id));
     row.append(button);
 
@@ -4285,6 +4316,8 @@ window.addEventListener("dashtop:plugin-status-changed", () => {
     renderGlobalSettingsPage();
   }
 });
+
+window.addEventListener("dashtop:project-nav-badges-changed", renderProjectList);
 
 globalNav.addEventListener("click", selectGlobal);
 globalSettingsButton.addEventListener("click", selectGlobalSettings);

@@ -86,6 +86,81 @@ async function loadTwiccProjects({ execFileAsync }) {
   }
 }
 
+async function loadTwiccProcesses({ execFileAsync }) {
+  try {
+    const { stdout } = await execFileAsync("twicc", ["processes", "--limit", "1000", "--include-hidden"], {
+      timeout: 5000,
+      windowsHide: true
+    });
+    const processes = JSON.parse(stdout);
+    return Array.isArray(processes) ? processes : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeTwiccProcessState(state) {
+  if (state === "assistant_turn") {
+    return "working";
+  }
+
+  if (state === "awaiting_user_input") {
+    return "input";
+  }
+
+  if (state === "user_turn") {
+    return "done";
+  }
+
+  return "";
+}
+
+function getTwiccProjectProcessStatuses(processes) {
+  if (!Array.isArray(processes)) {
+    return {};
+  }
+
+  const priority = {
+    input: 3,
+    working: 2,
+    done: 1
+  };
+
+  return processes.reduce((statuses, process) => {
+    const projectId = String(process?.project_id || "").trim();
+    const state = normalizeTwiccProcessState(process?.state);
+
+    if (!projectId || !state) {
+      return statuses;
+    }
+
+    const current = statuses[projectId] || {
+      state,
+      count: 0,
+      sessions: []
+    };
+    current.count += 1;
+    current.sessions.push({
+      id: process.session_id || "",
+      title: process.session_title || "",
+      state,
+      rawState: process.state || "",
+      lastStateChangeAt: process.last_state_change_at || ""
+    });
+
+    if (priority[state] > priority[current.state]) {
+      current.state = state;
+    }
+
+    statuses[projectId] = current;
+    return statuses;
+  }, {});
+}
+
+async function loadTwiccProjectProcessStatuses(options) {
+  return getTwiccProjectProcessStatuses(await loadTwiccProcesses(options));
+}
+
 async function inspectTwiccProject(sourcePath, options) {
   const projects = await loadTwiccProjects(options);
   const match = findTwiccProjectMatchForPath(projects, sourcePath);
@@ -117,6 +192,9 @@ module.exports = {
   createTwiccProject,
   findTwiccProjectForPath,
   findTwiccProjectMatchForPath,
+  getTwiccProjectProcessStatuses,
   inspectTwiccProject,
+  loadTwiccProcesses,
+  loadTwiccProjectProcessStatuses,
   loadTwiccProjects
 };
