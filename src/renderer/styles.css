@@ -757,15 +757,16 @@ button {
 
 .widget-rail-header:hover .widget-rail-actions,
 .widget-rail-header:focus-within .widget-rail-actions,
-.project-widget-rail.editing .widget-rail-actions {
+.project-widget-rail.editing .widget-rail-actions,
+.webapp-actions .widget-rail-actions {
   opacity: 1;
   pointer-events: auto;
 }
 
 .widget-rail-action {
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -793,7 +794,7 @@ button {
 }
 
 .widget-trash-dropzone {
-  min-height: 28px;
+  min-height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -810,6 +811,7 @@ button {
 }
 
 .project-widget-rail.dragging-widget .widget-trash-dropzone,
+.webapp-pane.dragging-widget .widget-trash-dropzone,
 .widget-trash-dropzone:hover,
 .widget-trash-dropzone.drag-over {
   opacity: 1;

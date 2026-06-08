@@ -1075,7 +1075,7 @@ function applyWidgetGridLayout(widgetRail, project, columnCount, widgetPaneId = 
     }
 
     card.style.gridColumn = `${position.x + 1} / span ${size.columns}`;
-    card.style.gridRow = `${position.y + 2} / span ${size.rows}`;
+    card.style.gridRow = `${position.y + 1} / span ${size.rows}`;
   }
 }
 
@@ -1250,7 +1250,7 @@ function getWidgetGridPositionFromPointer(event, rail, columnCount, size) {
   const columnWidth = (contentWidth - WIDGET_GRID_GAP * (columnCount - 1)) / columnCount;
   const x = Math.floor((event.clientX - rect.left - paddingLeft) / (columnWidth + WIDGET_GRID_GAP));
   const y = Math.floor(
-    (event.clientY - rect.top - paddingTop - rowHeight - WIDGET_GRID_GAP) /
+    (event.clientY - rect.top - paddingTop) /
       (rowHeight + WIDGET_GRID_GAP)
   );
 
@@ -1277,7 +1277,7 @@ function updateWidgetDropPreview(widgetRail, position, size, available) {
   const preview = ensureWidgetDropPreview(widgetRail);
   preview.classList.toggle("blocked", !available);
   preview.style.gridColumn = `${position.x + 1} / span ${size.columns}`;
-  preview.style.gridRow = `${position.y + 2} / span ${size.rows}`;
+  preview.style.gridRow = `${position.y + 1} / span ${size.rows}`;
 }
 
 function clearWidgetDropPreview(widgetRail) {
@@ -1387,7 +1387,7 @@ function createProjectWidget(project, definition, layout, columnCount, widgetPan
   const position = layout.positions[definition.id] || { x: 0, y: 0 };
   card.dataset.widgetId = definition.id;
   card.style.gridColumn = `${position.x + 1} / span ${size.columns}`;
-  card.style.gridRow = `${position.y + 2} / span ${size.rows}`;
+  card.style.gridRow = `${position.y + 1} / span ${size.rows}`;
 
   if (!layout.locked) {
     card.draggable = true;
@@ -1395,6 +1395,7 @@ function createProjectWidget(project, definition, layout, columnCount, widgetPan
       draggedWidgetId = definition.id;
       card.classList.add("dragging");
       card.closest(".project-widget-rail")?.classList.add("dragging-widget");
+      card.closest(".webapp-pane")?.classList.add("dragging-widget");
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", definition.id);
     });
@@ -1402,10 +1403,11 @@ function createProjectWidget(project, definition, layout, columnCount, widgetPan
       draggedWidgetId = null;
       card.classList.remove("dragging");
       card.closest(".project-widget-rail")?.classList.remove("dragging-widget");
+      card.closest(".webapp-pane")?.classList.remove("dragging-widget");
       for (const item of dashboardGrid.querySelectorAll(".widget-card")) {
         item.classList.remove("drag-over");
       }
-      for (const dropzone of dashboardGrid.querySelectorAll(".widget-trash-dropzone")) {
+      for (const dropzone of document.querySelectorAll(".widget-trash-dropzone")) {
         dropzone.classList.remove("drag-over");
       }
       for (const rail of dashboardGrid.querySelectorAll(".project-widget-rail")) {
@@ -1476,11 +1478,11 @@ function startWidgetResize(event, project, definition, layout, startSize, column
 
     if (canResizeNorth) {
       const bottom = startPosition.y + startSize.rows;
-      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, trackSpec.rowCount - 1));
+      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, trackSpec.rowCount));
       nextY = clamp(startPosition.y + deltaRows, Math.max(0, bottom - maxRows), bottom - spec.min.rows);
       nextRows = bottom - nextY;
     } else if (canResizeSouth) {
-      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, trackSpec.rowCount - 1 - startPosition.y));
+      const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, trackSpec.rowCount - startPosition.y));
       nextRows = clamp(startSize.rows + deltaRows, spec.min.rows, maxRows);
     }
 
@@ -1540,7 +1542,7 @@ function startWidgetResize(event, project, definition, layout, startSize, column
 
     if (card) {
       card.style.gridColumn = `${nextGeometry.position.x + 1} / span ${nextGeometry.size.columns}`;
-      card.style.gridRow = `${nextGeometry.position.y + 2} / span ${nextGeometry.size.rows}`;
+      card.style.gridRow = `${nextGeometry.position.y + 1} / span ${nextGeometry.size.rows}`;
     }
   }
 
@@ -1636,6 +1638,10 @@ function openWidgetAddMenuFromButton(button, project, layout, columnCount, widge
   menu.querySelector("button")?.focus();
 }
 
+function getWidgetRailFromControl(control) {
+  return control.closest(".project-widget-rail") || control.closest(".webapp-pane")?.querySelector(".project-widget-rail") || null;
+}
+
 function createWidgetTrashDropzone(project, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const dropzone = document.createElement("div");
   dropzone.className = "widget-trash-dropzone";
@@ -1651,7 +1657,7 @@ function createWidgetTrashDropzone(project, columnCount, widgetPaneId = DEFAULT_
     event.preventDefault();
     event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
-    clearWidgetDropPreview(dropzone.closest(".project-widget-rail"));
+    clearWidgetDropPreview(getWidgetRailFromControl(dropzone));
     dropzone.classList.add("drag-over");
   });
 
@@ -1671,22 +1677,16 @@ function createWidgetTrashDropzone(project, columnCount, widgetPaneId = DEFAULT_
     event.preventDefault();
     event.stopPropagation();
     dropzone.classList.remove("drag-over");
-    clearWidgetDropPreview(dropzone.closest(".project-widget-rail"));
+    clearWidgetDropPreview(getWidgetRailFromControl(dropzone));
     draggedWidgetId = null;
-    const rail = dropzone.closest(".project-widget-rail");
+    const rail = getWidgetRailFromControl(dropzone);
     await removeProjectWidget(project, widgetId, getWidgetRailColumnCount(rail) || columnCount, widgetPaneId);
   });
 
   return dropzone;
 }
 
-function createWidgetRailHeader(project, widgetPane, layout, columnCount) {
-  const header = document.createElement("header");
-  header.className = "widget-rail-header";
-
-  const title = document.createElement("h3");
-  title.textContent = widgetPane.label;
-
+function createWidgetPaneActions(project, widgetPane, layout, columnCount) {
   const actions = document.createElement("div");
   actions.className = "widget-rail-actions";
 
@@ -1707,7 +1707,7 @@ function createWidgetRailHeader(project, widgetPane, layout, columnCount) {
       text: "+",
       disabled: !layout.hidden.length,
       onClick: (event) => {
-        const rail = event.currentTarget.closest(".project-widget-rail");
+        const rail = getWidgetRailFromControl(event.currentTarget);
         const currentColumnCount = getWidgetRailColumnCount(rail) || columnCount;
         const currentLayout = getProjectWidgetLayout(project, currentColumnCount, widgetPane.id);
         openWidgetAddMenuFromButton(event.currentTarget, project, currentLayout, currentColumnCount, widgetPane.id);
@@ -1736,8 +1736,7 @@ function createWidgetRailHeader(project, widgetPane, layout, columnCount) {
     }
   }
 
-  header.append(title, actions);
-  return header;
+  return actions;
 }
 
 function getProjectWebApps(project, paneId) {
@@ -1939,7 +1938,6 @@ function createWidgetPaneSurface(project, widgetPane) {
   rail.style.setProperty("--widget-grid-row-height", `${WIDGET_GRID_ROW_HEIGHT}px`);
 
   rail.append(
-    createWidgetRailHeader(project, widgetPane, widgetLayout, widgetGridColumns),
     ...getOrderedWidgetDefinitions(widgetLayout).map((definition) => (
       createProjectWidget(project, definition, widgetLayout, widgetGridColumns, widgetPane.id)
     ))
@@ -2137,6 +2135,13 @@ function createWebAppPane(project, paneNode) {
 
   const actions = document.createElement("div");
   actions.className = "webapp-actions";
+
+  if (isWidgetPane) {
+    const fallbackWidth = Math.max(MIN_WIDGET_RAIL_WIDTH, Math.round((dashboardGrid.getBoundingClientRect().width || window.innerWidth) / 2));
+    const widgetGridColumns = getWidgetGridColumnCount(fallbackWidth);
+    const widgetLayout = getProjectWidgetLayout(project, widgetGridColumns, selectedWebApp.widgetPane.id);
+    actions.append(createWidgetPaneActions(project, selectedWebApp.widgetPane, widgetLayout, widgetGridColumns));
+  }
 
   const verticalSplitButton = document.createElement("button");
   verticalSplitButton.className = "webapp-tool-button";
