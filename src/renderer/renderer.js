@@ -409,37 +409,105 @@ async function attachTerminalTab(project, card, windowId) {
   const disposable = term.onData((data) => {
     window.dashtop.writeTerminal(attachResult.terminalId, data);
   });
-  let lastSelection = "";
   let selectionTimer = null;
-  const selectionDisposable = term.onSelectionChange(() => {
+  let lastMiddlePaste = {
+    text: "",
+    time: 0
+  };
+  let suppressNativePasteUntil = 0;
+  const publishTerminalSelection = (delay = 0) => {
     clearTimeout(selectionTimer);
     selectionTimer = setTimeout(() => {
       const selection = term.getSelection();
-      if (selection && selection !== lastSelection) {
-        lastSelection = selection;
+      if (selection) {
         window.dashtop.writeTerminalSelection(selection).catch((error) => {
           console.error("Could not write terminal selection:", error);
         });
       }
-    }, 60);
+    }, delay);
+  };
+  const selectionDisposable = term.onSelectionChange(() => {
+    publishTerminalSelection(60);
   });
-  const onMiddleClickPaste = (event) => {
+  const onLeftMouseUpSelection = (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    publishTerminalSelection(0);
+  };
+  const onLeftMouseDownSelection = (event) => {
+    if (event.button !== 0 || event.shiftKey || term.modes.mouseTrackingMode === "none") {
+      return;
+    }
+
+    try {
+      Object.defineProperty(event, "shiftKey", {
+        configurable: true,
+        value: true
+      });
+    } catch (error) {
+      console.error("Could not force terminal selection mode:", error);
+    }
+  };
+  const onMiddleMouseDownPaste = (event) => {
     if (event.button !== 1) {
       return;
     }
 
     event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") {
+      event.stopImmediatePropagation();
+    }
+    suppressNativePasteUntil = Date.now() + 300;
+    term.focus();
     window.dashtop.readTerminalSelection()
       .then((selection) => {
         if (selection) {
-          window.dashtop.writeTerminal(attachResult.terminalId, selection);
+          const now = Date.now();
+          if (selection === lastMiddlePaste.text && now - lastMiddlePaste.time < 150) {
+            return;
+          }
+
+          lastMiddlePaste = {
+            text: selection,
+            time: now
+          };
+          term.paste(selection);
         }
       })
       .catch((error) => {
         console.error("Could not read terminal selection:", error);
       });
   };
-  viewport.addEventListener("mousedown", onMiddleClickPaste);
+  const onMiddleAuxClick = (event) => {
+    if (event.button !== 1) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") {
+      event.stopImmediatePropagation();
+    }
+  };
+  const onNativePaste = (event) => {
+    if (Date.now() > suppressNativePasteUntil) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === "function") {
+      event.stopImmediatePropagation();
+    }
+  };
+  document.addEventListener("mouseup", onLeftMouseUpSelection, true);
+  viewport.addEventListener("mousedown", onLeftMouseDownSelection, true);
+  viewport.addEventListener("mousedown", onMiddleMouseDownPaste, true);
+  viewport.addEventListener("auxclick", onMiddleAuxClick, true);
+  viewport.addEventListener("paste", onNativePaste, true);
   const resizeObserver = new ResizeObserver(() => {
     const size = fitTerminal(term, fitAddon);
     window.dashtop.resizeTerminal(attachResult.terminalId, size);
@@ -457,7 +525,13 @@ async function attachTerminalTab(project, card, windowId) {
         dispose: () => clearTimeout(selectionTimer)
       }
     ],
-    removeMiddleClickPaste: () => viewport.removeEventListener("mousedown", onMiddleClickPaste),
+    removeMiddleClickPaste: () => {
+      document.removeEventListener("mouseup", onLeftMouseUpSelection, true);
+      viewport.removeEventListener("mousedown", onLeftMouseDownSelection, true);
+      viewport.removeEventListener("mousedown", onMiddleMouseDownPaste, true);
+      viewport.removeEventListener("auxclick", onMiddleAuxClick, true);
+      viewport.removeEventListener("paste", onNativePaste, true);
+    },
     resizeObserver
   });
   terminalWidgetsByTerminal.set(attachResult.terminalId, {
