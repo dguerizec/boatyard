@@ -20,6 +20,10 @@ function getProjectTmuxSessionName(project) {
   return `dashtop-${slugifyTmuxName(project.slug || project.name || project.id, "project")}`;
 }
 
+function getTerminalClientSessionName(projectSession, terminalId) {
+  return `${projectSession}-client-${slugifyTmuxName(String(terminalId).slice(0, 8), "terminal")}`;
+}
+
 function getProjectCwd(project) {
   return String(project.sourcePath || process.cwd()).trim() || process.cwd();
 }
@@ -47,6 +51,18 @@ async function resizeTmuxWindow(windowId, cols, rows) {
 async function configureTmuxSession(session) {
   await runTmux(["set-option", "-t", session, "window-size", "latest"]);
   await runTmux(["set-option", "-t", session, "mouse", "on"]);
+}
+
+async function destroyTmuxSession(session) {
+  if (!session) {
+    return;
+  }
+
+  try {
+    await runTmux(["kill-session", "-t", session]);
+  } catch (error) {
+    console.warn(`Could not kill tmux session ${session}: ${error.message}`);
+  }
 }
 
 class TerminalService {
@@ -139,13 +155,17 @@ class TerminalService {
 
   async attach(projectId, windowId, size = {}) {
     const project = this.getProject(projectId);
-    await this.ensureProjectSession(project);
+    const projectSession = await this.ensureProjectSession(project);
     const tabs = await this.listTabs(projectId);
     const selectedTab = tabs.find((tab) => tab.id === windowId) || tabs[0];
     const terminalId = randomUUID();
+    const clientSession = getTerminalClientSessionName(projectSession, terminalId);
     const cols = Math.max(20, Math.round(Number(size.cols) || 100));
     const rows = Math.max(5, Math.round(Number(size.rows) || 30));
-    const term = pty.spawn("tmux", ["attach-session", "-t", String(selectedTab.id)], {
+    await runTmux(["new-session", "-d", "-t", projectSession, "-s", clientSession]);
+    await configureTmuxSession(clientSession);
+    await runTmux(["select-window", "-t", `${clientSession}:${selectedTab.index}`]);
+    const term = pty.spawn("tmux", ["attach-session", "-t", clientSession], {
       name: "xterm-256color",
       cols,
       rows,
@@ -164,7 +184,9 @@ class TerminalService {
       });
     });
     term.onExit(({ exitCode }) => {
+      const terminal = this.terminals.get(terminalId);
       this.terminals.delete(terminalId);
+      destroyTmuxSession(terminal?.clientSession);
       this.sendToRenderer("terminal:exit", {
         terminalId,
         exitCode
@@ -172,7 +194,8 @@ class TerminalService {
     });
     this.terminals.set(terminalId, {
       term,
-      windowId: selectedTab.id
+      windowId: selectedTab.id,
+      clientSession
     });
 
     return {
@@ -208,6 +231,7 @@ class TerminalService {
 
     terminal.term.kill();
     this.terminals.delete(String(terminalId));
+    destroyTmuxSession(terminal.clientSession);
   }
 
   detachAll() {
@@ -220,5 +244,6 @@ class TerminalService {
 module.exports = {
   TerminalService,
   getProjectTmuxSessionName,
+  getTerminalClientSessionName,
   slugifyTmuxName
 };

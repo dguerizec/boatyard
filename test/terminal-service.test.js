@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  getTerminalClientSessionName,
   getProjectTmuxSessionName,
   slugifyTmuxName
 } = require("../src/main/terminalService");
@@ -20,4 +21,11 @@ test("getProjectTmuxSessionName derives project session names", () => {
   assert.equal(getProjectTmuxSessionName({
     name: "Project Name"
   }), "dashtop-project-name");
+});
+
+test("getTerminalClientSessionName derives per-terminal linked session names", () => {
+  assert.equal(
+    getTerminalClientSessionName("dashtop-project-name", "12345678-90ab-cdef"),
+    "dashtop-project-name-client-12345678"
+  );
 });

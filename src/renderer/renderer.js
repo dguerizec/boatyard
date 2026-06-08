@@ -98,8 +98,9 @@ let openWebAppTabMenu = null;
 let openWidgetAddMenu = null;
 let draggedProjectId = null;
 let draggedWidgetId = null;
-const terminalWidgetsByProject = new Map();
+const terminalWidgetsBySurface = new Map();
 const terminalWidgetsByTerminal = new Map();
+let nextTerminalSurfaceId = 1;
 
 function getProjects() {
   return state.projects;
@@ -301,8 +302,17 @@ function fitTerminal(term, fitAddon) {
   };
 }
 
-function detachProjectTerminal(projectId) {
-  const session = terminalWidgetsByProject.get(projectId);
+function getTerminalSurfaceId(card) {
+  if (!card.dataset.terminalSurfaceId) {
+    card.dataset.terminalSurfaceId = `terminal-surface-${nextTerminalSurfaceId}`;
+    nextTerminalSurfaceId += 1;
+  }
+
+  return card.dataset.terminalSurfaceId;
+}
+
+function detachTerminalSurface(surfaceId) {
+  const session = terminalWidgetsBySurface.get(surfaceId);
 
   if (!session) {
     return;
@@ -321,13 +331,21 @@ function detachProjectTerminal(projectId) {
   session.removeMiddleClickPaste?.();
   session.resizeObserver?.disconnect();
   session.term?.dispose();
-  terminalWidgetsByProject.delete(projectId);
+  terminalWidgetsBySurface.delete(surfaceId);
+}
+
+function detachProjectTerminal(projectId) {
+  for (const [surfaceId, session] of terminalWidgetsBySurface.entries()) {
+    if (session.projectId === projectId) {
+      detachTerminalSurface(surfaceId);
+    }
+  }
 }
 
 function detachInactiveProjectTerminals(activeProjectId = null) {
-  for (const projectId of terminalWidgetsByProject.keys()) {
-    if (projectId !== activeProjectId) {
-      detachProjectTerminal(projectId);
+  for (const [surfaceId, session] of terminalWidgetsBySurface.entries()) {
+    if (session.projectId !== activeProjectId) {
+      detachTerminalSurface(surfaceId);
     }
   }
 }
@@ -383,7 +401,8 @@ async function attachTerminalTab(project, card, windowId) {
     return;
   }
 
-  detachProjectTerminal(project.id);
+  const surfaceId = getTerminalSurfaceId(card);
+  detachTerminalSurface(surfaceId);
   const viewport = card.querySelector(".terminal-viewport");
   viewport.innerHTML = "";
   setTerminalStatus(card, "Attaching...");
@@ -513,7 +532,8 @@ async function attachTerminalTab(project, card, windowId) {
     window.dashtop.resizeTerminal(attachResult.terminalId, size);
   });
   resizeObserver.observe(viewport);
-  terminalWidgetsByProject.set(project.id, {
+  terminalWidgetsBySurface.set(surfaceId, {
+    projectId: project.id,
     terminalId: attachResult.terminalId,
     activeWindowId: attachResult.tab.id,
     term,
@@ -536,6 +556,7 @@ async function attachTerminalTab(project, card, windowId) {
   });
   terminalWidgetsByTerminal.set(attachResult.terminalId, {
     projectId: project.id,
+    surfaceId,
     term
   });
   setTerminalStatus(card, attachResult.tab.name || "attached");
@@ -580,13 +601,14 @@ function createTerminalSurface(project, { tagName = "article", className = "widg
   closeButton.setAttribute("aria-label", "Close current shell");
   closeButton.textContent = "x";
   closeButton.addEventListener("click", async () => {
-    const session = terminalWidgetsByProject.get(project.id);
+    const surfaceId = getTerminalSurfaceId(card);
+    const session = terminalWidgetsBySurface.get(surfaceId);
     if (!session) {
       return;
     }
 
     const activeWindowId = session.activeWindowId;
-    detachProjectTerminal(project.id);
+    detachTerminalSurface(surfaceId);
     const allTabs = await window.dashtop.listTerminalTabs(project.id);
     if (activeWindowId && allTabs.length > 1) {
       await window.dashtop.closeTerminalTab(project.id, activeWindowId);
@@ -4384,9 +4406,9 @@ window.dashtop.onTerminalExit(({ terminalId }) => {
   }
 
   terminalWidgetsByTerminal.delete(terminalId);
-  const projectSession = terminalWidgetsByProject.get(session.projectId);
-  if (projectSession?.terminalId === terminalId) {
-    terminalWidgetsByProject.delete(session.projectId);
+  const surfaceSession = terminalWidgetsBySurface.get(session.surfaceId);
+  if (surfaceSession?.terminalId === terminalId) {
+    terminalWidgetsBySurface.delete(session.surfaceId);
   }
 });
 
