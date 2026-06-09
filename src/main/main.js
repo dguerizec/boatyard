@@ -520,6 +520,10 @@ function registerIpcHandlers() {
     return terminalService.attach(projectId, windowId, size);
   });
 
+  ipcMain.handle("terminal:selection:update", (_event, projectId, surfaceKey, windowId) => {
+    return store.updateTerminalSelection(projectId, surfaceKey, windowId);
+  });
+
   ipcMain.handle("terminal:write", (_event, terminalId, data) => {
     terminalService.write(terminalId, data);
   });

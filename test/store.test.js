@@ -695,6 +695,33 @@ test("ProjectStore persists widget layouts", () => {
   assert.deepEqual(reloaded.getWidgetLayout("project-id"), layout);
 });
 
+test("ProjectStore persists terminal selections", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  const projectId = store.addProject({
+    name: "Project",
+    slug: "project",
+    sourcePath: "/tmp/project"
+  }).projects[0].id;
+
+  store.updateTerminalSelection(projectId, "pane:project:pane:1", "@2");
+  store.updateTerminalSelection(projectId, "widget:widgets-0", "@3");
+
+  const reloaded = new ProjectStore(filePath);
+  let state = reloaded.load();
+
+  assert.deepEqual(state.terminalSelections[projectId], {
+    "pane:project:pane:1": "@2",
+    "widget:widgets-0": "@3"
+  });
+
+  state = reloaded.removeProject(projectId);
+  assert.equal(state.terminalSelections[projectId], undefined);
+});
+
 test("ProjectStore migrates preview URLs into Pier plugin config", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
   const filePath = path.join(directory, "state.json");

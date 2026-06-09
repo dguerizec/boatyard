@@ -435,6 +435,20 @@ function getTerminalSurfaceSession(card) {
   return terminalWidgetsBySurface.get(getTerminalSurfaceId(card)) || null;
 }
 
+function getPersistedTerminalWindowId(projectId, surfaceKey) {
+  return state.terminalSelections?.[projectId]?.[surfaceKey] || null;
+}
+
+function persistTerminalSelection(projectId, surfaceKey, windowId) {
+  if (!surfaceKey || !window.dashtop.updateTerminalSelection) {
+    return;
+  }
+
+  window.dashtop.updateTerminalSelection(projectId, surfaceKey, windowId).catch((error) => {
+    console.error("Could not persist terminal selection:", error);
+  });
+}
+
 async function selectTerminalTab(project, card, tab) {
   const session = getTerminalSurfaceSession(card);
   const pendingWindowId = card.dataset.pendingTerminalWindowId;
@@ -445,6 +459,7 @@ async function selectTerminalTab(project, card, tab) {
   card.dataset.pendingTerminalWindowId = tab.id;
   try {
     await attachTerminalTab(project, card, tab.id);
+    persistTerminalSelection(project.id, card.dataset.terminalStorageKey, tab.id);
   } finally {
     if (card.dataset.pendingTerminalWindowId === tab.id) {
       delete card.dataset.pendingTerminalWindowId;
@@ -458,7 +473,8 @@ async function refreshTerminalTabs(project, card, activeWindowId = null) {
 
   try {
     const tabs = await window.dashtop.listTerminalTabs(project.id);
-    const selectedTab = tabs.find((tab) => tab.id === activeWindowId) || tabs[0];
+    const preferredWindowId = activeWindowId || getPersistedTerminalWindowId(project.id, card.dataset.terminalStorageKey);
+    const selectedTab = tabs.find((tab) => tab.id === preferredWindowId) || tabs[0];
 
     for (const tab of tabs) {
       const tabButton = document.createElement("button");
@@ -487,6 +503,7 @@ async function refreshTerminalTabs(project, card, activeWindowId = null) {
       }
 
       await attachTerminalTab(project, card, selectedTab.id);
+      persistTerminalSelection(project.id, card.dataset.terminalStorageKey, selectedTab.id);
     }
   } catch (error) {
     setTerminalStatus(card, `Terminal unavailable: ${error.message}`);
@@ -672,9 +689,14 @@ async function attachTerminalTab(project, card, windowId) {
   }
 }
 
-function createTerminalSurface(project, { tagName = "article", className = "widget-card terminal-widget" } = {}) {
+function createTerminalSurface(project, {
+  tagName = "article",
+  className = "widget-card terminal-widget",
+  storageKey = "widget:default"
+} = {}) {
   const card = document.createElement(tagName);
   card.className = className;
+  card.dataset.terminalStorageKey = storageKey;
 
   const header = document.createElement("div");
   header.className = "terminal-widget-header";
@@ -739,8 +761,10 @@ function createTerminalSurface(project, { tagName = "article", className = "widg
   return card;
 }
 
-function createTerminalWidget(project) {
-  return createTerminalSurface(project);
+function createTerminalWidget(project, props = {}) {
+  return createTerminalSurface(project, {
+    storageKey: `widget:${props.widgetPaneId || DEFAULT_WIDGET_PANE_ID}`
+  });
 }
 
 function formatHawserEndpoint(message) {
@@ -937,7 +961,7 @@ function registerBuiltinProjectWidgets() {
         default: { columns: 4, rows: 5 },
         min: { columns: 2, rows: 3 }
       },
-      createElement: (project) => createTerminalWidget(project)
+      createElement: (project, props) => createTerminalWidget(project, props)
     }
   ].forEach((definition) => registry.register(definition));
 }
@@ -1506,6 +1530,7 @@ function createProjectWidget(project, definition, layout, columnCount, widgetPan
   const props = {
     projectId: project.id,
     project,
+    widgetPaneId,
     pluginConfig: definition.pluginId ? getProjectPluginConfig(project.id, definition.pluginId) : {},
     globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {},
     allProjectPluginConfig: state.pluginConfig?.projects?.[project.id] || {},
@@ -2316,7 +2341,8 @@ function createWebAppPane(project, paneNode) {
   if (isTerminalPane) {
     host.append(createTerminalSurface(project, {
       tagName: "div",
-      className: "terminal-pane-surface terminal-widget"
+      className: "terminal-pane-surface terminal-widget",
+      storageKey: `pane:${paneNode.id}`
     }));
   } else if (isWidgetPane) {
     host.append(createWidgetPaneSurface(project, selectedWebApp.widgetPane));

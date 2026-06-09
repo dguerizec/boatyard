@@ -24,6 +24,9 @@ contextBridge.exposeInMainWorld("dashtop", {
   renameTerminalTab: (projectId, windowId, name) => ipcRenderer.invoke("terminal:rename-tab", projectId, windowId, name),
   closeTerminalTab: (projectId, windowId) => ipcRenderer.invoke("terminal:close-tab", projectId, windowId),
   attachTerminal: (projectId, windowId, size) => ipcRenderer.invoke("terminal:attach", projectId, windowId, size),
+  updateTerminalSelection: (projectId, surfaceKey, windowId) => (
+    ipcRenderer.invoke("terminal:selection:update", projectId, surfaceKey, windowId)
+  ),
   writeTerminal: (terminalId, data) => ipcRenderer.invoke("terminal:write", terminalId, data),
   resizeTerminal: (terminalId, size) => ipcRenderer.invoke("terminal:resize", terminalId, size),
   detachTerminal: (terminalId) => ipcRenderer.invoke("terminal:detach", terminalId),

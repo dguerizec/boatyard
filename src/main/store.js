@@ -53,7 +53,8 @@ function createDefaultState() {
       projects: {}
     },
     paneLayouts: {},
-    widgetLayouts: {}
+    widgetLayouts: {},
+    terminalSelections: {}
   };
 }
 
@@ -310,6 +311,37 @@ function normalizePaneLayouts(paneLayouts = {}) {
     const normalizedLayout = normalizePaneLayoutNode(layout);
     if (normalizedLayout) {
       normalized[String(projectId)] = normalizedLayout;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeTerminalSelections(terminalSelections = {}, projects = []) {
+  if (!terminalSelections || typeof terminalSelections !== "object" || Array.isArray(terminalSelections)) {
+    return {};
+  }
+
+  const projectIds = new Set(projects.map((project) => project.id));
+  const normalized = {};
+
+  for (const [projectId, selections] of Object.entries(terminalSelections)) {
+    const normalizedProjectId = normalizeText(projectId);
+    if (!projectIds.has(normalizedProjectId) || !selections || typeof selections !== "object" || Array.isArray(selections)) {
+      continue;
+    }
+
+    const normalizedSelections = {};
+    for (const [surfaceKey, windowId] of Object.entries(selections)) {
+      const normalizedSurfaceKey = normalizeText(surfaceKey);
+      const normalizedWindowId = normalizeText(windowId);
+      if (normalizedSurfaceKey && normalizedWindowId) {
+        normalizedSelections[normalizedSurfaceKey] = normalizedWindowId;
+      }
+    }
+
+    if (Object.keys(normalizedSelections).length) {
+      normalized[normalizedProjectId] = normalizedSelections;
     }
   }
 
@@ -689,7 +721,8 @@ class ProjectStore {
         plugins: normalizePluginsState(parsed.plugins),
         pluginConfig: normalizePluginConfig(parsed.pluginConfig, normalizedProjects, { migrateLegacyPreview: true }),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
-        widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts)
+        widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
+        terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, normalizedProjects)
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -811,6 +844,37 @@ class ProjectStore {
     this.state.widgetLayouts[String(projectId)] = normalizeProjectWidgetLayout(layout);
     this.save();
     return this.getWidgetLayout(projectId);
+  }
+
+  updateTerminalSelection(projectId, surfaceKey, windowId) {
+    const normalizedProjectId = normalizeText(projectId);
+    const normalizedSurfaceKey = normalizeText(surfaceKey);
+    const normalizedWindowId = normalizeText(windowId);
+
+    if (!this.state.projects.some((project) => project.id === normalizedProjectId)) {
+      throw new Error(`Unknown project: ${normalizedProjectId}`);
+    }
+
+    if (!normalizedSurfaceKey) {
+      throw new Error("Terminal surface key is required.");
+    }
+
+    if (!normalizedWindowId) {
+      if (this.state.terminalSelections[normalizedProjectId]) {
+        delete this.state.terminalSelections[normalizedProjectId][normalizedSurfaceKey];
+        if (!Object.keys(this.state.terminalSelections[normalizedProjectId]).length) {
+          delete this.state.terminalSelections[normalizedProjectId];
+        }
+      }
+    } else {
+      this.state.terminalSelections[normalizedProjectId] = {
+        ...(this.state.terminalSelections[normalizedProjectId] || {}),
+        [normalizedSurfaceKey]: normalizedWindowId
+      };
+    }
+
+    this.save();
+    return structuredClone(this.state.terminalSelections[normalizedProjectId] || {});
   }
 
   updatePluginEnabled(pluginId, enabled) {
@@ -952,6 +1016,7 @@ class ProjectStore {
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
     delete this.state.paneLayouts[projectId];
     delete this.state.widgetLayouts[projectId];
+    delete this.state.terminalSelections[projectId];
     delete this.state.pluginConfig.projects[projectId];
     if (this.state.navigation.projectId === projectId) {
       this.state.navigation = normalizeNavigationState({ view: "global" });
