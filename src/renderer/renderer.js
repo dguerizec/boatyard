@@ -100,7 +100,10 @@ let draggedProjectId = null;
 let draggedWidgetId = null;
 const terminalWidgetsBySurface = new Map();
 const terminalWidgetsByTerminal = new Map();
+const terminalTabSyncTimers = new Map();
 let nextTerminalSurfaceId = 1;
+const TERMINAL_TAB_SYNC_DELAY_MS = 150;
+const TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS = 250;
 
 function getProjects() {
   return state.projects;
@@ -118,6 +121,10 @@ function getSettings() {
 
 function getCurrentProject() {
   return getProjects().find((project) => project.id === currentProjectId) || null;
+}
+
+function getProjectById(projectId) {
+  return getProjects().find((project) => project.id === projectId) || null;
 }
 
 function getProjectPluginConfig(projectId, pluginId) {
@@ -343,6 +350,8 @@ function detachTerminalSurface(surfaceId) {
   session.removeMiddleClickPaste?.();
   session.resizeObserver?.disconnect();
   session.term?.dispose();
+  clearTimeout(terminalTabSyncTimers.get(surfaceId)?.timer);
+  terminalTabSyncTimers.delete(surfaceId);
   terminalWidgetsBySurface.delete(surfaceId);
 }
 
@@ -367,6 +376,80 @@ function setTerminalStatus(card, message) {
   if (status) {
     status.textContent = message;
   }
+}
+
+function getRenderedTerminalTabIds(card) {
+  return [...card.querySelectorAll(".terminal-tab")]
+    .map((tabButton) => tabButton.dataset.windowId)
+    .filter(Boolean);
+}
+
+function shouldRefreshTerminalTabs(session, tabs) {
+  const tabIds = tabs.map((tab) => tab.id);
+  const renderedTabIds = getRenderedTerminalTabIds(session.card);
+
+  return !tabIds.includes(session.activeWindowId)
+    || tabIds.length !== renderedTabIds.length
+    || tabIds.some((tabId, index) => tabId !== renderedTabIds[index]);
+}
+
+async function syncTerminalTabsForSurface(surfaceId, followupsRemaining = 0) {
+  terminalTabSyncTimers.delete(surfaceId);
+  const session = terminalWidgetsBySurface.get(surfaceId);
+  if (!session?.card?.isConnected) {
+    return;
+  }
+
+  const project = getProjectById(session.projectId);
+  if (!project) {
+    return;
+  }
+
+  try {
+    const tabs = await window.dashtop.listTerminalTabs(project.id);
+    const projectSessions = [...terminalWidgetsBySurface.values()]
+      .filter((candidate) => candidate.projectId === project.id && candidate.card.isConnected);
+    const staleSession = projectSessions.find((candidate) => shouldRefreshTerminalTabs(candidate, tabs));
+
+    if (staleSession) {
+      const closedWindowId = tabs.some((tab) => tab.id === staleSession.activeWindowId)
+        ? null
+        : staleSession.activeWindowId;
+      await refreshProjectTerminalTabs(project, closedWindowId, tabs);
+      return;
+    }
+  } catch (error) {
+    setTerminalStatus(session.card, `Could not refresh shells: ${error.message}`);
+  }
+
+  if (followupsRemaining > 0 && terminalWidgetsBySurface.has(surfaceId)) {
+    scheduleTerminalSurfaceTabSync(surfaceId, followupsRemaining - 1, TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS);
+  }
+}
+
+function scheduleTerminalSurfaceTabSync(surfaceId, followupsRemaining = 0, delay = TERMINAL_TAB_SYNC_DELAY_MS) {
+  const scheduled = terminalTabSyncTimers.get(surfaceId);
+  if (scheduled) {
+    scheduled.followupsRemaining = Math.max(scheduled.followupsRemaining, followupsRemaining);
+    return;
+  }
+
+  const scheduledSync = {
+    followupsRemaining,
+    timer: setTimeout(() => {
+      syncTerminalTabsForSurface(surfaceId, scheduledSync.followupsRemaining);
+    }, delay)
+  };
+  terminalTabSyncTimers.set(surfaceId, scheduledSync);
+}
+
+function scheduleTerminalTabSync(terminalId, followupsRemaining = 0) {
+  const terminalSession = terminalWidgetsByTerminal.get(terminalId);
+  if (!terminalSession) {
+    return;
+  }
+
+  scheduleTerminalSurfaceTabSync(terminalSession.surfaceId, followupsRemaining);
 }
 
 async function refreshProjectTerminalTabLabels(project) {
@@ -479,12 +562,14 @@ async function selectTerminalTab(project, card, tab) {
   }
 }
 
-async function refreshTerminalTabs(project, card, activeWindowId = null) {
+async function refreshTerminalTabs(project, card, activeWindowId = null, knownTabs = null) {
   const tabList = card.querySelector(".terminal-tabs");
   tabList.innerHTML = "";
 
   try {
-    const tabs = await window.dashtop.listTerminalTabs(project.id);
+    const tabs = Array.isArray(knownTabs)
+      ? knownTabs
+      : await window.dashtop.listTerminalTabs(project.id);
     const preferredWindowId = activeWindowId || getPersistedTerminalWindowId(project.id, card.dataset.terminalStorageKey);
     const selectedTab = tabs.find((tab) => tab.id === preferredWindowId) || tabs[0];
 
@@ -519,6 +604,32 @@ async function refreshTerminalTabs(project, card, activeWindowId = null) {
     }
   } catch (error) {
     setTerminalStatus(card, `Terminal unavailable: ${error.message}`);
+  }
+}
+
+async function refreshProjectTerminalTabs(project, closedWindowId, knownTabs) {
+  const sessions = [...terminalWidgetsBySurface.values()]
+    .filter((session) => session.projectId === project.id && session.card.isConnected);
+
+  await Promise.all(sessions.map((session) => {
+    const activeWindowId = session.activeWindowId === closedWindowId ? null : session.activeWindowId;
+    return refreshTerminalTabs(project, session.card, activeWindowId, knownTabs);
+  }));
+}
+
+function removeTerminalTabButtons(projectId, windowId) {
+  const removedWindowId = String(windowId);
+
+  for (const session of terminalWidgetsBySurface.values()) {
+    if (session.projectId !== projectId || !session.card.isConnected) {
+      continue;
+    }
+
+    for (const tabButton of session.card.querySelectorAll(".terminal-tab")) {
+      if (tabButton.dataset.windowId === removedWindowId) {
+        tabButton.remove();
+      }
+    }
   }
 }
 
@@ -561,6 +672,7 @@ async function attachTerminalTab(project, card, windowId) {
   const attachResult = await window.dashtop.attachTerminal(project.id, windowId, initialSize);
   const disposable = term.onData((data) => {
     window.dashtop.writeTerminal(attachResult.terminalId, data);
+    scheduleTerminalTabSync(attachResult.terminalId, /[\x04\r\n]/.test(data) ? 3 : 0);
   });
   let selectionTimer = null;
   let lastMiddlePaste = {
@@ -747,13 +859,23 @@ function createTerminalSurface(project, {
       return;
     }
 
+    closeButton.disabled = true;
     const activeWindowId = session.activeWindowId;
-    detachTerminalSurface(surfaceId);
-    const allTabs = await window.dashtop.listTerminalTabs(project.id);
-    if (activeWindowId && allTabs.length > 1) {
-      await window.dashtop.closeTerminalTab(project.id, activeWindowId);
+    try {
+      const allTabs = await window.dashtop.listTerminalTabs(project.id);
+      if (!activeWindowId || allTabs.length <= 1) {
+        return;
+      }
+
+      removeTerminalTabButtons(project.id, activeWindowId);
+      const remainingTabs = (await window.dashtop.closeTerminalTab(project.id, activeWindowId))
+        .filter((tab) => tab.id !== activeWindowId);
+      await refreshProjectTerminalTabs(project, activeWindowId, remainingTabs);
+    } catch (error) {
+      setTerminalStatus(card, `Could not close shell: ${error.message}`);
+    } finally {
+      closeButton.disabled = false;
     }
-    await refreshTerminalTabs(project, card);
   });
 
   actions.append(addButton, closeButton);
@@ -4694,9 +4816,10 @@ window.dashtop.onWebAppUrlChanged(({ key, url }) => {
 window.dashtop.onTerminalData(({ terminalId, data }) => {
   const session = terminalWidgetsByTerminal.get(terminalId);
   session?.term.write(data);
+  scheduleTerminalTabSync(terminalId);
 });
 
-window.dashtop.onTerminalExit(({ terminalId }) => {
+window.dashtop.onTerminalExit(({ terminalId, projectId, windowId }) => {
   const session = terminalWidgetsByTerminal.get(terminalId);
   if (!session) {
     return;
@@ -4704,9 +4827,27 @@ window.dashtop.onTerminalExit(({ terminalId }) => {
 
   terminalWidgetsByTerminal.delete(terminalId);
   const surfaceSession = terminalWidgetsBySurface.get(session.surfaceId);
-  if (surfaceSession?.terminalId === terminalId) {
-    terminalWidgetsBySurface.delete(session.surfaceId);
+  if (!surfaceSession || surfaceSession.terminalId !== terminalId) {
+    return;
   }
+
+  const exitedProjectId = projectId || surfaceSession.projectId;
+  const exitedWindowId = windowId || surfaceSession.activeWindowId;
+  if (!exitedProjectId || !exitedWindowId) {
+    terminalWidgetsBySurface.delete(session.surfaceId);
+    return;
+  }
+
+  removeTerminalTabButtons(exitedProjectId, exitedWindowId);
+  const project = getProjectById(exitedProjectId);
+  if (!project) {
+    terminalWidgetsBySurface.delete(session.surfaceId);
+    return;
+  }
+
+  refreshProjectTerminalTabs(project, exitedWindowId).catch((error) => {
+    setTerminalStatus(surfaceSession.card, `Could not refresh shells: ${error.message}`);
+  });
 });
 
 window.addEventListener("dashtop:plugin-status-changed", () => {

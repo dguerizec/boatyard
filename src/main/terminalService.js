@@ -65,6 +65,10 @@ async function runTmux(args) {
   return stdout.trim();
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function resizeTmuxWindow(windowId, cols, rows) {
   if (!windowId) {
     return;
@@ -137,6 +141,10 @@ class TerminalService {
   async listTabs(projectId) {
     const project = this.getProject(projectId);
     const session = await this.ensureProjectSession(project);
+    return this.listSessionTabs(session);
+  }
+
+  async listSessionTabs(session) {
     const output = await runTmux([
       "list-windows",
       "-t",
@@ -201,9 +209,20 @@ class TerminalService {
 
   async closeTab(projectId, windowId) {
     const project = this.getProject(projectId);
-    await this.ensureProjectSession(project);
-    await runTmux(["kill-window", "-t", String(windowId)]);
-    return this.listTabs(projectId);
+    const session = await this.ensureProjectSession(project);
+    const closedWindowId = String(windowId);
+    await runTmux(["kill-window", "-t", closedWindowId]);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const tabs = await this.listSessionTabs(session);
+      if (!tabs.some((tab) => tab.id === closedWindowId)) {
+        return tabs;
+      }
+
+      await sleep(50);
+    }
+
+    return (await this.listSessionTabs(session)).filter((tab) => tab.id !== closedWindowId);
   }
 
   async attach(projectId, windowId, size = {}) {
@@ -243,11 +262,14 @@ class TerminalService {
       destroyTmuxSession(terminal?.clientSession);
       this.sendToRenderer("terminal:exit", {
         terminalId,
+        projectId: terminal?.projectId,
+        windowId: terminal?.windowId,
         exitCode
       });
     });
     this.terminals.set(terminalId, {
       term,
+      projectId: project.id,
       windowId: selectedTab.id,
       clientSession
     });
