@@ -102,8 +102,10 @@ const terminalWidgetsBySurface = new Map();
 const terminalWidgetsByTerminal = new Map();
 const terminalTabSyncTimers = new Map();
 let nextTerminalSurfaceId = 1;
+let pendingTerminalCloseFocus = null;
 const TERMINAL_TAB_SYNC_DELAY_MS = 150;
 const TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS = 250;
+const TERMINAL_CLOSE_FOCUS_TTL_MS = 3000;
 
 function getProjects() {
   return state.projects;
@@ -384,6 +386,44 @@ function getRenderedTerminalTabIds(card) {
     .filter(Boolean);
 }
 
+function getTerminalReplacementWindowId(card, removedWindowId, remainingTabs) {
+  const remainingTabIds = remainingTabs
+    .map((tab) => tab.id)
+    .filter((tabId) => tabId !== String(removedWindowId));
+  const removedIndex = getRenderedTerminalTabIds(card).indexOf(String(removedWindowId));
+
+  if (removedIndex === -1 || !remainingTabIds.length) {
+    return null;
+  }
+
+  return remainingTabIds[Math.min(removedIndex, remainingTabIds.length - 1)] || null;
+}
+
+function markTerminalCloseFocus(surfaceId, windowId) {
+  pendingTerminalCloseFocus = {
+    surfaceId,
+    windowId: String(windowId),
+    timestamp: Date.now()
+  };
+}
+
+function shouldFocusAfterTerminalExit(surfaceId, windowId) {
+  if (!pendingTerminalCloseFocus) {
+    return true;
+  }
+
+  const isFresh = Date.now() - pendingTerminalCloseFocus.timestamp <= TERMINAL_CLOSE_FOCUS_TTL_MS;
+  const shouldFocus = isFresh &&
+    pendingTerminalCloseFocus.surfaceId === surfaceId &&
+    pendingTerminalCloseFocus.windowId === String(windowId);
+
+  if (!isFresh || shouldFocus) {
+    pendingTerminalCloseFocus = null;
+  }
+
+  return shouldFocus;
+}
+
 function shouldRefreshTerminalTabs(session, tabs) {
   const tabIds = tabs.map((tab) => tab.id);
   const renderedTabIds = getRenderedTerminalTabIds(session.card);
@@ -407,15 +447,13 @@ async function syncTerminalTabsForSurface(surfaceId, followupsRemaining = 0) {
 
   try {
     const tabs = await window.boatyard.listTerminalTabs(project.id);
-    const projectSessions = [...terminalWidgetsBySurface.values()]
-      .filter((candidate) => candidate.projectId === project.id && candidate.card.isConnected);
-    const staleSession = projectSessions.find((candidate) => shouldRefreshTerminalTabs(candidate, tabs));
-
-    if (staleSession) {
-      const closedWindowId = tabs.some((tab) => tab.id === staleSession.activeWindowId)
+    if (shouldRefreshTerminalTabs(session, tabs)) {
+      const closedWindowId = tabs.some((tab) => tab.id === session.activeWindowId)
         ? null
-        : staleSession.activeWindowId;
-      await refreshProjectTerminalTabs(project, closedWindowId, tabs);
+        : session.activeWindowId;
+      await refreshTerminalSurfaceAfterClosedTab(project, session.card, closedWindowId, tabs, {
+        focus: session.activeWindowId === closedWindowId
+      });
       return;
     }
   } catch (error) {
@@ -552,13 +590,18 @@ function persistTerminalSelection(projectId, surfaceKey, windowId) {
 async function selectTerminalTab(project, card, tab) {
   const session = getTerminalSurfaceSession(card);
   const pendingWindowId = card.dataset.pendingTerminalWindowId;
-  if (session?.activeWindowId === tab.id || pendingWindowId === tab.id) {
+  if (session?.activeWindowId === tab.id) {
+    session.term?.focus();
+    return;
+  }
+
+  if (pendingWindowId === tab.id) {
     return;
   }
 
   card.dataset.pendingTerminalWindowId = tab.id;
   try {
-    await attachTerminalTab(project, card, tab.id);
+    await attachTerminalTab(project, card, tab.id, { focus: true });
     persistTerminalSelection(project.id, card.dataset.terminalStorageKey, tab.id);
   } finally {
     if (card.dataset.pendingTerminalWindowId === tab.id) {
@@ -567,7 +610,52 @@ async function selectTerminalTab(project, card, tab) {
   }
 }
 
-async function refreshTerminalTabs(project, card, activeWindowId = null, knownTabs = null) {
+function selectAdjacentTerminalTab(project, card, direction) {
+  if (card.querySelector(".terminal-tab-editor")) {
+    return;
+  }
+
+  const tabButtons = [...card.querySelectorAll(".terminal-tab[data-window-id]")];
+  if (tabButtons.length <= 1) {
+    return;
+  }
+
+  const session = getTerminalSurfaceSession(card);
+  const activeWindowId = session?.activeWindowId || tabButtons.find((tabButton) => tabButton.classList.contains("active"))?.dataset.windowId;
+  const activeIndex = Math.max(0, tabButtons.findIndex((tabButton) => tabButton.dataset.windowId === activeWindowId));
+  const nextIndex = (activeIndex + direction + tabButtons.length) % tabButtons.length;
+  const nextWindowId = tabButtons[nextIndex]?.dataset.windowId;
+
+  if (!nextWindowId || nextWindowId === activeWindowId) {
+    return;
+  }
+
+  selectTerminalTab(project, card, { id: nextWindowId }).catch((error) => {
+    setTerminalStatus(card, `Could not switch shell: ${error.message}`);
+  });
+}
+
+function handleTerminalTabShortcut(project, card, event) {
+  if (!event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
+    return;
+  }
+
+  const direction = event.key === "ArrowLeft"
+    ? -1
+    : event.key === "ArrowRight"
+      ? 1
+      : 0;
+
+  if (!direction || event.target?.closest?.(".terminal-tab-editor")) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+  selectAdjacentTerminalTab(project, card, direction);
+}
+
+async function refreshTerminalTabs(project, card, activeWindowId = null, knownTabs = null, { focus = false } = {}) {
   const tabList = card.querySelector(".terminal-tabs");
   tabList.innerHTML = "";
 
@@ -604,7 +692,7 @@ async function refreshTerminalTabs(project, card, activeWindowId = null, knownTa
         return;
       }
 
-      await attachTerminalTab(project, card, selectedTab.id);
+      await attachTerminalTab(project, card, selectedTab.id, { focus });
       persistTerminalSelection(project.id, card.dataset.terminalStorageKey, selectedTab.id);
     }
   } catch (error) {
@@ -612,33 +700,15 @@ async function refreshTerminalTabs(project, card, activeWindowId = null, knownTa
   }
 }
 
-async function refreshProjectTerminalTabs(project, closedWindowId, knownTabs) {
-  const sessions = [...terminalWidgetsBySurface.values()]
-    .filter((session) => session.projectId === project.id && session.card.isConnected);
+async function refreshTerminalSurfaceAfterClosedTab(project, card, closedWindowId, knownTabs, { focus = false } = {}) {
+  const activeWindowId = closedWindowId
+    ? getTerminalReplacementWindowId(card, closedWindowId, knownTabs)
+    : null;
 
-  await Promise.all(sessions.map((session) => {
-    const activeWindowId = session.activeWindowId === closedWindowId ? null : session.activeWindowId;
-    return refreshTerminalTabs(project, session.card, activeWindowId, knownTabs);
-  }));
+  await refreshTerminalTabs(project, card, activeWindowId, knownTabs, { focus });
 }
 
-function removeTerminalTabButtons(projectId, windowId) {
-  const removedWindowId = String(windowId);
-
-  for (const session of terminalWidgetsBySurface.values()) {
-    if (session.projectId !== projectId || !session.card.isConnected) {
-      continue;
-    }
-
-    for (const tabButton of session.card.querySelectorAll(".terminal-tab")) {
-      if (tabButton.dataset.windowId === removedWindowId) {
-        tabButton.remove();
-      }
-    }
-  }
-}
-
-async function attachTerminalTab(project, card, windowId) {
+async function attachTerminalTab(project, card, windowId, { focus = false } = {}) {
   if (!card.isConnected) {
     return;
   }
@@ -676,6 +746,10 @@ async function attachTerminalTab(project, card, windowId) {
 
   const attachResult = await window.boatyard.attachTerminal(project.id, windowId, initialSize);
   const disposable = term.onData((data) => {
+    if (data.includes("\x04")) {
+      markTerminalCloseFocus(surfaceId, attachResult.tab.id);
+    }
+
     window.boatyard.writeTerminal(attachResult.terminalId, data);
     scheduleTerminalTabSync(attachResult.terminalId, /[\x04\r\n]/.test(data) ? 3 : 0);
   });
@@ -816,6 +890,10 @@ async function attachTerminalTab(project, card, windowId) {
   for (const tabButton of card.querySelectorAll(".terminal-tab")) {
     tabButton.classList.toggle("active", tabButton.dataset.windowId === attachResult.tab.id);
   }
+
+  if (focus) {
+    term.focus();
+  }
 }
 
 function createTerminalSurface(project, {
@@ -872,10 +950,10 @@ function createTerminalSurface(project, {
         return;
       }
 
-      removeTerminalTabButtons(project.id, activeWindowId);
+      markTerminalCloseFocus(surfaceId, activeWindowId);
       const remainingTabs = (await window.boatyard.closeTerminalTab(project.id, activeWindowId))
         .filter((tab) => tab.id !== activeWindowId);
-      await refreshProjectTerminalTabs(project, activeWindowId, remainingTabs);
+      await refreshTerminalSurfaceAfterClosedTab(project, card, activeWindowId, remainingTabs, { focus: true });
     } catch (error) {
       setTerminalStatus(card, `Could not close shell: ${error.message}`);
     } finally {
@@ -892,6 +970,10 @@ function createTerminalSurface(project, {
   const status = document.createElement("p");
   status.className = "terminal-status";
   status.textContent = "Loading tmux session...";
+
+  card.addEventListener("keydown", (event) => {
+    handleTerminalTabShortcut(project, card, event);
+  }, true);
 
   card.append(header, viewport, status);
   queueMicrotask(() => {
@@ -4824,7 +4906,7 @@ window.boatyard.onTerminalData(({ terminalId, data }) => {
   scheduleTerminalTabSync(terminalId);
 });
 
-window.boatyard.onTerminalExit(({ terminalId, projectId, windowId }) => {
+window.boatyard.onTerminalExit(async ({ terminalId, projectId, windowId }) => {
   const session = terminalWidgetsByTerminal.get(terminalId);
   if (!session) {
     return;
@@ -4843,16 +4925,20 @@ window.boatyard.onTerminalExit(({ terminalId, projectId, windowId }) => {
     return;
   }
 
-  removeTerminalTabButtons(exitedProjectId, exitedWindowId);
   const project = getProjectById(exitedProjectId);
   if (!project) {
     terminalWidgetsBySurface.delete(session.surfaceId);
     return;
   }
 
-  refreshProjectTerminalTabs(project, exitedWindowId).catch((error) => {
+  try {
+    const tabs = await window.boatyard.listTerminalTabs(project.id);
+    await refreshTerminalSurfaceAfterClosedTab(project, surfaceSession.card, exitedWindowId, tabs, {
+      focus: shouldFocusAfterTerminalExit(session.surfaceId, exitedWindowId)
+    });
+  } catch (error) {
     setTerminalStatus(surfaceSession.card, `Could not refresh shells: ${error.message}`);
-  });
+  }
 });
 
 window.addEventListener("boatyard:plugin-status-changed", () => {

@@ -170,6 +170,10 @@ class TerminalService {
   async createTab(projectId, name = "shell") {
     const project = this.getProject(projectId);
     const session = await this.ensureProjectSession(project);
+    const tabs = await this.listSessionTabs(session);
+    const nextIndex = tabs.reduce((maxIndex, tab) => (
+      Number.isFinite(tab.index) ? Math.max(maxIndex, tab.index) : maxIndex
+    ), 0) + 1;
     const tabName = slugifyTmuxName(name, "shell");
     const envArgs = getTmuxEnvironmentArgs(this.getProjectTerminalEnv(project));
     const output = await runTmux([
@@ -178,7 +182,7 @@ class TerminalService {
       "-F",
       "#{window_id}\t#{window_index}\t#{window_name}\t#{pane_current_path}",
       "-t",
-      session,
+      `${session}:${nextIndex}`,
       "-n",
       tabName,
       ...envArgs,
