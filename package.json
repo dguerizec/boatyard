@@ -1,6 +1,6 @@
 {
   "name": "boatyard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Electron project dock prototype for dashboards and development workflows.",
   "main": "src/main/main.js",
   "desktopName": "boatyard",
@@ -24,12 +24,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dguerizec/dashtop.git"
+    "url": "git+https://github.com/dguerizec/boatyard.git"
   },
   "bugs": {
-    "url": "https://github.com/dguerizec/dashtop/issues"
+    "url": "https://github.com/dguerizec/boatyard/issues"
   },
-  "homepage": "https://github.com/dguerizec/dashtop#readme",
+  "homepage": "https://github.com/dguerizec/boatyard#readme",
   "build": {
     "appId": "dev.boatyard.app",
     "productName": "Boatyard",
