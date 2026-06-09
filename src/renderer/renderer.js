@@ -20,6 +20,7 @@ const WIDGET_GRID_MAX_COLUMN_WIDTH = 200;
 const WIDGET_GRID_ROW_HEIGHT = 84;
 const WIDGET_GRID_GAP = 12;
 const WIDGET_GRID_SCROLL_GUARD = 10;
+const WEBAPP_SPLIT_RESIZER_SIZE = 6;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-preview", "boatyard.pier.urls"],
   ["pier-urls", "boatyard.pier.urls"]
@@ -2929,15 +2930,19 @@ function createSplitResizer(project, splitNode) {
 }
 
 function applySplitRatio(splitElement, splitNode) {
-  const first = `${Math.round(splitNode.ratio * 1000) / 10}%`;
-  const second = `${Math.round((1 - splitNode.ratio) * 1000) / 10}%`;
+  const firstRatio = Math.round(splitNode.ratio * 1000) / 10;
+  const secondRatio = Math.round((1 - splitNode.ratio) * 1000) / 10;
+  const resizerOffset = WEBAPP_SPLIT_RESIZER_SIZE / 2;
+  const first = `minmax(0, calc(${firstRatio}% - ${resizerOffset}px))`;
+  const second = `minmax(0, calc(${secondRatio}% - ${resizerOffset}px))`;
+  const resizer = `${WEBAPP_SPLIT_RESIZER_SIZE}px`;
 
   if (splitNode.direction === "vertical") {
-    splitElement.style.gridTemplateColumns = `${first} 6px ${second}`;
+    splitElement.style.gridTemplateColumns = `${first} ${resizer} ${second}`;
     splitElement.style.gridTemplateRows = "";
   } else {
     splitElement.style.gridTemplateColumns = "";
-    splitElement.style.gridTemplateRows = `${first} 6px ${second}`;
+    splitElement.style.gridTemplateRows = `${first} ${resizer} ${second}`;
   }
 }
 
