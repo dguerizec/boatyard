@@ -632,6 +632,7 @@ app.whenReady().then(() => {
   });
   terminalService = new TerminalService({
     getProject: (projectId) => store.getState().projects.find((project) => project.id === projectId),
+    getSettings: () => store.getState().settings,
     sendToRenderer: (channel, payload) => {
       if (mainWindow && !mainWindow.webContents.isDestroyed()) {
         mainWindow.webContents.send(channel, payload);

@@ -32,7 +32,8 @@ function createDefaultState() {
       blurWebAppOverlays: true,
       passwordManagerEnabled: false,
       passwordManagerDisclaimerAccepted: false,
-      widgetRailWidth: 340
+      widgetRailWidth: 340,
+      terminalEnv: ""
     },
     projects: [],
     window: {
@@ -86,6 +87,10 @@ function normalizeOptionalUrl(rawUrl) {
 
 function normalizeText(value) {
   return String(value || "").trim();
+}
+
+function normalizeMultilineText(value) {
+  return String(value || "").replace(/\r\n?/g, "\n").trim();
 }
 
 function stripGitSuffix(pathname) {
@@ -184,7 +189,8 @@ function normalizeSettings(settings = {}) {
     blurWebAppOverlays: source.blurWebAppOverlays !== false,
     passwordManagerEnabled: source.passwordManagerEnabled === true && source.passwordManagerDisclaimerAccepted === true,
     passwordManagerDisclaimerAccepted: source.passwordManagerDisclaimerAccepted === true,
-    widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340)
+    widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340),
+    terminalEnv: normalizeMultilineText(source.terminalEnv)
   };
 }
 
@@ -682,6 +688,7 @@ function normalizeProject(project, index = 0) {
     gitUrl,
     repoUrl,
     devBranch: normalizeText(project.devBranch),
+    terminalEnv: normalizeMultilineText(project.terminalEnv),
     previewUrl,
     urls: normalizeProjectUrls(project.urls),
     widgetPanes: normalizeProjectWidgetPanes(project.widgetPanes),

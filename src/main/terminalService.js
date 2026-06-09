@@ -28,6 +28,35 @@ function getProjectCwd(project) {
   return String(project.sourcePath || process.cwd()).trim() || process.cwd();
 }
 
+function parseTerminalEnv(text, label = "terminal environment") {
+  const env = {};
+
+  String(text || "")
+    .split(/\r?\n/)
+    .forEach((rawLine, index) => {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) {
+        return;
+      }
+
+      const separatorIndex = line.indexOf("=");
+      const key = separatorIndex >= 0 ? line.slice(0, separatorIndex).trim() : line;
+      const value = separatorIndex >= 0 ? line.slice(separatorIndex + 1) : "";
+
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+        throw new Error(`Invalid ${label} line ${index + 1}: ${rawLine}`);
+      }
+
+      env[key] = value;
+    });
+
+  return env;
+}
+
+function getTmuxEnvironmentArgs(env = {}) {
+  return Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
+}
+
 async function runTmux(args) {
   const { stdout } = await execFileAsync("tmux", args, {
     timeout: 5000,
@@ -66,8 +95,9 @@ async function destroyTmuxSession(session) {
 }
 
 class TerminalService {
-  constructor({ getProject, sendToRenderer }) {
+  constructor({ getProject, getSettings = () => ({}), sendToRenderer }) {
     this.findProject = getProject;
+    this.getSettings = getSettings;
     this.sendToRenderer = sendToRenderer;
     this.terminals = new Map();
   }
@@ -82,15 +112,23 @@ class TerminalService {
     return project;
   }
 
+  getProjectTerminalEnv(project) {
+    return {
+      ...parseTerminalEnv(this.getSettings().terminalEnv, "global terminal environment"),
+      ...parseTerminalEnv(project.terminalEnv, "project terminal environment")
+    };
+  }
+
   async ensureProjectSession(project) {
     const session = getProjectTmuxSessionName(project);
+    const envArgs = getTmuxEnvironmentArgs(this.getProjectTerminalEnv(project));
 
     try {
       await runTmux(["has-session", "-t", session]);
       await configureTmuxSession(session);
       return session;
     } catch {
-      await runTmux(["new-session", "-d", "-s", session, "-n", "main", "-c", getProjectCwd(project)]);
+      await runTmux(["new-session", "-d", "-s", session, "-n", "main", ...envArgs, "-c", getProjectCwd(project)]);
       await configureTmuxSession(session);
       return session;
     }
@@ -125,6 +163,7 @@ class TerminalService {
     const project = this.getProject(projectId);
     const session = await this.ensureProjectSession(project);
     const tabName = slugifyTmuxName(name, "shell");
+    const envArgs = getTmuxEnvironmentArgs(this.getProjectTerminalEnv(project));
     const output = await runTmux([
       "new-window",
       "-P",
@@ -134,6 +173,7 @@ class TerminalService {
       session,
       "-n",
       tabName,
+      ...envArgs,
       "-c",
       getProjectCwd(project)
     ]);
@@ -185,6 +225,7 @@ class TerminalService {
       cwd: getProjectCwd(project),
       env: {
         ...process.env,
+        ...this.getProjectTerminalEnv(project),
         TERM: "xterm-256color"
       }
     });
@@ -256,6 +297,7 @@ class TerminalService {
 
 module.exports = {
   TerminalService,
+  parseTerminalEnv,
   getProjectTmuxSessionName,
   getTerminalClientSessionName,
   slugifyTmuxName

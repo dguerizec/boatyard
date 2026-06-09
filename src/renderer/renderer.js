@@ -111,6 +111,7 @@ function getSettings() {
     projectsBasePath: "",
     blurWebAppOverlays: true,
     widgetRailWidth: 340,
+    terminalEnv: "",
     ...(state.settings || {})
   };
 }
@@ -125,6 +126,17 @@ function getProjectPluginConfig(projectId, pluginId) {
 
 function getGlobalPluginConfig(pluginId) {
   return state.pluginConfig?.global?.[pluginId] || {};
+}
+
+function applyFormControl(control) {
+  control.classList.add("form-control");
+  return control;
+}
+
+function applyFormControls(root) {
+  root
+    .querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]), textarea')
+    .forEach(applyFormControl);
 }
 
 function getPluginPaneDefinitions(filter = {}) {
@@ -2710,6 +2722,7 @@ function createGlobalProjectsSettingsForm({ settings, onSubmit }) {
 
   actions.append(submitButton);
   form.append(heading, projectsBasePathLabel, error, actions);
+  applyFormControls(form);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -2781,6 +2794,7 @@ function createGlobalPresentationSettingsForm({ settings, onSubmit }) {
 
   actions.append(submitButton);
   form.append(heading, blurLabel, error, actions);
+  applyFormControls(form);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -2790,6 +2804,68 @@ function createGlobalPresentationSettingsForm({ settings, onSubmit }) {
     try {
       await onSubmit({
         blurWebAppOverlays: blurSwitch.checked
+      });
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  return shell;
+}
+
+function createGlobalTerminalSettingsForm({ settings, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Terminal";
+
+  heading.append(headingTitle);
+
+  const terminalEnvLabel = document.createElement("label");
+  terminalEnvLabel.textContent = "Environment variables";
+
+  const terminalEnvInput = document.createElement("textarea");
+  terminalEnvInput.name = "terminalEnv";
+  terminalEnvInput.autocomplete = "off";
+  terminalEnvInput.rows = 4;
+  terminalEnvInput.placeholder = "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never";
+  terminalEnvInput.value = settings.terminalEnv || "";
+  terminalEnvLabel.append(terminalEnvInput);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save terminal";
+
+  actions.append(submitButton);
+  form.append(heading, terminalEnvLabel, error, actions);
+  applyFormControls(form);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit({
+        terminalEnv: terminalEnvInput.value
       });
     } catch (submitError) {
       error.textContent = submitError.message;
@@ -2869,6 +2945,7 @@ function createGlobalPasswordManagerSettingsForm({ settings, onSubmit }) {
 
   actions.append(submitButton);
   form.append(heading, disclaimer, enableLabel, acceptLabel, error, actions);
+  applyFormControls(form);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -3195,6 +3272,7 @@ function createGlobalPluginSettingsForm(section, options = {}) {
 
   actions.append(submitButton);
   form.append(error, actions);
+  applyFormControls(form);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -3245,6 +3323,12 @@ function renderGlobalSettingsPage() {
       renderGlobalSettingsPage();
     }
   }), createGlobalPresentationSettingsForm({
+    settings: getSettings(),
+    onSubmit: async (values) => {
+      state = await window.dashtop.updateSettings(values);
+      renderGlobalSettingsPage();
+    }
+  }), createGlobalTerminalSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
       state = await window.dashtop.updateSettings(values);
@@ -3636,6 +3720,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     error,
     actions
   );
+  applyFormControls(form);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -3679,6 +3764,7 @@ function createProjectUrlRow(entry = {}) {
   labelInput.placeholder = "Cloudflare";
   labelInput.value = entry.label || "";
   labelInput.setAttribute("aria-label", "URL label");
+  applyFormControl(labelInput);
 
   const urlInput = document.createElement("input");
   urlInput.name = "urlValue";
@@ -3687,6 +3773,7 @@ function createProjectUrlRow(entry = {}) {
   urlInput.placeholder = "https://dash.cloudflare.com/...";
   urlInput.value = entry.url || "";
   urlInput.setAttribute("aria-label", "URL");
+  applyFormControl(urlInput);
 
   const removeButton = document.createElement("button");
   removeButton.className = "project-url-remove";
@@ -3716,6 +3803,7 @@ function createProjectWidgetPaneRow(entry = {}) {
   labelInput.placeholder = "Widgets";
   labelInput.value = entry.label || "";
   labelInput.setAttribute("aria-label", "Widget pane name");
+  applyFormControl(labelInput);
 
   const spacer = document.createElement("div");
   spacer.className = "project-url-spacer";
@@ -3967,6 +4055,7 @@ function createProjectUrlsForm({ project, onSubmit }) {
 
   actions.append(addButton, submitButton);
   form.append(heading, list, error, actions);
+  applyFormControls(form);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -4030,6 +4119,7 @@ function createProjectWidgetPanesForm({ project, onSubmit }) {
 
   actions.append(addButton, submitButton);
   form.append(heading, list, error, actions);
+  applyFormControls(form);
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -4038,6 +4128,67 @@ function createProjectWidgetPanesForm({ project, onSubmit }) {
 
     try {
       await onSubmit(readProjectWidgetPaneRows(list));
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  return shell;
+}
+
+function createProjectTerminalSettingsForm({ project, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Terminal";
+  heading.append(headingTitle);
+
+  const terminalEnvLabel = document.createElement("label");
+  terminalEnvLabel.textContent = "Environment variables";
+
+  const terminalEnvInput = document.createElement("textarea");
+  terminalEnvInput.name = "terminalEnv";
+  terminalEnvInput.autocomplete = "off";
+  terminalEnvInput.rows = 4;
+  terminalEnvInput.placeholder = "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never";
+  terminalEnvInput.value = project.terminalEnv || "";
+  terminalEnvLabel.append(terminalEnvInput);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save terminal";
+
+  actions.append(submitButton);
+  form.append(heading, terminalEnvLabel, error, actions);
+  applyFormControls(form);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit({
+        terminalEnv: terminalEnvInput.value
+      });
     } catch (submitError) {
       error.textContent = submitError.message;
       error.hidden = false;
@@ -4078,6 +4229,7 @@ function createProjectDangerZone({ project, onUnregister }) {
   confirmInput.name = "projectName";
   confirmInput.type = "text";
   confirmInput.autocomplete = "off";
+  applyFormControl(confirmInput);
   label.append(confirmInput);
   confirmation.append(confirmationCopy, label);
 
@@ -4188,6 +4340,12 @@ function renderEditProjectPage(project) {
         project.id,
         values.pluginConfig
       );
+      reloadProjectSettings(project.id);
+    }
+  }), createProjectTerminalSettingsForm({
+    project,
+    onSubmit: async (values) => {
+      state = await window.dashtop.updateProject(project.id, values);
       reloadProjectSettings(project.id);
     }
   }), createProjectUrlsForm({

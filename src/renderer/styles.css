@@ -35,7 +35,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -428,10 +429,6 @@ button {
   gap: 6px;
 }
 
-.danger-confirmation input {
-  width: 100%;
-}
-
 .password-manager-disclaimer,
 .checkbox-row {
   display: grid;
@@ -646,7 +643,7 @@ button {
   text-transform: uppercase;
 }
 
-.plugin-global-settings-form input {
+.plugin-global-settings-form .form-control {
   width: 100%;
   min-width: 0;
   margin-top: 0;
@@ -1777,17 +1774,26 @@ button {
   text-transform: uppercase;
 }
 
-.project-form input {
+.form-control {
   width: 100%;
-  min-height: 42px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #0f1419;
   color: var(--text);
+}
+
+input.form-control {
+  min-height: 42px;
   padding: 0 10px;
 }
 
-.project-form input:focus {
+textarea.form-control {
+  min-height: 96px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.form-control:focus {
   outline: 2px solid rgba(65, 184, 131, 0.35);
   border-color: var(--accent);
 }

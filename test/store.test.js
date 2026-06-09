@@ -61,6 +61,7 @@ test("normalizeProject derives project tool defaults", () => {
     gitUrl: "git@github.com:owner/repo.git",
     repoUrl: "https://github.com/owner/repo",
     devBranch: "",
+    terminalEnv: "",
     previewUrl: "http://localhost:5173/",
     urls: [],
     widgetPanes: [{
@@ -192,20 +193,23 @@ test("normalizeSettings keeps global settings defaults", () => {
     blurWebAppOverlays: true,
     passwordManagerEnabled: false,
     passwordManagerDisclaimerAccepted: false,
-    widgetRailWidth: 340
+    widgetRailWidth: 340,
+    terminalEnv: ""
   });
   assert.deepEqual(normalizeSettings({
     projectsBasePath: "  /workspace/projects  ",
     blurWebAppOverlays: false,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
-    widgetRailWidth: 120
+    widgetRailWidth: 120,
+    terminalEnv: "SSH_ASKPASS=\r\nSSH_ASKPASS_REQUIRE=never\n"
   }), {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
-    widgetRailWidth: 240
+    widgetRailWidth: 240,
+    terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never"
   });
   assert.equal(normalizeSettings({
     passwordManagerEnabled: true,
@@ -524,7 +528,8 @@ test("ProjectStore persists global settings", () => {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
     passwordManagerEnabled: true,
-    passwordManagerDisclaimerAccepted: true
+    passwordManagerDisclaimerAccepted: true,
+    terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never"
   });
 
   assert.deepEqual(state.settings, {
@@ -532,7 +537,8 @@ test("ProjectStore persists global settings", () => {
     blurWebAppOverlays: false,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
-    widgetRailWidth: 340
+    widgetRailWidth: 340,
+    terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never"
   });
 
   const reloaded = new ProjectStore(filePath);
