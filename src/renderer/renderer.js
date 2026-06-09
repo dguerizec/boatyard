@@ -101,6 +101,7 @@ let draggedWidgetId = null;
 const terminalWidgetsBySurface = new Map();
 const terminalWidgetsByTerminal = new Map();
 const terminalTabSyncTimers = new Map();
+const terminalTabOrdersByProject = new Map();
 let nextTerminalSurfaceId = 1;
 let pendingTerminalCloseFocus = null;
 const TERMINAL_TAB_SYNC_DELAY_MS = 150;
@@ -386,6 +387,38 @@ function getRenderedTerminalTabIds(card) {
     .filter(Boolean);
 }
 
+function rememberTerminalTabOrder(projectId, orderedWindowIds) {
+  terminalTabOrdersByProject.set(String(projectId), orderedWindowIds.map((windowId) => String(windowId)));
+}
+
+function getOrderedTerminalTabs(projectId, tabs) {
+  const order = terminalTabOrdersByProject.get(String(projectId));
+  if (!order?.length) {
+    rememberTerminalTabOrder(projectId, tabs.map((tab) => tab.id));
+    return tabs;
+  }
+
+  const orderIndexes = new Map(order.map((windowId, index) => [windowId, index]));
+  const orderedTabs = [...tabs].sort((left, right) => {
+    const leftIndex = orderIndexes.get(left.id);
+    const rightIndex = orderIndexes.get(right.id);
+
+    if (leftIndex === undefined && rightIndex === undefined) {
+      return left.index - right.index;
+    }
+    if (leftIndex === undefined) {
+      return 1;
+    }
+    if (rightIndex === undefined) {
+      return -1;
+    }
+
+    return leftIndex - rightIndex;
+  });
+  rememberTerminalTabOrder(projectId, orderedTabs.map((tab) => tab.id));
+  return orderedTabs;
+}
+
 function getTerminalReplacementWindowId(card, removedWindowId, remainingTabs) {
   const remainingTabIds = remainingTabs
     .map((tab) => tab.id)
@@ -446,7 +479,7 @@ async function syncTerminalTabsForSurface(surfaceId, followupsRemaining = 0) {
   }
 
   try {
-    const tabs = await window.boatyard.listTerminalTabs(project.id);
+    const tabs = getOrderedTerminalTabs(project.id, await window.boatyard.listTerminalTabs(project.id));
     if (shouldRefreshTerminalTabs(session, tabs)) {
       const closedWindowId = tabs.some((tab) => tab.id === session.activeWindowId)
         ? null
@@ -491,7 +524,7 @@ function scheduleTerminalTabSync(terminalId, followupsRemaining = 0) {
 }
 
 async function refreshProjectTerminalTabLabels(project) {
-  const tabs = await window.boatyard.listTerminalTabs(project.id);
+  const tabs = getOrderedTerminalTabs(project.id, await window.boatyard.listTerminalTabs(project.id));
   const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
 
   for (const session of terminalWidgetsBySurface.values()) {
@@ -655,14 +688,167 @@ function handleTerminalTabShortcut(project, card, event) {
   selectAdjacentTerminalTab(project, card, direction);
 }
 
+function clearTerminalTabDragState(tabList) {
+  delete tabList.dataset.draggedWindowId;
+  for (const tabButton of tabList.querySelectorAll(".terminal-tab")) {
+    tabButton.classList.remove("dragging");
+  }
+  clearTerminalTabDropMarkers(tabList);
+}
+
+function clearTerminalTabDropMarkers(tabList) {
+  for (const tabButton of tabList.querySelectorAll(".terminal-tab")) {
+    tabButton.classList.remove("drop-before", "drop-after");
+  }
+}
+
+function getReorderedTerminalTabIds(tabList, draggedWindowId, targetWindowId, insertAfter = false) {
+  const tabIds = getRenderedTerminalTabIds(tabList);
+  const sourceIndex = tabIds.indexOf(String(draggedWindowId));
+  const targetIndex = tabIds.indexOf(String(targetWindowId));
+
+  if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) {
+    return null;
+  }
+
+  const nextTabIds = [...tabIds];
+  const [movedWindowId] = nextTabIds.splice(sourceIndex, 1);
+  const targetIndexAfterRemoval = nextTabIds.indexOf(String(targetWindowId));
+  nextTabIds.splice(targetIndexAfterRemoval + (insertAfter ? 1 : 0), 0, movedWindowId);
+
+  return nextTabIds;
+}
+
+function getTerminalTabDropPosition(tabList, event) {
+  const directTarget = event.target?.closest?.(".terminal-tab[data-window-id]");
+  if (directTarget && tabList.contains(directTarget)) {
+    const rect = directTarget.getBoundingClientRect();
+    return {
+      targetButton: directTarget,
+      insertAfter: event.clientX > rect.left + rect.width / 2
+    };
+  }
+
+  const tabButtons = [...tabList.querySelectorAll(".terminal-tab[data-window-id]")];
+  if (!tabButtons.length) {
+    return null;
+  }
+
+  for (const tabButton of tabButtons) {
+    const rect = tabButton.getBoundingClientRect();
+    if (event.clientX <= rect.left + rect.width / 2) {
+      return {
+        targetButton: tabButton,
+        insertAfter: false
+      };
+    }
+  }
+
+  return {
+    targetButton: tabButtons.at(-1),
+    insertAfter: true
+  };
+}
+
+function updateTerminalTabDropMarker(tabList, dropPosition) {
+  clearTerminalTabDropMarkers(tabList);
+
+  if (!dropPosition?.targetButton) {
+    return;
+  }
+
+  dropPosition.targetButton.classList.toggle("drop-before", !dropPosition.insertAfter);
+  dropPosition.targetButton.classList.toggle("drop-after", dropPosition.insertAfter);
+}
+
+function bindTerminalTabDropHandlers(project, card, tabList) {
+  tabList.ondragover = (event) => {
+    const draggedWindowId = tabList.dataset.draggedWindowId;
+    if (!draggedWindowId) {
+      return;
+    }
+
+    const dropPosition = getTerminalTabDropPosition(tabList, event);
+    if (!dropPosition || dropPosition.targetButton.dataset.windowId === draggedWindowId) {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+    updateTerminalTabDropMarker(tabList, dropPosition);
+  };
+
+  tabList.ondragleave = (event) => {
+    if (!event.relatedTarget || !tabList.contains(event.relatedTarget)) {
+      clearTerminalTabDropMarkers(tabList);
+    }
+  };
+
+  tabList.ondrop = async (event) => {
+    const draggedWindowId = tabList.dataset.draggedWindowId || event.dataTransfer?.getData("text/plain");
+    if (!draggedWindowId) {
+      return;
+    }
+
+    event.preventDefault();
+    const dropPosition = getTerminalTabDropPosition(tabList, event);
+    const targetWindowId = dropPosition?.targetButton?.dataset.windowId;
+    const nextTabIds = targetWindowId
+      ? getReorderedTerminalTabIds(tabList, draggedWindowId, targetWindowId, dropPosition.insertAfter)
+      : null;
+    clearTerminalTabDragState(tabList);
+
+    if (!nextTabIds) {
+      return;
+    }
+
+    const session = getTerminalSurfaceSession(card);
+    const activeWindowId = session?.activeWindowId || draggedWindowId;
+
+    try {
+      rememberTerminalTabOrder(project.id, nextTabIds);
+      const tabs = getOrderedTerminalTabs(project.id, await window.boatyard.listTerminalTabs(project.id));
+      await refreshTerminalTabs(project, card, activeWindowId, tabs, { focus: true });
+    } catch (error) {
+      setTerminalStatus(card, `Could not move shell: ${error.message}`);
+    }
+  };
+}
+
+function attachTerminalTabDragHandlers(card, tab, tabButton, tabList) {
+  tabButton.draggable = true;
+
+  tabButton.addEventListener("dragstart", (event) => {
+    if (card.querySelector(".terminal-tab-editor")) {
+      event.preventDefault();
+      return;
+    }
+
+    tabList.dataset.draggedWindowId = tab.id;
+    tabButton.classList.add("dragging");
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", tab.id);
+    }
+  });
+
+  tabButton.addEventListener("dragend", () => {
+    tabButton.classList.remove("dragging");
+    clearTerminalTabDragState(tabList);
+  });
+}
+
 async function refreshTerminalTabs(project, card, activeWindowId = null, knownTabs = null, { focus = false } = {}) {
   const tabList = card.querySelector(".terminal-tabs");
   tabList.innerHTML = "";
+  bindTerminalTabDropHandlers(project, card, tabList);
 
   try {
-    const tabs = Array.isArray(knownTabs)
+    const tabs = getOrderedTerminalTabs(project.id, Array.isArray(knownTabs)
       ? knownTabs
-      : await window.boatyard.listTerminalTabs(project.id);
+      : await window.boatyard.listTerminalTabs(project.id));
     const preferredWindowId = activeWindowId || getPersistedTerminalWindowId(project.id, card.dataset.terminalStorageKey);
     const selectedTab = tabs.find((tab) => tab.id === preferredWindowId) || tabs[0];
 
@@ -674,6 +860,7 @@ async function refreshTerminalTabs(project, card, activeWindowId = null, knownTa
       tabButton.dataset.windowId = tab.id;
       tabButton.textContent = tab.name || `shell ${tab.index}`;
       tabButton.title = "Double-click to rename shell";
+      attachTerminalTabDragHandlers(card, tab, tabButton, tabList);
       tabButton.addEventListener("click", () => {
         selectTerminalTab(project, card, tab).catch((error) => {
           setTerminalStatus(card, `Could not switch shell: ${error.message}`);
@@ -701,11 +888,12 @@ async function refreshTerminalTabs(project, card, activeWindowId = null, knownTa
 }
 
 async function refreshTerminalSurfaceAfterClosedTab(project, card, closedWindowId, knownTabs, { focus = false } = {}) {
+  const orderedTabs = getOrderedTerminalTabs(project.id, knownTabs);
   const activeWindowId = closedWindowId
-    ? getTerminalReplacementWindowId(card, closedWindowId, knownTabs)
+    ? getTerminalReplacementWindowId(card, closedWindowId, orderedTabs)
     : null;
 
-  await refreshTerminalTabs(project, card, activeWindowId, knownTabs, { focus });
+  await refreshTerminalTabs(project, card, activeWindowId, orderedTabs, { focus });
 }
 
 async function attachTerminalTab(project, card, windowId, { focus = false } = {}) {

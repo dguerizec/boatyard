@@ -1254,6 +1254,18 @@ button {
   color: var(--text);
 }
 
+.terminal-tab.dragging {
+  opacity: 0.45;
+}
+
+.terminal-tab.drop-before {
+  box-shadow: inset 2px 0 0 rgba(65, 184, 131, 0.9);
+}
+
+.terminal-tab.drop-after {
+  box-shadow: inset -2px 0 0 rgba(65, 184, 131, 0.9);
+}
+
 .terminal-tab-editor {
   outline: none;
 }
