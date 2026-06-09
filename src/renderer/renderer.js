@@ -389,7 +389,28 @@ function getRenderedTerminalTabIds(card) {
 }
 
 function rememberTerminalTabOrder(projectId, orderedWindowIds) {
-  terminalTabOrdersByProject.set(String(projectId), orderedWindowIds.map((windowId) => String(windowId)));
+  const normalizedProjectId = String(projectId);
+  const normalizedWindowIds = orderedWindowIds.map((windowId) => String(windowId));
+  terminalTabOrdersByProject.set(normalizedProjectId, normalizedWindowIds);
+
+  return normalizedWindowIds;
+}
+
+function persistTerminalTabOrder(projectId, orderedWindowIds) {
+  const normalizedProjectId = String(projectId);
+  const normalizedWindowIds = rememberTerminalTabOrder(normalizedProjectId, orderedWindowIds);
+  state.terminalTabOrders = {
+    ...(state.terminalTabOrders || {}),
+    [normalizedProjectId]: normalizedWindowIds
+  };
+
+  if (!window.boatyard.updateTerminalTabOrder) {
+    return;
+  }
+
+  window.boatyard.updateTerminalTabOrder(normalizedProjectId, normalizedWindowIds).catch((error) => {
+    console.error("Could not persist terminal tab order:", error);
+  });
 }
 
 function getOrderedTerminalTabs(projectId, tabs) {
@@ -809,7 +830,7 @@ function bindTerminalTabDropHandlers(project, card, tabList) {
     const activeWindowId = session?.activeWindowId || draggedWindowId;
 
     try {
-      rememberTerminalTabOrder(project.id, nextTabIds);
+      persistTerminalTabOrder(project.id, nextTabIds);
       const tabs = getOrderedTerminalTabs(project.id, await window.boatyard.listTerminalTabs(project.id));
       await refreshTerminalTabs(project, card, activeWindowId, tabs, { focus: true });
     } catch (error) {
@@ -2991,6 +3012,17 @@ function hydrateWidgetLayouts() {
   }
 }
 
+function hydrateTerminalTabOrders() {
+  terminalTabOrdersByProject.clear();
+  const persistedOrders = state.terminalTabOrders || {};
+
+  for (const [projectId, windowIds] of Object.entries(persistedOrders)) {
+    if (Array.isArray(windowIds)) {
+      rememberTerminalTabOrder(projectId, windowIds);
+    }
+  }
+}
+
 function hydratePaneLayoutSelections(node) {
   if (!node) {
     return;
@@ -5076,6 +5108,7 @@ async function loadState() {
   }
   hydratePaneLayouts();
   hydrateWidgetLayouts();
+  hydrateTerminalTabOrders();
   restoreNavigation();
   render();
 }

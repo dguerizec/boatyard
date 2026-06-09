@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateTerminalSelection: (projectId, surfaceKey, windowId) => (
     ipcRenderer.invoke("terminal:selection:update", projectId, surfaceKey, windowId)
   ),
+  updateTerminalTabOrder: (projectId, windowIds) => ipcRenderer.invoke("terminal:tab-order:update", projectId, windowIds),
   writeTerminal: (terminalId, data) => ipcRenderer.invoke("terminal:write", terminalId, data),
   resizeTerminal: (terminalId, size) => ipcRenderer.invoke("terminal:resize", terminalId, size),
   detachTerminal: (terminalId) => ipcRenderer.invoke("terminal:detach", terminalId),

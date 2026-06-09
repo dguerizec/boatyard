@@ -524,6 +524,10 @@ function registerIpcHandlers() {
     return store.updateTerminalSelection(projectId, surfaceKey, windowId);
   });
 
+  ipcMain.handle("terminal:tab-order:update", (_event, projectId, windowIds) => {
+    return store.updateTerminalTabOrder(projectId, windowIds);
+  });
+
   ipcMain.handle("terminal:write", (_event, terminalId, data) => {
     terminalService.write(terminalId, data);
   });

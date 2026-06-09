@@ -55,7 +55,8 @@ function createDefaultState() {
     },
     paneLayouts: {},
     widgetLayouts: {},
-    terminalSelections: {}
+    terminalSelections: {},
+    terminalTabOrders: {}
   };
 }
 
@@ -348,6 +349,38 @@ function normalizeTerminalSelections(terminalSelections = {}, projects = []) {
 
     if (Object.keys(normalizedSelections).length) {
       normalized[normalizedProjectId] = normalizedSelections;
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeTerminalTabOrders(terminalTabOrders = {}, projects = []) {
+  if (!terminalTabOrders || typeof terminalTabOrders !== "object" || Array.isArray(terminalTabOrders)) {
+    return {};
+  }
+
+  const projectIds = new Set(projects.map((project) => project.id));
+  const normalized = {};
+
+  for (const [projectId, windowIds] of Object.entries(terminalTabOrders)) {
+    const normalizedProjectId = normalizeText(projectId);
+    if (!projectIds.has(normalizedProjectId) || !Array.isArray(windowIds)) {
+      continue;
+    }
+
+    const seenWindowIds = new Set();
+    const normalizedWindowIds = [];
+    for (const windowId of windowIds) {
+      const normalizedWindowId = normalizeText(windowId);
+      if (normalizedWindowId && !seenWindowIds.has(normalizedWindowId)) {
+        seenWindowIds.add(normalizedWindowId);
+        normalizedWindowIds.push(normalizedWindowId);
+      }
+    }
+
+    if (normalizedWindowIds.length) {
+      normalized[normalizedProjectId] = normalizedWindowIds;
     }
   }
 
@@ -729,7 +762,8 @@ class ProjectStore {
         pluginConfig: normalizePluginConfig(parsed.pluginConfig, normalizedProjects, { migrateLegacyPreview: true }),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
-        terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, normalizedProjects)
+        terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, normalizedProjects),
+        terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, normalizedProjects)
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -884,6 +918,28 @@ class ProjectStore {
     return structuredClone(this.state.terminalSelections[normalizedProjectId] || {});
   }
 
+  updateTerminalTabOrder(projectId, windowIds) {
+    const normalizedProjectId = normalizeText(projectId);
+
+    if (!this.state.projects.some((project) => project.id === normalizedProjectId)) {
+      throw new Error(`Unknown project: ${normalizedProjectId}`);
+    }
+
+    const normalizedOrders = normalizeTerminalTabOrders({
+      [normalizedProjectId]: windowIds
+    }, this.state.projects);
+    const normalizedWindowIds = normalizedOrders[normalizedProjectId] || [];
+
+    if (!normalizedWindowIds.length) {
+      delete this.state.terminalTabOrders[normalizedProjectId];
+    } else {
+      this.state.terminalTabOrders[normalizedProjectId] = normalizedWindowIds;
+    }
+
+    this.save();
+    return structuredClone(this.state.terminalTabOrders[normalizedProjectId] || []);
+  }
+
   updatePluginEnabled(pluginId, enabled) {
     const normalizedPluginId = normalizeText(pluginId);
 
@@ -1024,6 +1080,7 @@ class ProjectStore {
     delete this.state.paneLayouts[projectId];
     delete this.state.widgetLayouts[projectId];
     delete this.state.terminalSelections[projectId];
+    delete this.state.terminalTabOrders[projectId];
     delete this.state.pluginConfig.projects[projectId];
     if (this.state.navigation.projectId === projectId) {
       this.state.navigation = normalizeNavigationState({ view: "global" });
@@ -1058,6 +1115,7 @@ module.exports = {
   normalizePluginsState,
   normalizePluginConfig,
   normalizePasswordVault,
+  normalizeTerminalTabOrders,
   normalizeNavigationState,
   normalizeWebAppState,
   normalizeWindowBounds,
