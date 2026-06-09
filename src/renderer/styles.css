@@ -1289,9 +1289,8 @@ button {
   min-width: 0;
   min-height: 0;
   flex: 1;
-  height: 100%;
   box-sizing: border-box;
-  padding: 8px;
+  padding: 0;
   border: 1px solid rgba(52, 64, 76, 0.7);
   border-radius: 6px;
   background: #080c11;
@@ -1300,6 +1299,17 @@ button {
 
 .terminal-viewport .xterm {
   height: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+}
+
+.terminal-viewport .xterm .xterm-viewport {
+  scrollbar-width: none;
+}
+
+.terminal-viewport .xterm .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .terminal-status {
