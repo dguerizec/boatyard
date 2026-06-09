@@ -462,6 +462,10 @@ async function refreshProjectTerminalTabLabels(project) {
     }
 
     for (const tabButton of session.card.querySelectorAll(".terminal-tab")) {
+      if (tabButton.classList.contains("terminal-tab-editor")) {
+        continue;
+      }
+
       const tab = tabsById.get(tabButton.dataset.windowId);
       if (tab) {
         tabButton.textContent = tab.name || `shell ${tab.index}`;
@@ -488,6 +492,7 @@ function editTerminalTabName(project, card, tab, tabButton) {
   editor.className = "terminal-tab terminal-tab-editor";
   editor.type = "text";
   editor.value = currentName;
+  editor.dataset.windowId = tab.id;
   editor.setAttribute("aria-label", "Shell name");
 
   let finished = false;
