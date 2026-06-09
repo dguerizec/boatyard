@@ -28,8 +28,8 @@ function makeResponse({ ok, status, body = {} }) {
 test("parseHawserProjectName derives the project from the configured main session", () => {
   assert.equal(parseHawserProjectName({
     slug: "fallback",
-    hawserMainSession: "dashtop:main"
-  }), "dashtop");
+    hawserMainSession: "boatyard:main"
+  }), "boatyard");
   assert.equal(parseHawserProjectName({
     slug: "fallback",
     hawserMainSession: ""
@@ -85,13 +85,13 @@ test("getHawserStatus asks for configuration when service rejects auth", async (
 
 test("parseHawserSessionName derives the session from the configured main session", () => {
   assert.equal(parseHawserSessionName({
-    hawserMainSession: "dashtop:main"
+    hawserMainSession: "boatyard:main"
   }), "main");
   assert.equal(parseHawserSessionName({
-    hawserMainSession: "dashtop:feature:one"
+    hawserMainSession: "boatyard:feature:one"
   }), "feature:one");
   assert.equal(parseHawserSessionName({
-    hawserMainSession: "dashtop"
+    hawserMainSession: "boatyard"
   }), "");
 });
 
@@ -173,14 +173,14 @@ test("normalizeMessage extracts the Twicc session id from Hawser envelopes", () 
       content: "Done."
     }),
     from_project: "hawser",
-    to_project: "dashtop"
-  }, "dashtop").twiccSessionId, "019e9d00-6985-7ce0-b903-ba343e968483");
+    to_project: "boatyard"
+  }, "boatyard").twiccSessionId, "019e9d00-6985-7ce0-b903-ba343e968483");
 });
 
 test("getMessageSessionTarget resolves sent and received Hawser session endpoints", () => {
   assert.deepEqual(getMessageSessionTarget({
     direction: "out",
-    fromProject: "dashtop",
+    fromProject: "boatyard",
     fromSession: "",
     toProject: "twicc",
     toSession: "main"
@@ -192,7 +192,7 @@ test("getMessageSessionTarget resolves sent and received Hawser session endpoint
     direction: "in",
     fromProject: "hawser",
     fromSession: "test",
-    toProject: "dashtop",
+    toProject: "boatyard",
     toSession: ""
   }), {
     project: "hawser",

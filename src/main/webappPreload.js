@@ -32,7 +32,7 @@ function findLoginFields() {
 }
 
 function getPendingUsernameKey() {
-  return `dashtop:password-manager:${window.location.origin}:username`;
+  return `boatyard:password-manager:${window.location.origin}:username`;
 }
 
 function getPendingUsername() {
@@ -83,15 +83,15 @@ async function autofillCredential() {
     return;
   }
 
-  if (loginFields.usernameInput && loginFields.usernameInput.dataset.dashtopAutofilled !== "true") {
+  if (loginFields.usernameInput && loginFields.usernameInput.dataset.boatyardAutofilled !== "true") {
     setInputValue(loginFields.usernameInput, credential.username);
-    loginFields.usernameInput.dataset.dashtopAutofilled = "true";
+    loginFields.usernameInput.dataset.boatyardAutofilled = "true";
     setPendingUsername(credential.username);
   }
 
-  if (loginFields.passwordInput && loginFields.passwordInput.dataset.dashtopAutofilled !== "true") {
+  if (loginFields.passwordInput && loginFields.passwordInput.dataset.boatyardAutofilled !== "true") {
     setInputValue(loginFields.passwordInput, credential.password);
-    loginFields.passwordInput.dataset.dashtopAutofilled = "true";
+    loginFields.passwordInput.dataset.boatyardAutofilled = "true";
   }
 }
 

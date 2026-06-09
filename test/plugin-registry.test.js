@@ -22,8 +22,8 @@ function createEnvironment() {
   vm.runInContext(widgetRegistrySource, context);
   vm.runInContext(pluginRegistrySource, context);
   return {
-    pluginRegistry: context.window.DashtopPluginRegistry,
-    widgetRegistry: context.window.DashtopWidgetRegistry,
+    pluginRegistry: context.window.BoatyardPluginRegistry,
+    widgetRegistry: context.window.BoatyardWidgetRegistry,
   };
 }
 

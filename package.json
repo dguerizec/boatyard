@@ -1,9 +1,9 @@
 {
-  "name": "dashtop",
+  "name": "boatyard",
   "version": "0.2.0",
-  "description": "Electron project cockpit prototype for dashboards and development workflows.",
+  "description": "Electron project dock prototype for dashboards and development workflows.",
   "main": "src/main/main.js",
-  "desktopName": "dashtop",
+  "desktopName": "boatyard",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
@@ -31,8 +31,8 @@
   },
   "homepage": "https://github.com/dguerizec/dashtop#readme",
   "build": {
-    "appId": "dev.dashtop.app",
-    "productName": "Dashtop",
+    "appId": "dev.boatyard.app",
+    "productName": "Boatyard",
     "directories": {
       "output": "dist"
     },
@@ -51,7 +51,7 @@
     ],
     "linux": {
       "category": "Development",
-      "icon": "src/renderer/assets/dashtop-icon.png",
+      "icon": "src/renderer/assets/boatyard-icon.png",
       "syncDesktopName": true,
       "target": [
         {

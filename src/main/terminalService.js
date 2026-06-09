@@ -17,7 +17,7 @@ function slugifyTmuxName(value, fallback = "session") {
 }
 
 function getProjectTmuxSessionName(project) {
-  return `dashtop-${slugifyTmuxName(project.slug || project.name || project.id, "project")}`;
+  return `boatyard-${slugifyTmuxName(project.slug || project.name || project.id, "project")}`;
 }
 
 function getTerminalClientSessionName(projectSession, terminalId) {

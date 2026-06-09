@@ -2,7 +2,7 @@
 
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("dashtop", {
+contextBridge.exposeInMainWorld("boatyard", {
   getState: () => ipcRenderer.invoke("state:get"),
   updateSettings: (patch) => ipcRenderer.invoke("settings:update", patch),
   updateNavigation: (navigation) => ipcRenderer.invoke("navigation:update", navigation),

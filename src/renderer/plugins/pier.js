@@ -1,7 +1,7 @@
 "use strict";
 
 (function registerPierPlugin(globalScope) {
-  const registry = globalScope.DashtopPluginRegistry;
+  const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_PIER_API_URL = "http://127.0.0.1:60080";
   const DEFAULT_PIER_URL = "http://pier.test";
 
@@ -152,14 +152,14 @@
           return true;
         }
 
-        return globalScope.dashtop.openExternal(url);
+        return globalScope.boatyard.openExternal(url);
       }
     });
   }
 
   async function copyText(value) {
-    if (globalScope.dashtop?.writeClipboardText) {
-      await globalScope.dashtop.writeClipboardText(value);
+    if (globalScope.boatyard?.writeClipboardText) {
+      await globalScope.boatyard.writeClipboardText(value);
       return;
     }
 
@@ -337,16 +337,16 @@
 
   registry.register(
     {
-      id: "dashtop.pier",
+      id: "boatyard.pier",
       name: "Pier",
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
-        widgets: ["dashtop.pier.urls"],
-        panes: ["dashtop.pier.preview"],
-        globalSettings: ["dashtop.pier.global"],
-        projectSettings: ["dashtop.pier.project"],
-        services: ["dashtop.pier"]
+        widgets: ["boatyard.pier.urls"],
+        panes: ["boatyard.pier.preview"],
+        globalSettings: ["boatyard.pier.global"],
+        projectSettings: ["boatyard.pier.project"],
+        services: ["boatyard.pier"]
       },
       permissions: [
         "projectConfig:read",
@@ -363,11 +363,11 @@
           summary: "Pier integration is available"
         });
         const pierService = createPierService();
-        ctx.services.provide("dashtop.pier", pierService);
-        ctx.events.on("dashtop.projectForm.coreFieldChanged", syncProjectDefaults);
+        ctx.services.provide("boatyard.pier", pierService);
+        ctx.events.on("boatyard.projectForm.coreFieldChanged", syncProjectDefaults);
 
         ctx.settings.registerGlobalSection({
-          id: "dashtop.pier.global",
+          id: "boatyard.pier.global",
           title: "Pier",
           fields: [
             {
@@ -388,7 +388,7 @@
         });
 
         ctx.settings.registerProjectSection({
-          id: "dashtop.pier.project",
+          id: "boatyard.pier.project",
           title: "Pier",
           fields: [
             {
@@ -414,7 +414,7 @@
         });
 
         ctx.panes.register({
-          id: "dashtop.pier.preview",
+          id: "boatyard.pier.preview",
           webAppId: "pier",
           key: "pier",
           title: "Pier",
@@ -429,7 +429,7 @@
         });
 
         ctx.widgets.register({
-          id: "dashtop.pier.urls",
+          id: "boatyard.pier.urls",
           name: "Pier URLs",
           title: "Pier URLs",
           scope: "project",

@@ -1,32 +1,32 @@
-# Dashtop Plugin API Contract
+# Boatyard Plugin API Contract
 
-This document defines the initial contract for Dashtop plugins. It is a design
+This document defines the initial contract for Boatyard plugins. It is a design
 contract, not a complete implementation guide. The goal is to make third-party
 plugins installable, configurable, composable, and callable without exposing
-Dashtop internals directly.
+Boatyard internals directly.
 
 ## Goals
 
 - Install plugins from third-party repositories or local paths.
 - Let plugins contribute widgets, panes, settings UI, actions, services, and
   callable tools.
-- Let plugins use Dashtop core features through a stable, permissioned API.
-- Let plugins communicate with Dashtop, with other plugins, and with future
+- Let plugins use Boatyard core features through a stable, permissioned API.
+- Let plugins communicate with Boatyard, with other plugins, and with future
   integrated agents.
-- Keep plugin-owned logic inside the plugin whenever Dashtop does not need to
+- Keep plugin-owned logic inside the plugin whenever Boatyard does not need to
   understand the domain.
-- Keep Dashtop in control of security-sensitive execution, persistence,
+- Keep Boatyard in control of security-sensitive execution, persistence,
   activation, and UI placement.
 
 ## Non-Goals
 
-- Dashtop does not define domain-specific APIs for external tools such as Twicc,
+- Boatyard does not define domain-specific APIs for external tools such as Twicc,
   Hawser, or Pier.
-- Dashtop does not run plugin-provided install commands without explicit user
+- Boatyard does not run plugin-provided install commands without explicit user
   confirmation.
-- Dashtop does not expose its internal store, renderer globals, Electron
+- Boatyard does not expose its internal store, renderer globals, Electron
   objects, or IPC channels directly to plugins.
-- Dashtop does not require plugins to expose agent tools. Tools are an optional
+- Boatyard does not require plugins to expose agent tools. Tools are an optional
   contribution.
 
 ## Plugin Package
@@ -92,7 +92,7 @@ export default {
   `vendor.plugin-name`.
 - `name`: user-facing plugin name.
 - `version`: plugin package version.
-- `apiVersion`: Dashtop Plugin API version required by the plugin.
+- `apiVersion`: Boatyard Plugin API version required by the plugin.
 
 ### Optional Fields
 
@@ -103,7 +103,7 @@ export default {
 - `homepage`: plugin homepage.
 - `repository`: source repository.
 - `license`: license id.
-- `compatibility`: Dashtop version constraints.
+- `compatibility`: Boatyard version constraints.
 - `contributes`: static contribution ids.
 - `permissions`: requested capability list.
 - `dependencies`: plugin dependencies.
@@ -111,15 +111,15 @@ export default {
 
 ## Lifecycle
 
-Plugins are activated by Dashtop. A plugin MAY be activated eagerly or lazily
-depending on its contributions and Dashtop policy.
+Plugins are activated by Boatyard. A plugin MAY be activated eagerly or lazily
+depending on its contributions and Boatyard policy.
 
 Plugins have a persistent enabled state. Disabled plugins remain installed and
-visible in plugin management UI, but Dashtop MUST NOT activate them or publish
+visible in plugin management UI, but Boatyard MUST NOT activate them or publish
 their widgets, panes, settings sections, services, tools, actions, or event
 subscriptions.
 
-Dashtop SHOULD expose basic plugin management for installed plugins:
+Boatyard SHOULD expose basic plugin management for installed plugins:
 
 - enable and disable,
 - runtime status and diagnostics,
@@ -141,7 +141,7 @@ function.
 shutting down a plugin. Plugins MUST release subscriptions, handles, timers, and
 long-running work through disposables returned by the context APIs.
 
-Dashtop MUST isolate plugin failures. A failing plugin MUST NOT crash the whole
+Boatyard MUST isolate plugin failures. A failing plugin MUST NOT crash the whole
 app or corrupt unrelated plugin state.
 
 ## Plugin Status
@@ -150,7 +150,7 @@ Plugins own their domain-specific status. For example, the Twicc plugin knows
 how to detect Twicc, the Hawser plugin knows how to detect Hawser, and the Pier
 plugin knows how to detect Pier.
 
-Dashtop only provides generic status publication.
+Boatyard only provides generic status publication.
 
 ```js
 ctx.status.set({
@@ -182,7 +182,7 @@ ctx.status.set({
   details: {
     command: "twicc"
   },
-  actions: ["dashtop.twicc.install"]
+  actions: ["boatyard.twicc.install"]
 });
 ```
 
@@ -194,13 +194,13 @@ surfaces.
 
 ```js
 ctx.actions.register({
-  id: "dashtop.twicc.install",
+  id: "boatyard.twicc.install",
   title: "Install Twicc",
   description: "Install Twicc with uvx.",
   scope: "plugin",
   confirmation: {
     title: "Install Twicc",
-    message: "Dashtop will run uvx twicc@latest.",
+    message: "Boatyard will run uvx twicc@latest.",
     command: ["uvx", "twicc@latest"]
   },
   async run() {
@@ -209,13 +209,13 @@ ctx.actions.register({
 });
 ```
 
-Dashtop MUST show confirmations for sensitive actions. The plugin proposes the
-action; Dashtop controls whether and how it runs.
+Boatyard MUST show confirmations for sensitive actions. The plugin proposes the
+action; Boatyard controls whether and how it runs.
 
 ## Permissions
 
 Plugins MUST request permissions for capabilities that cross plugin boundaries,
-touch Dashtop state, execute commands, or expose callable tools.
+touch Boatyard state, execute commands, or expose callable tools.
 
 Permission examples:
 
@@ -240,7 +240,7 @@ Permission examples:
 - `secrets:read`
 - `secrets:write`
 
-Dashtop MAY deny, prompt for, or restrict permissions at install time,
+Boatyard MAY deny, prompt for, or restrict permissions at install time,
 activation time, or call time.
 
 ## Plugin Context
@@ -268,7 +268,7 @@ interface PluginContext {
 }
 ```
 
-Dashtop MAY expose different context subsets to main-process, renderer, and
+Boatyard MAY expose different context subsets to main-process, renderer, and
 sandboxed surfaces.
 
 ## Contribution IDs
@@ -277,14 +277,14 @@ Every contribution id registered by a plugin MUST be namespaced by that plugin
 id. A contribution id is valid when it is exactly the plugin id or starts with
 `<pluginId>.`.
 
-Examples for plugin `dashtop.pier`:
+Examples for plugin `boatyard.pier`:
 
-- `dashtop.pier.urls`
-- `dashtop.pier.preview`
-- `dashtop.pier.global`
-- `dashtop.pier.project`
+- `boatyard.pier.urls`
+- `boatyard.pier.preview`
+- `boatyard.pier.global`
+- `boatyard.pier.project`
 
-This prevents collisions between third-party plugins and lets Dashtop remove all
+This prevents collisions between third-party plugins and lets Boatyard remove all
 contributions from one plugin during disable, reload, update, or uninstall.
 
 ## Configuration
@@ -292,10 +292,10 @@ contributions from one plugin during disable, reload, update, or uninstall.
 Plugins MAY define global and project configuration. Configuration is
 user-editable and SHOULD be schema-backed.
 
-Global configuration applies to the plugin across Dashtop. Project
+Global configuration applies to the plugin across Boatyard. Project
 configuration applies to one project.
 
-Dashtop stores plugin configuration under plugin namespaces:
+Boatyard stores plugin configuration under plugin namespaces:
 
 ```js
 {
@@ -314,7 +314,7 @@ Dashtop stores plugin configuration under plugin namespaces:
 
 ```js
 ctx.settings.registerGlobalSection({
-  id: "dashtop.twicc.global",
+  id: "boatyard.twicc.global",
   title: "Twicc",
   fields: [
     {
@@ -328,7 +328,7 @@ ctx.settings.registerGlobalSection({
 });
 
 ctx.settings.registerProjectSection({
-  id: "dashtop.twicc.project",
+  id: "boatyard.twicc.project",
   title: "Twicc",
   fields: [
     {
@@ -365,7 +365,7 @@ await ctx.state.project.get(projectId, "lastSessionId");
 await ctx.state.project.set(projectId, "lastSessionId", sessionId);
 ```
 
-Dashtop SHOULD namespace state by plugin id and SHOULD remove or archive it on
+Boatyard SHOULD namespace state by plugin id and SHOULD remove or archive it on
 uninstall according to the uninstall policy.
 
 ## Widgets
@@ -375,7 +375,7 @@ global if the surface supports it.
 
 ```js
 ctx.widgets.register({
-  id: "dashtop.hawser.inbox",
+  id: "boatyard.hawser.inbox",
   title: "Hawser Inbox",
   scope: "project",
   category: "Agents",
@@ -410,7 +410,7 @@ project name.
 
 ```js
 ctx.projectNavBadges.register({
-  id: "dashtop.twicc.projectStatus",
+  id: "boatyard.twicc.projectStatus",
   render({ project, projectConfig, globalConfig }) {
     return createTwiccStatusBadge(project, projectConfig, globalConfig);
   }
@@ -427,13 +427,13 @@ through the renderer event surface provided by their integration.
 Plugins MAY contribute panes. Pane kinds are:
 
 - `wcv`: Electron `WebContentsView` pane.
-- `dom`: Dashtop DOM-rendered pane.
+- `dom`: Boatyard DOM-rendered pane.
 
 ### WCV Pane
 
 ```js
 ctx.panes.register({
-  id: "dashtop.twicc.pane",
+  id: "boatyard.twicc.pane",
   title: "Twicc",
   kind: "wcv",
   scope: "project",
@@ -457,7 +457,7 @@ ctx.panes.register({
 });
 ```
 
-Dashtop owns pane layout, selection, splitting, closing, persistence, and
+Boatyard owns pane layout, selection, splitting, closing, persistence, and
 surface placement. Plugins provide pane content and metadata.
 
 ## Services
@@ -466,7 +466,7 @@ Services are plugin-to-plugin APIs. They are meant for in-process integration
 between plugins.
 
 ```js
-ctx.services.provide("dashtop.twicc.api", {
+ctx.services.provide("boatyard.twicc.api", {
   version: "1.0.0",
   async listProjects() {},
   async createSession(input) {}
@@ -476,7 +476,7 @@ ctx.services.provide("dashtop.twicc.api", {
 Consumers request services by id. Missing optional services return `null`.
 
 ```js
-const twicc = ctx.services.get("dashtop.twicc.api");
+const twicc = ctx.services.get("boatyard.twicc.api");
 
 if (twicc) {
   await twicc.createSession({ projectId, prompt });
@@ -487,24 +487,24 @@ Services SHOULD expose a `version` field when they have an external consumer.
 Plugins SHOULD treat service integrations as optional unless the manifest
 declares a hard dependency.
 
-Future Dashtop versions SHOULD provide availability events:
+Future Boatyard versions SHOULD provide availability events:
 
 ```js
-ctx.services.onAvailable("dashtop.twicc.api", async (twicc) => {});
-ctx.services.onUnavailable("dashtop.twicc.api", () => {});
+ctx.services.onAvailable("boatyard.twicc.api", async (twicc) => {});
+ctx.services.onUnavailable("boatyard.twicc.api", () => {});
 ```
 
 ## Tools
 
 Tools are callable operations intended for agents, automation, MCP, REST, or
-direct Dashtop calls. Tools are not the same as services. Services are plugin
+direct Boatyard calls. Tools are not the same as services. Services are plugin
 APIs; tools are externalizable capabilities with schemas.
 
 ```js
 ctx.tools.register({
   id: "twicc.createSession",
   title: "Create Twicc Session",
-  description: "Create a Twicc session for a Dashtop project.",
+  description: "Create a Twicc session for a Boatyard project.",
   inputSchema: {
     type: "object",
     properties: {
@@ -528,7 +528,7 @@ ctx.tools.register({
 });
 ```
 
-Dashtop owns publication of registered tools. The same tool registry MAY be
+Boatyard owns publication of registered tools. The same tool registry MAY be
 exposed through:
 
 - an MCP server,
@@ -548,37 +548,37 @@ interface ToolCallContext {
 }
 ```
 
-Tools MUST validate input through their schema. Dashtop MAY require additional
+Tools MUST validate input through their schema. Boatyard MAY require additional
 confirmation before invoking sensitive tools.
 
 ## Events
 
-Plugins MAY subscribe to Dashtop events. Future versions MAY allow plugins to
+Plugins MAY subscribe to Boatyard events. Future versions MAY allow plugins to
 publish plugin events.
 
 ```js
-const dispose = ctx.events.on("dashtop.projectForm.sourcePathInspected", (event) => {
+const dispose = ctx.events.on("boatyard.projectForm.sourcePathInspected", (event) => {
   if (event.inspected?.twiccUrl) {
     event.fields.setValue("twiccProjectUrl", event.inspected.twiccUrl);
   }
 });
 
-ctx.events.on("dashtop.projectForm.coreFieldChanged", (event) => {
+ctx.events.on("boatyard.projectForm.coreFieldChanged", (event) => {
   console.log(event.field, event.value, event.coreFields);
 });
 ```
 
-`dashtop.projectForm.sourcePathInspected` is emitted when the project form
+`boatyard.projectForm.sourcePathInspected` is emitted when the project form
 inspects a source path. Plugin handlers receive their own scoped field API, so a
 plugin can update its own project settings fields without accessing another
 plugin's fields.
 
-`dashtop.projectForm.coreFieldChanged` is emitted when a core project field
+`boatyard.projectForm.coreFieldChanged` is emitted when a core project field
 changes in the project form. The payload includes `field`, `value`, `source`,
 and `coreFields` with the current `name`, `slug`, `sourcePath`, `gitUrl`,
 `repoUrl`, `devBranch`, `twiccUrl`, and `hawserMainSession` values.
 
-Dashtop events SHOULD be typed and versioned. Plugin events SHOULD be
+Boatyard events SHOULD be typed and versioned. Plugin events SHOULD be
 namespaced by plugin id.
 
 ## System Execution
@@ -594,7 +594,7 @@ await ctx.system.exec(["uvx", "twicc@latest"], {
 });
 ```
 
-Dashtop MUST control execution policy. It MAY:
+Boatyard MUST control execution policy. It MAY:
 
 - deny execution,
 - require confirmation,
@@ -604,7 +604,7 @@ Dashtop MUST control execution policy. It MAY:
 - redact sensitive values.
 
 Plugins SHOULD implement domain-specific probe and install logic themselves,
-but command execution remains mediated by Dashtop.
+but command execution remains mediated by Boatyard.
 
 ## Secrets
 
@@ -616,7 +616,7 @@ await ctx.secrets.set("apiToken", token);
 const token = await ctx.secrets.get("apiToken");
 ```
 
-Dashtop SHOULD namespace secrets by plugin id and MAY support project-scoped
+Boatyard SHOULD namespace secrets by plugin id and MAY support project-scoped
 secrets.
 
 ## Installation
@@ -627,12 +627,12 @@ Installation flow:
 2. Read manifest without executing plugin runtime code.
 3. Validate id, version, API compatibility, contributions, and permissions.
 4. Show requested permissions and source metadata to the user.
-5. Install package into Dashtop plugin storage.
+5. Install package into Boatyard plugin storage.
 6. Build or load runtime assets if required.
 7. Add plugin to the installed plugin registry.
 8. Activate plugin according to policy.
 
-Dashtop SHOULD maintain a plugin lockfile that records:
+Boatyard SHOULD maintain a plugin lockfile that records:
 
 - plugin id,
 - installed version,
@@ -665,7 +665,7 @@ Uninstall flow:
 4. Remove lockfile entry.
 5. Ask whether to remove plugin config, plugin state, and secrets.
 
-Dashtop MUST clean active panes, widgets, services, tools, and actions provided
+Boatyard MUST clean active panes, widgets, services, tools, and actions provided
 by the plugin.
 
 ## Example: Twicc Plugin
@@ -677,9 +677,9 @@ Contributions:
 - global settings section with `twiccBaseUrl`,
 - project settings section with `twiccProjectUrl`,
 - WCV pane named `Twicc`,
-- service `dashtop.twicc.api`,
+- service `boatyard.twicc.api`,
 - tools such as `twicc.listProjects` and `twicc.createSession`,
-- status actions such as `dashtop.twicc.install`.
+- status actions such as `boatyard.twicc.install`.
 
 The plugin MAY set status to `unavailable` if Twicc is not detected, and MAY
 provide an install action that runs `uvx twicc@latest` through `ctx.system.exec`
@@ -693,7 +693,7 @@ Contributions:
 
 - global or project settings for Hawser main session,
 - project widget for inbox/task status,
-- optional service consumption of `dashtop.twicc.api`.
+- optional service consumption of `boatyard.twicc.api`.
 
 The Hawser widget SHOULD continue to work in a reduced mode when the Twicc
 service is unavailable.
@@ -708,10 +708,10 @@ Contributions:
 - project settings for `pierPreviewUrl` override and `pierProjectName`,
 - WCV pane named `Pier`.
 - project widget listing running Pier workload URLs and worktree paths.
-- service `dashtop.pier` exposing Pier workload operations.
+- service `boatyard.pier` exposing Pier workload operations.
 
 Legacy project `previewUrl` values MAY be migrated into
-`pluginConfig.projects[projectId]["dashtop.pier"].pierPreviewUrl` at store load
+`pluginConfig.projects[projectId]["boatyard.pier"].pierPreviewUrl` at store load
 time only. Runtime Pier contributions MUST read from Pier plugin config and the
 Pier API, not from the deprecated project root `previewUrl` field.
 
@@ -720,15 +720,15 @@ so for the pane contribution.
 
 ## Open Design Questions
 
-- What plugin runtime isolation should Dashtop use for third-party renderer
+- What plugin runtime isolation should Boatyard use for third-party renderer
   code?
-- Should plugin packages be JavaScript-only at first, or should Dashtop support
+- Should plugin packages be JavaScript-only at first, or should Boatyard support
   language-agnostic plugins through external processes?
 - Which permissions are install-time approvals and which are call-time
   approvals?
-- Should WCV pane preload scripts be plugin-provided, Dashtop-provided, or
+- Should WCV pane preload scripts be plugin-provided, Boatyard-provided, or
   forbidden for third-party plugins?
 - What is the first supported distribution format: Git repository, local path,
-  npm package, or Dashtop-specific archive?
-- Should Dashtop expose the tool registry through MCP itself, or should an
+  npm package, or Boatyard-specific archive?
+- Should Boatyard expose the tool registry through MCP itself, or should an
   agent plugin own MCP publication?

@@ -21,8 +21,8 @@ const WIDGET_GRID_ROW_HEIGHT = 84;
 const WIDGET_GRID_GAP = 12;
 const WIDGET_GRID_SCROLL_GUARD = 10;
 const LEGACY_WIDGET_IDS = new Map([
-  ["project-preview", "dashtop.pier.urls"],
-  ["pier-urls", "dashtop.pier.urls"]
+  ["project-preview", "boatyard.pier.urls"],
+  ["pier-urls", "boatyard.pier.urls"]
 ]);
 
 function slugify(value) {
@@ -147,19 +147,19 @@ function applyFormControls(root) {
 }
 
 function getPluginPaneDefinitions(filter = {}) {
-  return window.DashtopPluginRegistry?.listPanes(filter) || [];
+  return window.BoatyardPluginRegistry?.listPanes(filter) || [];
 }
 
 function getPluginProjectNavBadgeDefinitions() {
-  return window.DashtopPluginRegistry?.listProjectNavBadges() || [];
+  return window.BoatyardPluginRegistry?.listProjectNavBadges() || [];
 }
 
 function getPluginProjectSettingsSections() {
-  return window.DashtopPluginRegistry?.listProjectSettingsSections() || [];
+  return window.BoatyardPluginRegistry?.listProjectSettingsSections() || [];
 }
 
 function getPluginGlobalSettingsSections() {
-  return window.DashtopPluginRegistry?.listGlobalSettingsSections() || [];
+  return window.BoatyardPluginRegistry?.listGlobalSettingsSections() || [];
 }
 
 function getPluginEnabledState() {
@@ -168,7 +168,7 @@ function getPluginEnabledState() {
 
 function getProjectSummaryTarget(project) {
   return project.sourcePath ||
-    getProjectPluginConfig(project.id, "dashtop.pier").pierPreviewUrl ||
+    getProjectPluginConfig(project.id, "boatyard.pier").pierPreviewUrl ||
     project.slug;
 }
 
@@ -196,14 +196,14 @@ async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
   let nextState = state;
 
   for (const [pluginId, config] of Object.entries(pluginConfig)) {
-    nextState = await window.dashtop.updateProjectPluginConfig(projectId, pluginId, config);
+    nextState = await window.boatyard.updateProjectPluginConfig(projectId, pluginId, config);
   }
 
   return nextState;
 }
 
 function readPluginSettingsFieldValue(field, input) {
-  return window.DashtopPluginSettingsFields.readFieldValue(field, input, {
+  return window.BoatyardPluginSettingsFields.readFieldValue(field, input, {
     normalizeUrl: normalizeAddressInput
   });
 }
@@ -217,7 +217,7 @@ function persistNavigation() {
     return;
   }
 
-  window.dashtop.updateNavigation({
+  window.boatyard.updateNavigation({
     view: currentView,
     projectId: currentProjectId
   }).catch((error) => {
@@ -338,7 +338,7 @@ function detachTerminalSurface(surfaceId) {
   }
 
   if (session.terminalId) {
-    window.dashtop.detachTerminal(session.terminalId).catch((error) => {
+    window.boatyard.detachTerminal(session.terminalId).catch((error) => {
       console.error("Could not detach terminal:", error);
     });
     terminalWidgetsByTerminal.delete(session.terminalId);
@@ -406,7 +406,7 @@ async function syncTerminalTabsForSurface(surfaceId, followupsRemaining = 0) {
   }
 
   try {
-    const tabs = await window.dashtop.listTerminalTabs(project.id);
+    const tabs = await window.boatyard.listTerminalTabs(project.id);
     const projectSessions = [...terminalWidgetsBySurface.values()]
       .filter((candidate) => candidate.projectId === project.id && candidate.card.isConnected);
     const staleSession = projectSessions.find((candidate) => shouldRefreshTerminalTabs(candidate, tabs));
@@ -453,7 +453,7 @@ function scheduleTerminalTabSync(terminalId, followupsRemaining = 0) {
 }
 
 async function refreshProjectTerminalTabLabels(project) {
-  const tabs = await window.dashtop.listTerminalTabs(project.id);
+  const tabs = await window.boatyard.listTerminalTabs(project.id);
   const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
 
   for (const session of terminalWidgetsBySurface.values()) {
@@ -478,7 +478,7 @@ async function renameTerminalTab(project, tab, nextName) {
     return;
   }
 
-  await window.dashtop.renameTerminalTab(project.id, tab.id, normalizedName);
+  await window.boatyard.renameTerminalTab(project.id, tab.id, normalizedName);
   await refreshProjectTerminalTabLabels(project);
 }
 
@@ -535,11 +535,11 @@ function getPersistedTerminalWindowId(projectId, surfaceKey) {
 }
 
 function persistTerminalSelection(projectId, surfaceKey, windowId) {
-  if (!surfaceKey || !window.dashtop.updateTerminalSelection) {
+  if (!surfaceKey || !window.boatyard.updateTerminalSelection) {
     return;
   }
 
-  window.dashtop.updateTerminalSelection(projectId, surfaceKey, windowId).catch((error) => {
+  window.boatyard.updateTerminalSelection(projectId, surfaceKey, windowId).catch((error) => {
     console.error("Could not persist terminal selection:", error);
   });
 }
@@ -569,7 +569,7 @@ async function refreshTerminalTabs(project, card, activeWindowId = null, knownTa
   try {
     const tabs = Array.isArray(knownTabs)
       ? knownTabs
-      : await window.dashtop.listTerminalTabs(project.id);
+      : await window.boatyard.listTerminalTabs(project.id);
     const preferredWindowId = activeWindowId || getPersistedTerminalWindowId(project.id, card.dataset.terminalStorageKey);
     const selectedTab = tabs.find((tab) => tab.id === preferredWindowId) || tabs[0];
 
@@ -669,9 +669,9 @@ async function attachTerminalTab(project, card, windowId) {
   await nextAnimationFrame();
   const initialSize = fitTerminal(term, fitAddon);
 
-  const attachResult = await window.dashtop.attachTerminal(project.id, windowId, initialSize);
+  const attachResult = await window.boatyard.attachTerminal(project.id, windowId, initialSize);
   const disposable = term.onData((data) => {
-    window.dashtop.writeTerminal(attachResult.terminalId, data);
+    window.boatyard.writeTerminal(attachResult.terminalId, data);
     scheduleTerminalTabSync(attachResult.terminalId, /[\x04\r\n]/.test(data) ? 3 : 0);
   });
   let selectionTimer = null;
@@ -685,7 +685,7 @@ async function attachTerminalTab(project, card, windowId) {
     selectionTimer = setTimeout(() => {
       const selection = term.getSelection();
       if (selection) {
-        window.dashtop.writeTerminalSelection(selection).catch((error) => {
+        window.boatyard.writeTerminalSelection(selection).catch((error) => {
           console.error("Could not write terminal selection:", error);
         });
       }
@@ -727,7 +727,7 @@ async function attachTerminalTab(project, card, windowId) {
     }
     suppressNativePasteUntil = Date.now() + 300;
     term.focus();
-    window.dashtop.readTerminalSelection()
+    window.boatyard.readTerminalSelection()
       .then((selection) => {
         if (selection) {
           const now = Date.now();
@@ -775,7 +775,7 @@ async function attachTerminalTab(project, card, windowId) {
   viewport.addEventListener("paste", onNativePaste, true);
   const resizeObserver = new ResizeObserver(() => {
     const size = fitTerminal(term, fitAddon);
-    window.dashtop.resizeTerminal(attachResult.terminalId, size);
+    window.boatyard.resizeTerminal(attachResult.terminalId, size);
   });
   resizeObserver.observe(viewport);
   terminalWidgetsBySurface.set(surfaceId, {
@@ -842,7 +842,7 @@ function createTerminalSurface(project, {
   addButton.setAttribute("aria-label", "New shell");
   addButton.textContent = "+";
   addButton.addEventListener("click", async () => {
-    const tab = await window.dashtop.createTerminalTab(project.id, "shell");
+    const tab = await window.boatyard.createTerminalTab(project.id, "shell");
     await refreshTerminalTabs(project, card, tab.id);
   });
 
@@ -862,13 +862,13 @@ function createTerminalSurface(project, {
     closeButton.disabled = true;
     const activeWindowId = session.activeWindowId;
     try {
-      const allTabs = await window.dashtop.listTerminalTabs(project.id);
+      const allTabs = await window.boatyard.listTerminalTabs(project.id);
       if (!activeWindowId || allTabs.length <= 1) {
         return;
       }
 
       removeTerminalTabButtons(project.id, activeWindowId);
-      const remainingTabs = (await window.dashtop.closeTerminalTab(project.id, activeWindowId))
+      const remainingTabs = (await window.boatyard.closeTerminalTab(project.id, activeWindowId))
         .filter((tab) => tab.id !== activeWindowId);
       await refreshProjectTerminalTabs(project, activeWindowId, remainingTabs);
     } catch (error) {
@@ -1070,12 +1070,12 @@ function createHawserWidget(project, options = {}) {
   return card;
 }
 
-window.DashtopHawserUI = Object.freeze({
+window.BoatyardHawserUI = Object.freeze({
   createWidget: createHawserWidget
 });
 
 function registerBuiltinProjectWidgets() {
-  const registry = window.DashtopWidgetRegistry;
+  const registry = window.BoatyardWidgetRegistry;
 
   if (!registry) {
     throw new Error("Widget registry is unavailable.");
@@ -1103,7 +1103,7 @@ function registerBuiltinProjectWidgets() {
 registerBuiltinProjectWidgets();
 
 function getInstalledWidgets(filter = {}) {
-  return window.DashtopWidgetRegistry.list(filter);
+  return window.BoatyardWidgetRegistry.list(filter);
 }
 
 function getProjectWidgetDefinitions() {
@@ -1448,7 +1448,7 @@ function persistWidgetLayout(project) {
     return Promise.resolve(null);
   }
 
-  return window.dashtop.updateWidgetLayout(project.id, layout).catch((error) => {
+  return window.boatyard.updateWidgetLayout(project.id, layout).catch((error) => {
     console.error("Could not persist widget layout:", error);
     return null;
   });
@@ -2121,7 +2121,7 @@ function getSelectedWebApp(project, paneId, webApps) {
 }
 
 function invokeWebApp(action, ...payload) {
-  return window.dashtop[action](...payload).catch((error) => {
+  return window.boatyard[action](...payload).catch((error) => {
     console.error(`Could not ${action}:`, error);
   });
 }
@@ -2215,7 +2215,7 @@ function openProjectWebApp(projectId, webAppId, url = "") {
   return true;
 }
 
-window.DashtopPaneNavigation = Object.freeze({
+window.BoatyardPaneNavigation = Object.freeze({
   openProjectWebApp
 });
 
@@ -2688,7 +2688,7 @@ function persistPaneLayout(project) {
     return;
   }
 
-  window.dashtop.updatePaneLayout(project.id, layout).catch((error) => {
+  window.boatyard.updatePaneLayout(project.id, layout).catch((error) => {
     console.error("Could not persist pane layout:", error);
   });
 }
@@ -2816,7 +2816,7 @@ function createGlobalProjectsSettingsForm({ settings, onSubmit }) {
     error.hidden = true;
 
     try {
-      const selectedPath = await window.dashtop.selectProjectsBasePath(projectsBasePathInput.value);
+      const selectedPath = await window.boatyard.selectProjectsBasePath(projectsBasePathInput.value);
       if (selectedPath) {
         projectsBasePathInput.value = selectedPath;
       }
@@ -2880,7 +2880,7 @@ function createGlobalPresentationSettingsForm({ settings, onSubmit }) {
   headingTitle.textContent = "Presentation";
 
   const headingCopy = document.createElement("p");
-  headingCopy.textContent = "Tune how Dashtop displays webapp overlays.";
+  headingCopy.textContent = "Tune how Boatyard displays webapp overlays.";
   heading.append(headingTitle, headingCopy);
 
   const blurLabel = document.createElement("label");
@@ -3020,7 +3020,7 @@ function createGlobalPasswordManagerSettingsForm({ settings, onSubmit }) {
   disclaimer.className = "password-manager-disclaimer";
   disclaimer.innerHTML = `
     <strong>Security disclaimer</strong>
-    <span>Dashtop will store passwords locally, encrypted for the current OS user. This is a minimal convenience feature for trusted local use, not a hardened replacement for a dedicated password manager.</span>
+    <span>Boatyard will store passwords locally, encrypted for the current OS user. This is a minimal convenience feature for trusted local use, not a hardened replacement for a dedicated password manager.</span>
   `;
 
   const enableLabel = document.createElement("label");
@@ -3106,7 +3106,7 @@ function createGlobalWidgetsSettingsView() {
   headingTitle.textContent = "Widgets";
 
   const headingCopy = document.createElement("p");
-  headingCopy.textContent = "Installed widget plugins available to Dashtop.";
+  headingCopy.textContent = "Installed widget plugins available to Boatyard.";
   heading.append(headingTitle, headingCopy);
 
   const list = document.createElement("div");
@@ -3159,14 +3159,14 @@ function createGlobalPluginsSettingsView() {
   headingTitle.textContent = "Plugins";
 
   const headingCopy = document.createElement("p");
-  headingCopy.textContent = "Installed plugins and their Dashtop contributions.";
+  headingCopy.textContent = "Installed plugins and their Boatyard contributions.";
   heading.append(headingTitle, headingCopy);
 
   const list = document.createElement("div");
   list.className = "installed-plugin-list";
 
-  for (const plugin of window.DashtopPluginRegistry?.list() || []) {
-    const status = window.DashtopPluginRegistry.getStatus(plugin.id);
+  for (const plugin of window.BoatyardPluginRegistry?.list() || []) {
+    const status = window.BoatyardPluginRegistry.getStatus(plugin.id);
     const globalSettingsSections = getPluginGlobalSettingsSections()
       .filter((section) => section.pluginId === plugin.id);
     const item = document.createElement("article");
@@ -3215,8 +3215,8 @@ function createGlobalPluginsSettingsView() {
     toggle.type = "checkbox";
     toggle.checked = plugin.enabled !== false;
     toggle.addEventListener("change", async () => {
-      state = await window.dashtop.updatePluginEnabled(plugin.id, toggle.checked);
-      window.DashtopPluginRegistry.setEnabled(plugin.id, toggle.checked);
+      state = await window.boatyard.updatePluginEnabled(plugin.id, toggle.checked);
+      window.BoatyardPluginRegistry.setEnabled(plugin.id, toggle.checked);
       renderGlobalSettingsPage();
     });
 
@@ -3244,7 +3244,7 @@ function createGlobalPluginsSettingsView() {
     reloadButton.disabled = plugin.enabled === false;
     reloadButton.addEventListener("click", () => {
       try {
-        window.DashtopPluginRegistry.reload(plugin.id);
+        window.BoatyardPluginRegistry.reload(plugin.id);
       } catch (error) {
         console.error(`Could not reload plugin ${plugin.id}:`, error);
       }
@@ -3328,7 +3328,7 @@ function createGlobalPluginSettingsForm(section, options = {}) {
     input.autocomplete = "off";
     input.placeholder = field.placeholder || "";
     input.readOnly = field.readOnly === true;
-    const defaultValue = window.DashtopPluginSettingsFields.resolveFieldDefault(field);
+    const defaultValue = window.BoatyardPluginSettingsFields.resolveFieldDefault(field);
     input.dataset.defaultValue = String(defaultValue || "");
     input.value = pluginConfig[field.key] || input.dataset.defaultValue;
     label.append(input);
@@ -3411,7 +3411,7 @@ function createGlobalPluginSettingsForm(section, options = {}) {
         values[key] = readPluginSettingsFieldValue(field, input);
       }
 
-      state = await window.dashtop.updateGlobalPluginConfig(section.pluginId, values);
+      state = await window.boatyard.updateGlobalPluginConfig(section.pluginId, values);
       if (typeof options.onSaved === "function") {
         options.onSaved();
       } else {
@@ -3441,30 +3441,30 @@ function renderGlobalSettingsPage() {
   dashboardGrid.append(createGlobalProjectsSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
-      state = await window.dashtop.updateSettings(values);
+      state = await window.boatyard.updateSettings(values);
       renderGlobalSettingsPage();
     }
   }), createGlobalPresentationSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
-      state = await window.dashtop.updateSettings(values);
+      state = await window.boatyard.updateSettings(values);
       renderGlobalSettingsPage();
     }
   }), createGlobalTerminalSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
-      state = await window.dashtop.updateSettings(values);
+      state = await window.boatyard.updateSettings(values);
       renderGlobalSettingsPage();
     }
   }), createGlobalPasswordManagerSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
-      state = await window.dashtop.updateSettings(values);
+      state = await window.boatyard.updateSettings(values);
       renderGlobalSettingsPage();
     }
   }), createGlobalPluginsSettingsView(), createGlobalWidgetsSettingsView());
 
-  window.DashtopPluginRegistry?.emit("dashtop.globalSettings.opened", {
+  window.BoatyardPluginRegistry?.emit("boatyard.globalSettings.opened", {
     forPlugin: (pluginId) => ({
       globalConfig: getGlobalPluginConfig(pluginId)
     })
@@ -3573,7 +3573,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
     try {
       const settings = getSettings();
-      const selectedPath = await window.dashtop.selectProjectsBasePath(
+      const selectedPath = await window.boatyard.selectProjectsBasePath(
         sourcePathInput.value || settings.projectsBasePath
       );
       if (selectedPath) {
@@ -3656,7 +3656,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     if (options.markEdited) {
       input.dataset.edited = "true";
     }
-    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+    emitProjectFormEvent("boatyard.projectForm.coreFieldChanged", {
       field: key,
       value: nextValue,
       source: options.source || "core"
@@ -3673,7 +3673,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
   nameInput.addEventListener("input", () => {
     markCoreFieldEdited("name");
-    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+    emitProjectFormEvent("boatyard.projectForm.coreFieldChanged", {
       field: "name",
       value: nameInput.value,
       source: "user"
@@ -3687,7 +3687,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
   slugInput.addEventListener("input", () => {
     markCoreFieldEdited("slug");
-    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+    emitProjectFormEvent("boatyard.projectForm.coreFieldChanged", {
       field: "slug",
       value: slugInput.value,
       source: "user"
@@ -3697,7 +3697,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
   gitUrlInput.addEventListener("input", () => {
     markCoreFieldEdited("gitUrl");
-    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+    emitProjectFormEvent("boatyard.projectForm.coreFieldChanged", {
       field: "gitUrl",
       value: gitUrlInput.value,
       source: "user"
@@ -3710,7 +3710,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
   repoUrlInput.addEventListener("input", () => {
     markCoreFieldEdited("repoUrl");
-    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+    emitProjectFormEvent("boatyard.projectForm.coreFieldChanged", {
       field: "repoUrl",
       value: repoUrlInput.value,
       source: "user"
@@ -3719,7 +3719,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
   sourcePathInput.addEventListener("input", () => {
     markCoreFieldEdited("sourcePath");
-    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+    emitProjectFormEvent("boatyard.projectForm.coreFieldChanged", {
       field: "sourcePath",
       value: sourcePathInput.value,
       source: "user"
@@ -3728,7 +3728,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
 
   devBranchInput.addEventListener("input", () => {
     markCoreFieldEdited("devBranch");
-    emitProjectFormEvent("dashtop.projectForm.coreFieldChanged", {
+    emitProjectFormEvent("boatyard.projectForm.coreFieldChanged", {
       field: "devBranch",
       value: devBranchInput.value,
       source: "user"
@@ -3756,7 +3756,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   async function applySourcePathInspection(sourcePath) {
     applySourcePathIdentity(sourcePath);
 
-    const inspected = await window.dashtop.inspectSourcePath(sourcePath);
+    const inspected = await window.boatyard.inspectSourcePath(sourcePath);
 
     if (inspected?.gitUrl) {
       setCoreFieldValue("gitUrl", inspected.gitUrl, { source: "inspection" });
@@ -3768,14 +3768,14 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       setCoreFieldValue("repoUrl", deriveRepoUrl(inspected.gitUrl), { ifUnedited: true, source: "inspection" });
     }
 
-    emitProjectFormEvent("dashtop.projectForm.sourcePathInspected", {
+    emitProjectFormEvent("boatyard.projectForm.sourcePathInspected", {
       sourcePath,
       inspected
     });
   }
 
   function emitProjectFormEvent(eventName, payload) {
-    window.DashtopPluginRegistry?.emit(eventName, {
+    window.BoatyardPluginRegistry?.emit(eventName, {
       ...payload,
       projectId: initialValues.id || "",
       forPlugin: (pluginId) => ({
@@ -3970,7 +3970,7 @@ function createProjectPluginSettingsControls(initialValues = {}, options = {}) {
       input.name = field.key;
       input.type = field.type || "text";
       input.autocomplete = "off";
-      const defaultValue = window.DashtopPluginSettingsFields.resolveFieldDefault(field, {
+      const defaultValue = window.BoatyardPluginSettingsFields.resolveFieldDefault(field, {
         project: initialValues,
         coreFields: options.readCoreProjectFields?.() || {}
       });
@@ -4332,7 +4332,7 @@ function createProjectDangerZone({ project, onUnregister }) {
   headingTitle.textContent = "Danger zone";
 
   const headingCopy = document.createElement("p");
-  headingCopy.textContent = "Unregister this project from Dashtop without deleting files on disk.";
+  headingCopy.textContent = "Unregister this project from Boatyard without deleting files on disk.";
   heading.append(headingTitle, headingCopy);
 
   const form = document.createElement("form");
@@ -4414,7 +4414,7 @@ function renderCreateProjectPage() {
     initialValues: {},
     onCancel: () => restoreReturnView(),
     onSubmit: async (values) => {
-      state = await window.dashtop.addProject({
+      state = await window.boatyard.addProject({
         name: values.name,
         slug: values.slug,
         sourcePath: values.sourcePath,
@@ -4450,7 +4450,7 @@ function renderEditProjectPage(project) {
     initialValues: project,
     onCancel: () => selectProject(project.id),
     onSubmit: async (values) => {
-      state = await window.dashtop.updateProject(project.id, {
+      state = await window.boatyard.updateProject(project.id, {
         name: values.name,
         slug: values.slug,
         sourcePath: values.sourcePath,
@@ -4467,25 +4467,25 @@ function renderEditProjectPage(project) {
   }), createProjectTerminalSettingsForm({
     project,
     onSubmit: async (values) => {
-      state = await window.dashtop.updateProject(project.id, values);
+      state = await window.boatyard.updateProject(project.id, values);
       reloadProjectSettings(project.id);
     }
   }), createProjectUrlsForm({
     project,
     onSubmit: async (urls) => {
-      state = await window.dashtop.updateProject(project.id, { urls });
+      state = await window.boatyard.updateProject(project.id, { urls });
       reloadProjectSettings(project.id);
     }
   }), createProjectWidgetPanesForm({
     project,
     onSubmit: async (widgetPanes) => {
-      state = await window.dashtop.updateProject(project.id, { widgetPanes });
+      state = await window.boatyard.updateProject(project.id, { widgetPanes });
       reloadProjectSettings(project.id);
     }
   }), createProjectDangerZone({
     project,
     onUnregister: async () => {
-      state = await window.dashtop.removeProject(project.id);
+      state = await window.boatyard.removeProject(project.id);
       selectGlobal();
     }
   }));
@@ -4589,7 +4589,7 @@ function renderFrozenWebApps(captures) {
 
 async function freezeWebAppsForOverlay() {
   try {
-    const captures = await window.dashtop.freezeWebApps();
+    const captures = await window.boatyard.freezeWebApps();
     renderFrozenWebApps(captures);
   } catch (error) {
     console.error("Could not freeze webapps:", error);
@@ -4600,7 +4600,7 @@ async function restoreWebAppsAfterOverlay() {
   clearFrozenWebAppLayer();
 
   try {
-    await window.dashtop.restoreWebApps();
+    await window.boatyard.restoreWebApps();
   } catch (error) {
     console.error("Could not restore webapps:", error);
   }
@@ -4762,7 +4762,7 @@ async function reorderProjects(sourceId, targetId) {
   const reordered = [...projects];
   const [moved] = reordered.splice(sourceIndex, 1);
   reordered.splice(targetIndex, 0, moved);
-  state = await window.dashtop.reorderProjects(reordered.map((project) => project.id));
+  state = await window.boatyard.reorderProjects(reordered.map((project) => project.id));
   render();
 }
 
@@ -4786,8 +4786,8 @@ function render() {
 }
 
 async function loadState() {
-  state = await window.dashtop.getState();
-  window.DashtopPluginRegistry?.applyEnabledState(getPluginEnabledState());
+  state = await window.boatyard.getState();
+  window.BoatyardPluginRegistry?.applyEnabledState(getPluginEnabledState());
   currentWebAppUrlsByKey.clear();
   for (const [key, webApp] of Object.entries(state.webApps || {})) {
     if (webApp.url) {
@@ -4800,7 +4800,7 @@ async function loadState() {
   render();
 }
 
-window.dashtop.onWebAppUrlChanged(({ key, url }) => {
+window.boatyard.onWebAppUrlChanged(({ key, url }) => {
   if (!key || !url) {
     return;
   }
@@ -4813,13 +4813,13 @@ window.dashtop.onWebAppUrlChanged(({ key, url }) => {
   }
 });
 
-window.dashtop.onTerminalData(({ terminalId, data }) => {
+window.boatyard.onTerminalData(({ terminalId, data }) => {
   const session = terminalWidgetsByTerminal.get(terminalId);
   session?.term.write(data);
   scheduleTerminalTabSync(terminalId);
 });
 
-window.dashtop.onTerminalExit(({ terminalId, projectId, windowId }) => {
+window.boatyard.onTerminalExit(({ terminalId, projectId, windowId }) => {
   const session = terminalWidgetsByTerminal.get(terminalId);
   if (!session) {
     return;
@@ -4850,13 +4850,13 @@ window.dashtop.onTerminalExit(({ terminalId, projectId, windowId }) => {
   });
 });
 
-window.addEventListener("dashtop:plugin-status-changed", () => {
+window.addEventListener("boatyard:plugin-status-changed", () => {
   if (currentView === "global-settings") {
     renderGlobalSettingsPage();
   }
 });
 
-window.addEventListener("dashtop:project-nav-badges-changed", renderProjectList);
+window.addEventListener("boatyard:project-nav-badges-changed", renderProjectList);
 
 globalNav.addEventListener("click", selectGlobal);
 globalSettingsButton.addEventListener("click", selectGlobalSettings);

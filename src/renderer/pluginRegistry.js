@@ -60,7 +60,7 @@
     statuses.set(pluginId, status);
 
     if (typeof globalScope.dispatchEvent === "function" && typeof globalScope.CustomEvent === "function") {
-      globalScope.dispatchEvent(new globalScope.CustomEvent("dashtop:plugin-status-changed", {
+      globalScope.dispatchEvent(new globalScope.CustomEvent("boatyard:plugin-status-changed", {
         detail: {
           pluginId,
           status
@@ -233,13 +233,13 @@
       }),
       widgets: Object.freeze({
         register(definition) {
-          if (!globalScope.DashtopWidgetRegistry) {
+          if (!globalScope.BoatyardWidgetRegistry) {
             throw new Error("Widget registry is unavailable.");
           }
 
           const widgetId = requireId(definition?.id, "Widget");
           requireNamespacedContributionId(pluginId, widgetId, "Widget");
-          const registered = globalScope.DashtopWidgetRegistry.register({
+          const registered = globalScope.BoatyardWidgetRegistry.register({
             ...definition,
             provider: manifest.name,
             pluginId
@@ -346,9 +346,9 @@
       }
     }
 
-    if (globalScope.DashtopWidgetRegistry) {
+    if (globalScope.BoatyardWidgetRegistry) {
       for (const widgetId of widgetsByPlugin.get(pluginId) || []) {
-        globalScope.DashtopWidgetRegistry.unregister(widgetId);
+        globalScope.BoatyardWidgetRegistry.unregister(widgetId);
       }
     }
     widgetsByPlugin.delete(pluginId);
@@ -533,7 +533,7 @@
     return statuses.get(String(pluginId || "")) || null;
   }
 
-  globalScope.DashtopPluginRegistry = Object.freeze({
+  globalScope.BoatyardPluginRegistry = Object.freeze({
     register,
     list,
     setEnabled,

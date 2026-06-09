@@ -16,7 +16,7 @@ function createRegistry() {
   };
   vm.createContext(context);
   vm.runInContext(source, context);
-  return context.window.DashtopWidgetRegistry;
+  return context.window.BoatyardWidgetRegistry;
 }
 
 function plain(value) {

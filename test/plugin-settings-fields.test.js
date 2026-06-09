@@ -11,13 +11,13 @@ test("plugin settings fields persist dynamic defaults when user value is empty",
   const input = {
     value: "",
     dataset: {
-      defaultValue: "dashtop:main"
+      defaultValue: "boatyard:main"
     }
   };
 
   assert.equal(
     readFieldValue({ key: "hawserMainSession", label: "Hawser main session" }, input),
-    "dashtop:main"
+    "boatyard:main"
   );
 });
 
@@ -25,7 +25,7 @@ test("plugin settings fields keep explicit user values over dynamic defaults", (
   const input = {
     value: "custom:session",
     dataset: {
-      defaultValue: "dashtop:main"
+      defaultValue: "boatyard:main"
     }
   };
 
@@ -43,11 +43,11 @@ test("plugin settings fields resolve function defaults from context", () => {
       }
     }, {
       project: {
-        slug: "dashtop",
+        slug: "boatyard",
         devBranch: "feature"
       }
     }),
-    "dashtop:feature"
+    "boatyard:feature"
   );
 });
 

@@ -1,7 +1,7 @@
 "use strict";
 
 (function registerHawserPlugin(globalScope) {
-  const registry = globalScope.DashtopPluginRegistry;
+  const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
   const DEFAULT_HAWSER_WEB_URL = "http://localhost:60082";
   const HAWSER_INSTALL_COMMAND = "bash <(curl -fsSL https://raw.githubusercontent.com/dguerizec/hawser/main/install.sh) && hawser service install";
@@ -35,7 +35,7 @@
   }
 
   function addTwiccSessionUrls(project, data, options = {}) {
-    const twicc = registry.getService("dashtop.twicc.api");
+    const twicc = registry.getService("boatyard.twicc.api");
     if (!twicc || !Array.isArray(data?.messages)) {
       return data;
     }
@@ -60,7 +60,7 @@
       getMainSession: resolveMainSession,
       getProjectUrl: resolveProjectUrl,
       async getWidgetData(project, options = {}) {
-        const data = await globalScope.dashtop.getHawserWidgetDataForConfig(
+        const data = await globalScope.boatyard.getHawserWidgetDataForConfig(
           project.id,
           {
             hawserMainSession: resolveMainSession(project, options)
@@ -76,7 +76,7 @@
   }
 
   async function refreshHawserStatus(ctx, globalConfig = {}) {
-    if (typeof globalScope.dashtop.getHawserStatusForConfig !== "function") {
+    if (typeof globalScope.boatyard.getHawserStatusForConfig !== "function") {
       ctx.status.set({
         state: "degraded",
         summary: "Hawser status probe is unavailable."
@@ -85,7 +85,7 @@
     }
 
     try {
-      ctx.status.set(await globalScope.dashtop.getHawserStatusForConfig(globalConfig));
+      ctx.status.set(await globalScope.boatyard.getHawserStatusForConfig(globalConfig));
     } catch (error) {
       ctx.status.set({
         state: "unavailable",
@@ -106,16 +106,16 @@
 
   registry.register(
     {
-      id: "dashtop.hawser",
+      id: "boatyard.hawser",
       name: "Hawser",
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
-        widgets: ["dashtop.hawser.inbox"],
-        panes: ["dashtop.hawser.pane"],
-        globalSettings: ["dashtop.hawser.global"],
-        projectSettings: ["dashtop.hawser.project"],
-        services: ["dashtop.hawser.api"]
+        widgets: ["boatyard.hawser.inbox"],
+        panes: ["boatyard.hawser.pane"],
+        globalSettings: ["boatyard.hawser.global"],
+        projectSettings: ["boatyard.hawser.project"],
+        services: ["boatyard.hawser.api"]
       },
       permissions: [
         "projectConfig:read",
@@ -127,9 +127,9 @@
     {
       activate(ctx) {
         const hawserService = createHawserService();
-        ctx.services.provide("dashtop.hawser.api", hawserService);
-        ctx.events.on("dashtop.projectForm.coreFieldChanged", syncMainSessionField);
-        ctx.events.on("dashtop.globalSettings.opened", (event) => {
+        ctx.services.provide("boatyard.hawser.api", hawserService);
+        ctx.events.on("boatyard.projectForm.coreFieldChanged", syncMainSessionField);
+        ctx.events.on("boatyard.globalSettings.opened", (event) => {
           refreshHawserStatus(ctx, event.globalConfig || {});
         });
 
@@ -140,7 +140,7 @@
         refreshHawserStatus(ctx);
 
         ctx.settings.registerGlobalSection({
-          id: "dashtop.hawser.global",
+          id: "boatyard.hawser.global",
           title: "Hawser",
           fields: [
             {
@@ -171,7 +171,7 @@
                 hidden: false,
                 async run({ fields }) {
                   const command = fields.getValue("hawserInstallCommand") || HAWSER_INSTALL_COMMAND;
-                  await globalScope.dashtop.writeClipboardText(command);
+                  await globalScope.boatyard.writeClipboardText(command);
                   fields.setActionMessage("hawserInstallCommand", "Install command copied.");
                 }
               }
@@ -180,7 +180,7 @@
         });
 
         ctx.settings.registerProjectSection({
-          id: "dashtop.hawser.project",
+          id: "boatyard.hawser.project",
           title: "Hawser",
           fields: [
             {
@@ -207,7 +207,7 @@
         });
 
         ctx.panes.register({
-          id: "dashtop.hawser.pane",
+          id: "boatyard.hawser.pane",
           webAppId: "hawser",
           key: "hawser",
           title: "Hawser",
@@ -219,7 +219,7 @@
         });
 
         ctx.widgets.register({
-          id: "dashtop.hawser.inbox",
+          id: "boatyard.hawser.inbox",
           name: "Hawser",
           title: "Hawser",
           scope: "project",
@@ -232,7 +232,7 @@
             min: { columns: 3, rows: 3 }
           },
           createElement(project, props = {}) {
-            return globalScope.DashtopHawserUI.createWidget(project, {
+            return globalScope.BoatyardHawserUI.createWidget(project, {
               title: "Hawser",
               subtitle: hawserService.getMainSession(project, {
                 pluginConfig: props.pluginConfig
@@ -240,11 +240,11 @@
               loadData: () => hawserService.getWidgetData(project, {
                 pluginConfig: props.pluginConfig,
                 globalPluginConfig: props.globalPluginConfig,
-                twiccProjectConfig: props.allProjectPluginConfig?.["dashtop.twicc"] || {}
+                twiccProjectConfig: props.allProjectPluginConfig?.["boatyard.twicc"] || {}
               }),
               onOpenMessage(message) {
                 if (message.twiccSessionUrl) {
-                  globalScope.DashtopPaneNavigation.openProjectWebApp(project.id, "hawser", message.twiccSessionUrl);
+                  globalScope.BoatyardPaneNavigation.openProjectWebApp(project.id, "hawser", message.twiccSessionUrl);
                 }
               }
             });

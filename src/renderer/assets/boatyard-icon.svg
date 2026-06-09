@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Boatyard icon">
+  <defs>
+    <linearGradient id="water" x1="64" y1="116" x2="448" y2="438" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#12324a"/>
+      <stop offset="1" stop-color="#0f1c24"/>
+    </linearGradient>
+    <linearGradient id="hull" x1="128" y1="156" x2="392" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f4b942"/>
+      <stop offset="1" stop-color="#41b883"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="84" fill="#101418"/>
+  <path d="M74 334c42 18 83 18 124 0s82-18 124 0 84 18 126 0v74H74z" fill="url(#water)"/>
+  <path d="M134 286h244l-42 70H176z" fill="url(#hull)"/>
+  <path d="M196 286l42-132h96l42 132z" fill="#f5f0df"/>
+  <path d="M238 154v132M334 154v132" stroke="#101418" stroke-opacity="0.24" stroke-width="10"/>
+  <path d="M126 286h260" stroke="#ffffff" stroke-opacity="0.24" stroke-width="10" stroke-linecap="round"/>
+  <path d="M92 376c38 14 76 14 114 0s76-14 114 0 76 14 114 0" fill="none" stroke="#41b883" stroke-opacity="0.55" stroke-width="18" stroke-linecap="round"/>
+</svg>

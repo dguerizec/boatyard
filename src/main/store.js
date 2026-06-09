@@ -21,8 +21,8 @@ const DEFAULT_WINDOW_BOUNDS = {
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const LEGACY_WIDGET_IDS = new Map([
-  ["project-preview", "dashtop.pier.urls"],
-  ["pier-urls", "dashtop.pier.urls"]
+  ["project-preview", "boatyard.pier.urls"],
+  ["pier-urls", "boatyard.pier.urls"]
 ]);
 
 function createDefaultState() {
@@ -555,11 +555,11 @@ function normalizePluginConfig(pluginConfig = {}, projects = [], { migrateLegacy
         continue;
       }
 
-      const pierConfig = normalized.projects[project.id]?.["dashtop.pier"] || {};
+      const pierConfig = normalized.projects[project.id]?.["boatyard.pier"] || {};
       if (!normalizeText(pierConfig.pierPreviewUrl)) {
         normalized.projects[project.id] = {
           ...(normalized.projects[project.id] || {}),
-          "dashtop.pier": {
+          "boatyard.pier": {
             ...pierConfig,
             pierPreviewUrl: project.previewUrl
           }
@@ -733,7 +733,7 @@ class ProjectStore {
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
-        console.warn(`Could not load Dashtop state: ${error.message}`);
+        console.warn(`Could not load Boatyard state: ${error.message}`);
       }
       this.state = createDefaultState();
     }

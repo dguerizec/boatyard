@@ -1,5 +1,5 @@
 [project]
-name = "dashtop"
+name = "boatyard"
 
 [runtime]
 kind = "codex"

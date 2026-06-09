@@ -24,7 +24,7 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
     console,
     URL,
     window: {
-      dashtop: {
+      boatyard: {
         openExternal: () => {},
         writeClipboardText: () => {},
         getHawserStatusForConfig: async () => ({
@@ -34,7 +34,7 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
         getHawserWidgetDataForConfig: async () => ({}),
         getTwiccProjectProcessStatuses: async () => twiccProjectProcessStatuses
       },
-      DashtopHawserUI: {
+      BoatyardHawserUI: {
         createWidget: () => ({})
       },
       setInterval: () => 0,
@@ -63,7 +63,7 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
     vm.runInContext(fs.readFileSync(path.join(__dirname, file), "utf8"), context);
   }
 
-  return context.window.DashtopPluginRegistry;
+  return context.window.BoatyardPluginRegistry;
 }
 
 function plain(value) {
@@ -75,12 +75,12 @@ test("Built-in plugins register Twicc, Pier, and Hawser contributions", () => {
 
   registry.applyEnabledState({});
 
-  assert.equal(registry.getService("dashtop.twicc.api").version, "0.1.0");
-  assert.equal(typeof registry.getService("dashtop.pier").listProjectWorkloads, "function");
-  assert.equal(registry.getService("dashtop.hawser.api").version, "0.1.0");
+  assert.equal(registry.getService("boatyard.twicc.api").version, "0.1.0");
+  assert.equal(typeof registry.getService("boatyard.pier").listProjectWorkloads, "function");
+  assert.equal(registry.getService("boatyard.hawser.api").version, "0.1.0");
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.id).sort()),
-    ["dashtop.hawser.pane", "dashtop.pier.preview", "dashtop.twicc.pane"]
+    ["boatyard.hawser.pane", "boatyard.pier.preview", "boatyard.twicc.pane"]
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.key).sort()),
@@ -88,11 +88,11 @@ test("Built-in plugins register Twicc, Pier, and Hawser contributions", () => {
   );
   assert.deepEqual(
     plain(registry.listProjectNavBadges().map((badge) => badge.id).sort()),
-    ["dashtop.twicc.projectStatus"]
+    ["boatyard.twicc.projectStatus"]
   );
   assert.deepEqual(
     plain(registry.listGlobalSettingsSections().map((section) => section.id).sort()),
-    ["dashtop.hawser.global", "dashtop.pier.global", "dashtop.twicc.global"]
+    ["boatyard.hawser.global", "boatyard.pier.global", "boatyard.twicc.global"]
   );
 });
 
@@ -102,12 +102,12 @@ test("Twicc service resolves session URLs from the configured project URL", () =
   registry.applyEnabledState({});
 
   assert.equal(
-    registry.getService("dashtop.twicc.api").getSessionUrl({}, "session-1", {
+    registry.getService("boatyard.twicc.api").getSessionUrl({}, "session-1", {
       pluginConfig: {
-        twiccProjectUrl: "http://localhost:3500/project/dashtop"
+        twiccProjectUrl: "http://localhost:3500/project/boatyard"
       }
     }),
-    "http://localhost:3500/project/dashtop/session/session-1"
+    "http://localhost:3500/project/boatyard/session/session-1"
   );
 });
 
@@ -119,10 +119,10 @@ test("Twicc project nav badge matches the configured Twicc project URL", async (
 
   const badge = registry
     .listProjectNavBadges()
-    .find((candidate) => candidate.id === "dashtop.twicc.projectStatus");
+    .find((candidate) => candidate.id === "boatyard.twicc.projectStatus");
   const element = badge.render({
     project: {
-      id: "dashtop-internal-id",
+      id: "boatyard-internal-id",
       name: "Project"
     },
     projectConfig: {
@@ -154,10 +154,10 @@ test("Twicc done project nav badge stays visible for the active project", async 
 
   const badge = registry
     .listProjectNavBadges()
-    .find((candidate) => candidate.id === "dashtop.twicc.projectStatus");
+    .find((candidate) => candidate.id === "boatyard.twicc.projectStatus");
   const input = {
     project: {
-      id: "dashtop-internal-id",
+      id: "boatyard-internal-id",
       name: "Project"
     },
     projectConfig: {
@@ -179,7 +179,7 @@ test("Hawser global settings expose a copyable install command", () => {
   registry.applyEnabledState({});
   const hawserSection = registry
     .listGlobalSettingsSections()
-    .find((section) => section.id === "dashtop.hawser.global");
+    .find((section) => section.id === "boatyard.hawser.global");
   const fields = Object.fromEntries(hawserSection.fields.map((field) => [field.key, field]));
 
   assert.equal(fields.hawserInstallCommand.persist, false);
@@ -194,7 +194,7 @@ test("Pier project settings derive defaults from project identity", () => {
   registry.applyEnabledState({});
   const pierSection = registry
     .listProjectSettingsSections()
-    .find((section) => section.id === "dashtop.pier.project");
+    .find((section) => section.id === "boatyard.pier.project");
   const fields = Object.fromEntries(pierSection.fields.map((field) => [field.key, field]));
 
   assert.equal(
@@ -211,16 +211,16 @@ test("Pier project settings derive defaults from project identity", () => {
   );
 
   const updatedDefaults = {};
-  registry.emit("dashtop.projectForm.coreFieldChanged", {
+  registry.emit("boatyard.projectForm.coreFieldChanged", {
     field: "devBranch",
     coreFields: {
-      slug: "DashTop",
+      slug: "Boatyard",
       devBranch: "release/MVP"
     },
     forPlugin: (pluginId) => ({
       fields: {
         setDefaultValue(key, value) {
-          if (pluginId === "dashtop.pier") {
+          if (pluginId === "boatyard.pier") {
             updatedDefaults[key] = value;
           }
         }
@@ -229,8 +229,8 @@ test("Pier project settings derive defaults from project identity", () => {
   });
 
   assert.deepEqual(updatedDefaults, {
-    pierProjectName: "dashtop",
-    pierPreviewUrl: "http://pier.test/#/projects/dashtop"
+    pierProjectName: "boatyard",
+    pierPreviewUrl: "http://pier.test/#/projects/boatyard"
   });
 });
 
@@ -240,7 +240,7 @@ test("Pier pane resolves the project dashboard URL", () => {
   registry.applyEnabledState({});
   const pane = registry
     .listPanes({ scope: "project", kind: "wcv" })
-    .find((candidate) => candidate.id === "dashtop.pier.preview");
+    .find((candidate) => candidate.id === "boatyard.pier.preview");
 
   assert.equal(
     pane.resolveUrl({
@@ -268,7 +268,9 @@ test("Pier pane resolves the project dashboard URL", () => {
   );
 });
 
-test("Pier service matches worktree projects inside the DashTop source path", async () => {
+test("Pier service matches worktree projects inside the Boatyard source path", async () => {
+  const sourcePath = "/workspace/sshadow";
+  const worktreePath = `${sourcePath}/worktrees/v1`;
   const registry = loadRendererPluginEnvironment(undefined, async (url) => {
     if (String(url).endsWith("/api/v1/projects")) {
       return {
@@ -276,7 +278,7 @@ test("Pier service matches worktree projects inside the DashTop source path", as
         json: async () => [
           {
             name: "sshadow",
-            repo_path: "/workspace/sshadow/worktrees/v1"
+            repo_path: worktreePath
           }
         ]
       };
@@ -296,7 +298,7 @@ test("Pier service matches worktree projects inside the DashTop source path", as
                 default: true
               }
             ],
-            worktree_path: "/workspace/sshadow/worktrees/v1"
+            worktree_path: worktreePath
           }
         ]
       };
@@ -306,10 +308,10 @@ test("Pier service matches worktree projects inside the DashTop source path", as
   });
 
   registry.applyEnabledState({});
-  const workloads = await registry.getService("dashtop.pier").listProjectWorkloads(
+  const workloads = await registry.getService("boatyard.pier").listProjectWorkloads(
     {
       slug: "sshadow",
-      sourcePath: "/workspace/sshadow"
+      sourcePath
     },
     {}
   );
@@ -319,7 +321,7 @@ test("Pier service matches worktree projects inside the DashTop source path", as
       project: "sshadow",
       slug: "v1",
       url: "http://v1.sshadow.test",
-      worktreePath: "/workspace/sshadow/worktrees/v1"
+      worktreePath
     }
   ]);
 });

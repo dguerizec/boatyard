@@ -34,7 +34,7 @@ test("normalizeUrl adds https and rejects unsupported schemes", () => {
 });
 
 test("normalizeSlug derives stable project slugs", () => {
-  assert.equal(normalizeSlug("", "DashTop App"), "dashtop-app");
+  assert.equal(normalizeSlug("", "Boatyard App"), "boatyard-app");
   assert.equal(normalizeSlug("Pier_Main", "Fallback"), "pier-main");
   assert.throws(() => normalizeSlug("", ""), /Slug is required/);
 });
@@ -49,15 +49,15 @@ test("deriveRepoUrl converts git remotes to browser urls", () => {
 test("normalizeProject derives project tool defaults", () => {
   assert.deepEqual(normalizeProject({
     id: "project-id",
-    name: "DashTop",
-    sourcePath: "/tmp/dashtop",
+    name: "Boatyard",
+    sourcePath: "/tmp/boatyard",
     gitUrl: "git@github.com:owner/repo.git",
     previewUrl: "localhost:5173"
   }), {
     id: "project-id",
-    slug: "dashtop",
-    name: "DashTop",
-    sourcePath: "/tmp/dashtop",
+    slug: "boatyard",
+    name: "Boatyard",
+    sourcePath: "/tmp/boatyard",
     gitUrl: "git@github.com:owner/repo.git",
     repoUrl: "https://github.com/owner/repo",
     devBranch: "",
@@ -81,8 +81,8 @@ test("normalizeProject derives project tool defaults", () => {
 test("normalizeProject keeps explicit repo urls", () => {
   assert.equal(normalizeProject({
     id: "project-id",
-    name: "DashTop",
-    sourcePath: "/tmp/dashtop",
+    name: "Boatyard",
+    sourcePath: "/tmp/boatyard",
     gitUrl: "git@github.com:owner/repo.git",
     repoUrl: "https://github.com/owner/repo/tree/main/src/renderer"
   }).repoUrl, "https://github.com/owner/repo/tree/main/src/renderer");
@@ -378,8 +378,8 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
     },
     locked: false
   }), {
-    order: ["project-summary", "project-shell", "dashtop.pier.urls"],
-    hidden: ["discord", "dashtop.pier.urls"],
+    order: ["project-summary", "project-shell", "boatyard.pier.urls"],
+    hidden: ["discord", "boatyard.pier.urls"],
     sizes: {
       "project-summary": {
         columns: 2,
@@ -389,7 +389,7 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         columns: 1,
         rows: 3
       },
-      "dashtop.pier.urls": {
+      "boatyard.pier.urls": {
         columns: 2,
         rows: 2
       }
@@ -403,7 +403,7 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         x: 0,
         y: 4
       },
-      "dashtop.pier.urls": {
+      "boatyard.pier.urls": {
         x: 1,
         y: 2
       }
@@ -465,7 +465,7 @@ test("normalizeWidgetLayouts drops invalid containers", () => {
 });
 
 test("ProjectStore persists configured projects", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -483,13 +483,13 @@ test("ProjectStore persists configured projects", () => {
   const reloaded = new ProjectStore(filePath);
   const reloadedState = reloaded.load();
   assert.deepEqual(reloadedState.projects, state.projects);
-  assert.deepEqual(reloadedState.pluginConfig.projects[state.projects[0].id]["dashtop.pier"], {
+  assert.deepEqual(reloadedState.pluginConfig.projects[state.projects[0].id]["boatyard.pier"], {
     pierPreviewUrl: "https://status.example.com/"
   });
 });
 
 test("ProjectStore persists window state", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -519,7 +519,7 @@ test("ProjectStore persists window state", () => {
 });
 
 test("ProjectStore persists global settings", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -546,27 +546,27 @@ test("ProjectStore persists global settings", () => {
 });
 
 test("ProjectStore persists disabled plugins", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
   store.load();
-  let state = store.updatePluginEnabled("dashtop.pier", false);
+  let state = store.updatePluginEnabled("boatyard.pier", false);
   assert.deepEqual(state.plugins.enabled, {
-    "dashtop.pier": false
+    "boatyard.pier": false
   });
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(reloaded.load().plugins.enabled, {
-    "dashtop.pier": false
+    "boatyard.pier": false
   });
 
-  state = reloaded.updatePluginEnabled("dashtop.pier", true);
+  state = reloaded.updatePluginEnabled("boatyard.pier", true);
   assert.deepEqual(state.plugins.enabled, {});
 });
 
 test("ProjectStore persists navigation and clears removed active projects", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -597,7 +597,7 @@ test("ProjectStore persists navigation and clears removed active projects", () =
 });
 
 test("ProjectStore persists webapp urls", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -620,7 +620,7 @@ test("ProjectStore persists webapp urls", () => {
 });
 
 test("ProjectStore persists pane layouts", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -650,7 +650,7 @@ test("ProjectStore persists pane layouts", () => {
 });
 
 test("ProjectStore persists widget layouts", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -702,7 +702,7 @@ test("ProjectStore persists widget layouts", () => {
 });
 
 test("ProjectStore persists terminal selections", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -729,7 +729,7 @@ test("ProjectStore persists terminal selections", () => {
 });
 
 test("ProjectStore migrates preview URLs into Pier plugin config", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   fs.writeFileSync(filePath, JSON.stringify({
     projects: [
@@ -746,13 +746,13 @@ test("ProjectStore migrates preview URLs into Pier plugin config", () => {
   const state = store.load();
 
   assert.equal(state.projects[0].previewUrl, "http://localhost:5173/");
-  assert.deepEqual(state.pluginConfig.projects["project-id"]["dashtop.pier"], {
+  assert.deepEqual(state.pluginConfig.projects["project-id"]["boatyard.pier"], {
     pierPreviewUrl: "http://localhost:5173/"
   });
 });
 
 test("ProjectStore persists and removes project plugin config", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -763,17 +763,17 @@ test("ProjectStore persists and removes project plugin config", () => {
   });
   const projectId = state.projects[0].id;
 
-  state = store.updateProjectPluginConfig(projectId, "dashtop.pier", {
+  state = store.updateProjectPluginConfig(projectId, "boatyard.pier", {
     pierPreviewUrl: "http://localhost:5173/"
   });
 
-  assert.deepEqual(state.pluginConfig.projects[projectId]["dashtop.pier"], {
+  assert.deepEqual(state.pluginConfig.projects[projectId]["boatyard.pier"], {
     pierPreviewUrl: "http://localhost:5173/"
   });
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(
-    reloaded.load().pluginConfig.projects[projectId]["dashtop.pier"],
+    reloaded.load().pluginConfig.projects[projectId]["boatyard.pier"],
     { pierPreviewUrl: "http://localhost:5173/" }
   );
 
@@ -782,28 +782,28 @@ test("ProjectStore persists and removes project plugin config", () => {
 });
 
 test("ProjectStore persists global plugin config", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
   store.load();
-  const state = store.updateGlobalPluginConfig("dashtop.pier", {
+  const state = store.updateGlobalPluginConfig("boatyard.pier", {
     baseUrl: "http://localhost:5173/"
   });
 
-  assert.deepEqual(state.pluginConfig.global["dashtop.pier"], {
+  assert.deepEqual(state.pluginConfig.global["boatyard.pier"], {
     baseUrl: "http://localhost:5173/"
   });
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(
-    reloaded.load().pluginConfig.global["dashtop.pier"],
+    reloaded.load().pluginConfig.global["boatyard.pier"],
     { baseUrl: "http://localhost:5173/" }
   );
 });
 
 test("ProjectStore does not rehydrate Pier config from legacy preview after load", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -816,7 +816,7 @@ test("ProjectStore does not rehydrate Pier config from legacy preview after load
   const projectId = state.projects[0].id;
   assert.equal(state.pluginConfig.projects[projectId], undefined);
 
-  state = store.updateProjectPluginConfig(projectId, "dashtop.pier", {
+  state = store.updateProjectPluginConfig(projectId, "boatyard.pier", {
     pierPreviewUrl: ""
   });
   assert.equal(state.pluginConfig.projects[projectId], undefined);
@@ -830,7 +830,7 @@ test("ProjectStore does not rehydrate Pier config from legacy preview after load
 });
 
 test("ProjectStore reorders projects", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -858,7 +858,7 @@ test("ProjectStore reorders projects", () => {
 });
 
 test("ProjectStore persists project updates and removals", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   const store = new ProjectStore(filePath);
 
@@ -905,7 +905,7 @@ test("ProjectStore persists project updates and removals", () => {
   const reloaded = new ProjectStore(filePath);
   const reloadedState = reloaded.load();
   assert.deepEqual(reloadedState.projects, moved.projects);
-  assert.deepEqual(reloadedState.pluginConfig.projects[id]["dashtop.pier"], {
+  assert.deepEqual(reloadedState.pluginConfig.projects[id]["boatyard.pier"], {
     pierPreviewUrl: "https://project.example.test/"
   });
 
@@ -918,7 +918,7 @@ test("ProjectStore persists project updates and removals", () => {
 });
 
 test("ProjectStore migrates legacy apps state to projects", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "dashtop-store-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   fs.writeFileSync(filePath, JSON.stringify({
     apps: [{

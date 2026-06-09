@@ -4,7 +4,7 @@ install:
 	npm install
 
 run:
-	DISPLAY=:0 DASHTOP_STATE_PATH=.dashtop-state.json npm start -- --no-sandbox
+	DISPLAY=:0 BOATYARD_STATE_PATH=.boatyard-state.json npm start -- --no-sandbox
 
 build:
 	npm run lint

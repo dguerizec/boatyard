@@ -10,24 +10,24 @@ const {
 } = require("../src/main/terminalService");
 
 test("slugifyTmuxName keeps tmux target names stable", () => {
-  assert.equal(slugifyTmuxName("DashTop Main"), "dashtop-main");
+  assert.equal(slugifyTmuxName("Boatyard Main"), "boatyard-main");
   assert.equal(slugifyTmuxName("feature/foo:bar"), "feature-foo-bar");
   assert.equal(slugifyTmuxName("", "fallback"), "fallback");
 });
 
 test("getProjectTmuxSessionName derives project session names", () => {
   assert.equal(getProjectTmuxSessionName({
-    slug: "dashtop"
-  }), "dashtop-dashtop");
+    slug: "boatyard"
+  }), "boatyard-boatyard");
   assert.equal(getProjectTmuxSessionName({
     name: "Project Name"
-  }), "dashtop-project-name");
+  }), "boatyard-project-name");
 });
 
 test("getTerminalClientSessionName derives per-terminal linked session names", () => {
   assert.equal(
-    getTerminalClientSessionName("dashtop-project-name", "12345678-90ab-cdef"),
-    "dashtop-project-name-client-12345678"
+    getTerminalClientSessionName("boatyard-project-name", "12345678-90ab-cdef"),
+    "boatyard-project-name-client-12345678"
   );
 });
 

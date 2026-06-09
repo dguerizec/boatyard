@@ -72,7 +72,7 @@
       category: normalizeText(definition.category || "General"),
       status,
       description: normalizeText(definition.description),
-      provider: normalizeText(definition.provider || "Dashtop"),
+      provider: normalizeText(definition.provider || "Boatyard"),
       layout: normalizeLayout(definition.layout),
       requires: Array.isArray(definition.requires) ? definition.requires : [],
     };
@@ -103,7 +103,7 @@
     return widgets.delete(String(id || ""));
   }
 
-  globalScope.DashtopWidgetRegistry = Object.freeze({
+  globalScope.BoatyardWidgetRegistry = Object.freeze({
     register,
     list,
     get,

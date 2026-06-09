@@ -32,7 +32,7 @@
     resolveFieldDefault
   });
 
-  globalScope.DashtopPluginSettingsFields = api;
+  globalScope.BoatyardPluginSettingsFields = api;
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

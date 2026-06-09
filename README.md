@@ -1,13 +1,13 @@
-# Dashtop
+# Boatyard
 
-Dashtop is an Electron project cockpit for dashboards, web tools, and local development workflows.
+Boatyard is an Electron project dock for dashboards, web tools, and local development workflows.
 
 It is organized around a global workspace, a project switcher, project-scoped widgets, and project-scoped webapp panes. The app intentionally stays closer to a dashboard/workbench than to a "desktop inside a desktop".
 
 ## Features
 
 - Register projects with source path, git/repository URLs, development branch, custom provider URLs, and named widget panes.
-- Reorder projects in the sidebar and unregister projects from Dashtop without deleting files on disk.
+- Reorder projects in the sidebar and unregister projects from Boatyard without deleting files on disk.
 - Persist app state across restarts, including the last active page, window bounds, widget pane layouts, pane splits, and loaded webapp URLs.
 - Open project webapps and widget grids in panes with navigation controls, editable URL bar for webapps, tab picker, split panes, close panes, and persisted pane layouts.
 - Manage a freeform widget grid with lock/unlock, drag-and-drop placement, resize handles, trash dropzone, and opt-in widget installation per project.
@@ -39,7 +39,7 @@ npm install
 npm run dev
 ```
 
-The app stores local state in Electron's user data directory as `dashtop-state.json` by default.
+The app stores local state in Electron's user data directory as `boatyard-state.json` by default.
 
 For local manual testing from this checkout, you can use:
 
@@ -47,7 +47,7 @@ For local manual testing from this checkout, you can use:
 make run
 ```
 
-`make run` sets `DASHTOP_STATE_PATH=.dashtop-state.json` so configured projects and layouts stay in the repository working directory. That state file is ignored by git.
+`make run` sets `BOATYARD_STATE_PATH=.boatyard-state.json` so configured projects and layouts stay in the repository working directory. That state file is ignored by git.
 
 ## Configuration
 
@@ -55,13 +55,13 @@ Most configuration is available inside the app:
 
 - Global settings: projects base path, presentation blur, password handling, plugin settings, and installed widgets.
 - Project settings: identity, source path, git/repository URLs, plugin settings, and additional project URLs.
-- Project danger zone: unregisters a project from Dashtop state only.
+- Project danger zone: unregisters a project from Boatyard state only.
 
-Set `DASHTOP_STATE_PATH` to force a specific state file.
+Set `BOATYARD_STATE_PATH` to force a specific state file.
 
 ## Packaging
 
-Dashtop uses `electron-builder` for local packaging.
+Boatyard uses `electron-builder` for local packaging.
 
 ```sh
 make package
@@ -77,7 +77,7 @@ make dist
 
 ## Plugin API
 
-Plugins are registered in the renderer through `window.DashtopPluginRegistry.register(manifest, runtime)`.
+Plugins are registered in the renderer through `window.BoatyardPluginRegistry.register(manifest, runtime)`.
 
 The manifest must provide a namespaced `id`, `name`, `version`, and `apiVersion`. Contribution ids must be prefixed by the plugin id. Runtime activation receives a `ctx` object with these capabilities:
 
@@ -86,7 +86,7 @@ The manifest must provide a namespaced `id`, `name`, `version`, and `apiVersion`
 - `ctx.widgets.register(definition)`: contributes one or more project widgets through the widget registry.
 - `ctx.settings.registerGlobalSection(section)`: contributes global plugin settings. Global settings are edited from the plugin card cog dialog.
 - `ctx.settings.registerProjectSection(section)`: contributes project plugin settings in the project settings form.
-- `ctx.services.provide(serviceId, implementation)`: exposes a namespaced service callable by Dashtop or other plugins through `DashtopPluginRegistry.getService`.
+- `ctx.services.provide(serviceId, implementation)`: exposes a namespaced service callable by Boatyard or other plugins through `BoatyardPluginRegistry.getService`.
 - `ctx.events.on(eventName, handler)`: listens to core or plugin events and is automatically cleaned up when the plugin is disabled or reloaded.
 
 Plugin settings fields currently support:
@@ -106,14 +106,14 @@ Project setting event payloads expose a scoped field API through `event.fields`:
 
 Core project form events currently emitted:
 
-- `dashtop.projectForm.coreFieldChanged`
-- `dashtop.projectForm.sourcePathInspected`
+- `boatyard.projectForm.coreFieldChanged`
+- `boatyard.projectForm.sourcePathInspected`
 
 Implemented built-in plugins:
 
-- `dashtop.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
-- `dashtop.twicc`: Twicc pane, global/project settings, project creation action, and service.
-- `dashtop.hawser`: Hawser pane, inbox widget, global/project settings, and service.
+- `boatyard.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
+- `boatyard.twicc`: Twicc pane, global/project settings, project creation action, and service.
+- `boatyard.hawser`: Hawser pane, inbox widget, global/project settings, and service.
 
 ## Development
 

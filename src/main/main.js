@@ -11,7 +11,7 @@ const { TerminalService } = require("./terminalService");
 const { createTwiccProject, inspectTwiccProject, loadTwiccProjectProcessStatuses } = require("./twiccService");
 
 const execFileAsync = promisify(execFile);
-const WEBAPP_SESSION_PARTITION = "persist:dashtop-webapps";
+const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 
 let mainWindow = null;
 let store = null;
@@ -24,11 +24,11 @@ let visibleWebAppKeys = new Set();
 let webAppsFrozen = false;
 
 function getStorePath() {
-  if (process.env.DASHTOP_STATE_PATH) {
-    return process.env.DASHTOP_STATE_PATH;
+  if (process.env.BOATYARD_STATE_PATH) {
+    return process.env.BOATYARD_STATE_PATH;
   }
 
-  return path.join(app.getPath("userData"), "dashtop-state.json");
+  return path.join(app.getPath("userData"), "boatyard-state.json");
 }
 
 function createMainWindow() {
@@ -38,8 +38,8 @@ function createMainWindow() {
     ...windowState.bounds,
     minWidth: 920,
     minHeight: 620,
-    title: "Dashtop",
-    icon: path.join(__dirname, "../renderer/assets/dashtop-icon.png"),
+    title: "Boatyard",
+    icon: path.join(__dirname, "../renderer/assets/boatyard-icon.png"),
     backgroundColor: "#101418",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -427,7 +427,7 @@ function registerIpcHandlers() {
       !passwordManager.getStatus().encryptionAvailable
     ) {
       throw new Error(
-        "Electron safeStorage is unavailable. On Linux, safeStorage depends on a secret storage backend available in the desktop session, typically gnome-libsecret or kwallet/kwallet5/kwallet6. Try launching Dashtop from your desktop session instead of a detached terminal, tmux, or headless environment."
+        "Electron safeStorage is unavailable. On Linux, safeStorage depends on a secret storage backend available in the desktop session, typically gnome-libsecret or kwallet/kwallet5/kwallet6. Try launching Boatyard from your desktop session instead of a detached terminal, tmux, or headless environment."
       );
     }
 
@@ -623,9 +623,9 @@ app.whenReady().then(() => {
         buttons: [isUpdate ? "Update password" : "Save password", "Cancel"],
         defaultId: 0,
         cancelId: 1,
-        title: "Dashtop password manager",
+        title: "Boatyard password manager",
         message: `${isUpdate ? "Update" : "Save"} password for ${origin}?`,
-        detail: `Username: ${username}\n\nDashtop stores this password encrypted for the current OS user. This is a minimal local password manager, not a hardened replacement for a dedicated password manager.`
+        detail: `Username: ${username}\n\nBoatyard stores this password encrypted for the current OS user. This is a minimal local password manager, not a hardened replacement for a dedicated password manager.`
       });
       return result.response === 0;
     }

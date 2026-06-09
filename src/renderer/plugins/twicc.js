@@ -1,7 +1,7 @@
 "use strict";
 
 (function registerTwiccPlugin(globalScope) {
-  const registry = globalScope.DashtopPluginRegistry;
+  const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_TWICC_URL = "http://localhost:3500";
   const TWICC_PROJECT_STATUS_REFRESH_MS = 5000;
   const TWICC_PROJECT_STATUS_LABELS = {
@@ -63,17 +63,17 @@
 
   function dispatchProjectBadgeChange() {
     if (typeof globalScope.dispatchEvent === "function" && typeof globalScope.CustomEvent === "function") {
-      globalScope.dispatchEvent(new globalScope.CustomEvent("dashtop:project-nav-badges-changed"));
+      globalScope.dispatchEvent(new globalScope.CustomEvent("boatyard:project-nav-badges-changed"));
     }
   }
 
   async function refreshProjectProcessStatuses() {
-    if (!globalScope.dashtop?.getTwiccProjectProcessStatuses) {
+    if (!globalScope.boatyard?.getTwiccProjectProcessStatuses) {
       return;
     }
 
     try {
-      const nextStatuses = await globalScope.dashtop.getTwiccProjectProcessStatuses();
+      const nextStatuses = await globalScope.boatyard.getTwiccProjectProcessStatuses();
       if (JSON.stringify(projectProcessStatuses) !== JSON.stringify(nextStatuses)) {
         projectProcessStatuses = nextStatuses;
         dispatchProjectBadgeChange();
@@ -84,7 +84,7 @@
   }
 
   function startProjectStatusRefresh() {
-    if (!globalScope.dashtop?.getTwiccProjectProcessStatuses) {
+    if (!globalScope.boatyard?.getTwiccProjectProcessStatuses) {
       return;
     }
 
@@ -138,7 +138,7 @@
       getSessionUrl: resolveSessionUrl,
       openProject(project, options = {}) {
         const url = resolveProjectUrl(project, options);
-        return url ? globalScope.dashtop.openExternal(url) : null;
+        return url ? globalScope.boatyard.openExternal(url) : null;
       }
     });
   }
@@ -169,16 +169,16 @@
 
   registry.register(
     {
-      id: "dashtop.twicc",
+      id: "boatyard.twicc",
       name: "Twicc",
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
-        panes: ["dashtop.twicc.pane"],
-        projectNavBadges: ["dashtop.twicc.projectStatus"],
-        globalSettings: ["dashtop.twicc.global"],
-        projectSettings: ["dashtop.twicc.project"],
-        services: ["dashtop.twicc.api"]
+        panes: ["boatyard.twicc.pane"],
+        projectNavBadges: ["boatyard.twicc.projectStatus"],
+        globalSettings: ["boatyard.twicc.global"],
+        projectSettings: ["boatyard.twicc.project"],
+        services: ["boatyard.twicc.api"]
       },
       permissions: [
         "projectConfig:read",
@@ -190,8 +190,8 @@
     {
       activate(ctx) {
         const twiccService = createTwiccService();
-        ctx.services.provide("dashtop.twicc.api", twiccService);
-        ctx.events.on("dashtop.projectForm.sourcePathInspected", syncProjectUrlField);
+        ctx.services.provide("boatyard.twicc.api", twiccService);
+        ctx.events.on("boatyard.projectForm.sourcePathInspected", syncProjectUrlField);
         startProjectStatusRefresh();
 
         ctx.status.set({
@@ -200,7 +200,7 @@
         });
 
         ctx.settings.registerGlobalSection({
-          id: "dashtop.twicc.global",
+          id: "boatyard.twicc.global",
           title: "Twicc",
           fields: [
             {
@@ -214,7 +214,7 @@
         });
 
         ctx.settings.registerProjectSection({
-          id: "dashtop.twicc.project",
+          id: "boatyard.twicc.project",
           title: "Twicc",
           fields: [
             {
@@ -233,7 +233,7 @@
                     throw new Error("Source path is required to create a TwiCC project.");
                   }
 
-                  const created = await globalScope.dashtop.createTwiccProject(sourcePath);
+                  const created = await globalScope.boatyard.createTwiccProject(sourcePath);
                   if (!created?.url) {
                     throw new Error("TwiCC project was created but no URL was returned.");
                   }
@@ -247,7 +247,7 @@
         });
 
         ctx.panes.register({
-          id: "dashtop.twicc.pane",
+          id: "boatyard.twicc.pane",
           webAppId: "twicc-plugin",
           key: "twicc-plugin",
           title: "Twicc",
@@ -259,7 +259,7 @@
         });
 
         ctx.projectNavBadges.register({
-          id: "dashtop.twicc.projectStatus",
+          id: "boatyard.twicc.projectStatus",
           render({ project, projectConfig }) {
             return createProjectStatusBadge(project, projectConfig);
           }
