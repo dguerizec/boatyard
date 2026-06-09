@@ -19,7 +19,7 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
       }
     ]
   }
-}) {
+}, mockFetch = async () => ({ ok: true, json: async () => [] })) {
   const context = {
     console,
     URL,
@@ -48,7 +48,7 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
         classList: { add() {}, remove() {} }
       })
     },
-    fetch: async () => ({ ok: true, json: async () => [] })
+    fetch: mockFetch
   };
   context.window.window = context.window;
   vm.createContext(context);
@@ -207,7 +207,7 @@ test("Pier project settings derive defaults from project identity", () => {
     resolveFieldDefault(fields.pierPreviewUrl, {
       project: { slug: "Jobo", devBranch: "feature/demo" }
     }),
-    "http://feature-demo.jobo.test/"
+    "http://pier.test/#/projects/jobo"
   );
 
   const updatedDefaults = {};
@@ -230,6 +230,96 @@ test("Pier project settings derive defaults from project identity", () => {
 
   assert.deepEqual(updatedDefaults, {
     pierProjectName: "dashtop",
-    pierPreviewUrl: "http://release-mvp.dashtop.test/"
+    pierPreviewUrl: "http://pier.test/#/projects/dashtop"
   });
+});
+
+test("Pier pane resolves the project dashboard URL", () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+  const pane = registry
+    .listPanes({ scope: "project", kind: "wcv" })
+    .find((candidate) => candidate.id === "dashtop.pier.preview");
+
+  assert.equal(
+    pane.resolveUrl({
+      project: { slug: "Sshadow" },
+      projectConfig: {},
+      globalPluginConfig: {}
+    }),
+    "http://pier.test/#/projects/sshadow"
+  );
+  assert.equal(
+    pane.resolveUrl({
+      project: { slug: "Sshadow" },
+      projectConfig: {},
+      globalPluginConfig: { pierUrl: "http://pier.internal/" }
+    }),
+    "http://pier.internal/#/projects/sshadow"
+  );
+  assert.equal(
+    pane.resolveUrl({
+      project: { slug: "Sshadow" },
+      projectConfig: { pierPreviewUrl: "http://custom.test/#/pier" },
+      globalPluginConfig: { pierUrl: "http://pier.internal/" }
+    }),
+    "http://custom.test/#/pier"
+  );
+});
+
+test("Pier service matches worktree projects inside the DashTop source path", async () => {
+  const registry = loadRendererPluginEnvironment(undefined, async (url) => {
+    if (String(url).endsWith("/api/v1/projects")) {
+      return {
+        ok: true,
+        json: async () => [
+          {
+            name: "sshadow",
+            repo_path: "/workspace/sshadow/worktrees/v1"
+          }
+        ]
+      };
+    }
+
+    if (String(url).endsWith("/api/v1/workloads")) {
+      return {
+        ok: true,
+        json: async () => [
+          {
+            project: "sshadow",
+            slug: "v1",
+            status: "running",
+            urls: [
+              {
+                url: "http://v1.sshadow.test",
+                default: true
+              }
+            ],
+            worktree_path: "/workspace/sshadow/worktrees/v1"
+          }
+        ]
+      };
+    }
+
+    throw new Error(`Unexpected URL ${url}`);
+  });
+
+  registry.applyEnabledState({});
+  const workloads = await registry.getService("dashtop.pier").listProjectWorkloads(
+    {
+      slug: "sshadow",
+      sourcePath: "/workspace/sshadow"
+    },
+    {}
+  );
+
+  assert.deepEqual(plain(workloads), [
+    {
+      project: "sshadow",
+      slug: "v1",
+      url: "http://v1.sshadow.test",
+      worktreePath: "/workspace/sshadow/worktrees/v1"
+    }
+  ]);
 });

@@ -1508,7 +1508,10 @@ function createProjectWidget(project, definition, layout, columnCount, widgetPan
     project,
     pluginConfig: definition.pluginId ? getProjectPluginConfig(project.id, definition.pluginId) : {},
     globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {},
-    allProjectPluginConfig: state.pluginConfig?.projects?.[project.id] || {}
+    allProjectPluginConfig: state.pluginConfig?.projects?.[project.id] || {},
+    openProjectWebApp(webAppId, url = "") {
+      return openProjectWebApp(project.id, webAppId, url);
+    }
   };
   const card = definition.createElement ? definition.createElement(project, props) : createCard(definition.create(project, props));
   const size = fitWidgetSizeToGrid(layout.sizes[definition.id], columnCount);
@@ -1887,7 +1890,11 @@ function getProjectWebApps(project, paneId) {
 
   for (const pluginPane of getPluginPaneDefinitions({ scope: "project", kind: "wcv" })) {
     const projectPluginConfig = getProjectPluginConfig(project.id, pluginPane.pluginId);
-    const url = pluginPane.resolveUrl({ project, projectConfig: projectPluginConfig });
+    const url = pluginPane.resolveUrl({
+      project,
+      projectConfig: projectPluginConfig,
+      globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId)
+    });
     if (!url) {
       continue;
     }

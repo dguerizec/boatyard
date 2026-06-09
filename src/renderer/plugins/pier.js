@@ -3,6 +3,7 @@
 (function registerPierPlugin(globalScope) {
   const registry = globalScope.DashtopPluginRegistry;
   const DEFAULT_PIER_API_URL = "http://127.0.0.1:60080";
+  const DEFAULT_PIER_URL = "http://pier.test";
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
@@ -14,6 +15,10 @@
 
   function normalizeApiUrl(value) {
     return String(value || DEFAULT_PIER_API_URL).replace(/\/+$/g, "");
+  }
+
+  function pathsOverlap(left, right) {
+    return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
   }
 
   function findPierProject(project, pierProjects, config = {}) {
@@ -30,7 +35,7 @@
     return pierProjects
       .filter((candidate) => {
         const repoPath = normalizePath(candidate.repo_path);
-        return repoPath && (sourcePath === repoPath || sourcePath.startsWith(`${repoPath}/`));
+        return repoPath && pathsOverlap(sourcePath, repoPath);
       })
       .sort((left, right) => normalizePath(right.repo_path).length - normalizePath(left.repo_path).length)[0] || null;
   }
@@ -52,10 +57,23 @@
     return normalizeHostnameLabel(project.slug);
   }
 
+  function getPierUrl(options = {}) {
+    return normalizeApiUrl(options.globalPluginConfig?.pierUrl || DEFAULT_PIER_URL);
+  }
+
   function getDefaultPreviewUrl(project = {}) {
     const projectName = getDefaultPierProjectName(project);
-    const branch = normalizeHostnameLabel(project.devBranch || "main");
-    return projectName && branch ? `http://${branch}.${projectName}.test/` : "";
+    return projectName ? `${getPierUrl()}/#/projects/${encodeURIComponent(projectName)}` : "";
+  }
+
+  function getPierPaneUrl(project = {}, options = {}) {
+    const configuredUrl = String(options.pluginConfig?.pierPreviewUrl || "").trim();
+    if (configuredUrl) {
+      return configuredUrl;
+    }
+
+    const projectName = String(options.pluginConfig?.pierProjectName || "").trim() || getDefaultPierProjectName(project);
+    return projectName ? `${getPierUrl(options)}/#/projects/${encodeURIComponent(projectName)}` : "";
   }
 
   function getPierApiUrl(options = {}) {
@@ -129,7 +147,11 @@
           }
         );
       },
-      openUrl(url) {
+      openUrl(url, options = {}) {
+        if (typeof options.openProjectWebApp === "function" && options.openProjectWebApp("pier", url)) {
+          return true;
+        }
+
         return globalScope.dashtop.openExternal(url);
       }
     });
@@ -163,7 +185,7 @@
     link.className = "pier-url-link";
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      service.openUrl(link.href);
+      service.openUrl(link.href, props);
     });
 
     const pathButton = document.createElement("button");
@@ -354,6 +376,13 @@
               type: "text",
               valueType: "url",
               placeholder: DEFAULT_PIER_API_URL
+            },
+            {
+              key: "pierUrl",
+              label: "Pier URL",
+              type: "text",
+              valueType: "url",
+              placeholder: DEFAULT_PIER_URL
             }
           ]
         });
@@ -364,10 +393,10 @@
           fields: [
             {
               key: "pierPreviewUrl",
-              label: "Preview URL override",
+              label: "Pier pane URL override",
               type: "text",
               valueType: "url",
-              placeholder: "http://main.project.test/",
+              placeholder: "http://pier.test/#/projects/project",
               defaultValue({ project }) {
                 return getDefaultPreviewUrl(project);
               }
@@ -391,8 +420,11 @@
           title: "Pier",
           kind: "wcv",
           scope: "project",
-          resolveUrl({ projectConfig }) {
-            return projectConfig.pierPreviewUrl || "";
+          resolveUrl({ project, projectConfig, globalPluginConfig }) {
+            return getPierPaneUrl(project, {
+              pluginConfig: projectConfig,
+              globalPluginConfig
+            });
           }
         });
 
