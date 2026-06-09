@@ -1,4 +1,4 @@
-.PHONY: build dist install package run
+.PHONY: build check dist install package run
 
 install:
 	npm install
@@ -6,12 +6,14 @@ install:
 run:
 	DISPLAY=:0 BOATYARD_STATE_PATH=.boatyard-state.json npm start -- --no-sandbox
 
-build:
+check:
 	npm run lint
 	npm test
 
-package: build
+build: check
 	npm run package
 
-dist: build
+package: build
+
+dist: check
 	npm run dist

@@ -64,10 +64,22 @@ Set `BOATYARD_STATE_PATH` to force a specific state file.
 Boatyard uses `electron-builder` for local packaging.
 
 ```sh
+make check
+```
+
+`make check` runs lint and tests.
+
+```sh
+make build
+```
+
+`make build` runs lint and tests, then creates an unpacked Linux app under `dist/linux-unpacked`.
+
+```sh
 make package
 ```
 
-`make package` runs lint and tests, then creates an unpacked Linux app under `dist/linux-unpacked`.
+`make package` is an alias for `make build`.
 
 ```sh
 make dist
