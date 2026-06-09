@@ -619,6 +619,35 @@ test("ProjectStore persists webapp urls", () => {
   );
 });
 
+test("ProjectStore persists global urls", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  const state = store.updateGlobalUrls([{
+    label: "Cloudflare",
+    url: "dash.cloudflare.com"
+  }, {
+    id: "ovh",
+    label: "OVH",
+    url: "https://www.ovhcloud.com/manager/"
+  }]);
+
+  assert.deepEqual(state.globalUrls, [{
+    id: "cloudflare",
+    label: "Cloudflare",
+    url: "https://dash.cloudflare.com/"
+  }, {
+    id: "ovh",
+    label: "OVH",
+    url: "https://www.ovhcloud.com/manager/"
+  }]);
+
+  const reloaded = new ProjectStore(filePath);
+  assert.deepEqual(reloaded.load().globalUrls, state.globalUrls);
+});
+
 test("ProjectStore persists pane layouts", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");

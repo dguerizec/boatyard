@@ -472,6 +472,10 @@ function registerIpcHandlers() {
     return store.updateProject(id, patch);
   });
 
+  ipcMain.handle("global-urls:update", (_event, urls) => {
+    return store.updateGlobalUrls(urls);
+  });
+
   ipcMain.handle("projects:reorder", (_event, projectIds) => {
     return store.reorderProjects(projectIds);
   });

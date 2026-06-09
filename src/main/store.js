@@ -53,6 +53,7 @@ function createDefaultState() {
       global: {},
       projects: {}
     },
+    globalUrls: [],
     paneLayouts: {},
     widgetLayouts: {},
     terminalSelections: {},
@@ -760,6 +761,7 @@ class ProjectStore {
         passwordVault: normalizePasswordVault(parsed.passwordVault),
         plugins: normalizePluginsState(parsed.plugins),
         pluginConfig: normalizePluginConfig(parsed.pluginConfig, normalizedProjects, { migrateLegacyPreview: true }),
+        globalUrls: normalizeProjectUrls(parsed.globalUrls),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
         terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, normalizedProjects),
@@ -830,6 +832,12 @@ class ProjectStore {
 
     this.save();
     return structuredClone(this.state.webApps[String(key)] || null);
+  }
+
+  updateGlobalUrls(urls) {
+    this.state.globalUrls = normalizeProjectUrls(urls);
+    this.save();
+    return this.getState();
   }
 
   getPasswordCredential(origin) {

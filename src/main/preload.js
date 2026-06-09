@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   getTwiccProjectProcessStatuses: () => ipcRenderer.invoke("twicc:project-process-statuses"),
   addProject: (project) => ipcRenderer.invoke("projects:add", project),
   updateProject: (id, patch) => ipcRenderer.invoke("projects:update", id, patch),
+  updateGlobalUrls: (urls) => ipcRenderer.invoke("global-urls:update", urls),
   reorderProjects: (ids) => ipcRenderer.invoke("projects:reorder", ids),
   removeProject: (id) => ipcRenderer.invoke("projects:remove", id),
   updatePluginEnabled: (pluginId, enabled) => ipcRenderer.invoke("plugins:enabled:update", pluginId, enabled),

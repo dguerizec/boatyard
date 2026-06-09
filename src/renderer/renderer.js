@@ -15,6 +15,7 @@ const workspaceSummary = document.querySelector("#workspace-summary");
 
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
+const GLOBAL_WORKSPACE_ID = "__global__";
 const WIDGET_GRID_MIN_COLUMN_WIDTH = 100;
 const WIDGET_GRID_MAX_COLUMN_WIDTH = 200;
 const WIDGET_GRID_ROW_HEIGHT = 84;
@@ -129,6 +130,24 @@ function getCurrentProject() {
 
 function getProjectById(projectId) {
   return getProjects().find((project) => project.id === projectId) || null;
+}
+
+function getGlobalWorkspace() {
+  return {
+    id: GLOBAL_WORKSPACE_ID,
+    name: "Global",
+    slug: "global",
+    urls: state.globalUrls || [],
+    widgetPanes: [{
+      id: DEFAULT_WIDGET_PANE_ID,
+      label: "Widgets"
+    }],
+    isGlobalWorkspace: true
+  };
+}
+
+function isGlobalWorkspace(project) {
+  return project?.isGlobalWorkspace === true || project?.id === GLOBAL_WORKSPACE_ID;
 }
 
 function getProjectPluginConfig(projectId, pluginId) {
@@ -1397,14 +1416,83 @@ function registerBuiltinProjectWidgets() {
   ].forEach((definition) => registry.register(definition));
 }
 
+function registerBuiltinGlobalWidgets() {
+  const registry = window.BoatyardWidgetRegistry;
+
+  if (!registry) {
+    throw new Error("Widget registry is unavailable.");
+  }
+
+  [
+    {
+      id: "global-projects",
+      name: "Projects",
+      title: "Projects",
+      scope: "global",
+      category: "Workspace",
+      status: "experimental",
+      description: "Configured projects in this workspace.",
+      layout: {
+        default: { columns: 2, rows: 2 },
+        min: { columns: 1, rows: 1 }
+      },
+      create: () => ({
+        eyebrow: "Projects",
+        title: String(getProjects().length),
+        body: "Configured projects in this workspace.",
+        meta: "Project switcher is the primary navigation."
+      })
+    },
+    {
+      id: "global-usage",
+      name: "Usage",
+      title: "Usage",
+      scope: "global",
+      category: "Operations",
+      status: "experimental",
+      description: "Global agent and API usage placeholder.",
+      layout: {
+        default: { columns: 2, rows: 2 },
+        min: { columns: 1, rows: 1 }
+      },
+      create: () => ({
+        eyebrow: "Usage",
+        title: "Usage",
+        body: "Placeholder for global agent and API usage.",
+        meta: "Runtime widget target"
+      })
+    },
+    {
+      id: "global-inbox",
+      name: "Inbox",
+      title: "Inbox",
+      scope: "global",
+      category: "Operations",
+      status: "experimental",
+      description: "Cross-project messages and active requests placeholder.",
+      layout: {
+        default: { columns: 2, rows: 2 },
+        min: { columns: 1, rows: 1 }
+      },
+      create: () => ({
+        eyebrow: "Inbox",
+        title: "Inbox",
+        body: "Placeholder for cross-project messages and active requests.",
+        meta: "Plugin widget target"
+      })
+    }
+  ].forEach((definition) => registry.register(definition));
+}
+
 registerBuiltinProjectWidgets();
+registerBuiltinGlobalWidgets();
 
 function getInstalledWidgets(filter = {}) {
   return window.BoatyardWidgetRegistry.list(filter);
 }
 
-function getProjectWidgetDefinitions() {
-  return getInstalledWidgets({ scope: "project" });
+function getProjectWidgetDefinitions(project = null) {
+  return getInstalledWidgets({ scope: isGlobalWorkspace(project) ? "global" : "project" });
 }
 
 function normalizeWidgetId(widgetId) {
@@ -1467,7 +1555,7 @@ function setWidgetPaneLayout(project, widgetPaneId, layout) {
 
 function normalizeWidgetLayoutForProject(project, columnCount = null, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const persisted = getPersistedWidgetPaneLayout(project, widgetPaneId);
-  const widgetDefinitions = getProjectWidgetDefinitions();
+  const widgetDefinitions = getProjectWidgetDefinitions(project);
   const knownIds = widgetDefinitions.map((definition) => definition.id);
   const knownIdSet = new Set(knownIds);
   const definitionsById = new Map(widgetDefinitions.map((definition) => [definition.id, definition]));
@@ -1728,15 +1816,15 @@ function getProjectWidgetLayout(project, columnCount = null, widgetPaneId = DEFA
   return layout;
 }
 
-function getOrderedWidgetDefinitions(layout) {
-  const definitionsById = new Map(getProjectWidgetDefinitions().map((definition) => [definition.id, definition]));
+function getOrderedWidgetDefinitions(project, layout) {
+  const definitionsById = new Map(getProjectWidgetDefinitions(project).map((definition) => [definition.id, definition]));
   return layout.order
     .map((id) => definitionsById.get(id))
     .filter(Boolean);
 }
 
-function getWidgetDefinition(widgetId) {
-  return getProjectWidgetDefinitions().find((definition) => definition.id === widgetId) || null;
+function getWidgetDefinition(project, widgetId) {
+  return getProjectWidgetDefinitions(project).find((definition) => definition.id === widgetId) || null;
 }
 
 function persistWidgetLayout(project) {
@@ -1751,6 +1839,22 @@ function persistWidgetLayout(project) {
   });
 }
 
+function renderWorkspaceDashboard(project) {
+  if (isGlobalWorkspace(project)) {
+    renderGlobalDashboard();
+  } else {
+    renderProjectDashboard(project);
+  }
+}
+
+function renderWorkspacePaneArea(project) {
+  if (isGlobalWorkspace(project)) {
+    renderGlobalPaneArea();
+  } else {
+    renderProjectPaneArea(project);
+  }
+}
+
 async function toggleWidgetLayoutLock(project, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   const layout = getProjectWidgetLayout(project, null, widgetPaneId);
   setWidgetPaneLayout(project, widgetPaneId, {
@@ -1758,11 +1862,11 @@ async function toggleWidgetLayoutLock(project, widgetPaneId = DEFAULT_WIDGET_PAN
     locked: !layout.locked
   });
   await persistWidgetLayout(project);
-  renderProjectDashboard(project);
+  renderWorkspaceDashboard(project);
 }
 
 async function removeProjectWidget(project, widgetId, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
-  const definition = getWidgetDefinition(widgetId);
+  const definition = getWidgetDefinition(project, widgetId);
 
   if (!definition) {
     return false;
@@ -1783,12 +1887,12 @@ async function removeProjectWidget(project, widgetId, columnCount, widgetPaneId 
     positions
   });
   await persistWidgetLayout(project);
-  renderProjectDashboard(project);
+  renderWorkspaceDashboard(project);
   return true;
 }
 
 async function addProjectWidget(project, widgetId, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
-  const definition = getWidgetDefinition(widgetId);
+  const definition = getWidgetDefinition(project, widgetId);
 
   if (!definition) {
     return false;
@@ -1818,7 +1922,7 @@ async function addProjectWidget(project, widgetId, columnCount, widgetPaneId = D
     positions
   });
   await persistWidgetLayout(project);
-  renderProjectDashboard(project);
+  renderWorkspaceDashboard(project);
   return true;
 }
 
@@ -1873,7 +1977,7 @@ function clearWidgetDropPreview(widgetRail) {
 }
 
 async function moveWidgetToGridPosition(project, widgetId, position, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
-  const definition = getWidgetDefinition(widgetId);
+  const definition = getWidgetDefinition(project, widgetId);
 
   if (!definition) {
     return false;
@@ -1901,7 +2005,7 @@ async function moveWidgetToGridPosition(project, widgetId, position, columnCount
     }
   });
   await persistWidgetLayout(project);
-  renderProjectDashboard(project);
+  renderWorkspaceDashboard(project);
   return true;
 }
 
@@ -1958,13 +2062,14 @@ function attachWidgetGridDropHandlers(widgetRail, project, columnCount, widgetPa
 }
 
 function createProjectWidget(project, definition, layout, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
+  const globalScope = isGlobalWorkspace(project);
   const props = {
     projectId: project.id,
     project,
     widgetPaneId,
-    pluginConfig: definition.pluginId ? getProjectPluginConfig(project.id, definition.pluginId) : {},
+    pluginConfig: definition.pluginId && !globalScope ? getProjectPluginConfig(project.id, definition.pluginId) : {},
     globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {},
-    allProjectPluginConfig: state.pluginConfig?.projects?.[project.id] || {},
+    allProjectPluginConfig: globalScope ? {} : state.pluginConfig?.projects?.[project.id] || {},
     openProjectWebApp(webAppId, url = "") {
       return openProjectWebApp(project.id, webAppId, url);
     }
@@ -2157,7 +2262,7 @@ function openWidgetAddMenuFromButton(button, project, layout, columnCount, widge
   closeWidgetAddMenu();
 
   const hiddenDefinitions = layout.hidden
-    .map((id) => getWidgetDefinition(id))
+    .map((id) => getWidgetDefinition(project, id))
     .filter(Boolean);
 
   if (!hiddenDefinitions.length) {
@@ -2335,7 +2440,7 @@ function getProjectWebApps(project, paneId) {
     widgetPane
   }));
 
-  if (project.sourcePath) {
+  if (!isGlobalWorkspace(project) && project.sourcePath) {
     webApps.push({
       id: "terminal",
       label: "Terminal",
@@ -2344,8 +2449,8 @@ function getProjectWebApps(project, paneId) {
     });
   }
 
-  for (const pluginPane of getPluginPaneDefinitions({ scope: "project", kind: "wcv" })) {
-    const projectPluginConfig = getProjectPluginConfig(project.id, pluginPane.pluginId);
+  for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "wcv" })) {
+    const projectPluginConfig = isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId);
     const url = pluginPane.resolveUrl({
       project,
       projectConfig: projectPluginConfig,
@@ -2363,7 +2468,7 @@ function getProjectWebApps(project, paneId) {
     });
   }
 
-  if (project.repoUrl) {
+  if (!isGlobalWorkspace(project) && project.repoUrl) {
     webApps.push({
       id: "repo",
       label: "Repo",
@@ -2375,7 +2480,7 @@ function getProjectWebApps(project, paneId) {
   for (const projectUrl of project.urls || []) {
     webApps.push({
       id: `url:${projectUrl.id}`,
-      label: `URL: ${projectUrl.label}`,
+      label: isGlobalWorkspace(project) ? projectUrl.label : `URL: ${projectUrl.label}`,
       key: `${paneId}:url:${projectUrl.id}`,
       url: projectUrl.url
     });
@@ -2444,7 +2549,7 @@ function selectWebApp(project, paneNode, webApp) {
   paneNode.selectedWebAppId = webApp.id;
   selectedWebAppByProject.set(project.id, webApp.id);
   persistPaneLayout(project);
-  renderProjectDashboard(project);
+  renderWorkspaceDashboard(project);
 }
 
 function findFirstPaneNode(node) {
@@ -2501,7 +2606,7 @@ function openProjectWebApp(projectId, webAppId, url = "") {
   }
 
   persistPaneLayout(project);
-  renderProjectPaneArea(project);
+  renderWorkspacePaneArea(project);
 
   if (url) {
     requestAnimationFrame(() => {
@@ -2529,7 +2634,7 @@ function createWidgetPaneSurface(project, widgetPane) {
   rail.style.setProperty("--widget-grid-row-height", `${WIDGET_GRID_ROW_HEIGHT}px`);
 
   rail.append(
-    ...getOrderedWidgetDefinitions(widgetLayout).map((definition) => (
+    ...getOrderedWidgetDefinitions(project, widgetLayout).map((definition) => (
       createProjectWidget(project, definition, widgetLayout, widgetGridColumns, widgetPane.id)
     ))
   );
@@ -2895,7 +3000,7 @@ function splitPane(project, paneId, direction) {
   paneLayoutsByProject.set(project.id, replacePaneNode(layout, paneId, replacement));
   selectedWebAppByPane.set(paneId, currentWebAppId);
   persistPaneLayout(project);
-  renderProjectDashboard(project);
+  renderWorkspaceDashboard(project);
 }
 
 function closePane(project, paneId) {
@@ -2913,7 +3018,7 @@ function closePane(project, paneId) {
   selectedWebAppByPane.delete(paneId);
   paneLayoutsByProject.set(project.id, result.node);
   persistPaneLayout(project);
-  renderProjectDashboard(project);
+  renderWorkspaceDashboard(project);
 }
 
 function createSplitResizer(project, splitNode) {
@@ -3049,44 +3154,41 @@ function hydratePaneLayoutSelections(node) {
 }
 
 function renderGlobalDashboard() {
-  const projects = getProjects();
+  const globalWorkspace = getGlobalWorkspace();
   closeWidgetAddMenu();
   visibleWebAppHosts = new Map();
-  invokeWebApp("hideWebApp");
-  workspace.classList.remove("project-mode");
+  workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Global";
   workspaceTitle.textContent = "System overview";
-  workspaceSummary.textContent = "Global widgets will collect usage, agents, assistants, and service health.";
+  workspaceSummary.textContent = "Global workspace for cross-project widgets and operations dashboards.";
   dashboardGrid.innerHTML = "";
-  dashboardGrid.className = "dashboard-grid";
+  dashboardGrid.className = "project-workbench";
   dashboardGrid.style.gridTemplateColumns = "";
 
-  dashboardGrid.append(
-    createCard({
-      eyebrow: "Projects",
-      title: String(projects.length),
-      body: "Configured projects in this workspace.",
-      meta: "Project switcher is the primary navigation."
-    }),
-    createCard({
-      eyebrow: "Usage",
-      title: "Usage",
-      body: "Placeholder for global agent and API usage.",
-      meta: "Runtime widget target"
-    }),
-    createCard({
-      eyebrow: "Agents",
-      title: "Agent config",
-      body: "Placeholder for Tars, Hermes, and agent settings.",
-      meta: "Global widget"
-    }),
-    createCard({
-      eyebrow: "Inbox",
-      title: "Inbox",
-      body: "Placeholder for cross-project messages and active requests.",
-      meta: "Plugin widget target"
-    })
-  );
+  dashboardGrid.append(createPaneLayout(globalWorkspace, getProjectPaneLayout(globalWorkspace)));
+}
+
+function renderGlobalPaneArea() {
+  if (
+    currentView !== "global" ||
+    !dashboardGrid.classList.contains("project-workbench")
+  ) {
+    renderGlobalDashboard();
+    return;
+  }
+
+  const globalWorkspace = getGlobalWorkspace();
+  closeWebAppTabMenu();
+  visibleWebAppHosts = new Map();
+  const paneLayoutElement = createPaneLayout(globalWorkspace, getProjectPaneLayout(globalWorkspace));
+  const currentPaneLayoutElement = dashboardGrid.lastElementChild;
+
+  if (!currentPaneLayoutElement) {
+    renderGlobalDashboard();
+    return;
+  }
+
+  currentPaneLayoutElement.replaceWith(paneLayoutElement);
 }
 
 function createGlobalProjectsSettingsForm({ settings, onSubmit }) {
@@ -3754,6 +3856,13 @@ function renderGlobalSettingsPage() {
     settings: getSettings(),
     onSubmit: async (values) => {
       state = await window.boatyard.updateSettings(values);
+      renderGlobalSettingsPage();
+    }
+  }), createGlobalUrlsSettingsForm({
+    onSubmit: async (urls) => {
+      state = await window.boatyard.updateGlobalUrls(urls);
+      hydratePaneLayouts();
+      hydrateWidgetLayouts();
       renderGlobalSettingsPage();
     }
   }), createGlobalPresentationSettingsForm({
@@ -4486,6 +4595,74 @@ function createProjectUrlsForm({ project, onSubmit }) {
   submitButton.className = "primary-button";
   submitButton.type = "submit";
   submitButton.textContent = "Save URLs";
+
+  actions.append(addButton, submitButton);
+  form.append(heading, list, error, actions);
+  applyFormControls(form);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit(readProjectUrlRows(list));
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  return shell;
+}
+
+function createGlobalUrlsSettingsForm({ onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Global URLs";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Add infrastructure and operations dashboards that should appear as Global webapp panes.";
+  heading.append(headingTitle, headingCopy);
+
+  const list = document.createElement("div");
+  list.className = "project-url-list";
+
+  for (const entry of state.globalUrls || []) {
+    list.append(createProjectUrlRow(entry));
+  }
+
+  if (list.children.length === 0) {
+    list.append(createProjectUrlRow());
+  }
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const addButton = document.createElement("button");
+  addButton.className = "secondary-button";
+  addButton.type = "button";
+  addButton.textContent = "Add URL";
+  addButton.addEventListener("click", () => list.append(createProjectUrlRow()));
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save global URLs";
 
   actions.append(addButton, submitButton);
   form.append(heading, list, error, actions);
