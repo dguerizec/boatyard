@@ -20,6 +20,7 @@ const DEFAULT_WINDOW_BOUNDS = {
 
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
+const GLOBAL_WORKSPACE_ID = "__global__";
 const LEGACY_WIDGET_IDS = new Map([
   ["project-preview", "boatyard.pier.urls"],
   ["pier-urls", "boatyard.pier.urls"]
@@ -331,6 +332,7 @@ function normalizeTerminalSelections(terminalSelections = {}, projects = []) {
   }
 
   const projectIds = new Set(projects.map((project) => project.id));
+  projectIds.add(GLOBAL_WORKSPACE_ID);
   const normalized = {};
 
   for (const [projectId, selections] of Object.entries(terminalSelections)) {
@@ -362,6 +364,7 @@ function normalizeTerminalTabOrders(terminalTabOrders = {}, projects = []) {
   }
 
   const projectIds = new Set(projects.map((project) => project.id));
+  projectIds.add(GLOBAL_WORKSPACE_ID);
   const normalized = {};
 
   for (const [projectId, windowIds] of Object.entries(terminalTabOrders)) {
@@ -900,7 +903,7 @@ class ProjectStore {
     const normalizedSurfaceKey = normalizeText(surfaceKey);
     const normalizedWindowId = normalizeText(windowId);
 
-    if (!this.state.projects.some((project) => project.id === normalizedProjectId)) {
+    if (normalizedProjectId !== GLOBAL_WORKSPACE_ID && !this.state.projects.some((project) => project.id === normalizedProjectId)) {
       throw new Error(`Unknown project: ${normalizedProjectId}`);
     }
 
@@ -929,7 +932,7 @@ class ProjectStore {
   updateTerminalTabOrder(projectId, windowIds) {
     const normalizedProjectId = normalizeText(projectId);
 
-    if (!this.state.projects.some((project) => project.id === normalizedProjectId)) {
+    if (normalizedProjectId !== GLOBAL_WORKSPACE_ID && !this.state.projects.some((project) => project.id === normalizedProjectId)) {
       throw new Error(`Unknown project: ${normalizedProjectId}`);
     }
 

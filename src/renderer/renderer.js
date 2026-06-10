@@ -1425,6 +1425,20 @@ function registerBuiltinGlobalWidgets() {
 
   [
     {
+      id: "global-shell",
+      name: "Terminal",
+      title: "Terminal",
+      scope: "global",
+      category: "Developer tools",
+      status: "experimental",
+      description: "Persistent multi-tab tmux terminal for global work.",
+      layout: {
+        default: { columns: 4, rows: 5 },
+        min: { columns: 2, rows: 3 }
+      },
+      createElement: (project, props) => createTerminalWidget(project, props)
+    },
+    {
       id: "global-projects",
       name: "Projects",
       title: "Projects",
@@ -2440,7 +2454,7 @@ function getProjectWebApps(project, paneId) {
     widgetPane
   }));
 
-  if (!isGlobalWorkspace(project) && project.sourcePath) {
+  if (isGlobalWorkspace(project) || project.sourcePath) {
     webApps.push({
       id: "terminal",
       label: "Terminal",

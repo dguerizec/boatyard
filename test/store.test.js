@@ -780,6 +780,24 @@ test("ProjectStore persists terminal tab order", () => {
   assert.equal(state.terminalTabOrders[projectId], undefined);
 });
 
+test("ProjectStore persists global terminal state", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  store.updateTerminalSelection("__global__", "pane:__global__:pane:1", "@2");
+  store.updateTerminalTabOrder("__global__", ["@3", "@1", "@2"]);
+
+  const reloaded = new ProjectStore(filePath);
+  const state = reloaded.load();
+
+  assert.deepEqual(state.terminalSelections.__global__, {
+    "pane:__global__:pane:1": "@2"
+  });
+  assert.deepEqual(state.terminalTabOrders.__global__, ["@3", "@1", "@2"]);
+});
+
 test("ProjectStore migrates preview URLs into Pier plugin config", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");

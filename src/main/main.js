@@ -639,7 +639,20 @@ app.whenReady().then(() => {
     }
   });
   terminalService = new TerminalService({
-    getProject: (projectId) => store.getState().projects.find((project) => project.id === projectId),
+    getProject: (projectId) => {
+      if (projectId === "__global__") {
+        const settings = store.getState().settings || {};
+        return {
+          id: "__global__",
+          name: "Global",
+          slug: "global",
+          sourcePath: settings.projectsBasePath || process.cwd(),
+          terminalEnv: ""
+        };
+      }
+
+      return store.getState().projects.find((project) => project.id === projectId);
+    },
     getSettings: () => store.getState().settings,
     sendToRenderer: (channel, payload) => {
       if (mainWindow && !mainWindow.webContents.isDestroyed()) {
