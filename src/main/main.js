@@ -233,13 +233,28 @@ function ensureWebAppView(key) {
       persistWebAppUrl(key, url);
     }
   });
+  view.webContents.on("dom-ready", () => {
+    const item = webAppViews.get(key);
+    view.webContents.send("webapp:autofill-enabled", item?.autofillEnabled !== false);
+  });
 
   mainWindow.contentView.addChildView(view);
   webAppViews.set(key, {
     view,
-    url: null
+    url: null,
+    autofillEnabled: true
   });
   return webAppViews.get(key);
+}
+
+function getWebAppForWebContents(webContents) {
+  for (const [key, item] of webAppViews) {
+    if (item.view.webContents.id === webContents.id) {
+      return { key, item };
+    }
+  }
+
+  return null;
 }
 
 function persistWebAppUrl(key, url) {
@@ -256,7 +271,7 @@ function persistWebAppUrl(key, url) {
   }
 }
 
-function showWebApp({ key, url, bounds }) {
+function showWebApp({ key, url, bounds, autofillEnabled }) {
   if (!key) {
     throw new Error("Webapp key is required.");
   }
@@ -269,6 +284,9 @@ function showWebApp({ key, url, bounds }) {
   }
 
   const webApp = ensureWebAppView(String(key));
+  if (typeof autofillEnabled === "boolean") {
+    webApp.autofillEnabled = autofillEnabled;
+  }
   webApp.view.setBounds(normalizeWebAppBounds(bounds));
   webApp.view.setVisible(!webAppsFrozen);
   activeWebAppKey = String(key);
@@ -339,6 +357,17 @@ function navigateWebApp(key, action, url) {
   }
 
   return false;
+}
+
+function updateWebAppAutofill(key, enabled) {
+  const webApp = webAppViews.get(String(key || ""));
+  if (!webApp || webApp.view.webContents.isDestroyed()) {
+    return false;
+  }
+
+  webApp.autofillEnabled = enabled !== false;
+  webApp.view.webContents.send("webapp:autofill-enabled", webApp.autofillEnabled);
+  return webApp.autofillEnabled;
 }
 
 function setVisibleWebApps(keys) {
@@ -575,7 +604,12 @@ function registerIpcHandlers() {
     return passwordManager.getStatus();
   });
 
-  ipcMain.handle("password-manager:get-credential", (_event, url) => {
+  ipcMain.handle("password-manager:get-credential", (event, url) => {
+    const webApp = getWebAppForWebContents(event.sender);
+    if (webApp?.item.autofillEnabled === false) {
+      return null;
+    }
+
     return passwordManager.getCredential(url);
   });
 
@@ -593,6 +627,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("webapp:navigate", (_event, key, action, url) => {
     return navigateWebApp(key, action, url);
+  });
+
+  ipcMain.handle("webapp:autofill:update", (_event, key, enabled) => {
+    return updateWebAppAutofill(key, enabled);
   });
 
   ipcMain.handle("webapp:set-visible", (_event, keys) => {

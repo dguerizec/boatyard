@@ -1673,6 +1673,11 @@ button {
   border-color: rgba(65, 184, 131, 0.65);
 }
 
+.webapp-tool-button.active {
+  border-color: rgba(65, 184, 131, 0.75);
+  color: var(--accent);
+}
+
 .webapp-tool-button.danger {
   color: #ffd7db;
 }

@@ -92,6 +92,7 @@ const widgetLayoutsByProject = new Map();
 const selectedWebAppByPane = new Map();
 const loadedWebAppKeys = new Set();
 const currentWebAppUrlsByKey = new Map();
+const webAppAutofillEnabledByKey = new Map();
 let visibleWebAppHosts = new Map();
 let webAppBoundsFrame = null;
 let nextPaneId = 1;
@@ -2589,6 +2590,24 @@ function invokeWebApp(action, ...payload) {
   });
 }
 
+function isWebAppAutofillEnabled(webApp) {
+  return webAppAutofillEnabledByKey.get(webApp.key) !== false;
+}
+
+function syncWebAppAutofillButton(button, enabled) {
+  button.classList.toggle("active", enabled);
+  button.setAttribute("aria-pressed", String(enabled));
+  button.title = enabled ? "Disable autofill" : "Enable autofill";
+  button.setAttribute("aria-label", button.title);
+}
+
+async function toggleWebAppAutofill(webApp, button) {
+  const enabled = !isWebAppAutofillEnabled(webApp);
+  webAppAutofillEnabledByKey.set(webApp.key, enabled);
+  syncWebAppAutofillButton(button, enabled);
+  await invokeWebApp("updateWebAppAutofill", webApp.key, enabled);
+}
+
 function getCurrentWebAppUrl(webApp) {
   return currentWebAppUrlsByKey.get(webApp.key) || webApp.url;
 }
@@ -2861,6 +2880,17 @@ function createWebAppPane(project, paneNode) {
     refreshButton.textContent = "↻";
     refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
 
+    const autofillButton = document.createElement("button");
+    autofillButton.className = "webapp-tool-button autofill";
+    autofillButton.type = "button";
+    autofillButton.textContent = "AF";
+    syncWebAppAutofillButton(autofillButton, isWebAppAutofillEnabled(selectedWebApp));
+    autofillButton.addEventListener("click", () => {
+      toggleWebAppAutofill(selectedWebApp, autofillButton).catch((error) => {
+        console.error("Could not update webapp autofill:", error);
+      });
+    });
+
     const activeUrl = document.createElement("input");
     activeUrl.className = "webapp-url";
     activeUrl.type = "text";
@@ -2887,7 +2917,7 @@ function createWebAppPane(project, paneNode) {
       }
     });
 
-    tabs.append(homeButton, backButton, forwardButton, refreshButton, activeUrl);
+    tabs.append(homeButton, backButton, forwardButton, refreshButton, autofillButton, activeUrl);
   }
 
   const actions = document.createElement("div");
@@ -5081,7 +5111,8 @@ async function syncWebAppView() {
     showCalls.push(invokeWebApp("showWebApp", {
       key: webApp.key,
       url: webApp.url,
-      bounds
+      bounds,
+      autofillEnabled: isWebAppAutofillEnabled(webApp)
     }));
   }
 

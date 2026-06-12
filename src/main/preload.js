@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   showWebApp: (webApp) => ipcRenderer.invoke("webapp:show", webApp),
   setWebAppBounds: (bounds) => ipcRenderer.invoke("webapp:set-bounds", bounds),
   navigateWebApp: (key, action, url) => ipcRenderer.invoke("webapp:navigate", key, action, url),
+  updateWebAppAutofill: (key, enabled) => ipcRenderer.invoke("webapp:autofill:update", key, enabled),
   setVisibleWebApps: (keys) => ipcRenderer.invoke("webapp:set-visible", keys),
   hideWebApp: () => ipcRenderer.invoke("webapp:hide"),
   freezeWebApps: () => ipcRenderer.invoke("webapp:freeze"),

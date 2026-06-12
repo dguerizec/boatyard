@@ -4,6 +4,7 @@ const { ipcRenderer } = require("electron");
 
 const PASSWORD_SELECTOR = 'input[type="password"]';
 const USERNAME_TYPES = new Set(["email", "text", "tel", "url"]);
+let autofillEnabled = true;
 
 function isUsernameInput(input, passwordInput = null) {
   if (!input || input === passwordInput || input.disabled || input.readOnly) {
@@ -73,6 +74,10 @@ function setInputValue(input, value) {
 }
 
 async function autofillCredential() {
+  if (!autofillEnabled) {
+    return;
+  }
+
   const loginFields = findLoginFields();
   if (!loginFields.usernameInput && !loginFields.passwordInput) {
     return;
@@ -171,6 +176,13 @@ function scheduleAutofill() {
     autofillCredential().catch(() => {});
   }, 250);
 }
+
+ipcRenderer.on("webapp:autofill-enabled", (_event, enabled) => {
+  autofillEnabled = enabled !== false;
+  if (autofillEnabled) {
+    scheduleAutofill();
+  }
+});
 
 window.addEventListener("DOMContentLoaded", () => {
   installSubmitCapture();
