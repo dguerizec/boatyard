@@ -1086,6 +1086,11 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
     window.boatyard.readTerminalSelection()
       .then((selection) => {
         if (selection) {
+          const session = terminalWidgetsBySurface.get(surfaceId);
+          if (!session?.terminalId) {
+            return;
+          }
+
           const now = Date.now();
           if (selection === lastMiddlePaste.text && now - lastMiddlePaste.time < 150) {
             return;
@@ -1095,7 +1100,9 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
             text: selection,
             time: now
           };
-          term.paste(selection);
+          session.term?.focus();
+          window.boatyard.writeTerminal(session.terminalId, selection);
+          scheduleTerminalTabSync(session.terminalId, /[\x04\r\n]/.test(selection) ? 3 : 0);
         }
       })
       .catch((error) => {
