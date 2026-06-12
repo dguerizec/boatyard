@@ -2598,13 +2598,20 @@ function invokeWebApp(action, ...payload) {
 }
 
 function isWebAppAutofillEnabled(webApp) {
-  return webAppAutofillEnabledByKey.get(webApp.key) !== false;
+  return webAppAutofillEnabledByKey.get(webApp.key) === true;
+}
+
+function isPasswordManagerEnabled() {
+  const settings = getSettings();
+  return settings.passwordManagerEnabled === true && settings.passwordManagerDisclaimerAccepted === true;
 }
 
 function syncWebAppAutofillButton(button, enabled) {
   button.classList.toggle("active", enabled);
   button.setAttribute("aria-pressed", String(enabled));
-  button.title = enabled ? "Disable autofill" : "Enable autofill";
+  button.title = enabled
+    ? "Saved login and password fill is enabled. Click to disable."
+    : "Enable one-time fill with the saved login and password.";
   button.setAttribute("aria-label", button.title);
 }
 
@@ -2887,16 +2894,19 @@ function createWebAppPane(project, paneNode) {
     refreshButton.textContent = "↻";
     refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
 
-    const autofillButton = document.createElement("button");
-    autofillButton.className = "webapp-tool-button autofill";
-    autofillButton.type = "button";
-    autofillButton.textContent = "AF";
-    syncWebAppAutofillButton(autofillButton, isWebAppAutofillEnabled(selectedWebApp));
-    autofillButton.addEventListener("click", () => {
-      toggleWebAppAutofill(selectedWebApp, autofillButton).catch((error) => {
-        console.error("Could not update webapp autofill:", error);
+    const autofillButton = isPasswordManagerEnabled() ? document.createElement("button") : null;
+    if (autofillButton) {
+      autofillButton.className = "webapp-tool-button autofill";
+      autofillButton.type = "button";
+      autofillButton.dataset.webappKey = selectedWebApp.key;
+      autofillButton.textContent = "AF";
+      syncWebAppAutofillButton(autofillButton, isWebAppAutofillEnabled(selectedWebApp));
+      autofillButton.addEventListener("click", () => {
+        toggleWebAppAutofill(selectedWebApp, autofillButton).catch((error) => {
+          console.error("Could not update webapp autofill:", error);
+        });
       });
-    });
+    }
 
     const activeUrl = document.createElement("input");
     activeUrl.className = "webapp-url";
@@ -2924,7 +2934,14 @@ function createWebAppPane(project, paneNode) {
       }
     });
 
-    tabs.append(homeButton, backButton, forwardButton, refreshButton, autofillButton, activeUrl);
+    tabs.append(
+      homeButton,
+      backButton,
+      forwardButton,
+      refreshButton,
+      ...(autofillButton ? [autofillButton] : []),
+      activeUrl
+    );
   }
 
   const actions = document.createElement("div");
@@ -5398,6 +5415,19 @@ window.boatyard.onWebAppUrlChanged(({ key, url }) => {
   for (const input of document.querySelectorAll(".webapp-url")) {
     if (input.dataset.webappKey === key && input !== document.activeElement) {
       input.value = url;
+    }
+  }
+});
+
+window.boatyard.onWebAppAutofillChanged?.(({ key, enabled }) => {
+  if (!key) {
+    return;
+  }
+
+  webAppAutofillEnabledByKey.set(key, enabled === true);
+  for (const button of document.querySelectorAll(".webapp-tool-button.autofill")) {
+    if (button.dataset.webappKey === key) {
+      syncWebAppAutofillButton(button, enabled === true);
     }
   }
 });

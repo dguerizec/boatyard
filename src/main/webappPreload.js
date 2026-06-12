@@ -4,7 +4,7 @@ const { ipcRenderer } = require("electron");
 
 const PASSWORD_SELECTOR = 'input[type="password"]';
 const USERNAME_TYPES = new Set(["email", "text", "tel", "url"]);
-let autofillEnabled = true;
+let autofillEnabled = false;
 
 function isUsernameInput(input, passwordInput = null) {
   if (!input || input === passwordInput || input.disabled || input.readOnly) {
@@ -88,15 +88,23 @@ async function autofillCredential() {
     return;
   }
 
+  let didAutofill = false;
   if (loginFields.usernameInput && loginFields.usernameInput.dataset.boatyardAutofilled !== "true") {
     setInputValue(loginFields.usernameInput, credential.username);
     loginFields.usernameInput.dataset.boatyardAutofilled = "true";
     setPendingUsername(credential.username);
+    didAutofill = true;
   }
 
   if (loginFields.passwordInput && loginFields.passwordInput.dataset.boatyardAutofilled !== "true") {
     setInputValue(loginFields.passwordInput, credential.password);
     loginFields.passwordInput.dataset.boatyardAutofilled = "true";
+    didAutofill = true;
+  }
+
+  if (didAutofill) {
+    autofillEnabled = false;
+    ipcRenderer.invoke("webapp:autofill-consumed").catch(() => {});
   }
 }
 
@@ -178,7 +186,7 @@ function scheduleAutofill() {
 }
 
 ipcRenderer.on("webapp:autofill-enabled", (_event, enabled) => {
-  autofillEnabled = enabled !== false;
+  autofillEnabled = enabled === true;
   if (autofillEnabled) {
     scheduleAutofill();
   }

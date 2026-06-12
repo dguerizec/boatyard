@@ -235,14 +235,14 @@ function ensureWebAppView(key) {
   });
   view.webContents.on("dom-ready", () => {
     const item = webAppViews.get(key);
-    view.webContents.send("webapp:autofill-enabled", item?.autofillEnabled !== false);
+    view.webContents.send("webapp:autofill-enabled", item?.autofillEnabled === true);
   });
 
   mainWindow.contentView.addChildView(view);
   webAppViews.set(key, {
     view,
     url: null,
-    autofillEnabled: true
+    autofillEnabled: false
   });
   return webAppViews.get(key);
 }
@@ -365,8 +365,14 @@ function updateWebAppAutofill(key, enabled) {
     return false;
   }
 
-  webApp.autofillEnabled = enabled !== false;
+  webApp.autofillEnabled = enabled === true;
   webApp.view.webContents.send("webapp:autofill-enabled", webApp.autofillEnabled);
+  if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+    mainWindow.webContents.send("webapp:autofill-changed", {
+      key: String(key),
+      enabled: webApp.autofillEnabled
+    });
+  }
   return webApp.autofillEnabled;
 }
 
@@ -631,6 +637,11 @@ function registerIpcHandlers() {
 
   ipcMain.handle("webapp:autofill:update", (_event, key, enabled) => {
     return updateWebAppAutofill(key, enabled);
+  });
+
+  ipcMain.handle("webapp:autofill-consumed", (event) => {
+    const webApp = getWebAppForWebContents(event.sender);
+    return webApp ? updateWebAppAutofill(webApp.key, false) : false;
   });
 
   ipcMain.handle("webapp:set-visible", (_event, keys) => {

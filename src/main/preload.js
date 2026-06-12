@@ -61,6 +61,11 @@ contextBridge.exposeInMainWorld("boatyard", {
     ipcRenderer.on("webapp:url-changed", listener);
     return () => ipcRenderer.removeListener("webapp:url-changed", listener);
   },
+  onWebAppAutofillChanged: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("webapp:autofill-changed", listener);
+    return () => ipcRenderer.removeListener("webapp:autofill-changed", listener);
+  },
   writeClipboardText: (text) => ipcRenderer.invoke("clipboard:write-text", text),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url)
 });
