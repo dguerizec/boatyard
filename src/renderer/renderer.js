@@ -651,20 +651,67 @@ function getPersistedTerminalWindowId(projectId, surfaceKey) {
   return state.terminalSelections?.[projectId]?.[surfaceKey] || null;
 }
 
+function rememberTerminalSelection(projectId, surfaceKey, windowId) {
+  const normalizedProjectId = String(projectId || "").trim();
+  const normalizedSurfaceKey = String(surfaceKey || "").trim();
+  const normalizedWindowId = String(windowId || "").trim();
+  if (!normalizedProjectId || !normalizedSurfaceKey) {
+    return;
+  }
+
+  state.terminalSelections = {
+    ...(state.terminalSelections || {})
+  };
+
+  if (!normalizedWindowId) {
+    if (state.terminalSelections[normalizedProjectId]) {
+      delete state.terminalSelections[normalizedProjectId][normalizedSurfaceKey];
+      if (!Object.keys(state.terminalSelections[normalizedProjectId]).length) {
+        delete state.terminalSelections[normalizedProjectId];
+      }
+    }
+    return;
+  }
+
+  state.terminalSelections[normalizedProjectId] = {
+    ...(state.terminalSelections[normalizedProjectId] || {}),
+    [normalizedSurfaceKey]: normalizedWindowId
+  };
+}
+
 function persistTerminalSelection(projectId, surfaceKey, windowId) {
   if (!surfaceKey || !window.boatyard.updateTerminalSelection) {
     return;
   }
 
-  window.boatyard.updateTerminalSelection(projectId, surfaceKey, windowId).catch((error) => {
-    console.error("Could not persist terminal selection:", error);
-  });
+  rememberTerminalSelection(projectId, surfaceKey, windowId);
+
+  window.boatyard.updateTerminalSelection(projectId, surfaceKey, windowId)
+    .then((selections) => {
+      if (!selections || typeof selections !== "object" || Array.isArray(selections)) {
+        return;
+      }
+
+      const normalizedProjectId = String(projectId || "").trim();
+      state.terminalSelections = {
+        ...(state.terminalSelections || {})
+      };
+      if (Object.keys(selections).length) {
+        state.terminalSelections[normalizedProjectId] = selections;
+      } else {
+        delete state.terminalSelections[normalizedProjectId];
+      }
+    })
+    .catch((error) => {
+      console.error("Could not persist terminal selection:", error);
+    });
 }
 
 async function selectTerminalTab(project, card, tab) {
   const session = getTerminalSurfaceSession(card);
   const pendingWindowId = card.dataset.pendingTerminalWindowId;
   if (session?.activeWindowId === tab.id) {
+    persistTerminalSelection(project.id, card.dataset.terminalStorageKey, tab.id);
     session.term?.focus();
     return;
   }
