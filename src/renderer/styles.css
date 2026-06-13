@@ -1739,6 +1739,55 @@ button {
   border-color: rgba(65, 184, 131, 0.65);
 }
 
+.widget-pane-tabs {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.widget-pane-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.widget-pane-tab {
+  max-width: 150px;
+  min-height: 28px;
+  flex: 0 1 auto;
+  padding: 0 9px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(15, 23, 32, 0.48);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-pane-tab:hover,
+.widget-pane-tab:focus-visible {
+  border-color: rgba(65, 184, 131, 0.58);
+  color: var(--text);
+  outline: none;
+}
+
+.widget-pane-tab[aria-selected="true"] {
+  border-color: rgba(65, 184, 131, 0.75);
+  background: rgba(65, 184, 131, 0.13);
+  color: var(--text);
+}
+
+.widget-pane-tab-editor {
+  color: var(--text);
+  background: rgba(7, 13, 18, 0.95);
+  border-color: rgba(65, 184, 131, 0.85);
+  outline: none;
+}
+
 .webapp-tab-picker {
   max-width: min(260px, 34vw);
   display: inline-flex;

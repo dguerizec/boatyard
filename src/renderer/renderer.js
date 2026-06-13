@@ -1606,6 +1606,15 @@ function getPersistedWidgetPaneLayout(project, widgetPaneId = DEFAULT_WIDGET_PAN
   return widgetPaneId === DEFAULT_WIDGET_PANE_ID ? persistedProjectLayout : {};
 }
 
+function hasPersistedWidgetPaneLayout(project, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
+  const persistedProjectLayout = widgetLayoutsByProject.get(project.id) || {};
+  if (persistedProjectLayout.panes && typeof persistedProjectLayout.panes === "object") {
+    return Boolean(persistedProjectLayout.panes[widgetPaneId]);
+  }
+
+  return widgetPaneId === DEFAULT_WIDGET_PANE_ID && Object.keys(persistedProjectLayout).length > 0;
+}
+
 function setWidgetPaneLayout(project, widgetPaneId, layout) {
   const persistedProjectLayout = widgetLayoutsByProject.get(project.id) || {};
   const panes = persistedProjectLayout.panes && typeof persistedProjectLayout.panes === "object"
@@ -1628,6 +1637,7 @@ function normalizeWidgetLayoutForProject(project, columnCount = null, widgetPane
   const knownIds = widgetDefinitions.map((definition) => definition.id);
   const knownIdSet = new Set(knownIds);
   const definitionsById = new Map(widgetDefinitions.map((definition) => [definition.id, definition]));
+  const startsEmpty = widgetPaneId !== DEFAULT_WIDGET_PANE_ID && !hasPersistedWidgetPaneLayout(project, widgetPaneId);
   const persistedOrderIdSet = new Set(Array.isArray(persisted.order)
     ? persisted.order.map(normalizeWidgetId).filter((id) => knownIdSet.has(id))
     : []);
@@ -1635,7 +1645,7 @@ function normalizeWidgetLayoutForProject(project, columnCount = null, widgetPane
     ? persisted.hidden
         .map(normalizeWidgetId)
         .filter((id, index, ids) => knownIdSet.has(id) && ids.indexOf(id) === index)
-    : [];
+    : startsEmpty ? [...knownIds] : [];
 
   for (const definition of widgetDefinitions) {
     if (
@@ -2646,6 +2656,98 @@ function selectWebApp(project, paneNode, webApp) {
   renderWorkspaceDashboard(project);
 }
 
+async function renameWidgetPane(project, widgetPane, nextLabel) {
+  const currentLabel = widgetPane.label || "Widgets";
+  const normalizedLabel = String(nextLabel || "").trim();
+  if (!normalizedLabel || normalizedLabel === currentLabel) {
+    return;
+  }
+
+  const widgetPanes = getProjectWidgetPanes(project).map((pane) => (
+    pane.id === widgetPane.id
+      ? { ...pane, label: normalizedLabel }
+      : pane
+  ));
+  state = await window.boatyard.updateProject(project.id, { widgetPanes });
+  renderWorkspaceDashboard(getProjectById(project.id) || project);
+}
+
+function editWidgetPaneLabel(project, widgetPane, button) {
+  const editor = document.createElement("input");
+  editor.className = "widget-pane-tab widget-pane-tab-editor";
+  editor.type = "text";
+  editor.value = widgetPane.label || "Widgets";
+  editor.setAttribute("aria-label", "Widget page name");
+
+  let finished = false;
+  const finish = async (shouldSave) => {
+    if (finished) {
+      return;
+    }
+    finished = true;
+
+    const nextLabel = editor.value;
+    editor.replaceWith(button);
+    if (!shouldSave) {
+      return;
+    }
+
+    try {
+      await renameWidgetPane(project, widgetPane, nextLabel);
+    } catch (error) {
+      console.error("Could not rename widget pane:", error);
+    }
+  };
+
+  editor.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      finish(true);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      finish(false);
+    }
+  });
+  editor.addEventListener("blur", () => finish(true));
+
+  button.replaceWith(editor);
+  editor.focus();
+  editor.select();
+}
+
+function createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps) {
+  const widgetWebApps = webApps.filter((webApp) => webApp.kind === "widgets");
+  const list = document.createElement("div");
+  list.className = "widget-pane-tabs";
+  list.setAttribute("role", "tablist");
+  list.setAttribute("aria-label", "Widget pages");
+
+  for (const webApp of widgetWebApps) {
+    const button = document.createElement("button");
+    button.className = "widget-pane-tab";
+    button.type = "button";
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-selected", String(webApp.id === selectedWebApp.id));
+    button.textContent = webApp.label;
+    button.addEventListener("click", () => {
+      if (webApp.id !== selectedWebApp.id) {
+        selectWebApp(project, paneNode, webApp);
+      }
+    });
+    if (!isGlobalWorkspace(project)) {
+      button.title = "Double-click to rename widget page";
+      button.addEventListener("dblclick", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        editWidgetPaneLabel(project, webApp.widgetPane, button);
+      });
+    }
+    list.append(button);
+  }
+
+  return list;
+}
+
 function findFirstPaneNode(node) {
   if (!node) {
     return null;
@@ -2847,7 +2949,7 @@ function createWebAppPane(project, paneNode) {
   tabPickerButton.setAttribute("aria-selected", "true");
   tabPickerButton.setAttribute("aria-haspopup", "menu");
   tabPickerButton.setAttribute("aria-expanded", "false");
-  tabPickerButton.textContent = selectedWebApp.label;
+  tabPickerButton.textContent = isWidgetPane ? "Widgets" : selectedWebApp.label;
   tabPickerButton.addEventListener("click", () => {
     const isOpen = Boolean(openWebAppTabMenu);
     tabPickerButton.setAttribute("aria-expanded", String(!isOpen));
@@ -2860,6 +2962,10 @@ function createWebAppPane(project, paneNode) {
   });
 
   tabs.append(tabPickerButton);
+
+  if (isWidgetPane) {
+    tabs.append(createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps));
+  }
 
   if (!isTerminalPane && !isWidgetPane) {
     const homeButton = document.createElement("button");
