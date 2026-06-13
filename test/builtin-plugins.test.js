@@ -58,7 +58,8 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
     "../src/renderer/pluginRegistry.js",
     "../src/renderer/plugins/twicc.js",
     "../src/renderer/plugins/pier.js",
-    "../src/renderer/plugins/hawser.js"
+    "../src/renderer/plugins/hawser.js",
+    "../src/renderer/plugins/colorPalette.js"
   ]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, file), "utf8"), context);
   }
@@ -70,7 +71,7 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-test("Built-in plugins register Twicc, Pier, and Hawser contributions", () => {
+test("Built-in plugins register project integrations and widgets", () => {
   const registry = loadRendererPluginEnvironment();
 
   registry.applyEnabledState({});
@@ -94,6 +95,8 @@ test("Built-in plugins register Twicc, Pier, and Hawser contributions", () => {
     plain(registry.listGlobalSettingsSections().map((section) => section.id).sort()),
     ["boatyard.hawser.global", "boatyard.pier.global", "boatyard.twicc.global"]
   );
+  const colorPalettePlugin = registry.list().find((plugin) => plugin.id === "boatyard.colorPalette");
+  assert.deepEqual(plain(colorPalettePlugin.contributes.widgets), ["boatyard.colorPalette.widget"]);
 });
 
 test("Twicc service resolves session URLs from the configured project URL", () => {
