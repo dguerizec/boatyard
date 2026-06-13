@@ -4,6 +4,9 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   addSessionRefsToMessages,
+  buildHawserProjectUrl,
+  createHawserProject,
+  findHawserProjectMatchForPath,
   getHawserStatus,
   getMessageSessionTarget,
   getTwiccSessionIdFromRefs,
@@ -11,6 +14,7 @@ const {
   isQueuedRemoteMessage,
   isRunningTask,
   normalizeMessage,
+  parseHawserProjectList,
   parseHawserProjectName,
   parseHawserSessionName,
   shouldShowWidgetMessage,
@@ -81,6 +85,57 @@ test("getHawserStatus asks for configuration when service rejects auth", async (
   assert.equal(status.state, "notConfigured");
   assert.equal(status.summary, "Hawser service is running. Configure the API token.");
   assert.equal(status.details.cliAvailable, true);
+});
+
+test("parseHawserProjectList reads registered projects", () => {
+  const projects = parseHawserProjectList(`
+boatyard                 -                /workspace/boatyard
+boatyard.dev-web         web              /workspace/boatyard.dev-web
+  `);
+
+  assert.deepEqual(projects, [
+    {
+      name: "boatyard",
+      workspace: "",
+      path: "/workspace/boatyard"
+    },
+    {
+      name: "boatyard.dev-web",
+      workspace: "web",
+      path: "/workspace/boatyard.dev-web"
+    }
+  ]);
+  assert.equal(
+    findHawserProjectMatchForPath(projects, "/workspace/boatyard.dev-web")?.project.name,
+    "boatyard.dev-web"
+  );
+});
+
+test("createHawserProject registers source path with runtime", async () => {
+  const calls = [];
+  const result = await createHawserProject("/workspace/app", "claude", {
+    execFileAsync: async (command, args, options = {}) => {
+      calls.push({ command, args, cwd: options.cwd });
+      if (args[0] === "list") {
+        return { stdout: "app - /workspace/app\n" };
+      }
+
+      return { stdout: "" };
+    }
+  });
+
+  assert.deepEqual(calls[0], {
+    command: "hawser",
+    args: ["init", "--here", "--runtime", "claude"],
+    cwd: "/workspace/app"
+  });
+  assert.deepEqual(calls[1], {
+    command: "hawser",
+    args: ["list"],
+    cwd: undefined
+  });
+  assert.equal(result.name, "app");
+  assert.equal(result.url, buildHawserProjectUrl("app"));
 });
 
 test("parseHawserSessionName derives the session from the configured main session", () => {

@@ -4,7 +4,7 @@ const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
-const { getHawserStatus, getHawserWidgetData } = require("./hawserService");
+const { createHawserProject, getHawserStatus, getHawserWidgetData, inspectHawserProject } = require("./hawserService");
 const { PasswordManager } = require("./passwordManager");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
@@ -122,12 +122,18 @@ async function readGitValue(sourcePath, args) {
 
 async function inspectSourcePath(sourcePath) {
   const gitUrl = await readGitValue(sourcePath, ["config", "--get", "remote.origin.url"]);
-  const twiccProject = await inspectTwiccProject(sourcePath, { execFileAsync });
+  const [twiccProject, hawserProject] = await Promise.all([
+    inspectTwiccProject(sourcePath, { execFileAsync }),
+    inspectHawserProject(sourcePath, { execFileAsync })
+  ]);
   return {
     gitUrl,
     repoUrl: deriveRepoUrl(gitUrl),
     twiccMatchType: twiccProject?.matchType || "",
-    twiccProjectUrl: twiccProject?.url || ""
+    twiccProjectUrl: twiccProject?.url || "",
+    hawserMatchType: hawserProject?.matchType || "",
+    hawserProjectName: hawserProject?.name || "",
+    hawserProjectUrl: hawserProject?.url || ""
   };
 }
 
@@ -493,6 +499,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("projects:create-twicc-project", async (_event, sourcePath) => {
     return createTwiccProject(sourcePath, { execFileAsync });
+  });
+
+  ipcMain.handle("projects:create-hawser-project", async (_event, sourcePath, runtime) => {
+    return createHawserProject(sourcePath, runtime, { execFileAsync });
   });
 
   ipcMain.handle("twicc:project-process-statuses", async () => {

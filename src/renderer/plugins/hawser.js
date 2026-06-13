@@ -4,6 +4,7 @@
   const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
   const DEFAULT_HAWSER_WEB_URL = "http://localhost:60082";
+  const DEFAULT_HAWSER_RUNTIME = "codex";
   const HAWSER_INSTALL_COMMAND = "bash <(curl -fsSL https://raw.githubusercontent.com/dguerizec/hawser/main/install.sh) && hawser service install";
   const HAWSER_INSTALL_REQUIREMENTS = "Requires Linux x86_64, curl, bash, sha256sum, tar, and systemd --user.";
 
@@ -24,6 +25,21 @@
   function getDefaultProjectUrl(project = {}) {
     const slug = String(project.slug || "").trim();
     return slug ? `${DEFAULT_HAWSER_WEB_URL}/#/projects/${encodeURIComponent(slug)}` : "";
+  }
+
+  function getProjectUrl(projectName) {
+    const name = String(projectName || "").trim();
+    return name ? `${DEFAULT_HAWSER_WEB_URL}/#/projects/${encodeURIComponent(name)}` : "";
+  }
+
+  function getMainSession(projectName, branch) {
+    const name = String(projectName || "").trim();
+    const session = String(branch || "").trim() || "main";
+    return name ? `${name}:${session}` : "";
+  }
+
+  function getDefaultRuntime(globalConfig = {}) {
+    return String(globalConfig.hawserDefaultRuntime || DEFAULT_HAWSER_RUNTIME).trim() || DEFAULT_HAWSER_RUNTIME;
   }
 
   function resolveMainSession(project, options = {}) {
@@ -104,6 +120,28 @@
     fields?.setDefaultValue("hawserProjectUrl", getDefaultProjectUrl(event.coreFields));
   }
 
+  function syncProjectRegistrationFields(event) {
+    const fields = event.fields;
+    const inspected = event.inspected || {};
+    const coreFields = event.coreFields || {};
+
+    if (!fields) {
+      return;
+    }
+
+    fields.setActionVisible("hawserMainSession", false);
+
+    if (inspected.hawserProjectName && inspected.hawserMatchType === "exact") {
+      const mainSession = getMainSession(inspected.hawserProjectName, coreFields.devBranch);
+      const projectUrl = inspected.hawserProjectUrl || getProjectUrl(inspected.hawserProjectName);
+
+      fields.setValue("hawserMainSession", mainSession, { ifUnedited: true });
+      fields.setValue("hawserProjectUrl", projectUrl, { ifUnedited: true });
+    } else if (String(event.sourcePath || "").trim()) {
+      fields.setActionVisible("hawserMainSession", true);
+    }
+  }
+
   registry.register(
     {
       id: "boatyard.hawser",
@@ -129,6 +167,7 @@
         const hawserService = createHawserService();
         ctx.services.provide("boatyard.hawser.api", hawserService);
         ctx.events.on("boatyard.projectForm.coreFieldChanged", syncMainSessionField);
+        ctx.events.on("boatyard.projectForm.sourcePathInspected", syncProjectRegistrationFields);
         ctx.events.on("boatyard.globalSettings.opened", (event) => {
           refreshHawserStatus(ctx, event.globalConfig || {});
         });
@@ -155,6 +194,14 @@
               label: "API token",
               type: "password",
               valueType: "text"
+            },
+            {
+              key: "hawserDefaultRuntime",
+              label: "Default runtime",
+              type: "text",
+              valueType: "text",
+              placeholder: DEFAULT_HAWSER_RUNTIME,
+              defaultValue: DEFAULT_HAWSER_RUNTIME
             },
             {
               key: "hawserInstallCommand",
@@ -191,6 +238,29 @@
               placeholder: "project:main",
               defaultValue({ project }) {
                 return getDefaultMainSession(project);
+              },
+              action: {
+                label: "Create",
+                pendingLabel: "Creating...",
+                message: "Hawser project not found. Register it?",
+                async run({ coreFields, fields, globalConfig }) {
+                  const sourcePath = String(coreFields.sourcePath || "").trim();
+                  if (!sourcePath) {
+                    throw new Error("Source path is required to create a Hawser project.");
+                  }
+
+                  const created = await globalScope.boatyard.createHawserProject(
+                    sourcePath,
+                    getDefaultRuntime(globalConfig)
+                  );
+                  if (!created?.name) {
+                    throw new Error("Hawser project was created but no project name was returned.");
+                  }
+
+                  fields.setValue("hawserMainSession", getMainSession(created.name, coreFields.devBranch), { markEdited: true });
+                  fields.setValue("hawserProjectUrl", created.url || getProjectUrl(created.name), { markEdited: true });
+                  fields.setActionVisible("hawserMainSession", false);
+                }
               }
             },
             {

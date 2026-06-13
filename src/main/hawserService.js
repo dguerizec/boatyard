@@ -1,13 +1,122 @@
 "use strict";
 
 const { execFile } = require("node:child_process");
+const path = require("node:path");
 const { promisify } = require("node:util");
 
 const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082";
+const DEFAULT_HAWSER_WEB_URL = "http://localhost:60082";
+const DEFAULT_HAWSER_RUNTIME = "codex";
 const execFileAsync = promisify(execFile);
 
 function getHawserApiUrl(settings = {}) {
   return String(settings.hawserApiUrl || DEFAULT_HAWSER_API_URL).replace(/\/+$/, "");
+}
+
+function normalizePathForMatch(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed ? path.resolve(trimmed) : "";
+}
+
+function normalizeHawserRuntime(value) {
+  const runtime = String(value || DEFAULT_HAWSER_RUNTIME).trim();
+  if (!/^[A-Za-z0-9_.-]+$/.test(runtime)) {
+    throw new Error("Hawser runtime must contain only letters, numbers, dots, underscores, or dashes.");
+  }
+
+  return runtime;
+}
+
+function buildHawserProjectUrl(projectName, baseUrl = DEFAULT_HAWSER_WEB_URL) {
+  const name = String(projectName || "").trim();
+  if (!name) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(baseUrl || DEFAULT_HAWSER_WEB_URL);
+    parsed.hash = `#/projects/${encodeURIComponent(name)}`;
+    parsed.search = "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function parseHawserProjectList(stdout) {
+  return String(stdout || "")
+    .split(/\r?\n/)
+    .map((line) => {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length < 3) {
+        return null;
+      }
+
+      return {
+        name: parts[0],
+        workspace: parts[1] === "-" ? "" : parts[1],
+        path: parts.slice(2).join(" ")
+      };
+    })
+    .filter(Boolean);
+}
+
+function findHawserProjectMatchForPath(projects, sourcePath) {
+  if (!Array.isArray(projects)) {
+    return null;
+  }
+
+  const normalizedSourcePath = normalizePathForMatch(sourcePath);
+  if (!normalizedSourcePath) {
+    return null;
+  }
+
+  const exactMatch = projects.find((project) => normalizePathForMatch(project.path) === normalizedSourcePath);
+  return exactMatch
+    ? {
+        project: exactMatch,
+        matchType: "exact"
+      }
+    : null;
+}
+
+async function loadHawserProjects({ execFileAsync: runCommand = execFileAsync } = {}) {
+  try {
+    const { stdout } = await runCommand("hawser", ["list"], {
+      timeout: 5000,
+      windowsHide: true
+    });
+    return parseHawserProjectList(stdout);
+  } catch {
+    return [];
+  }
+}
+
+async function inspectHawserProject(sourcePath, options = {}) {
+  const projects = await loadHawserProjects(options);
+  const match = findHawserProjectMatchForPath(projects, sourcePath);
+  return match?.project?.name
+    ? {
+        name: match.project.name,
+        matchType: match.matchType,
+        url: buildHawserProjectUrl(match.project.name)
+      }
+    : null;
+}
+
+async function createHawserProject(sourcePath, runtime = DEFAULT_HAWSER_RUNTIME, { execFileAsync: runCommand = execFileAsync } = {}) {
+  const normalizedSourcePath = normalizePathForMatch(sourcePath);
+  if (!normalizedSourcePath) {
+    throw new Error("Source path is required to create a Hawser project.");
+  }
+
+  await runCommand("hawser", ["init", "--here", "--runtime", normalizeHawserRuntime(runtime)], {
+    cwd: normalizedSourcePath,
+    timeout: 30000,
+    windowsHide: true
+  });
+
+  return inspectHawserProject(normalizedSourcePath, { execFileAsync: runCommand });
 }
 
 async function getHawserCliStatus(runCommand = execFileAsync) {
@@ -385,16 +494,23 @@ async function getHawserWidgetData(project, settings = {}) {
 
 module.exports = {
   DEFAULT_HAWSER_API_URL,
+  DEFAULT_HAWSER_RUNTIME,
+  buildHawserProjectUrl,
   addSessionRefsToMessages,
+  createHawserProject,
+  findHawserProjectMatchForPath,
   getHawserCliStatus,
   getHawserWidgetData,
   getHawserStatus,
   getMessageSessionTarget,
   getTwiccSessionIdFromRefs,
+  inspectHawserProject,
   isActiveTask,
   isQueuedRemoteMessage,
   isRunningTask,
+  loadHawserProjects,
   normalizeMessage,
+  parseHawserProjectList,
   parseHawserProjectName,
   parseHawserSessionName,
   shouldShowWidgetMessage,

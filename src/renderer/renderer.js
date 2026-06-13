@@ -4316,6 +4316,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       projectId: initialValues.id || "",
       forPlugin: (pluginId) => ({
         coreFields: readCoreProjectFields(),
+        globalConfig: getGlobalPluginConfig(pluginId),
         fields: pluginSettings.createFieldApi(pluginId)
       })
     });
@@ -4545,6 +4546,7 @@ function createProjectPluginSettingsControls(initialValues = {}, options = {}) {
             await field.action.run({
               project: initialValues,
               coreFields: options.readCoreProjectFields?.() || {},
+              globalConfig: getGlobalPluginConfig(section.pluginId),
               fields: createPluginFieldApi(inputs)
             });
           } catch (actionError) {

@@ -182,6 +182,7 @@ test("Hawser global settings expose a copyable install command", () => {
     .find((section) => section.id === "boatyard.hawser.global");
   const fields = Object.fromEntries(hawserSection.fields.map((field) => [field.key, field]));
 
+  assert.equal(fields.hawserDefaultRuntime.defaultValue, "codex");
   assert.equal(fields.hawserInstallCommand.persist, false);
   assert.equal(fields.hawserInstallCommand.readOnly, true);
   assert.match(fields.hawserInstallCommand.defaultValue, /^bash <\(curl -fsSL https:\/\/raw\.githubusercontent\.com\/dguerizec\/hawser\/main\/install\.sh\)/);
