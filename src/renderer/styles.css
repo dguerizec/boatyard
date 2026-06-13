@@ -1490,6 +1490,112 @@ button {
   font-size: 12px;
 }
 
+.twicc-usage-widget {
+  gap: 4px;
+  padding: 6px;
+  overflow: hidden;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.twicc-usage-gauge-copy strong,
+.twicc-usage-gauge-copy small,
+.twicc-usage-footer,
+.twicc-usage-empty {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.twicc-usage-providers {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.twicc-usage-provider {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 5px;
+  border-radius: 6px;
+  background: rgba(7, 13, 18, 0.34);
+}
+
+.twicc-usage-provider-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.twicc-usage-metrics {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.twicc-usage-gauge {
+  --twicc-usage-color: #41b883;
+  --twicc-usage-percent: 0%;
+  min-width: 54px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.twicc-usage-gauge.warn {
+  --twicc-usage-color: #facc15;
+}
+
+.twicc-usage-gauge.danger {
+  --twicc-usage-color: #f87171;
+}
+
+.twicc-usage-ring {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at center, #111823 0 58%, transparent 60%),
+    conic-gradient(var(--twicc-usage-color) var(--twicc-usage-percent), rgba(148, 163, 184, 0.2) 0);
+  color: var(--text);
+  font-size: 8px;
+  font-weight: 900;
+}
+
+.twicc-usage-gauge-copy {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.twicc-usage-gauge-copy strong {
+  color: var(--text);
+}
+
+.twicc-usage-gauge-copy small,
+.twicc-usage-footer {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .color-palette-widget {
   gap: 10px;
   padding: 12px;

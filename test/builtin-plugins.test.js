@@ -95,6 +95,11 @@ test("Built-in plugins register project integrations and widgets", () => {
     plain(registry.listGlobalSettingsSections().map((section) => section.id).sort()),
     ["boatyard.hawser.global", "boatyard.pier.global", "boatyard.twicc.global"]
   );
+  const twiccPlugin = registry.list().find((plugin) => plugin.id === "boatyard.twicc");
+  assert.deepEqual(
+    plain(twiccPlugin.contributes.widgets),
+    ["boatyard.twicc.usage", "boatyard.twicc.projectUsage"]
+  );
   const colorPalettePlugin = registry.list().find((plugin) => plugin.id === "boatyard.colorPalette");
   assert.deepEqual(plain(colorPalettePlugin.contributes.widgets), ["boatyard.colorPalette.widget"]);
 });
@@ -112,6 +117,20 @@ test("Twicc service resolves session URLs from the configured project URL", () =
     }),
     "http://localhost:3500/project/boatyard/session/session-1"
   );
+});
+
+test("Twicc global settings expose base URL and API token fields", () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+  const twiccSection = registry
+    .listGlobalSettingsSections()
+    .find((section) => section.id === "boatyard.twicc.global");
+  const fields = Object.fromEntries(twiccSection.fields.map((field) => [field.key, field]));
+
+  assert.equal(fields.twiccBaseUrl.valueType, "url");
+  assert.equal(fields.twiccApiToken.type, "password");
+  assert.equal(fields.twiccApiToken.valueType, "text");
 });
 
 test("Twicc project nav badge matches the configured Twicc project URL", async () => {

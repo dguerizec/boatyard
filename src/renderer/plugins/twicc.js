@@ -9,6 +9,7 @@
     input: "Input",
     done: "Done"
   };
+  const TWICC_USAGE_REFRESH_MS = 60000;
   let projectProcessStatuses = {};
   let projectStatusRefreshTimer = null;
 
@@ -143,6 +144,275 @@
     });
   }
 
+  function getFetch() {
+    if (typeof globalScope.fetch === "function") {
+      return globalScope.fetch.bind(globalScope);
+    }
+
+    if (typeof fetch === "function") {
+      return fetch;
+    }
+
+    return null;
+  }
+
+  function formatProviderName(provider) {
+    return String(provider || "")
+      .split(/[_\s-]+/)
+      .filter(Boolean)
+      .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+      .join(" ") || "Provider";
+  }
+
+  function formatPercent(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? `${Math.round(number)}%` : "--";
+  }
+
+  function formatResetRelative(value) {
+    if (!value) {
+      return "--";
+    }
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "--";
+    }
+
+    const diffMs = date.getTime() - Date.now();
+    if (diffMs <= 0) {
+      return "now";
+    }
+
+    const minutes = Math.ceil(diffMs / 60000);
+    if (minutes < 60) {
+      return `in ${minutes}m`;
+    }
+
+    const hours = Math.ceil(minutes / 60);
+    if (hours < 48) {
+      return `in ${hours}h`;
+    }
+
+    return `in ${Math.ceil(hours / 24)}d`;
+  }
+
+  function getUsageTone(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return "unknown";
+    }
+    if (number >= 90) {
+      return "danger";
+    }
+    if (number >= 70) {
+      return "warn";
+    }
+    return "ok";
+  }
+
+  function getProviderInitials(provider) {
+    const normalized = String(provider || "").toLowerCase();
+    if (normalized === "claude_code") {
+      return "CC";
+    }
+    if (normalized === "codex") {
+      return "AI";
+    }
+
+    return formatProviderName(provider)
+      .split(/\s+/)
+      .map((part) => part.slice(0, 1))
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "?";
+  }
+
+  function getGaugePercent(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 0;
+  }
+
+  function createUsageGauge(label, percentValue, detail) {
+    const gauge = document.createElement("div");
+    gauge.className = `twicc-usage-gauge ${getUsageTone(percentValue)}`;
+    gauge.style.setProperty("--twicc-usage-percent", `${getGaugePercent(percentValue)}%`);
+
+    const ring = document.createElement("span");
+    ring.className = "twicc-usage-ring";
+    ring.textContent = formatPercent(percentValue);
+
+    const copy = document.createElement("span");
+    copy.className = "twicc-usage-gauge-copy";
+
+    const labelElement = document.createElement("strong");
+    labelElement.textContent = label;
+    const detailElement = document.createElement("small");
+    detailElement.textContent = detail;
+    copy.append(labelElement, detailElement);
+
+    gauge.append(ring, copy);
+    return gauge;
+  }
+
+  function normalizeUsageResult(payload) {
+    if (!payload || typeof payload !== "object") {
+      return {};
+    }
+
+    if ("result" in payload || "exit_code" in payload || "error" in payload) {
+      if (payload.exit_code && payload.exit_code !== 0) {
+        throw new Error(payload.error || "TwiCC usage request failed.");
+      }
+      if (payload.error) {
+        throw new Error(String(payload.error));
+      }
+      return payload.result && typeof payload.result === "object" ? payload.result : {};
+    }
+
+    return payload;
+  }
+
+  async function fetchUsage(globalPluginConfig = {}) {
+    const request = getFetch();
+    if (!request) {
+      throw new Error("Fetch is unavailable.");
+    }
+
+    const token = String(globalPluginConfig.twiccApiToken || "").trim();
+    const headers = {
+      "Content-Type": "application/json"
+    };
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await request(`${normalizeBaseUrl(globalPluginConfig.twiccBaseUrl)}/rpc/usage`, {
+      method: "POST",
+      headers,
+      body: "{}"
+    });
+    if (!response?.ok) {
+      throw new Error(`TwiCC usage request failed with HTTP ${response?.status || "error"}.`);
+    }
+
+    return normalizeUsageResult(await response.json());
+  }
+
+  function renderProviderUsage(providerKey, usage) {
+    const provider = usage && typeof usage === "object" ? usage : {};
+    const providerName = formatProviderName(provider.provider || providerKey);
+    const row = document.createElement("section");
+    row.className = "twicc-usage-provider";
+    row.title = provider.fetched_at ? `${providerName} fetched ${new Date(provider.fetched_at).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit"
+    })}` : providerName;
+    row.setAttribute("aria-label", providerName);
+
+    const icon = document.createElement("div");
+    icon.className = "twicc-usage-provider-icon";
+    icon.textContent = getProviderInitials(provider.provider || providerKey);
+
+    const metrics = document.createElement("div");
+    metrics.className = "twicc-usage-metrics";
+    metrics.append(
+      createUsageGauge(
+        "5h",
+        provider.five_hour_utilization,
+        formatResetRelative(provider.five_hour_resets_at)
+      ),
+      createUsageGauge(
+        "7d",
+        provider.seven_day_utilization,
+        formatResetRelative(provider.seven_day_resets_at)
+      )
+    );
+
+    if (provider.extra_usage_is_enabled) {
+      metrics.append(createUsageGauge(
+        "Extra",
+        provider.extra_usage_utilization,
+        `${Number(provider.extra_usage_remaining_credits || 0).toFixed(1)} left`
+      ));
+    }
+
+    row.append(icon, metrics);
+    return row;
+  }
+
+  function createUsageWidget(project, props = {}) {
+    const card = document.createElement("article");
+    card.className = "widget-card twicc-usage-widget";
+
+    const providers = document.createElement("div");
+    providers.className = "twicc-usage-providers";
+
+    const footer = document.createElement("p");
+    footer.className = "twicc-usage-footer";
+    footer.hidden = true;
+
+    async function load() {
+      if (!card.isConnected && card.parentElement) {
+        return;
+      }
+
+      try {
+        const result = await fetchUsage(props.globalPluginConfig || {});
+        const entries = Object.entries(result || {});
+        providers.replaceChildren();
+
+        if (!entries.length) {
+          const empty = document.createElement("p");
+          empty.className = "twicc-usage-empty";
+          empty.textContent = "No usage snapshot.";
+          providers.append(empty);
+        } else {
+          entries
+            .sort(([left], [right]) => left.localeCompare(right))
+            .forEach(([providerKey, usage]) => providers.append(renderProviderUsage(providerKey, usage)));
+        }
+
+        footer.hidden = true;
+        footer.textContent = "";
+      } catch (error) {
+        footer.hidden = false;
+        footer.textContent = error.message;
+      }
+    }
+
+    load();
+    const refreshInterval = globalScope.setInterval?.(() => {
+      if (!card.isConnected) {
+        globalScope.clearInterval?.(refreshInterval);
+        return;
+      }
+
+      load();
+    }, TWICC_USAGE_REFRESH_MS);
+
+    card.append(providers, footer);
+    return card;
+  }
+
+  function registerUsageWidget(ctx, id, scope) {
+    ctx.widgets.register({
+      id,
+      name: "TwiCC Usage",
+      title: "TwiCC Usage",
+      scope,
+      category: "Usage",
+      status: "experimental",
+      defaultVisible: false,
+      description: "Shows provider quota utilization from the TwiCC usage RPC.",
+      layout: {
+        default: { columns: 3, rows: 1 },
+        min: { columns: 3, rows: 1 }
+      },
+      createElement: createUsageWidget
+    });
+  }
+
   function syncProjectUrlField(event) {
     const fields = event.fields;
     const inspected = event.inspected || {};
@@ -174,6 +444,7 @@
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
+        widgets: ["boatyard.twicc.usage", "boatyard.twicc.projectUsage"],
         panes: ["boatyard.twicc.pane"],
         projectNavBadges: ["boatyard.twicc.projectStatus"],
         globalSettings: ["boatyard.twicc.global"],
@@ -184,6 +455,7 @@
         "projectConfig:read",
         "projectConfig:write",
         "pane:wcv",
+        "widget:provide",
         "service:provide"
       ]
     },
@@ -209,6 +481,13 @@
               type: "text",
               valueType: "url",
               placeholder: DEFAULT_TWICC_URL
+            },
+            {
+              key: "twiccApiToken",
+              label: "API token",
+              type: "password",
+              valueType: "text",
+              placeholder: "Optional Bearer token"
             }
           ]
         });
@@ -264,6 +543,9 @@
             return createProjectStatusBadge(project, projectConfig);
           }
         });
+
+        registerUsageWidget(ctx, "boatyard.twicc.usage", "global");
+        registerUsageWidget(ctx, "boatyard.twicc.projectUsage", "project");
       },
       deactivate() {
         stopProjectStatusRefresh();
