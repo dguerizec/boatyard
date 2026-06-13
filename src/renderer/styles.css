@@ -1538,6 +1538,25 @@ button {
   font-weight: 900;
 }
 
+.twicc-usage-provider-icon.claude,
+.twicc-usage-provider-icon.openai {
+  border-color: transparent;
+  border-radius: 0;
+  background: currentColor;
+  -webkit-mask: center / 18px 18px no-repeat;
+  mask: center / 18px 18px no-repeat;
+}
+
+.twicc-usage-provider-icon.claude {
+  -webkit-mask-image: url("./assets/fontawesome-brands-claude.svg");
+  mask-image: url("./assets/fontawesome-brands-claude.svg");
+}
+
+.twicc-usage-provider-icon.openai {
+  -webkit-mask-image: url("./assets/fontawesome-brands-openai.svg");
+  mask-image: url("./assets/fontawesome-brands-openai.svg");
+}
+
 .twicc-usage-metrics {
   min-width: 0;
   display: flex;
@@ -1594,6 +1613,45 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.twicc-usage-burn-gauge {
+  --twicc-burn-color: #41b883;
+  --twicc-burn-arc: 0%;
+  min-width: 72px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.twicc-usage-burn-gauge.warn {
+  --twicc-burn-color: #facc15;
+}
+
+.twicc-usage-burn-gauge.danger {
+  --twicc-burn-color: #f87171;
+}
+
+.twicc-usage-burn-dial {
+  position: relative;
+  width: 28px;
+  height: 15px;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.twicc-usage-burn-dial::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background:
+    conic-gradient(from 270deg, var(--twicc-burn-color) 0 var(--twicc-burn-arc), rgba(148, 163, 184, 0.22) var(--twicc-burn-arc) 50%, transparent 50%);
+  -webkit-mask: radial-gradient(circle at center, transparent 0 53%, #000 55%);
+  mask: radial-gradient(circle at center, transparent 0 53%, #000 55%);
 }
 
 .color-palette-widget {

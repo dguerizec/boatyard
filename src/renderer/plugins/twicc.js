@@ -213,13 +213,6 @@
 
   function getProviderInitials(provider) {
     const normalized = String(provider || "").toLowerCase();
-    if (normalized === "claude_code") {
-      return "CC";
-    }
-    if (normalized === "codex") {
-      return "AI";
-    }
-
     return formatProviderName(provider)
       .split(/\s+/)
       .map((part) => part.slice(0, 1))
@@ -228,9 +221,76 @@
       .toUpperCase() || "?";
   }
 
+  function getProviderIconClass(provider) {
+    const normalized = String(provider || "").toLowerCase();
+    if (normalized === "claude_code" || normalized === "claude" || normalized === "anthropic") {
+      return "claude";
+    }
+    if (normalized === "codex" || normalized === "openai") {
+      return "openai";
+    }
+    return "";
+  }
+
+  function createProviderIcon(provider) {
+    const iconClass = getProviderIconClass(provider);
+    const icon = document.createElement("span");
+    icon.className = `twicc-usage-provider-icon${iconClass ? ` ${iconClass}` : ""}`;
+    icon.setAttribute("aria-hidden", "true");
+    if (!iconClass) {
+      icon.textContent = getProviderInitials(provider);
+    }
+    return icon;
+  }
+
   function getGaugePercent(value) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 0;
+  }
+
+  function getFiveHourBurnRate(provider) {
+    return provider.five_hour_burn_rate ??
+      provider.five_hour_burn_rate_1h ??
+      provider.five_hour_burn_rate_30min;
+  }
+
+  function getSevenDayBurnRate(provider) {
+    return provider.seven_day_burn_rate ??
+      provider.seven_day_burn_rate_24h ??
+      provider.seven_day_burn_rate_12h;
+  }
+
+  function formatBurnRate(value) {
+    const percent = normalizeBurnRatePercent(value);
+    return Number.isFinite(percent) ? `${Math.round(percent)}%` : "--";
+  }
+
+  function normalizeBurnRatePercent(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) {
+      return Number.NaN;
+    }
+
+    return Math.abs(number) <= 2 ? number * 100 : number;
+  }
+
+  function getBurnRateArc(value) {
+    const percent = normalizeBurnRatePercent(value);
+    return Number.isFinite(percent) ? Math.max(0, Math.min(50, percent / 4)) : 0;
+  }
+
+  function getBurnRateTone(value) {
+    const percent = normalizeBurnRatePercent(value);
+    if (!Number.isFinite(percent)) {
+      return "unknown";
+    }
+    if (percent > 100) {
+      return "danger";
+    }
+    if (percent >= 90) {
+      return "warn";
+    }
+    return "ok";
   }
 
   function createUsageGauge(label, percentValue, detail) {
@@ -252,6 +312,28 @@
     copy.append(labelElement, detailElement);
 
     gauge.append(ring, copy);
+    return gauge;
+  }
+
+  function createBurnRateGauge(label, value) {
+    const gauge = document.createElement("div");
+    gauge.className = `twicc-usage-burn-gauge ${getBurnRateTone(value)}`;
+    gauge.style.setProperty("--twicc-burn-arc", `${getBurnRateArc(value)}%`);
+
+    const dial = document.createElement("span");
+    dial.className = "twicc-usage-burn-dial";
+    dial.setAttribute("aria-hidden", "true");
+
+    const copy = document.createElement("span");
+    copy.className = "twicc-usage-gauge-copy";
+
+    const labelElement = document.createElement("strong");
+    labelElement.textContent = label;
+    const detailElement = document.createElement("small");
+    detailElement.textContent = formatBurnRate(value);
+    copy.append(labelElement, detailElement);
+
+    gauge.append(dial, copy);
     return gauge;
   }
 
@@ -310,9 +392,7 @@
     })}` : providerName;
     row.setAttribute("aria-label", providerName);
 
-    const icon = document.createElement("div");
-    icon.className = "twicc-usage-provider-icon";
-    icon.textContent = getProviderInitials(provider.provider || providerKey);
+    const icon = createProviderIcon(provider.provider || providerKey);
 
     const metrics = document.createElement("div");
     metrics.className = "twicc-usage-metrics";
@@ -322,11 +402,13 @@
         provider.five_hour_utilization,
         formatResetRelative(provider.five_hour_resets_at)
       ),
+      createBurnRateGauge("5h Burn", getFiveHourBurnRate(provider)),
       createUsageGauge(
         "7d",
         provider.seven_day_utilization,
         formatResetRelative(provider.seven_day_resets_at)
-      )
+      ),
+      createBurnRateGauge("7d Burn", getSevenDayBurnRate(provider))
     );
 
     if (provider.extra_usage_is_enabled) {
