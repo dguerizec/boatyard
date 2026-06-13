@@ -1492,63 +1492,6 @@ function registerBuiltinGlobalWidgets() {
         min: { columns: 2, rows: 3 }
       },
       createElement: (project, props) => createTerminalWidget(project, props)
-    },
-    {
-      id: "global-projects",
-      name: "Projects",
-      title: "Projects",
-      scope: "global",
-      category: "Workspace",
-      status: "experimental",
-      description: "Configured projects in this workspace.",
-      layout: {
-        default: { columns: 2, rows: 2 },
-        min: { columns: 1, rows: 1 }
-      },
-      create: () => ({
-        eyebrow: "Projects",
-        title: String(getProjects().length),
-        body: "Configured projects in this workspace.",
-        meta: "Project switcher is the primary navigation."
-      })
-    },
-    {
-      id: "global-usage",
-      name: "Usage",
-      title: "Usage",
-      scope: "global",
-      category: "Operations",
-      status: "experimental",
-      description: "Global agent and API usage placeholder.",
-      layout: {
-        default: { columns: 2, rows: 2 },
-        min: { columns: 1, rows: 1 }
-      },
-      create: () => ({
-        eyebrow: "Usage",
-        title: "Usage",
-        body: "Placeholder for global agent and API usage.",
-        meta: "Runtime widget target"
-      })
-    },
-    {
-      id: "global-inbox",
-      name: "Inbox",
-      title: "Inbox",
-      scope: "global",
-      category: "Operations",
-      status: "experimental",
-      description: "Cross-project messages and active requests placeholder.",
-      layout: {
-        default: { columns: 2, rows: 2 },
-        min: { columns: 1, rows: 1 }
-      },
-      create: () => ({
-        eyebrow: "Inbox",
-        title: "Inbox",
-        body: "Placeholder for cross-project messages and active requests.",
-        meta: "Plugin widget target"
-      })
     }
   ].forEach((definition) => registry.register(definition));
 }
