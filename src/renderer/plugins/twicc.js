@@ -477,12 +477,12 @@
     return card;
   }
 
-  function registerUsageWidget(ctx, id, scope) {
+  function registerUsageWidget(ctx) {
     ctx.widgets.register({
-      id,
+      id: "boatyard.twicc.usage",
       name: "TwiCC Usage",
       title: "TwiCC Usage",
-      scope,
+      scopes: ["global", "project"],
       category: "Usage",
       status: "experimental",
       defaultVisible: false,
@@ -526,7 +526,7 @@
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
-        widgets: ["boatyard.twicc.usage", "boatyard.twicc.projectUsage"],
+        widgets: ["boatyard.twicc.usage"],
         panes: ["boatyard.twicc.pane"],
         projectNavBadges: ["boatyard.twicc.projectStatus"],
         globalSettings: ["boatyard.twicc.global"],
@@ -626,8 +626,7 @@
           }
         });
 
-        registerUsageWidget(ctx, "boatyard.twicc.usage", "global");
-        registerUsageWidget(ctx, "boatyard.twicc.projectUsage", "project");
+        registerUsageWidget(ctx);
       },
       deactivate() {
         stopProjectStatusRefresh();

@@ -8,6 +8,17 @@
     return String(value || "").trim();
   }
 
+  function normalizeScopes(definition) {
+    const source = Array.isArray(definition.scopes)
+      ? definition.scopes
+      : [definition.scope || "project"];
+    const scopes = source
+      .map(normalizeText)
+      .filter((scope, index, values) => scope && values.indexOf(scope) === index);
+
+    return scopes.length ? scopes : ["project"];
+  }
+
   function normalizeGridSize(size, fallback) {
     const source = size && typeof size === "object" ? size : fallback;
     return {
@@ -43,7 +54,7 @@
 
     const id = normalizeText(definition.id);
     const name = normalizeText(definition.name || definition.title);
-    const scope = normalizeText(definition.scope || "project");
+    const scopes = normalizeScopes(definition);
     const status = allowedStatuses.has(definition.status)
       ? definition.status
       : "experimental";
@@ -68,7 +79,8 @@
       id,
       name,
       title: normalizeText(definition.title || name),
-      scope,
+      scope: scopes[0],
+      scopes,
       category: normalizeText(definition.category || "General"),
       status,
       description: normalizeText(definition.description),
@@ -91,7 +103,7 @@
 
   function list(filter = {}) {
     return [...widgets.values()]
-      .filter((widget) => !filter.scope || widget.scope === filter.scope)
+      .filter((widget) => !filter.scope || widget.scopes.includes(filter.scope))
       .filter((widget) => !filter.status || widget.status === filter.status);
   }
 

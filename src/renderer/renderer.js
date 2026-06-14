@@ -23,8 +23,11 @@ const WIDGET_GRID_GAP = 12;
 const WIDGET_GRID_SCROLL_GUARD = 10;
 const WEBAPP_SPLIT_RESIZER_SIZE = 6;
 const LEGACY_WIDGET_IDS = new Map([
+  ["project-shell", "terminal-shell"],
+  ["global-shell", "terminal-shell"],
   ["project-preview", "boatyard.pier.urls"],
-  ["pier-urls", "boatyard.pier.urls"]
+  ["pier-urls", "boatyard.pier.urls"],
+  ["boatyard.twicc.projectUsage", "boatyard.twicc.usage"]
 ]);
 
 function slugify(value) {
@@ -1445,7 +1448,7 @@ window.BoatyardHawserUI = Object.freeze({
   createWidget: createHawserWidget
 });
 
-function registerBuiltinProjectWidgets() {
+function registerBuiltinWidgets() {
   const registry = window.BoatyardWidgetRegistry;
 
   if (!registry) {
@@ -1454,14 +1457,13 @@ function registerBuiltinProjectWidgets() {
 
   [
     {
-      id: "project-shell",
+      id: "terminal-shell",
       name: "Terminal",
       title: "Terminal",
-      scope: "project",
+      scopes: ["global", "project"],
       category: "Developer tools",
       status: "experimental",
-      description: "Persistent multi-tab tmux terminal rooted in the project.",
-      requires: [{ type: "projectField", key: "sourcePath" }],
+      description: "Persistent multi-tab tmux terminal.",
       layout: {
         default: { columns: 4, rows: 5 },
         min: { columns: 2, rows: 3 }
@@ -1471,33 +1473,7 @@ function registerBuiltinProjectWidgets() {
   ].forEach((definition) => registry.register(definition));
 }
 
-function registerBuiltinGlobalWidgets() {
-  const registry = window.BoatyardWidgetRegistry;
-
-  if (!registry) {
-    throw new Error("Widget registry is unavailable.");
-  }
-
-  [
-    {
-      id: "global-shell",
-      name: "Terminal",
-      title: "Terminal",
-      scope: "global",
-      category: "Developer tools",
-      status: "experimental",
-      description: "Persistent multi-tab tmux terminal for global work.",
-      layout: {
-        default: { columns: 4, rows: 5 },
-        min: { columns: 2, rows: 3 }
-      },
-      createElement: (project, props) => createTerminalWidget(project, props)
-    }
-  ].forEach((definition) => registry.register(definition));
-}
-
-registerBuiltinProjectWidgets();
-registerBuiltinGlobalWidgets();
+registerBuiltinWidgets();
 
 function getInstalledWidgets(filter = {}) {
   return window.BoatyardWidgetRegistry.list(filter);
@@ -3712,7 +3688,7 @@ function createGlobalWidgetsSettingsView() {
     const meta = document.createElement("div");
     meta.className = "installed-widget-meta";
 
-    for (const value of [widget.scope, widget.category, widget.provider]) {
+    for (const value of [...widget.scopes, widget.category, widget.provider]) {
       const chip = document.createElement("span");
       chip.textContent = value;
       meta.append(chip);

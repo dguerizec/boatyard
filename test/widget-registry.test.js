@@ -28,7 +28,7 @@ test("Widget registry normalizes and filters definitions", () => {
   const first = registry.register({
     id: "project-terminal",
     name: "Terminal",
-    scope: "project",
+    scopes: ["project", "global"],
     status: "stable",
     category: "Developer tools",
     layout: {
@@ -48,10 +48,15 @@ test("Widget registry normalizes and filters definitions", () => {
     min: { columns: 1, rows: 1 }
   });
   assert.equal(first.status, "stable");
+  assert.deepEqual(plain(first.scopes), ["project", "global"]);
   assert.equal(registry.get("project-terminal").name, "Terminal");
   assert.deepEqual(
     plain(registry.list({ scope: "project" }).map((widget) => widget.id)),
     ["project-terminal"],
+  );
+  assert.deepEqual(
+    plain(registry.list({ scope: "global" }).map((widget) => widget.id)),
+    ["project-terminal", "global-usage"],
   );
   assert.deepEqual(
     plain(registry.list({ status: "experimental" }).map((widget) => widget.id)),

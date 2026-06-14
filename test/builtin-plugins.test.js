@@ -98,7 +98,7 @@ test("Built-in plugins register project integrations and widgets", () => {
   const twiccPlugin = registry.list().find((plugin) => plugin.id === "boatyard.twicc");
   assert.deepEqual(
     plain(twiccPlugin.contributes.widgets),
-    ["boatyard.twicc.usage", "boatyard.twicc.projectUsage"]
+    ["boatyard.twicc.usage"]
   );
   const colorPalettePlugin = registry.list().find((plugin) => plugin.id === "boatyard.colorPalette");
   assert.deepEqual(plain(colorPalettePlugin.contributes.widgets), ["boatyard.colorPalette.widget"]);
