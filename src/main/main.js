@@ -12,6 +12,7 @@ const { createTwiccProject, inspectTwiccProject, loadTwiccProjectProcessStatuses
 
 const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
+const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
 
 let mainWindow = null;
 let store = null;
@@ -277,13 +278,13 @@ function persistWebAppUrl(key, url) {
   }
 }
 
-function showWebApp({ key, url, bounds, autofillEnabled }) {
+function showWebApp({ key, url, bounds, autofillEnabled, restoreUrl = true }) {
   if (!key) {
     throw new Error("Webapp key is required.");
   }
 
   const restoredUrl = store.getWebAppUrl(String(key));
-  const parsedUrl = new URL(restoredUrl || url);
+  const parsedUrl = new URL(restoreUrl === false ? url : (restoredUrl || url));
 
   if (!["http:", "https:"].includes(parsedUrl.protocol)) {
     throw new Error("Only http and https webapps are supported.");
@@ -401,29 +402,49 @@ function hideWebApp() {
   }
 }
 
+function withTimeout(promise, timeoutMs, errorMessage) {
+  let timeout = null;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timeout = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
+    })
+  ]).finally(() => {
+    clearTimeout(timeout);
+  });
+}
+
+async function captureWebAppForFreeze(key) {
+  const item = webAppViews.get(key);
+  if (!item || item.view.webContents.isDestroyed()) {
+    return null;
+  }
+
+  try {
+    const image = await withTimeout(
+      item.view.webContents.capturePage(),
+      WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS,
+      "capture timed out"
+    );
+
+    if (image.isEmpty()) {
+      return null;
+    }
+
+    return {
+      key,
+      bounds: item.view.getBounds(),
+      dataUrl: image.toDataURL()
+    };
+  } catch (error) {
+    console.warn(`Could not capture webapp ${key}: ${error.message}`);
+    return null;
+  }
+}
+
 async function freezeWebApps() {
   webAppsFrozen = true;
-  const captures = [];
-
-  for (const key of visibleWebAppKeys) {
-    const item = webAppViews.get(key);
-    if (!item || item.view.webContents.isDestroyed()) {
-      continue;
-    }
-
-    try {
-      const image = await item.view.webContents.capturePage();
-      if (!image.isEmpty()) {
-        captures.push({
-          key,
-          bounds: item.view.getBounds(),
-          dataUrl: image.toDataURL()
-        });
-      }
-    } catch (error) {
-      console.warn(`Could not capture webapp ${key}: ${error.message}`);
-    }
-  }
+  const captures = (await Promise.all([...visibleWebAppKeys].map(captureWebAppForFreeze))).filter(Boolean);
 
   for (const item of webAppViews.values()) {
     item.view.setVisible(false);

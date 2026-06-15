@@ -307,21 +307,33 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
       };
     }
 
-    if (String(url).endsWith("/api/v1/workloads")) {
+    if (String(url).endsWith("/api/v1/projects/sshadow/worktrees")) {
       return {
         ok: true,
         json: async () => [
           {
-            project: "sshadow",
+            path: worktreePath,
             slug: "v1",
-            status: "running",
-            urls: [
-              {
-                url: "http://v1.sshadow.test",
-                default: true
-              }
-            ],
-            worktree_path: worktreePath
+            branch: "v1",
+            has_workload: true,
+            workload: {
+              project: "sshadow",
+              slug: "v1",
+              status: "running",
+              urls: [
+                {
+                  url: "http://v1.sshadow.test",
+                  default: true
+                }
+              ],
+              worktree_path: worktreePath
+            }
+          },
+          {
+            path: `${sourcePath}/worktrees/stopped`,
+            slug: "stopped",
+            branch: "stopped",
+            has_workload: false
           }
         ]
       };
@@ -333,6 +345,7 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
   registry.applyEnabledState({});
   const workloads = await registry.getService("boatyard.pier").listProjectWorkloads(
     {
+      id: "project-id",
       slug: "sshadow",
       sourcePath
     },
@@ -344,7 +357,48 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
       project: "sshadow",
       slug: "v1",
       url: "http://v1.sshadow.test",
-      worktreePath
+      worktreePath,
+      status: "running",
+      running: true
+    },
+    {
+      project: "sshadow",
+      slug: "stopped",
+      url: "",
+      worktreePath: `${sourcePath}/worktrees/stopped`,
+      status: "stopped",
+      running: false
     }
   ]);
+
+  const pane = registry
+    .listPanes({ scope: "project", kind: "wcv" })
+    .find((candidate) => candidate.id === "boatyard.pier.preview");
+  assert.deepEqual(
+    plain(pane.resolveWebApps({
+      project: {
+        id: "project-id",
+        slug: "sshadow",
+        sourcePath
+      },
+      projectConfig: {},
+      globalPluginConfig: {}
+    })),
+    [
+      {
+        id: "pier",
+        key: "dashboard",
+        label: "Pier",
+        url: "http://pier.test/#/projects/sshadow",
+        restoreUrl: false
+      },
+      {
+        id: "pier:v1",
+        key: "v1",
+        label: "Pier: v1",
+        url: "http://v1.sshadow.test",
+        restoreUrl: false
+      }
+    ]
+  );
 });

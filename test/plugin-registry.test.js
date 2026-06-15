@@ -165,7 +165,50 @@ test("Plugin registry rejects invalid and duplicate contributions", () => {
       },
     },
   );
-  assert.throws(() => registry.setEnabled("vendor.bad", true), /must provide resolveUrl/);
+  assert.throws(() => registry.setEnabled("vendor.bad", true), /must provide resolveUrl or resolveWebApps/);
+});
+
+test("Plugin registry accepts dynamic WCV pane webapps", () => {
+  const registry = createRegistry();
+
+  registry.register(
+    { id: "vendor.dynamic", name: "Dynamic" },
+    {
+      activate(ctx) {
+        ctx.panes.register({
+          id: "vendor.dynamic.pane",
+          title: "Dynamic",
+          kind: "wcv",
+          resolveWebApps: ({ project }) => [
+            {
+              id: `dynamic:${project.slug}`,
+              label: `Dynamic ${project.slug}`,
+              url: project.previewUrl
+            }
+          ]
+        });
+      }
+    },
+  );
+
+  registry.setEnabled("vendor.dynamic", true);
+  const pane = registry.listPanes({ kind: "wcv" })[0];
+
+  assert.deepEqual(
+    plain(pane.resolveWebApps({
+      project: {
+        slug: "demo",
+        previewUrl: "https://demo.example"
+      }
+    })),
+    [
+      {
+        id: "dynamic:demo",
+        label: "Dynamic demo",
+        url: "https://demo.example"
+      }
+    ]
+  );
 });
 
 test("Plugin registry requires namespaced contribution ids", () => {

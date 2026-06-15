@@ -87,8 +87,12 @@
       throw new Error(`Pane ${id} kind must be wcv or dom.`);
     }
 
-    if (kind === "wcv" && typeof definition.resolveUrl !== "function") {
-      throw new Error(`WCV pane ${id} must provide resolveUrl.`);
+    if (
+      kind === "wcv" &&
+      typeof definition.resolveUrl !== "function" &&
+      typeof definition.resolveWebApps !== "function"
+    ) {
+      throw new Error(`WCV pane ${id} must provide resolveUrl or resolveWebApps.`);
     }
 
     if (kind === "dom" && typeof definition.render !== "function") {

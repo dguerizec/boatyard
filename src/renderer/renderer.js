@@ -102,6 +102,7 @@ let nextPaneId = 1;
 let frozenWebAppLayer = null;
 let openWebAppTabMenu = null;
 let openWidgetAddMenu = null;
+let pierWorkloadPaneRefreshFrame = null;
 let draggedProjectId = null;
 let draggedWidgetId = null;
 const terminalWidgetsBySurface = new Map();
@@ -2449,11 +2450,29 @@ function getProjectWebApps(project, paneId) {
 
   for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "wcv" })) {
     const projectPluginConfig = isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId);
-    const url = pluginPane.resolveUrl({
+    const context = {
       project,
       projectConfig: projectPluginConfig,
       globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId)
-    });
+    };
+
+    if (typeof pluginPane.resolveWebApps === "function") {
+      for (const webApp of pluginPane.resolveWebApps(context) || []) {
+        if (!webApp?.url) {
+          continue;
+        }
+        webApps.push({
+          id: webApp.id || `${pluginPane.webAppId}:${webApp.key || webApp.url}`,
+          label: webApp.label || pluginPane.title,
+          key: `${paneId}:${pluginPane.key}:${webApp.key || webApp.id || webApp.url}`,
+          url: webApp.url,
+          restoreUrl: webApp.restoreUrl
+        });
+      }
+      continue;
+    }
+
+    const url = pluginPane.resolveUrl(context);
     if (!url) {
       continue;
     }
@@ -2552,6 +2571,10 @@ async function toggleWebAppAutofill(webApp, button) {
 }
 
 function getCurrentWebAppUrl(webApp) {
+  if (webApp.restoreUrl === false) {
+    return webApp.url;
+  }
+
   return currentWebAppUrlsByKey.get(webApp.key) || webApp.url;
 }
 
@@ -2788,13 +2811,13 @@ function closeWebAppTabMenu() {
 async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps) {
   closeWebAppTabMenu();
 
+  const rect = button.getBoundingClientRect();
   await freezeWebAppsForOverlay();
 
   const menu = document.createElement("div");
   menu.className = "webapp-tab-menu";
   menu.setAttribute("role", "menu");
 
-  const rect = button.getBoundingClientRect();
   menu.style.top = `${Math.round(rect.bottom + 6)}px`;
   menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 220))}px`;
 
@@ -5163,7 +5186,8 @@ async function syncWebAppView() {
       key: webApp.key,
       url: webApp.url,
       bounds,
-      autofillEnabled: isWebAppAutofillEnabled(webApp)
+      autofillEnabled: isWebAppAutofillEnabled(webApp),
+      restoreUrl: webApp.restoreUrl
     }));
   }
 
@@ -5507,6 +5531,17 @@ window.addEventListener("boatyard:plugin-status-changed", () => {
 });
 
 window.addEventListener("boatyard:project-nav-badges-changed", renderProjectList);
+
+window.addEventListener("boatyard:pier-workloads-changed", () => {
+  if (currentView !== "project" || pierWorkloadPaneRefreshFrame) {
+    return;
+  }
+
+  pierWorkloadPaneRefreshFrame = requestAnimationFrame(() => {
+    pierWorkloadPaneRefreshFrame = null;
+    renderWorkspacePaneArea(getCurrentProject());
+  });
+});
 
 globalNav.addEventListener("click", selectGlobal);
 globalSettingsButton.addEventListener("click", selectGlobalSettings);

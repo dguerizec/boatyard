@@ -1140,18 +1140,27 @@ button {
   cursor: pointer;
 }
 
-.pier-stop-button {
+.pier-action-button {
   grid-column: 2;
   grid-row: 1 / span 2;
   align-self: center;
   min-height: 28px;
-  border: 1px solid rgba(248, 113, 113, 0.45);
   border-radius: 6px;
-  background: rgba(248, 113, 113, 0.08);
-  color: #ff6b6b;
   padding: 0 10px;
   font-size: 11px;
   font-weight: 800;
+}
+
+.pier-action-button.stop {
+  border: 1px solid rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.08);
+  color: #ff6b6b;
+}
+
+.pier-action-button.start {
+  border: 1px solid rgba(65, 184, 131, 0.45);
+  background: rgba(65, 184, 131, 0.1);
+  color: #8ee7bb;
 }
 
 .pier-url-link:hover,
@@ -1163,15 +1172,26 @@ button {
   outline: none;
 }
 
-.pier-stop-button:hover,
-.pier-stop-button:focus-visible {
+.pier-action-button.stop:hover,
+.pier-action-button.stop:focus-visible {
   border-color: rgba(248, 113, 113, 0.8);
   background: rgba(248, 113, 113, 0.14);
   outline: none;
 }
 
-.pier-stop-button:disabled {
+.pier-action-button.start:hover,
+.pier-action-button.start:focus-visible {
+  border-color: rgba(65, 184, 131, 0.75);
+  background: rgba(65, 184, 131, 0.16);
+  outline: none;
+}
+
+.pier-action-button:disabled {
   opacity: 0.55;
+}
+
+.pier-url-row.stopped .pier-url-link {
+  color: var(--muted);
 }
 
 .terminal-widget {
