@@ -6036,16 +6036,14 @@ function renderProjectList() {
     button.addEventListener("click", () => selectProject(project.id));
     row.append(button);
 
-    if (isActiveProject) {
-      const settingsButton = document.createElement("button");
-      settingsButton.className = "project-settings-button";
-      settingsButton.type = "button";
-      settingsButton.title = "Project settings";
-      settingsButton.setAttribute("aria-label", `${project.name} settings`);
-      settingsButton.textContent = "⚙";
-      settingsButton.addEventListener("click", () => selectEditProject(project.id));
-      row.append(settingsButton);
-    }
+    const settingsButton = document.createElement("button");
+    settingsButton.className = "project-settings-button";
+    settingsButton.type = "button";
+    settingsButton.title = "Project settings";
+    settingsButton.setAttribute("aria-label", `${project.name} settings`);
+    settingsButton.textContent = "⚙";
+    settingsButton.addEventListener("click", () => selectEditProject(project.id));
+    row.append(settingsButton);
 
     projectList.append(row);
   }
