@@ -330,7 +330,12 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
     second: {
       type: "pane",
       id: "project:pane:2",
-      selectedWebAppId: "preview"
+      selectedWebAppId: "transient:health",
+      transientWebApp: {
+        id: " transient:health ",
+        label: " Health ",
+        url: "http://localhost:60082/api/health"
+      }
     }
   }), {
     type: "split",
@@ -345,7 +350,12 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
     second: {
       type: "pane",
       id: "project:pane:2",
-      selectedWebAppId: "preview"
+      selectedWebAppId: "transient:health",
+      transientWebApp: {
+        id: "transient:health",
+        label: "Health",
+        url: "http://localhost:60082/api/health"
+      }
     }
   });
 });

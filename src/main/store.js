@@ -312,6 +312,26 @@ function normalizePaneLayoutNode(node, seenIds = new Set()) {
       normalized.selectedWebAppId = node.selectedWebAppId.trim();
     }
 
+    const transientWebApp = node.transientWebApp && typeof node.transientWebApp === "object"
+      ? node.transientWebApp
+      : null;
+    if (transientWebApp) {
+      const transientId = normalizeText(transientWebApp.id);
+
+      try {
+        const transientUrl = normalizeUrl(transientWebApp.url);
+        if (transientId) {
+          normalized.transientWebApp = {
+            id: transientId,
+            label: normalizeText(transientWebApp.label),
+            url: transientUrl
+          };
+        }
+      } catch {
+        // Ignore invalid transient pane URLs.
+      }
+    }
+
     return normalized;
   }
 

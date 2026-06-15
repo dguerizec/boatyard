@@ -2644,6 +2644,21 @@ function getVisibleWebAppProject() {
   return null;
 }
 
+function persistVisibleWebAppPaneLayout(key, url = "") {
+  const sourceEntry = getVisibleWebAppEntryByKey(key);
+  const project = sourceEntry ? getVisibleWebAppProject() : null;
+  if (project) {
+    const paneNode = findPaneNode(getProjectPaneLayout(project), sourceEntry.paneId);
+    if (paneNode?.transientWebApp?.id === sourceEntry.webApp.id && url) {
+      paneNode.transientWebApp = {
+        ...paneNode.transientWebApp,
+        url
+      };
+    }
+    persistPaneLayout(project);
+  }
+}
+
 function getWebAppOpenUrlLabel(url) {
   try {
     const parsedUrl = new URL(url);
@@ -6106,6 +6121,7 @@ window.boatyard.onWebAppUrlChanged(({ key, url }) => {
   }
 
   currentWebAppUrlsByKey.set(key, url);
+  persistVisibleWebAppPaneLayout(key, url);
   for (const input of document.querySelectorAll(".webapp-url")) {
     if (input.dataset.webappKey === key && input !== document.activeElement) {
       input.value = url;
