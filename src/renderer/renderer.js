@@ -123,6 +123,7 @@ function getSettings() {
   return {
     projectsBasePath: "",
     blurWebAppOverlays: true,
+    webAppOpenRules: [],
     widgetRailWidth: 340,
     terminalEnv: "",
     ...(state.settings || {})
@@ -2578,6 +2579,232 @@ function getCurrentWebAppUrl(webApp) {
   return currentWebAppUrlsByKey.get(webApp.key) || webApp.url;
 }
 
+function getVisibleWebAppByKey(key) {
+  for (const { webApp } of visibleWebAppHosts.values()) {
+    if (webApp.key === key) {
+      return webApp;
+    }
+  }
+
+  return null;
+}
+
+function getVisibleWebAppEntryByKey(key) {
+  for (const entry of visibleWebAppHosts.values()) {
+    if (entry.webApp.key === key) {
+      return entry;
+    }
+  }
+
+  return null;
+}
+
+function getWebAppOpenRulePattern(url, scope) {
+  const parsedUrl = new URL(url);
+  if (scope === "host") {
+    return parsedUrl.host;
+  }
+
+  if (scope === "path-prefix") {
+    return `${parsedUrl.origin}${parsedUrl.pathname}`;
+  }
+
+  return parsedUrl.toString();
+}
+
+function upsertWebAppOpenRule(rules, nextRule) {
+  return [
+    ...rules.filter((rule) => !(rule.scope === nextRule.scope && rule.pattern === nextRule.pattern)),
+    nextRule
+  ];
+}
+
+async function applyWebAppOpenChoice(payload, choice) {
+  const url = normalizeAddressInput(payload.url);
+
+  if (choice.target === "external") {
+    await window.boatyard.openExternal(url);
+  } else {
+    await invokeWebApp("navigateWebApp", payload.sourceWebAppKey, "open", url);
+  }
+
+  if (!choice.persist) {
+    return;
+  }
+
+  const settings = getSettings();
+  const nextRule = {
+    pattern: getWebAppOpenRulePattern(url, choice.scope),
+    scope: choice.scope,
+    target: choice.target,
+    label: choice.label || ""
+  };
+  state = await window.boatyard.updateSettings({
+    webAppOpenRules: upsertWebAppOpenRule(settings.webAppOpenRules || [], nextRule)
+  });
+}
+
+function createRadioOption(name, value, labelText, descriptionText, checked = false) {
+  const label = document.createElement("label");
+  label.className = "webapp-open-option";
+
+  const input = document.createElement("input");
+  input.type = "radio";
+  input.name = name;
+  input.value = value;
+  input.checked = checked;
+
+  const copy = document.createElement("span");
+  copy.innerHTML = `<strong>${labelText}</strong><small>${descriptionText}</small>`;
+
+  label.append(input, copy);
+  return { label, input };
+}
+
+async function openWebAppOpenUrlDialog(payload = {}) {
+  let url = "";
+  try {
+    url = normalizeAddressInput(payload.url);
+  } catch {
+    return;
+  }
+
+  const sourceEntry = getVisibleWebAppEntryByKey(payload.sourceWebAppKey);
+  const sourceWebApp = sourceEntry?.webApp || null;
+  const sourceBounds = getWebAppHostBounds(sourceEntry?.host) || null;
+  await freezeWebAppsForOverlay();
+
+  const dialog = document.createElement("dialog");
+  dialog.className = "plugin-settings-dialog webapp-open-dialog";
+  if (sourceBounds) {
+    dialog.classList.add("anchored");
+    dialog.style.left = `${Math.round(sourceBounds.x + (sourceBounds.width / 2))}px`;
+    dialog.style.top = `${Math.round(sourceBounds.y + (sourceBounds.height / 2))}px`;
+  }
+
+  const panel = document.createElement("form");
+  panel.className = "plugin-settings-dialog-panel webapp-open-dialog-panel";
+
+  const header = document.createElement("header");
+  header.className = "plugin-settings-dialog-header";
+
+  const title = document.createElement("h3");
+  title.textContent = "Open URL";
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "icon-button";
+  closeButton.type = "button";
+  closeButton.title = "Close";
+  closeButton.setAttribute("aria-label", "Close");
+  closeButton.textContent = "X";
+  closeButton.addEventListener("click", () => dialog.close());
+  header.append(title, closeButton);
+
+  const summary = document.createElement("div");
+  summary.className = "webapp-open-summary";
+  const source = document.createElement("span");
+  source.textContent = sourceWebApp ? `From ${sourceWebApp.label}` : "From webapp";
+  const urlText = document.createElement("code");
+  urlText.textContent = url;
+  summary.append(source, urlText);
+
+  const targetGroup = document.createElement("div");
+  targetGroup.className = "webapp-open-options";
+  const samePane = createRadioOption(
+    "webAppOpenTarget",
+    "same-pane",
+    "Same pane",
+    "Navigate the current webapp pane to this URL.",
+    true
+  );
+  const external = createRadioOption(
+    "webAppOpenTarget",
+    "external",
+    "External browser",
+    "Open this URL outside Boatyard."
+  );
+  targetGroup.append(samePane.label, external.label);
+
+  const persistLabel = document.createElement("label");
+  persistLabel.className = "webapp-open-persist";
+  const persistInput = document.createElement("input");
+  persistInput.type = "checkbox";
+  persistInput.name = "persistRule";
+  const persistCopy = document.createElement("span");
+  persistCopy.innerHTML = "<strong>Always use this method</strong><small>Save a rule in global settings.</small>";
+  persistLabel.append(persistInput, persistCopy);
+
+  const scopeLabel = document.createElement("label");
+  scopeLabel.className = "webapp-open-scope";
+  const scopeText = document.createElement("span");
+  scopeText.textContent = "Rule scope";
+  const scopeSelect = document.createElement("select");
+  scopeSelect.name = "ruleScope";
+  for (const [value, label] of [
+    ["exact", "Exact URL"],
+    ["host", "This host"],
+    ["path-prefix", "This path prefix"]
+  ]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    scopeSelect.append(option);
+  }
+  scopeLabel.append(scopeText, scopeSelect);
+  scopeLabel.hidden = true;
+
+  persistInput.addEventListener("change", () => {
+    scopeLabel.hidden = !persistInput.checked;
+  });
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+  const cancelButton = document.createElement("button");
+  cancelButton.className = "secondary-button";
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel";
+  cancelButton.addEventListener("click", () => dialog.close());
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Open";
+  actions.append(cancelButton, submitButton);
+
+  panel.append(header, summary, targetGroup, persistLabel, scopeLabel, error, actions);
+  panel.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.hidden = true;
+    submitButton.disabled = true;
+
+    try {
+      await applyWebAppOpenChoice(payload, {
+        target: panel.elements.webAppOpenTarget.value,
+        persist: persistInput.checked,
+        scope: scopeSelect.value,
+        label: sourceWebApp?.label || ""
+      });
+      dialog.close();
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+
+  dialog.append(panel);
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    restoreWebAppsAfterOverlay();
+  });
+  document.body.append(dialog);
+  dialog.showModal();
+}
+
 function normalizeAddressInput(rawUrl) {
   const trimmed = String(rawUrl || "").trim();
 
@@ -3672,6 +3899,294 @@ function createGlobalPasswordManagerSettingsForm({ settings, onSubmit }) {
   return shell;
 }
 
+const WEBAPP_OPEN_TARGET_LABELS = {
+  "same-pane": "Same pane",
+  external: "External browser"
+};
+
+const WEBAPP_OPEN_SCOPE_LABELS = {
+  exact: "Exact URL",
+  host: "Host",
+  "path-prefix": "Path prefix"
+};
+
+function createWebAppOpenRuleSelect(name, labelText, options, selectedValue) {
+  const label = document.createElement("label");
+  label.className = "field";
+
+  const span = document.createElement("span");
+  span.textContent = labelText;
+
+  const select = document.createElement("select");
+  select.name = name;
+  for (const [value, text] of Object.entries(options)) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    option.selected = selectedValue === value;
+    select.append(option);
+  }
+
+  label.append(span, select);
+  return { label, select };
+}
+
+function createWebAppOpenRuleListItem(rule, index, { onEdit, onRemove }) {
+  const item = document.createElement("article");
+  item.className = "webapp-open-rule-item";
+
+  const editButton = document.createElement("button");
+  editButton.className = "webapp-open-rule-edit";
+  editButton.type = "button";
+  editButton.addEventListener("click", () => onEdit(index));
+
+  const pattern = document.createElement("code");
+  pattern.textContent = rule.pattern || "Untitled rule";
+
+  const meta = document.createElement("span");
+  meta.className = "webapp-open-rule-meta";
+  const label = rule.label ? ` · ${rule.label}` : "";
+  meta.textContent = `${WEBAPP_OPEN_TARGET_LABELS[rule.target] || rule.target} · ${WEBAPP_OPEN_SCOPE_LABELS[rule.scope] || rule.scope}${label}`;
+
+  editButton.append(pattern, meta);
+
+  const removeButton = document.createElement("button");
+  removeButton.className = "project-url-remove";
+  removeButton.type = "button";
+  removeButton.title = "Remove rule";
+  removeButton.setAttribute("aria-label", "Remove rule");
+  removeButton.textContent = "X";
+  removeButton.addEventListener("click", () => onRemove(index));
+
+  item.append(editButton, removeButton);
+  return item;
+}
+
+function openWebAppOpenRuleSettingsDialog(rule = {}, { onSave, onRemove } = {}) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "plugin-settings-dialog webapp-open-rule-dialog";
+
+  const form = document.createElement("form");
+  form.className = "plugin-settings-dialog-panel";
+
+  const header = document.createElement("header");
+  header.className = "plugin-settings-dialog-header";
+
+  const title = document.createElement("h3");
+  title.textContent = rule.pattern ? "Edit URL opening rule" : "Add URL opening rule";
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "icon-button";
+  closeButton.type = "button";
+  closeButton.title = "Close";
+  closeButton.setAttribute("aria-label", "Close");
+  closeButton.textContent = "X";
+  closeButton.addEventListener("click", () => dialog.close());
+  header.append(title, closeButton);
+
+  const patternLabel = document.createElement("label");
+  patternLabel.className = "field";
+  const patternText = document.createElement("span");
+  patternText.textContent = "URL pattern";
+  const patternInput = document.createElement("input");
+  patternInput.name = "openRulePattern";
+  patternInput.type = "text";
+  patternInput.autocomplete = "off";
+  patternInput.placeholder = "https://accounts.google.com";
+  patternInput.value = rule.pattern || "";
+  applyFormControl(patternInput);
+  patternLabel.append(patternText, patternInput);
+
+  const { label: targetLabel, select: targetSelect } = createWebAppOpenRuleSelect(
+    "openRuleTarget",
+    "Open target",
+    WEBAPP_OPEN_TARGET_LABELS,
+    rule.target || "same-pane"
+  );
+
+  const { label: scopeLabel, select: scopeSelect } = createWebAppOpenRuleSelect(
+    "openRuleScope",
+    "Rule scope",
+    WEBAPP_OPEN_SCOPE_LABELS,
+    rule.scope || "exact"
+  );
+
+  const labelLabel = document.createElement("label");
+  labelLabel.className = "field";
+  const labelText = document.createElement("span");
+  labelText.textContent = "Label";
+  const labelInput = document.createElement("input");
+  labelInput.name = "openRuleLabel";
+  labelInput.type = "text";
+  labelInput.autocomplete = "off";
+  labelInput.placeholder = "Optional label";
+  labelInput.value = rule.label || "";
+  applyFormControl(labelInput);
+  labelLabel.append(labelText, labelInput);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const deleteButton = document.createElement("button");
+  deleteButton.className = "danger-button";
+  deleteButton.type = "button";
+  deleteButton.textContent = "Remove";
+  deleteButton.hidden = !onRemove;
+  deleteButton.addEventListener("click", async () => {
+    deleteButton.disabled = true;
+    try {
+      await onRemove();
+      dialog.close();
+    } catch (removeError) {
+      error.textContent = removeError.message;
+      error.hidden = false;
+    } finally {
+      deleteButton.disabled = false;
+    }
+  });
+
+  const cancelButton = document.createElement("button");
+  cancelButton.className = "secondary-button";
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel";
+  cancelButton.addEventListener("click", () => dialog.close());
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save";
+
+  actions.append(deleteButton, cancelButton, submitButton);
+  form.append(header, patternLabel, targetLabel, scopeLabel, labelLabel, error, actions);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+    submitButton.disabled = true;
+
+    const nextRule = {
+      pattern: patternInput.value.trim(),
+      target: targetSelect.value,
+      scope: scopeSelect.value,
+      label: labelInput.value.trim()
+    };
+
+    if (!nextRule.pattern) {
+      error.textContent = "URL pattern is required.";
+      error.hidden = false;
+      submitButton.disabled = false;
+      return;
+    }
+
+    try {
+      await onSave(nextRule);
+      dialog.close();
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+
+  dialog.append(form);
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  patternInput.focus();
+  patternInput.select();
+}
+
+function createGlobalWebAppOpenRulesSettingsForm({ settings, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const panel = document.createElement("div");
+  panel.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Webapp URL opening";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Manage saved rules created by Open with dialogs.";
+  heading.append(headingTitle, headingCopy);
+
+  const list = document.createElement("div");
+  list.className = "webapp-open-rule-list";
+  let rules = [...(settings.webAppOpenRules || [])];
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  async function saveRules(nextRules) {
+    error.textContent = "";
+    error.hidden = true;
+    await onSubmit({
+      webAppOpenRules: nextRules.filter((rule) => rule.pattern?.trim())
+    });
+  }
+
+  function renderRules() {
+    list.innerHTML = "";
+
+    if (rules.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "webapp-open-rule-empty";
+      empty.textContent = "No saved URL opening rules.";
+      list.append(empty);
+      return;
+    }
+
+    rules.forEach((rule, index) => {
+      list.append(createWebAppOpenRuleListItem(rule, index, {
+        onEdit: (ruleIndex) => {
+          openWebAppOpenRuleSettingsDialog(rules[ruleIndex], {
+            onSave: (nextRule) => {
+              const nextRules = rules.map((currentRule, currentIndex) => (
+                currentIndex === ruleIndex ? nextRule : currentRule
+              ));
+              return saveRules(nextRules);
+            },
+            onRemove: () => saveRules(rules.filter((_, currentIndex) => currentIndex !== ruleIndex))
+          });
+        },
+        onRemove: (ruleIndex) => saveRules(rules.filter((_, currentIndex) => currentIndex !== ruleIndex))
+      }));
+    });
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const addButton = document.createElement("button");
+  addButton.className = "secondary-button";
+  addButton.type = "button";
+  addButton.textContent = "Add rule";
+  addButton.addEventListener("click", () => {
+    openWebAppOpenRuleSettingsDialog({}, {
+      onSave: (nextRule) => saveRules([...rules, nextRule])
+    });
+  });
+
+  actions.append(addButton);
+  panel.append(heading, list, error, actions);
+  renderRules();
+
+  shell.append(panel);
+  return shell;
+}
+
 function createGlobalWidgetsSettingsView() {
   const shell = document.createElement("section");
   shell.className = "project-form-page widgets-settings-page";
@@ -4041,6 +4556,12 @@ function renderGlobalSettingsPage() {
       renderGlobalSettingsPage();
     }
   }), createGlobalPasswordManagerSettingsForm({
+    settings: getSettings(),
+    onSubmit: async (values) => {
+      state = await window.boatyard.updateSettings(values);
+      renderGlobalSettingsPage();
+    }
+  }), createGlobalWebAppOpenRulesSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
       state = await window.boatyard.updateSettings(values);
@@ -5481,6 +6002,10 @@ window.boatyard.onWebAppAutofillChanged?.(({ key, enabled }) => {
       syncWebAppAutofillButton(button, enabled === true);
     }
   }
+});
+
+window.boatyard.onWebAppOpenUrlRequested?.((payload) => {
+  openWebAppOpenUrlDialog(payload);
 });
 
 window.boatyard.onTerminalData(({ terminalId, data }) => {

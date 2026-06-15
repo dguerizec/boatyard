@@ -34,7 +34,8 @@ function createDefaultState() {
       passwordManagerEnabled: false,
       passwordManagerDisclaimerAccepted: false,
       widgetRailWidth: 340,
-      terminalEnv: ""
+      terminalEnv: "",
+      webAppOpenRules: []
     },
     projects: [],
     window: {
@@ -193,8 +194,36 @@ function normalizeSettings(settings = {}) {
     passwordManagerEnabled: source.passwordManagerEnabled === true && source.passwordManagerDisclaimerAccepted === true,
     passwordManagerDisclaimerAccepted: source.passwordManagerDisclaimerAccepted === true,
     widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340),
-    terminalEnv: normalizeMultilineText(source.terminalEnv)
+    terminalEnv: normalizeMultilineText(source.terminalEnv),
+    webAppOpenRules: normalizeWebAppOpenRules(source.webAppOpenRules)
   };
+}
+
+function normalizeWebAppOpenRules(rules = []) {
+  const source = Array.isArray(rules) ? rules : [];
+  const allowedTargets = new Set(["same-pane", "external"]);
+  const allowedScopes = new Set(["exact", "host", "path-prefix"]);
+  const normalized = [];
+
+  for (const rule of source) {
+    const entry = rule && typeof rule === "object" ? rule : {};
+    const pattern = normalizeText(entry.pattern || entry.match);
+    const target = normalizeText(entry.target);
+    const scope = normalizeText(entry.scope || "exact");
+
+    if (!pattern || !allowedTargets.has(target) || !allowedScopes.has(scope)) {
+      continue;
+    }
+
+    normalized.push({
+      pattern,
+      target,
+      scope,
+      label: normalizeText(entry.label)
+    });
+  }
+
+  return normalized;
 }
 
 function normalizePasswordVault(vault = {}) {
@@ -1123,6 +1152,7 @@ module.exports = {
   normalizeSlug,
   deriveRepoUrl,
   normalizeSettings,
+  normalizeWebAppOpenRules,
   normalizePluginsState,
   normalizePluginConfig,
   normalizePasswordVault,

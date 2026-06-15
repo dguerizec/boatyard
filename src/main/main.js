@@ -163,8 +163,17 @@ function createWebAppContextMenu(webContents, params) {
     }
     template.push(
       {
+        label: "Open with...",
+        click: () => {
+          const webApp = getWebAppForWebContents(webContents);
+          if (!sendWebAppOpenUrlRequest(webApp?.key || "", params.linkURL, "context-menu")) {
+            openExternalUrl(params.linkURL);
+          }
+        }
+      },
+      {
         label: "Open link in browser",
-        click: () => shell.openExternal(params.linkURL)
+        click: () => openExternalUrl(params.linkURL)
       },
       {
         label: "Copy link address",
@@ -207,6 +216,100 @@ function createWebAppContextMenu(webContents, params) {
   return Menu.buildFromTemplate(template);
 }
 
+function parseHttpUrl(url) {
+  try {
+    const parsedUrl = new URL(url);
+    return ["http:", "https:"].includes(parsedUrl.protocol) ? parsedUrl : null;
+  } catch {
+    return null;
+  }
+}
+
+function openExternalUrl(url) {
+  return shell.openExternal(String(url || ""));
+}
+
+function sendWebAppOpenUrlRequest(sourceWebAppKey, url, source = "window-open") {
+  if (!mainWindow || mainWindow.webContents.isDestroyed()) {
+    return false;
+  }
+
+  mainWindow.webContents.send("webapp:open-url-requested", {
+    sourceWebAppKey: String(sourceWebAppKey || ""),
+    url: String(url || ""),
+    source
+  });
+  return true;
+}
+
+function getWebAppOpenRule(url) {
+  const parsedUrl = parseHttpUrl(url);
+  if (!parsedUrl) {
+    return null;
+  }
+
+  const rules = store?.getState()?.settings?.webAppOpenRules || [];
+  return rules.find((rule) => {
+    if (rule.scope === "host") {
+      return parsedUrl.host === rule.pattern || parsedUrl.hostname === rule.pattern;
+    }
+
+    if (rule.scope === "path-prefix") {
+      return parsedUrl.toString().startsWith(rule.pattern);
+    }
+
+    return parsedUrl.toString() === rule.pattern;
+  }) || null;
+}
+
+function applyWebAppOpenRule(webApp, rule, url) {
+  if (!rule) {
+    return false;
+  }
+
+  if (rule.target === "external") {
+    openExternalUrl(url);
+    return true;
+  }
+
+  if (rule.target === "same-pane") {
+    return loadWebAppUrl(webApp, url);
+  }
+
+  return false;
+}
+
+function loadWebAppUrl(webApp, url) {
+  const parsedUrl = parseHttpUrl(url);
+  if (!parsedUrl || !webApp || webApp.view.webContents.isDestroyed()) {
+    return false;
+  }
+
+  webApp.url = parsedUrl.toString();
+  webApp.view.webContents.loadURL(webApp.url).catch((error) => {
+    console.warn(`Could not load webapp ${webApp.url}: ${error.message}`);
+  });
+  return true;
+}
+
+function handleWebAppWindowOpen(key, details) {
+  const url = details?.url || "";
+  const webApp = webAppViews.get(key);
+
+  if (details?.disposition === "background-tab") {
+    openExternalUrl(url);
+    return { action: "deny" };
+  }
+
+  const rule = getWebAppOpenRule(url);
+  if (rule) {
+    applyWebAppOpenRule(webApp, rule, url);
+  } else if (!sendWebAppOpenUrlRequest(key, url, "window-open")) {
+    openExternalUrl(url);
+  }
+  return { action: "deny" };
+}
+
 function ensureWebAppView(key) {
   const existing = webAppViews.get(key);
   if (existing) {
@@ -223,10 +326,7 @@ function ensureWebAppView(key) {
     }
   });
   view.setBackgroundColor("#0b0f14");
-  view.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
-    return { action: "deny" };
-  });
+  view.webContents.setWindowOpenHandler((details) => handleWebAppWindowOpen(key, details));
   view.webContents.on("context-menu", (_event, params) => {
     createWebAppContextMenu(view.webContents, params).popup({
       window: mainWindow || undefined
@@ -299,10 +399,7 @@ function showWebApp({ key, url, bounds, autofillEnabled, restoreUrl = true }) {
   activeWebAppKey = String(key);
 
   if (webApp.url !== parsedUrl.toString()) {
-    webApp.url = parsedUrl.toString();
-    webApp.view.webContents.loadURL(webApp.url).catch((error) => {
-      console.warn(`Could not load webapp ${webApp.url}: ${error.message}`);
-    });
+    loadWebAppUrl(webApp, parsedUrl.toString());
   }
 }
 
@@ -335,11 +432,7 @@ function navigateWebApp(key, action, url) {
       return false;
     }
 
-    webApp.url = parsedUrl.toString();
-    webApp.view.webContents.loadURL(webApp.url).catch((error) => {
-      console.warn(`Could not load webapp ${webApp.url}: ${error.message}`);
-    });
-    return true;
+    return loadWebAppUrl(webApp, parsedUrl.toString());
   }
 
   if (action === "back") {
@@ -696,7 +789,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("shell:open-external", (_event, url) => {
-    return shell.openExternal(url);
+    return openExternalUrl(url);
   });
 }
 

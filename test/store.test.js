@@ -194,7 +194,8 @@ test("normalizeSettings keeps global settings defaults", () => {
     passwordManagerEnabled: false,
     passwordManagerDisclaimerAccepted: false,
     widgetRailWidth: 340,
-    terminalEnv: ""
+    terminalEnv: "",
+    webAppOpenRules: []
   });
   assert.deepEqual(normalizeSettings({
     projectsBasePath: "  /workspace/projects  ",
@@ -202,14 +203,35 @@ test("normalizeSettings keeps global settings defaults", () => {
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 120,
-    terminalEnv: "SSH_ASKPASS=\r\nSSH_ASKPASS_REQUIRE=never\n"
+    terminalEnv: "SSH_ASKPASS=\r\nSSH_ASKPASS_REQUIRE=never\n",
+    webAppOpenRules: [
+      {
+        pattern: "https://accounts.example.com",
+        target: "same-pane",
+        scope: "host",
+        label: "Accounts"
+      },
+      {
+        pattern: "https://ignored.example.com",
+        target: "subpane",
+        scope: "host"
+      }
+    ]
   }), {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 240,
-    terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never"
+    terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never",
+    webAppOpenRules: [
+      {
+        pattern: "https://accounts.example.com",
+        target: "same-pane",
+        scope: "host",
+        label: "Accounts"
+      }
+    ]
   });
   assert.equal(normalizeSettings({
     passwordManagerEnabled: true,
@@ -529,7 +551,14 @@ test("ProjectStore persists global settings", () => {
     blurWebAppOverlays: false,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
-    terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never"
+    terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never",
+    webAppOpenRules: [
+      {
+        pattern: "https://accounts.example.com",
+        target: "external",
+        scope: "host"
+      }
+    ]
   });
 
   assert.deepEqual(state.settings, {
@@ -538,7 +567,15 @@ test("ProjectStore persists global settings", () => {
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 340,
-    terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never"
+    terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never",
+    webAppOpenRules: [
+      {
+        pattern: "https://accounts.example.com",
+        target: "external",
+        scope: "host",
+        label: ""
+      }
+    ]
   });
 
   const reloaded = new ProjectStore(filePath);
