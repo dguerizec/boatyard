@@ -238,7 +238,8 @@ function sendWebAppOpenUrlRequest(sourceWebAppKey, url, source = "window-open", 
     sourceWebAppKey: String(sourceWebAppKey || ""),
     url: String(url || ""),
     source,
-    target: String(options.target || "")
+    target: String(options.target || ""),
+    sourceUrl: String(options.sourceUrl || "")
   });
   return true;
 }
@@ -263,7 +264,7 @@ function getWebAppOpenRule(url) {
   }) || null;
 }
 
-function applyWebAppOpenRule(webApp, rule, url) {
+function applyWebAppOpenRule(webApp, rule, url, sourceWebAppKey = "") {
   if (!rule) {
     return false;
   }
@@ -278,8 +279,9 @@ function applyWebAppOpenRule(webApp, rule, url) {
   }
 
   if (rule.target === "split-pane") {
-    return sendWebAppOpenUrlRequest(webApp?.key || "", url, "saved-rule", {
-      target: "split-pane"
+    return sendWebAppOpenUrlRequest(sourceWebAppKey, url, "saved-rule", {
+      target: "split-pane",
+      sourceUrl: webApp?.url || ""
     });
   }
 
@@ -310,7 +312,7 @@ function handleWebAppWindowOpen(key, details) {
 
   const rule = getWebAppOpenRule(url);
   if (rule) {
-    applyWebAppOpenRule(webApp, rule, url);
+    applyWebAppOpenRule(webApp, rule, url, key);
   } else if (!sendWebAppOpenUrlRequest(key, url, "window-open")) {
     openExternalUrl(url);
   }

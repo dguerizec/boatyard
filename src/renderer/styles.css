@@ -2077,6 +2077,7 @@ button {
 
 .webapp-tabs {
   flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .webapp-tab {
@@ -2219,6 +2220,7 @@ button {
 }
 
 .webapp-tool-button {
+  flex: 0 0 32px;
   width: 32px;
   height: 32px;
   min-height: 32px;
@@ -2263,8 +2265,9 @@ button {
 }
 
 .webapp-url {
+  flex: 1 1 96px;
   min-width: 0;
-  width: min(48vw, 720px);
+  width: auto;
   max-width: min(48vw, 720px);
   height: 32px;
   border: 1px solid transparent;

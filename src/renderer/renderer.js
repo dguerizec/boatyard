@@ -2615,6 +2615,23 @@ function getVisibleWebAppEntryByKey(key) {
   return null;
 }
 
+function getVisibleWebAppEntryByUrl(url) {
+  if (!url) {
+    return null;
+  }
+
+  for (const [paneId, entry] of visibleWebAppHosts.entries()) {
+    if (getCurrentWebAppUrl(entry.webApp) === url || entry.webApp.url === url) {
+      return {
+        ...entry,
+        paneId
+      };
+    }
+  }
+
+  return null;
+}
+
 function getVisibleWebAppProject() {
   if (currentView === "global") {
     return getGlobalWorkspace();
@@ -2646,9 +2663,18 @@ function createTransientWebApp(url, label = "") {
 
 function openUrlInSplitPane(sourceWebAppKey, url, label = "") {
   const sourceEntry = getVisibleWebAppEntryByKey(sourceWebAppKey);
+  return openUrlInSplitPaneFromEntry(sourceEntry, url, label);
+}
+
+function openUrlInSplitPaneFromEntry(sourceEntry, url, label = "") {
   const project = sourceEntry ? getVisibleWebAppProject() : null;
   if (!sourceEntry || !project) {
     return false;
+  }
+
+  const existingEntry = getVisibleWebAppEntryByUrl(url);
+  if (existingEntry) {
+    return true;
   }
 
   const layout = getProjectPaneLayout(project);
@@ -2707,7 +2733,14 @@ async function applyWebAppOpenChoice(payload, choice) {
   if (choice.target === "external") {
     await window.boatyard.openExternal(url);
   } else if (choice.target === "split-pane") {
-    openUrlInSplitPane(payload.sourceWebAppKey, url, choice.label || "");
+    const sourceEntry = getVisibleWebAppEntryByKey(payload.sourceWebAppKey) ||
+      getVisibleWebAppEntryByUrl(payload.sourceUrl);
+    if (!openUrlInSplitPaneFromEntry(sourceEntry, url, choice.label || "")) {
+      const opened = await invokeWebApp("navigateWebApp", payload.sourceWebAppKey, "open", url);
+      if (!opened) {
+        await window.boatyard.openExternal(url);
+      }
+    }
   } else {
     await invokeWebApp("navigateWebApp", payload.sourceWebAppKey, "open", url);
   }
