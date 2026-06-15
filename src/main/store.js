@@ -201,7 +201,7 @@ function normalizeSettings(settings = {}) {
 
 function normalizeWebAppOpenRules(rules = []) {
   const source = Array.isArray(rules) ? rules : [];
-  const allowedTargets = new Set(["same-pane", "external"]);
+  const allowedTargets = new Set(["same-pane", "split-pane", "external"]);
   const allowedScopes = new Set(["exact", "host", "path-prefix"]);
   const normalized = [];
 

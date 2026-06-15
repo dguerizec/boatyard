@@ -22,6 +22,7 @@ const WIDGET_GRID_ROW_HEIGHT = 84;
 const WIDGET_GRID_GAP = 12;
 const WIDGET_GRID_SCROLL_GUARD = 10;
 const WEBAPP_SPLIT_RESIZER_SIZE = 6;
+const WEBAPP_OPEN_SPLIT_RATIO = 2 / 3;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-shell", "terminal-shell"],
   ["global-shell", "terminal-shell"],
@@ -2432,6 +2433,7 @@ function createWidgetPaneActions(project, widgetPane, layout, columnCount) {
 }
 
 function getProjectWebApps(project, paneId) {
+  const paneNode = findPaneNode(getProjectPaneLayout(project), paneId);
   const webApps = getProjectWidgetPanes(project).map((widgetPane, index) => ({
     id: `widgets:${widgetPane.id}`,
     label: widgetPane.label || `Widgets ${index + 1}`,
@@ -2439,6 +2441,17 @@ function getProjectWebApps(project, paneId) {
     kind: "widgets",
     widgetPane
   }));
+
+  if (paneNode?.transientWebApp?.url) {
+    webApps.push({
+      id: paneNode.transientWebApp.id,
+      label: paneNode.transientWebApp.label || "Link",
+      key: `${paneId}:transient:${paneNode.transientWebApp.id}`,
+      url: paneNode.transientWebApp.url,
+      restoreUrl: false,
+      transient: true
+    });
+  }
 
   if (isGlobalWorkspace(project) || project.sourcePath) {
     webApps.push({
@@ -2590,13 +2603,82 @@ function getVisibleWebAppByKey(key) {
 }
 
 function getVisibleWebAppEntryByKey(key) {
-  for (const entry of visibleWebAppHosts.values()) {
+  for (const [paneId, entry] of visibleWebAppHosts.entries()) {
     if (entry.webApp.key === key) {
-      return entry;
+      return {
+        ...entry,
+        paneId
+      };
     }
   }
 
   return null;
+}
+
+function getVisibleWebAppProject() {
+  if (currentView === "global") {
+    return getGlobalWorkspace();
+  }
+
+  if (currentView === "project") {
+    return getCurrentProject();
+  }
+
+  return null;
+}
+
+function getWebAppOpenUrlLabel(url) {
+  try {
+    const parsedUrl = new URL(url);
+    return parsedUrl.hostname || "Link";
+  } catch {
+    return "Link";
+  }
+}
+
+function createTransientWebApp(url, label = "") {
+  return {
+    id: `transient:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+    label: label || getWebAppOpenUrlLabel(url),
+    url
+  };
+}
+
+function openUrlInSplitPane(sourceWebAppKey, url, label = "") {
+  const sourceEntry = getVisibleWebAppEntryByKey(sourceWebAppKey);
+  const project = sourceEntry ? getVisibleWebAppProject() : null;
+  if (!sourceEntry || !project) {
+    return false;
+  }
+
+  const layout = getProjectPaneLayout(project);
+  const sourcePaneNode = findPaneNode(layout, sourceEntry.paneId);
+  if (!sourcePaneNode) {
+    return false;
+  }
+
+  const sourceWebAppId = sourceEntry.webApp.id;
+  const sourceBounds = getWebAppHostBounds(sourceEntry.host);
+  const splitDirection = sourceBounds && sourceBounds.height > 0 && sourceBounds.width / sourceBounds.height <= 1
+    ? "horizontal"
+    : "vertical";
+  const replacement = createSplitNode(
+    project,
+    splitDirection,
+    { ...sourcePaneNode, selectedWebAppId: sourceWebAppId },
+    null
+  );
+  replacement.ratio = WEBAPP_OPEN_SPLIT_RATIO;
+  replacement.second.transientWebApp = createTransientWebApp(url, label);
+  replacement.second.selectedWebAppId = replacement.second.transientWebApp.id;
+
+  paneLayoutsByProject.set(project.id, replacePaneNode(layout, sourceEntry.paneId, replacement));
+  selectedWebAppByPane.set(sourceEntry.paneId, sourceWebAppId);
+  selectedWebAppByPane.set(replacement.second.id, replacement.second.selectedWebAppId);
+
+  persistPaneLayout(project);
+  renderWorkspaceDashboard(project);
+  return true;
 }
 
 function getWebAppOpenRulePattern(url, scope) {
@@ -2624,6 +2706,8 @@ async function applyWebAppOpenChoice(payload, choice) {
 
   if (choice.target === "external") {
     await window.boatyard.openExternal(url);
+  } else if (choice.target === "split-pane") {
+    openUrlInSplitPane(payload.sourceWebAppKey, url, choice.label || "");
   } else {
     await invokeWebApp("navigateWebApp", payload.sourceWebAppKey, "open", url);
   }
@@ -2717,13 +2801,19 @@ async function openWebAppOpenUrlDialog(payload = {}) {
     "Navigate the current webapp pane to this URL.",
     true
   );
+  const splitPane = createRadioOption(
+    "webAppOpenTarget",
+    "split-pane",
+    "Split pane",
+    "Open this URL in a new pane next to the current one."
+  );
   const external = createRadioOption(
     "webAppOpenTarget",
     "external",
     "External browser",
     "Open this URL outside Boatyard."
   );
-  targetGroup.append(samePane.label, external.label);
+  targetGroup.append(samePane.label, splitPane.label, external.label);
 
   const persistLabel = document.createElement("label");
   persistLabel.className = "webapp-open-persist";
@@ -3901,6 +3991,7 @@ function createGlobalPasswordManagerSettingsForm({ settings, onSubmit }) {
 
 const WEBAPP_OPEN_TARGET_LABELS = {
   "same-pane": "Same pane",
+  "split-pane": "Split pane",
   external: "External browser"
 };
 
@@ -6005,6 +6096,18 @@ window.boatyard.onWebAppAutofillChanged?.(({ key, enabled }) => {
 });
 
 window.boatyard.onWebAppOpenUrlRequested?.((payload) => {
+  if (payload?.target) {
+    applyWebAppOpenChoice(payload, {
+      target: payload.target,
+      persist: false,
+      scope: "exact",
+      label: ""
+    }).catch((error) => {
+      console.error("Could not apply webapp URL opening rule:", error);
+    });
+    return;
+  }
+
   openWebAppOpenUrlDialog(payload);
 });
 

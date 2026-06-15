@@ -212,8 +212,14 @@ test("normalizeSettings keeps global settings defaults", () => {
         label: "Accounts"
       },
       {
+        pattern: "https://popup.example.com",
+        target: "split-pane",
+        scope: "path-prefix",
+        label: "Popup"
+      },
+      {
         pattern: "https://ignored.example.com",
-        target: "subpane",
+        target: "new-window",
         scope: "host"
       }
     ]
@@ -230,6 +236,12 @@ test("normalizeSettings keeps global settings defaults", () => {
         target: "same-pane",
         scope: "host",
         label: "Accounts"
+      },
+      {
+        pattern: "https://popup.example.com",
+        target: "split-pane",
+        scope: "path-prefix",
+        label: "Popup"
       }
     ]
   });

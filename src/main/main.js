@@ -229,7 +229,7 @@ function openExternalUrl(url) {
   return shell.openExternal(String(url || ""));
 }
 
-function sendWebAppOpenUrlRequest(sourceWebAppKey, url, source = "window-open") {
+function sendWebAppOpenUrlRequest(sourceWebAppKey, url, source = "window-open", options = {}) {
   if (!mainWindow || mainWindow.webContents.isDestroyed()) {
     return false;
   }
@@ -237,7 +237,8 @@ function sendWebAppOpenUrlRequest(sourceWebAppKey, url, source = "window-open") 
   mainWindow.webContents.send("webapp:open-url-requested", {
     sourceWebAppKey: String(sourceWebAppKey || ""),
     url: String(url || ""),
-    source
+    source,
+    target: String(options.target || "")
   });
   return true;
 }
@@ -274,6 +275,12 @@ function applyWebAppOpenRule(webApp, rule, url) {
 
   if (rule.target === "same-pane") {
     return loadWebAppUrl(webApp, url);
+  }
+
+  if (rule.target === "split-pane") {
+    return sendWebAppOpenUrlRequest(webApp?.key || "", url, "saved-rule", {
+      target: "split-pane"
+    });
   }
 
   return false;
