@@ -324,6 +324,8 @@ function normalizePaneLayoutNode(node, seenIds = new Set()) {
           normalized.transientWebApp = {
             id: transientId,
             label: normalizeText(transientWebApp.label),
+            parentLabel: normalizeText(transientWebApp.parentLabel),
+            parentWebAppId: normalizeText(transientWebApp.parentWebAppId),
             url: transientUrl
           };
         }

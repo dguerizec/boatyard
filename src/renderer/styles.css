@@ -2207,6 +2207,15 @@ button {
   color: var(--accent);
 }
 
+.webapp-tab-menu-item.child {
+  padding-left: 24px;
+  font-size: 12px;
+}
+
+.webapp-tab-menu-item.child::before {
+  content: "↳";
+}
+
 .webapp-tab-menu-item:hover,
 .webapp-tab-menu-item:focus-visible,
 .webapp-tab-menu-item[aria-current="true"] {

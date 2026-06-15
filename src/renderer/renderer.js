@@ -2446,6 +2446,8 @@ function getProjectWebApps(project, paneId) {
     webApps.push({
       id: paneNode.transientWebApp.id,
       label: paneNode.transientWebApp.label || "Link",
+      parentLabel: paneNode.transientWebApp.parentLabel || "",
+      parentWebAppId: paneNode.transientWebApp.parentWebAppId || "",
       key: `${paneId}:transient:${paneNode.transientWebApp.id}`,
       url: paneNode.transientWebApp.url,
       restoreUrl: false,
@@ -2668,10 +2670,12 @@ function getWebAppOpenUrlLabel(url) {
   }
 }
 
-function createTransientWebApp(url, label = "") {
+function createTransientWebApp(url, label = "", parentWebApp = null) {
   return {
     id: `transient:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
     label: label || getWebAppOpenUrlLabel(url),
+    parentLabel: parentWebApp?.label || "",
+    parentWebAppId: parentWebApp?.id || "",
     url
   };
 }
@@ -2710,7 +2714,7 @@ function openUrlInSplitPaneFromEntry(sourceEntry, url, label = "") {
     null
   );
   replacement.ratio = WEBAPP_OPEN_SPLIT_RATIO;
-  replacement.second.transientWebApp = createTransientWebApp(url, label);
+  replacement.second.transientWebApp = createTransientWebApp(url, label, sourceEntry.webApp);
   replacement.second.selectedWebAppId = replacement.second.transientWebApp.id;
 
   paneLayoutsByProject.set(project.id, replacePaneNode(layout, sourceEntry.paneId, replacement));
@@ -3186,15 +3190,50 @@ async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWe
   menu.style.top = `${Math.round(rect.bottom + 6)}px`;
   menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 220))}px`;
 
-  for (const webApp of webApps) {
+  const rootWebApps = webApps.filter((webApp) => !webApp.parentWebAppId);
+  const childWebAppsByParentId = new Map();
+  for (const webApp of webApps.filter((candidate) => candidate.parentWebAppId)) {
+    const children = childWebAppsByParentId.get(webApp.parentWebAppId) || [];
+    children.push(webApp);
+    childWebAppsByParentId.set(webApp.parentWebAppId, children);
+  }
+  const orderedWebApps = [];
+  for (const webApp of rootWebApps) {
+    orderedWebApps.push({
+      webApp,
+      depth: 0
+    });
+    for (const childWebApp of childWebAppsByParentId.get(webApp.id) || []) {
+      orderedWebApps.push({
+        webApp: childWebApp,
+        depth: 1
+      });
+    }
+  }
+  for (const [parentId, children] of childWebAppsByParentId) {
+    if (rootWebApps.some((webApp) => webApp.id === parentId)) {
+      continue;
+    }
+    for (const webApp of children) {
+      orderedWebApps.push({
+        webApp,
+        depth: 0
+      });
+    }
+  }
+
+  for (const { webApp, depth } of orderedWebApps) {
     const item = document.createElement("button");
     item.className = "webapp-tab-menu-item";
+    item.classList.toggle("child", depth > 0);
     item.classList.toggle("loaded", loadedWebAppKeys.has(webApp.key));
     item.type = "button";
     item.setAttribute("role", "menuitem");
     item.setAttribute("aria-current", String(webApp.id === selectedWebApp.id));
     item.setAttribute("data-load-state", loadedWebAppKeys.has(webApp.key) ? "Loaded" : "Not loaded");
-    item.textContent = webApp.label;
+    item.textContent = depth > 0 && webApp.parentLabel
+      ? `${webApp.parentLabel} -> ${webApp.label}`
+      : webApp.label;
     item.addEventListener("click", () => {
       closeWebAppTabMenu();
       selectWebApp(project, paneNode, webApp);

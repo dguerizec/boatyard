@@ -334,6 +334,8 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
       transientWebApp: {
         id: " transient:health ",
         label: " Health ",
+        parentLabel: " Hawser ",
+        parentWebAppId: "boatyard.hawser",
         url: "http://localhost:60082/api/health"
       }
     }
@@ -354,6 +356,8 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
       transientWebApp: {
         id: "transient:health",
         label: "Health",
+        parentLabel: "Hawser",
+        parentWebAppId: "boatyard.hawser",
         url: "http://localhost:60082/api/health"
       }
     }
