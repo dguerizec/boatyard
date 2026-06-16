@@ -11,6 +11,7 @@
   };
   const TWICC_USAGE_REFRESH_MS = 60000;
   let projectProcessStatuses = {};
+  const retainedDoneProjectStatuses = new Map();
   let projectStatusRefreshTimer = null;
 
   if (!registry) {
@@ -104,13 +105,25 @@
     }
     projectStatusRefreshTimer = null;
     projectProcessStatuses = {};
+    retainedDoneProjectStatuses.clear();
     dispatchProjectBadgeChange();
   }
 
-  function createProjectStatusBadge(project, projectConfig = {}) {
+  function createProjectStatusBadge(project, projectConfig = {}, options = {}) {
     const statusKey = getStatusKeysForProject(project, projectConfig)
       .find((key) => projectProcessStatuses?.[key]);
-    const status = statusKey ? projectProcessStatuses[statusKey] : null;
+    const liveStatus = statusKey ? projectProcessStatuses[statusKey] : null;
+    const retainKey = project.id || statusKey;
+
+    if (options.isActiveProject && retainKey) {
+      retainedDoneProjectStatuses.delete(retainKey);
+    }
+
+    if (liveStatus?.state === "done" && retainKey && !options.isActiveProject) {
+      retainedDoneProjectStatuses.set(retainKey, liveStatus);
+    }
+
+    const status = liveStatus || (retainKey ? retainedDoneProjectStatuses.get(retainKey) : null);
     if (!status?.state) {
       return null;
     }
@@ -621,8 +634,8 @@
 
         ctx.projectNavBadges.register({
           id: "boatyard.twicc.projectStatus",
-          render({ project, projectConfig }) {
-            return createProjectStatusBadge(project, projectConfig);
+          render({ project, projectConfig, isActiveProject }) {
+            return createProjectStatusBadge(project, projectConfig, { isActiveProject });
           }
         });
 
