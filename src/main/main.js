@@ -239,7 +239,8 @@ function sendWebAppOpenUrlRequest(sourceWebAppKey, url, source = "window-open", 
     url: String(url || ""),
     source,
     target: String(options.target || ""),
-    sourceUrl: String(options.sourceUrl || "")
+    sourceUrl: String(options.sourceUrl || ""),
+    sourceBounds: options.sourceBounds || null
   });
   return true;
 }
@@ -281,7 +282,8 @@ function applyWebAppOpenRule(webApp, rule, url, sourceWebAppKey = "") {
   if (rule.target === "split-pane") {
     return sendWebAppOpenUrlRequest(sourceWebAppKey, url, "saved-rule", {
       target: "split-pane",
-      sourceUrl: webApp?.url || ""
+      sourceUrl: webApp?.url || "",
+      sourceBounds: webApp?.bounds || null
     });
   }
 
@@ -313,7 +315,9 @@ function handleWebAppWindowOpen(key, details) {
   const rule = getWebAppOpenRule(url);
   if (rule) {
     applyWebAppOpenRule(webApp, rule, url, key);
-  } else if (!sendWebAppOpenUrlRequest(key, url, "window-open")) {
+  } else if (!sendWebAppOpenUrlRequest(key, url, "window-open", {
+    sourceBounds: webApp?.bounds || null
+  })) {
     openExternalUrl(url);
   }
   return { action: "deny" };
@@ -358,6 +362,7 @@ function ensureWebAppView(key) {
   webAppViews.set(key, {
     view,
     url: null,
+    bounds: null,
     autofillEnabled: false
   });
   return webAppViews.get(key);
@@ -403,7 +408,8 @@ function showWebApp({ key, url, bounds, autofillEnabled, restoreUrl = true }) {
   if (typeof autofillEnabled === "boolean") {
     webApp.autofillEnabled = autofillEnabled;
   }
-  webApp.view.setBounds(normalizeWebAppBounds(bounds));
+  webApp.bounds = normalizeWebAppBounds(bounds);
+  webApp.view.setBounds(webApp.bounds);
   webApp.view.setVisible(!webAppsFrozen);
   activeWebAppKey = String(key);
 

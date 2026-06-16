@@ -2865,7 +2865,7 @@ async function openWebAppOpenUrlDialog(payload = {}) {
 
   const sourceEntry = getVisibleWebAppEntryByKey(payload.sourceWebAppKey);
   const sourceWebApp = sourceEntry?.webApp || null;
-  const sourceBounds = getWebAppHostBounds(sourceEntry?.host) || null;
+  const sourceBounds = normalizePayloadBounds(payload.sourceBounds) || getWebAppHostBounds(sourceEntry?.host) || null;
   await freezeWebAppsForOverlay();
 
   const dialog = document.createElement("dialog");
@@ -6111,6 +6111,28 @@ function getWebAppHostBounds(host) {
     y: rect.y,
     width: rect.width,
     height: rect.height
+  };
+}
+
+function normalizePayloadBounds(bounds) {
+  if (!bounds || typeof bounds !== "object") {
+    return null;
+  }
+
+  const x = Number(bounds.x);
+  const y = Number(bounds.y);
+  const width = Number(bounds.width);
+  const height = Number(bounds.height);
+
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    return null;
+  }
+
+  return {
+    x,
+    y,
+    width,
+    height
   };
 }
 

@@ -727,6 +727,8 @@ button {
 
 .webapp-open-dialog.anchored {
   position: fixed;
+  inset: auto;
+  margin: 0;
   transform: translate(-50%, -50%);
 }
 
