@@ -56,7 +56,6 @@ function createDefaultState() {
       projects: {}
     },
     globalUrls: [],
-    webAppHomeTabs: {},
     paneLayouts: {},
     widgetLayouts: {},
     terminalSelections: {},
@@ -291,6 +290,40 @@ function normalizeWebAppState(webApps = {}) {
   return normalized;
 }
 
+function normalizeWebAppHomeTabList(tabs = []) {
+  if (!Array.isArray(tabs)) {
+    return [];
+  }
+
+  const seenIds = new Set();
+  const normalized = [];
+  for (const tab of tabs) {
+    const source = tab && typeof tab === "object" ? tab : {};
+    const id = normalizeText(source.id);
+    const parentWebAppId = normalizeText(source.parentWebAppId);
+    const label = normalizeText(source.label);
+
+    if (!id || seenIds.has(id) || !parentWebAppId || !label) {
+      continue;
+    }
+
+    try {
+      normalized.push({
+        id,
+        parentWebAppId,
+        parentLabel: normalizeText(source.parentLabel),
+        label,
+        url: normalizeUrl(source.url)
+      });
+      seenIds.add(id);
+    } catch {
+      // Ignore invalid saved webapp home tabs.
+    }
+  }
+
+  return normalized;
+}
+
 function normalizeWebAppHomeTabs(homeTabs = {}, projects = []) {
   if (!homeTabs || typeof homeTabs !== "object" || Array.isArray(homeTabs)) {
     return {};
@@ -301,36 +334,11 @@ function normalizeWebAppHomeTabs(homeTabs = {}, projects = []) {
 
   for (const [projectId, tabs] of Object.entries(homeTabs)) {
     const normalizedProjectId = normalizeText(projectId);
-    if (!projectIds.has(normalizedProjectId) || !Array.isArray(tabs)) {
+    if (!projectIds.has(normalizedProjectId)) {
       continue;
     }
 
-    const seenIds = new Set();
-    const projectTabs = [];
-    for (const tab of tabs) {
-      const source = tab && typeof tab === "object" ? tab : {};
-      const id = normalizeText(source.id);
-      const parentWebAppId = normalizeText(source.parentWebAppId);
-      const label = normalizeText(source.label);
-
-      if (!id || seenIds.has(id) || !parentWebAppId || !label) {
-        continue;
-      }
-
-      try {
-        projectTabs.push({
-          id,
-          parentWebAppId,
-          parentLabel: normalizeText(source.parentLabel),
-          label,
-          url: normalizeUrl(source.url)
-        });
-        seenIds.add(id);
-      } catch {
-        // Ignore invalid saved webapp home tabs.
-      }
-    }
-
+    const projectTabs = normalizeWebAppHomeTabList(tabs);
     if (projectTabs.length) {
       normalized[normalizedProjectId] = projectTabs;
     }
@@ -828,6 +836,7 @@ function normalizeProject(project, index = 0) {
     terminalEnv: normalizeMultilineText(project.terminalEnv),
     previewUrl,
     urls: normalizeProjectUrls(project.urls),
+    webAppHomeTabs: normalizeWebAppHomeTabList(project.webAppHomeTabs),
     widgetPanes: normalizeProjectWidgetPanes(project.widgetPanes),
     bounds: normalizeBounds(project.bounds, {
       x: 48 + index * 32,
@@ -855,21 +864,27 @@ class ProjectStore {
           ? parsed.apps
           : [];
       const normalizedProjects = projects.map((project, index) => normalizeProject(project, index));
+      const legacyWebAppHomeTabs = normalizeWebAppHomeTabs(parsed.webAppHomeTabs, normalizedProjects);
+      const projectsWithHomeTabs = normalizedProjects.map((project) => ({
+        ...project,
+        webAppHomeTabs: project.webAppHomeTabs.length
+          ? project.webAppHomeTabs
+          : legacyWebAppHomeTabs[project.id] || []
+      }));
       this.state = {
         settings: normalizeSettings(parsed.settings),
-        projects: normalizedProjects,
+        projects: projectsWithHomeTabs,
         window: normalizeWindowState(parsed.window),
         navigation: normalizeNavigationState(parsed.navigation),
         webApps: normalizeWebAppState(parsed.webApps),
         passwordVault: normalizePasswordVault(parsed.passwordVault),
         plugins: normalizePluginsState(parsed.plugins),
-        pluginConfig: normalizePluginConfig(parsed.pluginConfig, normalizedProjects, { migrateLegacyPreview: true }),
+        pluginConfig: normalizePluginConfig(parsed.pluginConfig, projectsWithHomeTabs, { migrateLegacyPreview: true }),
         globalUrls: normalizeProjectUrls(parsed.globalUrls),
-        webAppHomeTabs: normalizeWebAppHomeTabs(parsed.webAppHomeTabs, normalizedProjects),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
-        terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, normalizedProjects),
-        terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, normalizedProjects)
+        terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, projectsWithHomeTabs),
+        terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, projectsWithHomeTabs)
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -946,48 +961,40 @@ class ProjectStore {
 
   updateWebAppHomeTab(projectId, tab) {
     const normalizedProjectId = normalizeText(projectId);
-    if (
-      normalizedProjectId !== GLOBAL_WORKSPACE_ID &&
-      !this.state.projects.some((project) => project.id === normalizedProjectId)
-    ) {
+    const projectIndex = this.state.projects.findIndex((project) => project.id === normalizedProjectId);
+    if (projectIndex === -1) {
       throw new Error(`Unknown project: ${normalizedProjectId}`);
     }
 
-    const normalized = normalizeWebAppHomeTabs({
-      [normalizedProjectId]: [tab]
-    }, this.state.projects)[normalizedProjectId]?.[0];
+    const normalized = normalizeWebAppHomeTabList([tab])[0];
 
     if (!normalized) {
       throw new Error("Invalid webapp home tab.");
     }
 
-    const tabs = this.state.webAppHomeTabs[normalizedProjectId] || [];
-    this.state.webAppHomeTabs[normalizedProjectId] = [
-      ...tabs.filter((entry) => entry.id !== normalized.id),
-      normalized
-    ];
+    const tabs = this.state.projects[projectIndex].webAppHomeTabs || [];
+    this.state.projects[projectIndex] = {
+      ...this.state.projects[projectIndex],
+      webAppHomeTabs: [
+        ...tabs.filter((entry) => entry.id !== normalized.id),
+        normalized
+      ]
+    };
     this.save();
     return this.getState();
   }
 
   updateWebAppHomeTabs(projectId, tabs) {
     const normalizedProjectId = normalizeText(projectId);
-    if (
-      normalizedProjectId !== GLOBAL_WORKSPACE_ID &&
-      !this.state.projects.some((project) => project.id === normalizedProjectId)
-    ) {
+    const projectIndex = this.state.projects.findIndex((project) => project.id === normalizedProjectId);
+    if (projectIndex === -1) {
       throw new Error(`Unknown project: ${normalizedProjectId}`);
     }
 
-    const normalized = normalizeWebAppHomeTabs({
-      [normalizedProjectId]: tabs
-    }, this.state.projects)[normalizedProjectId] || [];
-
-    if (normalized.length) {
-      this.state.webAppHomeTabs[normalizedProjectId] = normalized;
-    } else {
-      delete this.state.webAppHomeTabs[normalizedProjectId];
-    }
+    this.state.projects[projectIndex] = {
+      ...this.state.projects[projectIndex],
+      webAppHomeTabs: normalizeWebAppHomeTabList(tabs)
+    };
 
     this.save();
     return this.getState();
@@ -1240,7 +1247,6 @@ class ProjectStore {
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
     delete this.state.paneLayouts[projectId];
     delete this.state.widgetLayouts[projectId];
-    delete this.state.webAppHomeTabs[projectId];
     delete this.state.terminalSelections[projectId];
     delete this.state.terminalTabOrders[projectId];
     delete this.state.pluginConfig.projects[projectId];

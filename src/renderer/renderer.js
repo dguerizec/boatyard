@@ -2442,7 +2442,7 @@ function getProjectWebApps(project, paneId) {
     widgetPane
   }));
 
-  if (paneNode?.transientWebApp?.url) {
+  if (paneNode?.transientWebApp?.url && paneNode.selectedWebAppId === paneNode.transientWebApp.id) {
     webApps.push({
       id: paneNode.transientWebApp.id,
       label: paneNode.transientWebApp.label || "Link",
@@ -2455,7 +2455,7 @@ function getProjectWebApps(project, paneId) {
     });
   }
 
-  for (const homeTab of state.webAppHomeTabs?.[project.id] || []) {
+  for (const homeTab of project.webAppHomeTabs || []) {
     webApps.push({
       id: homeTab.id,
       label: homeTab.label || "Link",
@@ -2733,8 +2733,9 @@ async function saveCurrentUrlAsWebAppHomeTab(project, paneNode, selectedWebApp) 
   selectedWebAppByProject.set(project.id, nextTab.id);
   currentWebAppUrlsByKey.set(`${paneNode.id}:home:${nextTab.id}`, currentUrl);
 
-  persistPaneLayout(project);
-  renderWorkspaceDashboard(project);
+  const updatedProject = getProjectById(project.id) || project;
+  persistPaneLayout(updatedProject);
+  renderWorkspaceDashboard(updatedProject);
   return true;
 }
 
@@ -5684,7 +5685,7 @@ function createProjectWebAppHomeTabsForm({ project, onSubmit }) {
   const list = document.createElement("div");
   list.className = "project-webapp-home-tab-list";
 
-  for (const entry of state.webAppHomeTabs?.[project.id] || []) {
+  for (const entry of project.webAppHomeTabs || []) {
     list.append(createProjectWebAppHomeTabRow(entry));
   }
 

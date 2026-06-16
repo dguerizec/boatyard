@@ -65,6 +65,7 @@ test("normalizeProject derives project tool defaults", () => {
     terminalEnv: "",
     previewUrl: "http://localhost:5173/",
     urls: [],
+    webAppHomeTabs: [],
     widgetPanes: [{
       id: "widgets-0",
       label: "Widgets"
@@ -761,7 +762,7 @@ test("ProjectStore persists project webapp home tabs", () => {
     url: "localhost:60082/api/health"
   });
 
-  assert.deepEqual(state.webAppHomeTabs[projectId], [{
+  assert.deepEqual(state.projects[0].webAppHomeTabs, [{
     id: "home:health",
     parentWebAppId: "hawser",
     parentLabel: "Hawser",
@@ -776,7 +777,7 @@ test("ProjectStore persists project webapp home tabs", () => {
     label: "Status",
     url: "localhost:60082/status"
   }]);
-  assert.deepEqual(updated.webAppHomeTabs[projectId], [{
+  assert.deepEqual(updated.projects[0].webAppHomeTabs, [{
     id: "home:health",
     parentWebAppId: "hawser",
     parentLabel: "Hawser",
@@ -785,8 +786,8 @@ test("ProjectStore persists project webapp home tabs", () => {
   }]);
 
   const reloaded = new ProjectStore(filePath);
-  assert.deepEqual(reloaded.load().webAppHomeTabs[projectId], updated.webAppHomeTabs[projectId]);
-  assert.equal(reloaded.updateWebAppHomeTabs(projectId, []).webAppHomeTabs[projectId], undefined);
+  assert.deepEqual(reloaded.load().projects[0].webAppHomeTabs, updated.projects[0].webAppHomeTabs);
+  assert.deepEqual(reloaded.updateWebAppHomeTabs(projectId, []).projects[0].webAppHomeTabs, []);
   reloaded.updateWebAppHomeTab(projectId, {
     id: "home:health",
     parentWebAppId: "hawser",
@@ -794,7 +795,38 @@ test("ProjectStore persists project webapp home tabs", () => {
     label: "Health",
     url: "localhost:60082/api/health"
   });
-  assert.equal(reloaded.removeProject(projectId).webAppHomeTabs[projectId], undefined);
+  assert.equal(reloaded.removeProject(projectId).projects.some((project) => project.id === projectId), false);
+});
+
+test("ProjectStore migrates top-level webapp home tabs into projects", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
+  const filePath = path.join(directory, "state.json");
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    projects: [{
+      id: "project-id",
+      name: "Project",
+      sourcePath: "/workspace/example"
+    }],
+    webAppHomeTabs: {
+      "project-id": [{
+        id: "home:health",
+        parentWebAppId: "hawser",
+        parentLabel: "Hawser",
+        label: "Health",
+        url: "localhost:60082/api/health"
+      }]
+    }
+  })}\n`);
+
+  const state = new ProjectStore(filePath).load();
+  assert.deepEqual(state.projects[0].webAppHomeTabs, [{
+    id: "home:health",
+    parentWebAppId: "hawser",
+    parentLabel: "Hawser",
+    label: "Health",
+    url: "http://localhost:60082/api/health"
+  }]);
+  assert.equal(state.webAppHomeTabs, undefined);
 });
 
 test("ProjectStore persists pane layouts", () => {
