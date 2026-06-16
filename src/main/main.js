@@ -644,6 +644,14 @@ function registerIpcHandlers() {
     return store.updateGlobalUrls(urls);
   });
 
+  ipcMain.handle("webapp-home-tab:update", (_event, projectId, tab) => {
+    return store.updateWebAppHomeTab(projectId, tab);
+  });
+
+  ipcMain.handle("webapp-home-tabs:update", (_event, projectId, tabs) => {
+    return store.updateWebAppHomeTabs(projectId, tabs);
+  });
+
   ipcMain.handle("projects:reorder", (_event, projectIds) => {
     return store.reorderProjects(projectIds);
   });

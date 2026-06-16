@@ -21,6 +21,7 @@ const {
   normalizeSlug,
   deriveRepoUrl,
   normalizeUrl,
+  normalizeWebAppHomeTabs,
   normalizeWebAppState,
   normalizeWindowBounds,
   normalizeWindowState
@@ -313,6 +314,37 @@ test("normalizeWebAppState keeps valid urls and drops invalid urls", () => {
     "project:twicc": {
       url: "http://localhost:3500/projects/example"
     }
+  });
+});
+
+test("normalizeWebAppHomeTabs keeps project scoped home tabs", () => {
+  assert.deepEqual(normalizeWebAppHomeTabs({
+    "project-id": [{
+      id: " home:demo ",
+      parentWebAppId: " hawser ",
+      parentLabel: " Hawser ",
+      label: " Localhost ",
+      url: "localhost:60082/api/health"
+    }, {
+      id: "home:invalid",
+      parentWebAppId: "hawser",
+      label: "Invalid",
+      url: "file:///workspace/example"
+    }],
+    "unknown-project": [{
+      id: "home:ignored",
+      parentWebAppId: "hawser",
+      label: "Ignored",
+      url: "example.com"
+    }]
+  }, [{ id: "project-id" }]), {
+    "project-id": [{
+      id: "home:demo",
+      parentWebAppId: "hawser",
+      parentLabel: "Hawser",
+      label: "Localhost",
+      url: "http://localhost:60082/api/health"
+    }]
   });
 });
 
@@ -709,6 +741,60 @@ test("ProjectStore persists global urls", () => {
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(reloaded.load().globalUrls, state.globalUrls);
+});
+
+test("ProjectStore persists project webapp home tabs", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  const projectId = store.addProject({
+    name: "Project",
+    sourcePath: "/workspace/example"
+  }).projects[0].id;
+  const state = store.updateWebAppHomeTab(projectId, {
+    id: "home:health",
+    parentWebAppId: "hawser",
+    parentLabel: "Hawser",
+    label: "Health",
+    url: "localhost:60082/api/health"
+  });
+
+  assert.deepEqual(state.webAppHomeTabs[projectId], [{
+    id: "home:health",
+    parentWebAppId: "hawser",
+    parentLabel: "Hawser",
+    label: "Health",
+    url: "http://localhost:60082/api/health"
+  }]);
+
+  const updated = store.updateWebAppHomeTabs(projectId, [{
+    id: "home:health",
+    parentWebAppId: "hawser",
+    parentLabel: "Hawser",
+    label: "Status",
+    url: "localhost:60082/status"
+  }]);
+  assert.deepEqual(updated.webAppHomeTabs[projectId], [{
+    id: "home:health",
+    parentWebAppId: "hawser",
+    parentLabel: "Hawser",
+    label: "Status",
+    url: "http://localhost:60082/status"
+  }]);
+
+  const reloaded = new ProjectStore(filePath);
+  assert.deepEqual(reloaded.load().webAppHomeTabs[projectId], updated.webAppHomeTabs[projectId]);
+  assert.equal(reloaded.updateWebAppHomeTabs(projectId, []).webAppHomeTabs[projectId], undefined);
+  reloaded.updateWebAppHomeTab(projectId, {
+    id: "home:health",
+    parentWebAppId: "hawser",
+    parentLabel: "Hawser",
+    label: "Health",
+    url: "localhost:60082/api/health"
+  });
+  assert.equal(reloaded.removeProject(projectId).webAppHomeTabs[projectId], undefined);
 });
 
 test("ProjectStore persists pane layouts", () => {

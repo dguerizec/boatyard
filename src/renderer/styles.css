@@ -2527,6 +2527,36 @@ textarea.form-control {
   align-items: center;
 }
 
+.project-webapp-home-tab-list {
+  display: grid;
+  gap: 10px;
+}
+
+.project-webapp-home-tab-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(90px, 0.24fr) minmax(120px, 0.28fr) minmax(180px, 1fr) 34px;
+  gap: 10px;
+  align-items: center;
+}
+
+.project-webapp-home-tab-parent {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: rgba(15, 23, 32, 0.72);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-url-remove {
   width: 34px;
   height: 42px;
@@ -2604,9 +2634,26 @@ textarea.form-control {
     grid-template-columns: 1fr 34px;
   }
 
+  .project-webapp-home-tab-row {
+    grid-template-columns: 1fr 34px;
+  }
+
   .project-url-row input[name="urlValue"] {
     grid-column: 1 / -1;
     order: 3;
+  }
+
+  .project-webapp-home-tab-parent,
+  .project-webapp-home-tab-row input[name="homeTabUrl"] {
+    grid-column: 1 / -1;
+  }
+
+  .project-webapp-home-tab-parent {
+    order: 3;
+  }
+
+  .project-webapp-home-tab-row input[name="homeTabUrl"] {
+    order: 4;
   }
 
   .project-url-remove {

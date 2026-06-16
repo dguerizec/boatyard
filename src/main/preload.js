@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("boatyard", {
   addProject: (project) => ipcRenderer.invoke("projects:add", project),
   updateProject: (id, patch) => ipcRenderer.invoke("projects:update", id, patch),
   updateGlobalUrls: (urls) => ipcRenderer.invoke("global-urls:update", urls),
+  updateWebAppHomeTab: (projectId, tab) => ipcRenderer.invoke("webapp-home-tab:update", projectId, tab),
+  updateWebAppHomeTabs: (projectId, tabs) => ipcRenderer.invoke("webapp-home-tabs:update", projectId, tabs),
   reorderProjects: (ids) => ipcRenderer.invoke("projects:reorder", ids),
   removeProject: (id) => ipcRenderer.invoke("projects:remove", id),
   updatePluginEnabled: (pluginId, enabled) => ipcRenderer.invoke("plugins:enabled:update", pluginId, enabled),

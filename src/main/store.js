@@ -56,6 +56,7 @@ function createDefaultState() {
       projects: {}
     },
     globalUrls: [],
+    webAppHomeTabs: {},
     paneLayouts: {},
     widgetLayouts: {},
     terminalSelections: {},
@@ -284,6 +285,54 @@ function normalizeWebAppState(webApps = {}) {
       };
     } catch {
       // Ignore invalid restored webapp URLs.
+    }
+  }
+
+  return normalized;
+}
+
+function normalizeWebAppHomeTabs(homeTabs = {}, projects = []) {
+  if (!homeTabs || typeof homeTabs !== "object" || Array.isArray(homeTabs)) {
+    return {};
+  }
+
+  const projectIds = new Set([GLOBAL_WORKSPACE_ID, ...projects.map((project) => project.id)]);
+  const normalized = {};
+
+  for (const [projectId, tabs] of Object.entries(homeTabs)) {
+    const normalizedProjectId = normalizeText(projectId);
+    if (!projectIds.has(normalizedProjectId) || !Array.isArray(tabs)) {
+      continue;
+    }
+
+    const seenIds = new Set();
+    const projectTabs = [];
+    for (const tab of tabs) {
+      const source = tab && typeof tab === "object" ? tab : {};
+      const id = normalizeText(source.id);
+      const parentWebAppId = normalizeText(source.parentWebAppId);
+      const label = normalizeText(source.label);
+
+      if (!id || seenIds.has(id) || !parentWebAppId || !label) {
+        continue;
+      }
+
+      try {
+        projectTabs.push({
+          id,
+          parentWebAppId,
+          parentLabel: normalizeText(source.parentLabel),
+          label,
+          url: normalizeUrl(source.url)
+        });
+        seenIds.add(id);
+      } catch {
+        // Ignore invalid saved webapp home tabs.
+      }
+    }
+
+    if (projectTabs.length) {
+      normalized[normalizedProjectId] = projectTabs;
     }
   }
 
@@ -816,6 +865,7 @@ class ProjectStore {
         plugins: normalizePluginsState(parsed.plugins),
         pluginConfig: normalizePluginConfig(parsed.pluginConfig, normalizedProjects, { migrateLegacyPreview: true }),
         globalUrls: normalizeProjectUrls(parsed.globalUrls),
+        webAppHomeTabs: normalizeWebAppHomeTabs(parsed.webAppHomeTabs, normalizedProjects),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
         terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, normalizedProjects),
@@ -890,6 +940,55 @@ class ProjectStore {
 
   updateGlobalUrls(urls) {
     this.state.globalUrls = normalizeProjectUrls(urls);
+    this.save();
+    return this.getState();
+  }
+
+  updateWebAppHomeTab(projectId, tab) {
+    const normalizedProjectId = normalizeText(projectId);
+    if (
+      normalizedProjectId !== GLOBAL_WORKSPACE_ID &&
+      !this.state.projects.some((project) => project.id === normalizedProjectId)
+    ) {
+      throw new Error(`Unknown project: ${normalizedProjectId}`);
+    }
+
+    const normalized = normalizeWebAppHomeTabs({
+      [normalizedProjectId]: [tab]
+    }, this.state.projects)[normalizedProjectId]?.[0];
+
+    if (!normalized) {
+      throw new Error("Invalid webapp home tab.");
+    }
+
+    const tabs = this.state.webAppHomeTabs[normalizedProjectId] || [];
+    this.state.webAppHomeTabs[normalizedProjectId] = [
+      ...tabs.filter((entry) => entry.id !== normalized.id),
+      normalized
+    ];
+    this.save();
+    return this.getState();
+  }
+
+  updateWebAppHomeTabs(projectId, tabs) {
+    const normalizedProjectId = normalizeText(projectId);
+    if (
+      normalizedProjectId !== GLOBAL_WORKSPACE_ID &&
+      !this.state.projects.some((project) => project.id === normalizedProjectId)
+    ) {
+      throw new Error(`Unknown project: ${normalizedProjectId}`);
+    }
+
+    const normalized = normalizeWebAppHomeTabs({
+      [normalizedProjectId]: tabs
+    }, this.state.projects)[normalizedProjectId] || [];
+
+    if (normalized.length) {
+      this.state.webAppHomeTabs[normalizedProjectId] = normalized;
+    } else {
+      delete this.state.webAppHomeTabs[normalizedProjectId];
+    }
+
     this.save();
     return this.getState();
   }
@@ -1141,6 +1240,7 @@ class ProjectStore {
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
     delete this.state.paneLayouts[projectId];
     delete this.state.widgetLayouts[projectId];
+    delete this.state.webAppHomeTabs[projectId];
     delete this.state.terminalSelections[projectId];
     delete this.state.terminalTabOrders[projectId];
     delete this.state.pluginConfig.projects[projectId];
@@ -1181,6 +1281,7 @@ module.exports = {
   normalizeTerminalTabOrders,
   normalizeNavigationState,
   normalizeWebAppState,
+  normalizeWebAppHomeTabs,
   normalizeWindowBounds,
   normalizeWindowState,
   ProjectStore,

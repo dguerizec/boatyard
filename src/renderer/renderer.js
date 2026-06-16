@@ -2455,6 +2455,19 @@ function getProjectWebApps(project, paneId) {
     });
   }
 
+  for (const homeTab of state.webAppHomeTabs?.[project.id] || []) {
+    webApps.push({
+      id: homeTab.id,
+      label: homeTab.label || "Link",
+      parentLabel: homeTab.parentLabel || "",
+      parentWebAppId: homeTab.parentWebAppId || "",
+      key: `${paneId}:home:${homeTab.id}`,
+      url: homeTab.url,
+      homeTab: true,
+      homeTabId: homeTab.id
+    });
+  }
+
   if (isGlobalWorkspace(project) || project.sourcePath) {
     webApps.push({
       id: "terminal",
@@ -2678,6 +2691,51 @@ function createTransientWebApp(url, label = "", parentWebApp = null) {
     parentWebAppId: parentWebApp?.id || "",
     url
   };
+}
+
+function createWebAppHomeTabId() {
+  return `home:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function getParentWebAppForDerivedTab(webApp) {
+  if ((webApp?.transient || webApp?.homeTab) && webApp.parentWebAppId) {
+    return {
+      id: webApp.parentWebAppId,
+      label: webApp.parentLabel || ""
+    };
+  }
+
+  return webApp;
+}
+
+async function saveCurrentUrlAsWebAppHomeTab(project, paneNode, selectedWebApp) {
+  const currentUrl = getCurrentWebAppUrl(selectedWebApp);
+  if (!currentUrl) {
+    return false;
+  }
+
+  const parentWebApp = getParentWebAppForDerivedTab(selectedWebApp);
+  if (!parentWebApp?.id) {
+    return false;
+  }
+
+  const nextTab = {
+    id: selectedWebApp.homeTabId || createWebAppHomeTabId(),
+    parentWebAppId: parentWebApp.id,
+    parentLabel: parentWebApp.label || "",
+    label: getWebAppOpenUrlLabel(currentUrl),
+    url: currentUrl
+  };
+
+  state = await window.boatyard.updateWebAppHomeTab(project.id, nextTab);
+  paneNode.selectedWebAppId = nextTab.id;
+  selectedWebAppByPane.set(paneNode.id, nextTab.id);
+  selectedWebAppByProject.set(project.id, nextTab.id);
+  currentWebAppUrlsByKey.set(`${paneNode.id}:home:${nextTab.id}`, currentUrl);
+
+  persistPaneLayout(project);
+  renderWorkspaceDashboard(project);
+  return true;
 }
 
 function openUrlInSplitPane(sourceWebAppKey, url, label = "") {
@@ -3270,6 +3328,63 @@ async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWe
   menu.querySelector("button")?.focus();
 }
 
+async function openWebAppHomeMenu(event, project, paneNode, selectedWebApp) {
+  event.preventDefault();
+  const sourceButton = event.currentTarget;
+  closeWebAppTabMenu();
+  await freezeWebAppsForOverlay();
+
+  const menu = document.createElement("div");
+  menu.className = "webapp-tab-menu";
+  menu.setAttribute("role", "menu");
+
+  const menuWidth = 260;
+  const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
+  const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 48));
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+
+  const item = document.createElement("button");
+  item.className = "webapp-tab-menu-item";
+  item.type = "button";
+  item.setAttribute("role", "menuitem");
+  item.textContent = selectedWebApp.homeTab ? "Update this tab home" : "Save current URL as sub-tab";
+  item.addEventListener("click", () => {
+    closeWebAppTabMenu();
+    saveCurrentUrlAsWebAppHomeTab(project, paneNode, selectedWebApp).catch((error) => {
+      console.error("Could not save webapp home tab:", error);
+    });
+  });
+  menu.append(item);
+
+  document.body.append(menu);
+  openWebAppTabMenu = menu;
+
+  function onPointerDown(pointerEvent) {
+    if (!menu.contains(pointerEvent.target) && pointerEvent.target !== sourceButton) {
+      closeWebAppTabMenu();
+    }
+  }
+
+  function onKeyDown(keyEvent) {
+    if (keyEvent.key === "Escape") {
+      closeWebAppTabMenu();
+    }
+  }
+
+  menu.cleanup = () => {
+    document.removeEventListener("pointerdown", onPointerDown);
+    document.removeEventListener("keydown", onKeyDown);
+  };
+
+  setTimeout(() => {
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+  }, 0);
+
+  item.focus();
+}
+
 function createWebAppPane(project, paneNode) {
   const webApps = getProjectWebApps(project, paneNode.id);
   const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
@@ -3321,6 +3436,9 @@ function createWebAppPane(project, paneNode) {
     homeButton.setAttribute("aria-label", "Go home");
     homeButton.textContent = "⌂";
     homeButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "home", selectedWebApp.url));
+    homeButton.addEventListener("contextmenu", (event) => {
+      openWebAppHomeMenu(event, project, paneNode, selectedWebApp);
+    });
 
     const backButton = document.createElement("button");
     backButton.className = "webapp-tool-button";
@@ -5193,6 +5311,59 @@ function createProjectUrlRow(entry = {}) {
   return row;
 }
 
+function createProjectWebAppHomeTabRow(entry = {}) {
+  const row = document.createElement("div");
+  row.className = "project-webapp-home-tab-row";
+
+  const idInput = document.createElement("input");
+  idInput.name = "homeTabId";
+  idInput.type = "hidden";
+  idInput.value = entry.id || "";
+
+  const parentIdInput = document.createElement("input");
+  parentIdInput.name = "homeTabParentWebAppId";
+  parentIdInput.type = "hidden";
+  parentIdInput.value = entry.parentWebAppId || "";
+
+  const parentLabelInput = document.createElement("input");
+  parentLabelInput.name = "homeTabParentLabel";
+  parentLabelInput.type = "hidden";
+  parentLabelInput.value = entry.parentLabel || "";
+
+  const parentText = document.createElement("div");
+  parentText.className = "project-webapp-home-tab-parent";
+  parentText.textContent = entry.parentLabel || entry.parentWebAppId || "Webapp";
+
+  const labelInput = document.createElement("input");
+  labelInput.name = "homeTabLabel";
+  labelInput.type = "text";
+  labelInput.autocomplete = "off";
+  labelInput.placeholder = "Localhost";
+  labelInput.value = entry.label || "";
+  labelInput.setAttribute("aria-label", "Sub-tab label");
+  applyFormControl(labelInput);
+
+  const urlInput = document.createElement("input");
+  urlInput.name = "homeTabUrl";
+  urlInput.type = "text";
+  urlInput.autocomplete = "off";
+  urlInput.placeholder = "https://example.com/...";
+  urlInput.value = entry.url || "";
+  urlInput.setAttribute("aria-label", "Sub-tab URL");
+  applyFormControl(urlInput);
+
+  const removeButton = document.createElement("button");
+  removeButton.className = "project-url-remove";
+  removeButton.type = "button";
+  removeButton.title = "Remove sub-tab";
+  removeButton.setAttribute("aria-label", "Remove sub-tab");
+  removeButton.textContent = "X";
+  removeButton.addEventListener("click", () => row.remove());
+
+  row.append(idInput, parentIdInput, parentLabelInput, parentText, labelInput, urlInput, removeButton);
+  return row;
+}
+
 function createProjectWidgetPaneRow(entry = {}) {
   const row = document.createElement("div");
   row.className = "project-url-row";
@@ -5404,6 +5575,18 @@ function readProjectUrlRows(list) {
     .filter((entry) => entry.id.trim() || entry.label.trim() || entry.url.trim());
 }
 
+function readProjectWebAppHomeTabRows(list) {
+  return [...list.querySelectorAll(".project-webapp-home-tab-row")]
+    .map((row) => ({
+      id: row.querySelector('[name="homeTabId"]').value,
+      parentWebAppId: row.querySelector('[name="homeTabParentWebAppId"]').value,
+      parentLabel: row.querySelector('[name="homeTabParentLabel"]').value,
+      label: row.querySelector('[name="homeTabLabel"]').value,
+      url: row.querySelector('[name="homeTabUrl"]').value
+    }))
+    .filter((entry) => entry.id.trim() || entry.label.trim() || entry.url.trim());
+}
+
 function readProjectWidgetPaneRows(list) {
   return [...list.querySelectorAll(".project-url-row")]
     .map((row) => ({
@@ -5471,6 +5654,69 @@ function createProjectUrlsForm({ project, onSubmit }) {
 
     try {
       await onSubmit(readProjectUrlRows(list));
+    } catch (submitError) {
+      error.textContent = submitError.message;
+      error.hidden = false;
+    }
+  });
+
+  shell.append(form);
+  return shell;
+}
+
+function createProjectWebAppHomeTabsForm({ project, onSubmit }) {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page";
+
+  const form = document.createElement("form");
+  form.className = "project-form";
+
+  const heading = document.createElement("div");
+  heading.className = "form-heading";
+
+  const headingTitle = document.createElement("h3");
+  headingTitle.textContent = "Webapp home tabs";
+
+  const headingCopy = document.createElement("p");
+  headingCopy.textContent = "Edit project-wide sub-tabs created from webapp Home menus.";
+  heading.append(headingTitle, headingCopy);
+
+  const list = document.createElement("div");
+  list.className = "project-webapp-home-tab-list";
+
+  for (const entry of state.webAppHomeTabs?.[project.id] || []) {
+    list.append(createProjectWebAppHomeTabRow(entry));
+  }
+
+  const empty = document.createElement("p");
+  empty.className = "empty-state";
+  empty.textContent = "No saved webapp home tabs.";
+  empty.hidden = list.children.length > 0;
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Save home tabs";
+
+  actions.append(submitButton);
+  form.append(heading, list, empty, error, actions);
+  applyFormControls(form);
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    try {
+      await onSubmit(readProjectWebAppHomeTabRows(list));
     } catch (submitError) {
       error.textContent = submitError.message;
       error.hidden = false;
@@ -5827,6 +6073,12 @@ function renderEditProjectPage(project) {
     project,
     onSubmit: async (urls) => {
       state = await window.boatyard.updateProject(project.id, { urls });
+      reloadProjectSettings(project.id);
+    }
+  }), createProjectWebAppHomeTabsForm({
+    project,
+    onSubmit: async (homeTabs) => {
+      state = await window.boatyard.updateWebAppHomeTabs(project.id, homeTabs);
       reloadProjectSettings(project.id);
     }
   }), createProjectWidgetPanesForm({
