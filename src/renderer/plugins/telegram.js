@@ -135,6 +135,32 @@
     }
   }
 
+  async function persistResolvedTarget(props = {}, target = {}) {
+    const threadId = normalizeText(target.threadId);
+    const currentConfig = props.projectConfig || props.pluginConfig || {};
+    if (
+      !props.projectId ||
+      !threadId ||
+      normalizeText(currentConfig.telegramThreadId) === threadId ||
+      !globalScope.boatyard?.updateProjectPluginConfig
+    ) {
+      return;
+    }
+
+    const nextConfig = {
+      ...currentConfig,
+      telegramThreadId: threadId,
+      telegramTopicTitle: target.topicTitle || currentConfig.telegramTopicTitle || ""
+    };
+    props.projectConfig = nextConfig;
+    props.pluginConfig = nextConfig;
+
+    await globalScope.boatyard.updateProjectPluginConfig(props.projectId, "boatyard.telegram", {
+      telegramThreadId: threadId,
+      telegramTopicTitle: nextConfig.telegramTopicTitle
+    });
+  }
+
   function createTelegramPane(container, props = {}, service) {
     const project = props.project || {};
     const target = service.getTarget(project, props.projectConfig, props.globalPluginConfig);
@@ -251,6 +277,7 @@
       refreshButton.disabled = true;
       try {
         const data = await service.getMessages(project, props);
+        await persistResolvedTarget(props, data.target);
         setStatusText(status, data.status);
         updateAuthState(data.status);
         renderMessages(list, data.messages);
@@ -405,8 +432,10 @@
       try {
         const data = await service.getMessages(project, {
           pluginConfig: props.pluginConfig,
-          globalPluginConfig: props.globalPluginConfig
+          globalPluginConfig: props.globalPluginConfig,
+          projectId: props.projectId
         });
+        await persistResolvedTarget(props, data.target);
         const latest = data.messages?.[data.messages.length - 1];
         setStatusText(status, latest ? { state: "ready", summary: latest.text } : data.status);
       } catch (error) {

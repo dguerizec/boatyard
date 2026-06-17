@@ -3,7 +3,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { safeStorage } = require("electron");
-const { TelegramClient } = require("telegram");
+const { Api, TelegramClient, utils } = require("telegram");
 const { StringSession } = require("telegram/sessions");
 
 const CLIENT_OPTIONS = {
@@ -41,6 +41,10 @@ function normalizeApiCredentials(globalConfig = {}) {
 function normalizeThreadId(value) {
   const threadId = Number(normalizeText(value));
   return Number.isInteger(threadId) && threadId > 0 ? threadId : null;
+}
+
+function normalizeTopicTitle(value) {
+  return normalizeText(value).toLowerCase();
 }
 
 function serializeError(error) {
@@ -385,6 +389,78 @@ class TelegramService {
     return chatId;
   }
 
+  async getInputChannel(client, target = {}) {
+    return utils.getInputChannel(await client.getInputEntity(this.getPeerValue(target)));
+  }
+
+  getTopicThreadId(topic = {}) {
+    const topMessage = Number(topic.topMessage);
+    if (Number.isInteger(topMessage) && topMessage > 0) {
+      return topMessage;
+    }
+
+    const id = Number(topic.id);
+    return Number.isInteger(id) && id > 0 ? id : null;
+  }
+
+  async listForumTopics(client, target = {}, query = "") {
+    const channel = await this.getInputChannel(client, target);
+    const response = await client.invoke(new Api.channels.GetForumTopics({
+      channel,
+      q: normalizeText(query) || undefined,
+      offsetDate: 0,
+      offsetId: 0,
+      offsetTopic: 0,
+      limit: 100
+    }));
+
+    return Array.isArray(response.topics) ? response.topics : [];
+  }
+
+  async findForumTopic(client, target = {}) {
+    const title = normalizeTopicTitle(target.topicTitle);
+    if (!title) {
+      return null;
+    }
+
+    const topics = await this.listForumTopics(client, target, target.topicTitle);
+    return topics.find((topic) => normalizeTopicTitle(topic.title) === title) || null;
+  }
+
+  async resolveProjectTopic(client, target = {}) {
+    const normalizedTarget = normalizeTarget(target);
+    if (normalizeThreadId(normalizedTarget.threadId) || !normalizedTarget.topicTitle) {
+      return normalizedTarget;
+    }
+
+    const existing = await this.findForumTopic(client, normalizedTarget);
+    if (existing) {
+      return {
+        ...normalizedTarget,
+        threadId: String(this.getTopicThreadId(existing) || ""),
+        topicTitle: existing.title || normalizedTarget.topicTitle
+      };
+    }
+
+    const channel = await this.getInputChannel(client, normalizedTarget);
+    await client.invoke(new Api.channels.CreateForumTopic({
+      channel,
+      title: normalizedTarget.topicTitle
+    }));
+
+    const created = await this.findForumTopic(client, normalizedTarget);
+    const threadId = this.getTopicThreadId(created);
+    if (!threadId) {
+      throw new Error(`Telegram topic was created but its thread id could not be resolved: ${normalizedTarget.topicTitle}`);
+    }
+
+    return {
+      ...normalizedTarget,
+      threadId: String(threadId),
+      topicTitle: created.title || normalizedTarget.topicTitle
+    };
+  }
+
   getMessageOptions(target = {}) {
     const threadId = normalizeThreadId(target.threadId);
     return threadId ? { replyTo: threadId, topMsgId: threadId } : {};
@@ -405,19 +481,20 @@ class TelegramService {
 
     try {
       const client = await this.getAuthorizedClient(globalConfig);
+      const resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
       const params = { limit: MESSAGE_LIMIT };
-      const threadId = normalizeThreadId(normalizedTarget.threadId);
+      const threadId = normalizeThreadId(resolvedTarget.threadId);
       if (threadId) {
         params.replyTo = threadId;
       }
 
-      const messages = await client.getMessages(this.getPeerValue(normalizedTarget), params);
+      const messages = await client.getMessages(this.getPeerValue(resolvedTarget), params);
       return {
         status: {
           state: "ready",
           summary: "Telegram messages synced."
         },
-        target: normalizedTarget,
+        target: resolvedTarget,
         messages: [...messages].reverse().map(mapMessage)
       };
     } catch (error) {
@@ -440,15 +517,16 @@ class TelegramService {
 
     const normalizedTarget = normalizeTarget(target);
     const client = await this.getAuthorizedClient(globalConfig);
-    const sentMessage = await client.sendMessage(this.getPeerValue(normalizedTarget), {
+    const resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
+    const sentMessage = await client.sendMessage(this.getPeerValue(resolvedTarget), {
       message,
-      ...this.getMessageOptions(normalizedTarget)
+      ...this.getMessageOptions(resolvedTarget)
     });
 
     return {
       sent: true,
       message: mapMessage(sentMessage),
-      target: normalizedTarget
+      target: resolvedTarget
     };
   }
 }
