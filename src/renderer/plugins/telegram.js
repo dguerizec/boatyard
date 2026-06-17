@@ -1,0 +1,587 @@
+"use strict";
+
+(function registerTelegramPlugin(globalScope) {
+  const registry = globalScope.BoatyardPluginRegistry;
+  const TELEGRAM_REFRESH_MS = 15000;
+
+  if (!registry) {
+    throw new Error("Plugin registry is unavailable.");
+  }
+
+  function normalizeText(value) {
+    return String(value || "").trim();
+  }
+
+  function getProjectTopicTitle(project = {}, config = {}) {
+    return normalizeText(config.telegramTopicTitle || project.slug || project.name);
+  }
+
+  function getTarget(project = {}, projectConfig = {}, globalConfig = {}) {
+    return {
+      chatId: normalizeText(projectConfig.telegramChatId || globalConfig.telegramDefaultChatId),
+      threadId: normalizeText(projectConfig.telegramThreadId),
+      topicTitle: getProjectTopicTitle(project, projectConfig),
+      chatTitle: normalizeText(projectConfig.telegramChatTitle || globalConfig.telegramDefaultChatTitle),
+      botUsername: normalizeText(projectConfig.telegramBotUsername || globalConfig.telegramBotUsername)
+    };
+  }
+
+  function getTargetLabel(target = {}) {
+    const topic = normalizeText(target.topicTitle);
+    const chat = normalizeText(target.chatTitle || target.chatId);
+    if (chat && topic) {
+      return `${chat} / ${topic}`;
+    }
+    return topic || chat || "No Telegram topic";
+  }
+
+  function getTelegramWebLink(target = {}) {
+    const chatId = normalizeText(target.chatId);
+    const threadId = normalizeText(target.threadId);
+    if (!chatId) {
+      return "";
+    }
+
+    if (chatId.startsWith("@")) {
+      return `https://t.me/${encodeURIComponent(chatId.slice(1))}${threadId ? `/${encodeURIComponent(threadId)}` : ""}`;
+    }
+
+    const supergroupMatch = chatId.match(/^-100(\d+)$/);
+    if (supergroupMatch) {
+      return `https://t.me/c/${supergroupMatch[1]}${threadId ? `/${encodeURIComponent(threadId)}` : ""}`;
+    }
+
+    return "";
+  }
+
+  function createTelegramService() {
+    return Object.freeze({
+      version: "0.1.0",
+      getTarget,
+      getWebLink: getTelegramWebLink,
+      async getStatus(options = {}) {
+        if (!globalScope.boatyard?.getTelegramStatus) {
+          return {
+            state: "unavailable",
+            summary: "Telegram IPC bridge is unavailable."
+          };
+        }
+        return globalScope.boatyard.getTelegramStatus(options.globalPluginConfig || {});
+      },
+      async getMessages(project, options = {}) {
+        const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
+        if (!globalScope.boatyard?.getTelegramMessages) {
+          return {
+            status: {
+              state: "unavailable",
+              summary: "Telegram IPC bridge is unavailable."
+            },
+            target,
+            messages: []
+          };
+        }
+        return globalScope.boatyard.getTelegramMessages(target, options.globalPluginConfig || {});
+      },
+      async sendMessage(project, text, options = {}) {
+        const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
+        return globalScope.boatyard.sendTelegramMessage(target, text, options.globalPluginConfig || {});
+      },
+      async startLogin(globalConfig, phoneNumber) {
+        return globalScope.boatyard.startTelegramLogin(globalConfig || {}, phoneNumber);
+      },
+      async completeLoginCode(code) {
+        return globalScope.boatyard.completeTelegramLoginCode(code);
+      },
+      async completeLoginPassword(password) {
+        return globalScope.boatyard.completeTelegramLoginPassword(password);
+      },
+      async logout() {
+        return globalScope.boatyard.logoutTelegram();
+      },
+      openTelegram(target = {}) {
+        const link = getTelegramWebLink(target);
+        return link ? globalScope.boatyard.openExternal(link) : null;
+      }
+    });
+  }
+
+  function setStatusText(element, status = {}) {
+    element.className = `telegram-status ${status.state || "unknown"}`;
+    element.textContent = status.summary || status.state || "Telegram status unavailable.";
+  }
+
+  function renderMessages(list, messages = []) {
+    list.replaceChildren();
+    if (!messages.length) {
+      const empty = document.createElement("p");
+      empty.className = "telegram-empty";
+      empty.textContent = "No synced messages yet.";
+      list.append(empty);
+      return;
+    }
+
+    for (const message of messages) {
+      const row = document.createElement("article");
+      row.className = `telegram-message ${message.outgoing ? "outgoing" : "incoming"}`;
+
+      const meta = document.createElement("div");
+      meta.className = "telegram-message-meta";
+      meta.textContent = [message.senderName, message.sentAt].map(normalizeText).filter(Boolean).join(" - ");
+
+      const body = document.createElement("p");
+      body.textContent = message.text || "";
+      row.append(meta, body);
+      list.append(row);
+    }
+  }
+
+  function createTelegramPane(container, props = {}, service) {
+    const project = props.project || {};
+    const target = service.getTarget(project, props.projectConfig, props.globalPluginConfig);
+
+    const shell = document.createElement("section");
+    shell.className = "telegram-pane";
+
+    const header = document.createElement("header");
+    header.className = "telegram-pane-header";
+
+    const titleWrap = document.createElement("div");
+    const kicker = document.createElement("p");
+    kicker.className = "kicker";
+    kicker.textContent = "Telegram";
+    const title = document.createElement("h3");
+    title.textContent = getTargetLabel(target);
+    titleWrap.append(kicker, title);
+
+    const actions = document.createElement("div");
+    actions.className = "telegram-pane-actions";
+
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "secondary-button";
+    openButton.textContent = "Open";
+    openButton.disabled = !service.getWebLink(target);
+    openButton.addEventListener("click", () => service.openTelegram(target));
+
+    const refreshButton = document.createElement("button");
+    refreshButton.type = "button";
+    refreshButton.className = "secondary-button";
+    refreshButton.textContent = "Refresh";
+    actions.append(openButton, refreshButton);
+    header.append(titleWrap, actions);
+
+    const status = document.createElement("p");
+    status.className = "telegram-status";
+    status.textContent = "Loading Telegram status.";
+
+    const auth = document.createElement("form");
+    auth.className = "telegram-auth";
+    const phoneInput = document.createElement("input");
+    phoneInput.type = "tel";
+    phoneInput.autocomplete = "tel";
+    phoneInput.placeholder = "+15551234567";
+    phoneInput.setAttribute("aria-label", "Telegram phone number");
+    const startLoginButton = document.createElement("button");
+    startLoginButton.type = "button";
+    startLoginButton.textContent = "Send code";
+
+    const codeInput = document.createElement("input");
+    codeInput.type = "text";
+    codeInput.inputMode = "numeric";
+    codeInput.autocomplete = "one-time-code";
+    codeInput.placeholder = "Login code";
+    codeInput.setAttribute("aria-label", "Telegram login code");
+    const codeButton = document.createElement("button");
+    codeButton.type = "button";
+    codeButton.textContent = "Confirm";
+
+    const passwordInput = document.createElement("input");
+    passwordInput.type = "password";
+    passwordInput.placeholder = "2FA password";
+    passwordInput.setAttribute("aria-label", "Telegram 2FA password");
+    const passwordButton = document.createElement("button");
+    passwordButton.type = "button";
+    passwordButton.textContent = "Unlock";
+
+    const logoutButton = document.createElement("button");
+    logoutButton.type = "button";
+    logoutButton.textContent = "Logout";
+
+    const phoneRow = document.createElement("div");
+    phoneRow.className = "telegram-auth-row";
+    phoneRow.append(phoneInput, startLoginButton);
+    const codeRow = document.createElement("div");
+    codeRow.className = "telegram-auth-row";
+    codeRow.append(codeInput, codeButton);
+    const passwordRow = document.createElement("div");
+    passwordRow.className = "telegram-auth-row";
+    passwordRow.append(passwordInput, passwordButton);
+    const logoutRow = document.createElement("div");
+    logoutRow.className = "telegram-auth-row";
+    logoutRow.append(logoutButton);
+    auth.append(phoneRow, codeRow, passwordRow, logoutRow);
+
+    const list = document.createElement("div");
+    list.className = "telegram-message-list";
+
+    const form = document.createElement("form");
+    form.className = "telegram-composer";
+    const input = document.createElement("textarea");
+    input.rows = 3;
+    input.placeholder = `Message ${target.botUsername ? `@${target.botUsername.replace(/^@/, "")}` : "TARS"}`;
+    const sendButton = document.createElement("button");
+    sendButton.type = "submit";
+    sendButton.textContent = "Send";
+    form.append(input, sendButton);
+
+    function updateAuthState(state) {
+      const phase = state?.state || "";
+      auth.hidden = false;
+      phoneRow.hidden = phase === "codeRequired" || phase === "passwordRequired";
+      if (phase === "ready") {
+        phoneRow.hidden = true;
+      }
+      codeRow.hidden = phase !== "codeRequired";
+      passwordRow.hidden = phase !== "passwordRequired";
+      logoutRow.hidden = phase !== "ready";
+      form.hidden = phase !== "ready";
+    }
+
+    async function load() {
+      refreshButton.disabled = true;
+      try {
+        const data = await service.getMessages(project, props);
+        setStatusText(status, data.status);
+        updateAuthState(data.status);
+        renderMessages(list, data.messages);
+        list.scrollTop = list.scrollHeight;
+      } catch (error) {
+        setStatusText(status, {
+          state: "error",
+          summary: error.message
+        });
+      } finally {
+        refreshButton.disabled = false;
+      }
+    }
+
+    refreshButton.addEventListener("click", () => load());
+    startLoginButton.addEventListener("click", async () => {
+      startLoginButton.disabled = true;
+      try {
+        const nextStatus = await service.startLogin(props.globalPluginConfig, phoneInput.value);
+        setStatusText(status, nextStatus);
+        updateAuthState(nextStatus);
+      } catch (error) {
+        setStatusText(status, {
+          state: "error",
+          summary: error.message
+        });
+      } finally {
+        startLoginButton.disabled = false;
+      }
+    });
+    codeButton.addEventListener("click", async () => {
+      codeButton.disabled = true;
+      try {
+        const nextStatus = await service.completeLoginCode(codeInput.value);
+        setStatusText(status, nextStatus);
+        updateAuthState(nextStatus);
+        if (nextStatus.state === "ready") {
+          await load();
+        }
+      } catch (error) {
+        setStatusText(status, {
+          state: "error",
+          summary: error.message
+        });
+      } finally {
+        codeButton.disabled = false;
+      }
+    });
+    passwordButton.addEventListener("click", async () => {
+      passwordButton.disabled = true;
+      try {
+        const nextStatus = await service.completeLoginPassword(passwordInput.value);
+        setStatusText(status, nextStatus);
+        updateAuthState(nextStatus);
+        if (nextStatus.state === "ready") {
+          await load();
+        }
+      } catch (error) {
+        setStatusText(status, {
+          state: "error",
+          summary: error.message
+        });
+      } finally {
+        passwordButton.disabled = false;
+      }
+    });
+    logoutButton.addEventListener("click", async () => {
+      const nextStatus = await service.logout();
+      setStatusText(status, nextStatus);
+      updateAuthState(nextStatus);
+      renderMessages(list, []);
+    });
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const text = normalizeText(input.value);
+      if (!text) {
+        return;
+      }
+
+      sendButton.disabled = true;
+      try {
+        await service.sendMessage(project, text, props);
+        input.value = "";
+        await load();
+      } catch (error) {
+        setStatusText(status, {
+          state: "error",
+          summary: error.message
+        });
+      } finally {
+        sendButton.disabled = false;
+      }
+    });
+
+    shell.append(header, status, auth, list, form);
+    container.append(shell);
+    load();
+
+    const refreshInterval = globalScope.setInterval(() => {
+      if (!shell.isConnected) {
+        globalScope.clearInterval(refreshInterval);
+        return;
+      }
+      load();
+    }, TELEGRAM_REFRESH_MS);
+
+    return () => globalScope.clearInterval(refreshInterval);
+  }
+
+  function createTelegramWidget(project, props = {}, service) {
+    const target = service.getTarget(project, props.pluginConfig, props.globalPluginConfig);
+    const card = document.createElement("article");
+    card.className = "widget-card telegram-widget";
+
+    const content = document.createElement("div");
+    content.className = "widget-content telegram-widget-content";
+
+    const header = document.createElement("div");
+    header.className = "telegram-widget-header";
+
+    const title = document.createElement("div");
+    title.className = "telegram-widget-title";
+    const eyebrow = document.createElement("p");
+    eyebrow.className = "widget-eyebrow";
+    eyebrow.textContent = "Telegram";
+    const heading = document.createElement("h3");
+    heading.textContent = target.topicTitle || project.slug || "Project topic";
+    title.append(eyebrow, heading);
+
+    const openButton = document.createElement("button");
+    openButton.type = "button";
+    openButton.className = "telegram-widget-button";
+    openButton.textContent = "Open";
+    openButton.addEventListener("click", () => {
+      props.openProjectWebApp?.("telegram");
+    });
+
+    header.append(title, openButton);
+
+    const targetText = document.createElement("p");
+    targetText.className = "telegram-widget-target";
+    targetText.textContent = getTargetLabel(target);
+
+    const status = document.createElement("p");
+    status.className = "telegram-status";
+    status.textContent = "Loading Telegram status.";
+
+    content.append(header, targetText, status);
+    card.append(content);
+
+    async function load() {
+      try {
+        const data = await service.getMessages(project, {
+          pluginConfig: props.pluginConfig,
+          globalPluginConfig: props.globalPluginConfig
+        });
+        const latest = data.messages?.[data.messages.length - 1];
+        setStatusText(status, latest ? { state: "ready", summary: latest.text } : data.status);
+      } catch (error) {
+        setStatusText(status, {
+          state: "error",
+          summary: error.message
+        });
+      }
+    }
+
+    load();
+    return card;
+  }
+
+  function syncProjectTopicField(event) {
+    if (!["slug", "name"].includes(event.field)) {
+      return;
+    }
+
+    event.fields?.setDefaultValue("telegramTopicTitle", getProjectTopicTitle(event.coreFields));
+  }
+
+  async function refreshTelegramStatus(ctx, globalConfig = {}) {
+    const service = registry.getService("boatyard.telegram");
+    if (!service) {
+      return;
+    }
+
+    ctx.status.set(await service.getStatus({ globalPluginConfig: globalConfig }));
+  }
+
+  registry.register(
+    {
+      id: "boatyard.telegram",
+      name: "Telegram",
+      version: "0.1.0",
+      apiVersion: "0.1",
+      contributes: {
+        widgets: ["boatyard.telegram.topic"],
+        panes: ["boatyard.telegram.pane"],
+        globalSettings: ["boatyard.telegram.global"],
+        projectSettings: ["boatyard.telegram.project"],
+        services: ["boatyard.telegram"]
+      },
+      permissions: [
+        "projectConfig:read",
+        "projectConfig:write",
+        "pane:dom",
+        "widget:provide",
+        "service:provide"
+      ]
+    },
+    {
+      activate(ctx) {
+        const service = createTelegramService();
+        ctx.services.provide("boatyard.telegram", service);
+        ctx.events.on("boatyard.projectForm.coreFieldChanged", syncProjectTopicField);
+        ctx.events.on("boatyard.globalSettings.opened", (event) => {
+          refreshTelegramStatus(ctx, event.globalConfig || {});
+        });
+
+        ctx.status.set({
+          state: "activating",
+          summary: "Checking Telegram client configuration."
+        });
+        refreshTelegramStatus(ctx);
+
+        ctx.settings.registerGlobalSection({
+          id: "boatyard.telegram.global",
+          title: "Telegram",
+          fields: [
+            {
+              key: "telegramApiId",
+              label: "Telegram API ID",
+              type: "text",
+              valueType: "text",
+              placeholder: "123456"
+            },
+            {
+              key: "telegramApiHash",
+              label: "Telegram API hash",
+              type: "password",
+              valueType: "text"
+            },
+            {
+              key: "telegramDefaultChatId",
+              label: "Default project chat ID",
+              type: "text",
+              valueType: "text",
+              placeholder: "-1001234567890"
+            },
+            {
+              key: "telegramDefaultChatTitle",
+              label: "Default chat title",
+              type: "text",
+              valueType: "text",
+              placeholder: "TARS projects"
+            },
+            {
+              key: "telegramBotUsername",
+              label: "TARS bot username",
+              type: "text",
+              valueType: "text",
+              placeholder: "tars_bot"
+            }
+          ]
+        });
+
+        ctx.settings.registerProjectSection({
+          id: "boatyard.telegram.project",
+          title: "Telegram",
+          fields: [
+            {
+              key: "telegramChatId",
+              label: "Telegram chat ID",
+              type: "text",
+              valueType: "text",
+              placeholder: "Use global default"
+            },
+            {
+              key: "telegramThreadId",
+              label: "Telegram topic ID",
+              type: "text",
+              valueType: "text",
+              placeholder: "message_thread_id"
+            },
+            {
+              key: "telegramTopicTitle",
+              label: "Telegram topic title",
+              type: "text",
+              valueType: "text",
+              defaultValue({ project }) {
+                return getProjectTopicTitle(project);
+              }
+            },
+            {
+              key: "telegramChatTitle",
+              label: "Telegram chat title",
+              type: "text",
+              valueType: "text",
+              placeholder: "Use global default"
+            }
+          ]
+        });
+
+        ctx.panes.register({
+          id: "boatyard.telegram.pane",
+          webAppId: "telegram",
+          key: "telegram",
+          title: "Telegram",
+          kind: "dom",
+          scope: "project",
+          render(container, props) {
+            return createTelegramPane(container, props, service);
+          }
+        });
+
+        ctx.widgets.register({
+          id: "boatyard.telegram.topic",
+          name: "Telegram",
+          title: "Telegram",
+          scope: "project",
+          category: "Communication",
+          status: "experimental",
+          defaultVisible: false,
+          description: "Shows the Telegram project topic connected to the TARS bot.",
+          layout: {
+            default: { columns: 3, rows: 2 },
+            min: { columns: 2, rows: 2 }
+          },
+          createElement(project, props = {}) {
+            return createTelegramWidget(project, props, service);
+          }
+        });
+      }
+    }
+  );
+})(window);

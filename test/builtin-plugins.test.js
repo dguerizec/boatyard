@@ -49,6 +49,22 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
           summary: "Hawser service is available."
         }),
         getHawserWidgetDataForConfig: async () => ({}),
+        getTelegramStatus: async () => ({
+          state: "notConfigured",
+          summary: "Telegram API credentials are not configured."
+        }),
+        getTelegramMessages: async () => ({
+          status: {
+            state: "notConfigured",
+            summary: "Telegram API credentials are not configured."
+          },
+          messages: []
+        }),
+        sendTelegramMessage: async () => ({ sent: true }),
+        startTelegramLogin: async () => ({ state: "codeRequired", summary: "Enter the Telegram login code." }),
+        completeTelegramLoginCode: async () => ({ state: "ready", summary: "Telegram user is authenticated." }),
+        completeTelegramLoginPassword: async () => ({ state: "ready", summary: "Telegram user is authenticated." }),
+        logoutTelegram: async () => ({ state: "notAuthenticated", summary: "Telegram user is not authenticated." }),
         getTwiccProjectProcessStatuses: async () => twiccProjectProcessStatuses
       },
       BoatyardHawserUI: {
@@ -79,6 +95,7 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
     "../src/renderer/plugins/twicc.js",
     "../src/renderer/plugins/pier.js",
     "../src/renderer/plugins/hawser.js",
+    "../src/renderer/plugins/telegram.js",
     "../src/renderer/plugins/colorPalette.js"
   ]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, file), "utf8"), context);
@@ -106,9 +123,14 @@ test("Built-in plugins register project integrations and widgets", () => {
   assert.equal(registry.getService("boatyard.twicc.api").version, "0.1.0");
   assert.equal(typeof registry.getService("boatyard.pier").listProjectWorkloads, "function");
   assert.equal(registry.getService("boatyard.hawser.api").version, "0.1.0");
+  assert.equal(registry.getService("boatyard.telegram").version, "0.1.0");
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.id).sort()),
     ["boatyard.hawser.pane", "boatyard.pier.preview", "boatyard.twicc.pane"]
+  );
+  assert.deepEqual(
+    plain(registry.listPanes({ scope: "project", kind: "dom" }).map((pane) => pane.id).sort()),
+    ["boatyard.telegram.pane"]
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.key).sort()),
@@ -120,7 +142,7 @@ test("Built-in plugins register project integrations and widgets", () => {
   );
   assert.deepEqual(
     plain(registry.listGlobalSettingsSections().map((section) => section.id).sort()),
-    ["boatyard.hawser.global", "boatyard.pier.global", "boatyard.twicc.global"]
+    ["boatyard.hawser.global", "boatyard.pier.global", "boatyard.telegram.global", "boatyard.twicc.global"]
   );
   const twiccPlugin = registry.list().find((plugin) => plugin.id === "boatyard.twicc");
   assert.deepEqual(
@@ -129,6 +151,31 @@ test("Built-in plugins register project integrations and widgets", () => {
   );
   const colorPalettePlugin = registry.list().find((plugin) => plugin.id === "boatyard.colorPalette");
   assert.deepEqual(plain(colorPalettePlugin.contributes.widgets), ["boatyard.colorPalette.widget"]);
+});
+
+test("Telegram plugin defaults project topic titles to the project slug", () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+  const service = registry.getService("boatyard.telegram");
+
+  assert.deepEqual(
+    plain(service.getTarget({
+      slug: "feature-telegram",
+      name: "Feature Telegram"
+    }, {}, {
+      telegramDefaultChatId: "-1001234567890",
+      telegramDefaultChatTitle: "TARS projects",
+      telegramBotUsername: "tars_bot"
+    })),
+    {
+      chatId: "-1001234567890",
+      threadId: "",
+      topicTitle: "feature-telegram",
+      chatTitle: "TARS projects",
+      botUsername: "tars_bot"
+    }
+  );
 });
 
 test("Twicc service resolves session URLs from the configured project URL", () => {

@@ -211,6 +211,35 @@ test("Plugin registry accepts dynamic WCV pane webapps", () => {
   );
 });
 
+test("Plugin registry accepts DOM pane renderers", () => {
+  const registry = createRegistry();
+
+  registry.register(
+    { id: "vendor.dom", name: "DOM" },
+    {
+      activate(ctx) {
+        ctx.panes.register({
+          id: "vendor.dom.pane",
+          title: "DOM",
+          kind: "dom",
+          render(container) {
+            container.rendered = true;
+          }
+        });
+      }
+    },
+  );
+
+  registry.setEnabled("vendor.dom", true);
+  const pane = registry.listPanes({ kind: "dom" })[0];
+  const container = {};
+
+  pane.render(container);
+
+  assert.equal(pane.webAppId, "vendor.dom.pane");
+  assert.equal(container.rendered, true);
+});
+
 test("Plugin registry requires namespaced contribution ids", () => {
   const registry = createRegistry();
 

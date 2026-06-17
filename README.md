@@ -26,6 +26,7 @@ Optional plugin dependencies:
 - [Twicc](https://github.com/twidi/twicc), for Twicc project/session panes, widgets, and project creation helpers.
 - [Pier](https://github.com/LeoPartt/pier), for Pier preview panes and URL widgets.
 - [Hawser](https://github.com/dguerizec/hawser), for Hawser inbox panes, widgets, and task/session links.
+- Telegram API credentials, for Telegram project topic panes and widgets.
 
 ## Install
 
@@ -126,6 +127,7 @@ Implemented built-in plugins:
 - `boatyard.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
 - `boatyard.twicc`: Twicc pane, global/project settings, project creation action, and service.
 - `boatyard.hawser`: Hawser pane, inbox widget, global/project settings, and service.
+- `boatyard.telegram`: Telegram project topic pane, widget, global/project settings, and service.
 
 ## Development
 

@@ -41,6 +41,13 @@ contextBridge.exposeInMainWorld("boatyard", {
     ipcRenderer.invoke("hawser:widget-data-for-config", projectId, projectConfig, globalConfig)
   ),
   getHawserStatusForConfig: (globalConfig) => ipcRenderer.invoke("hawser:status-for-config", globalConfig),
+  getTelegramStatus: (globalConfig) => ipcRenderer.invoke("telegram:status", globalConfig),
+  getTelegramMessages: (target, globalConfig) => ipcRenderer.invoke("telegram:messages", target, globalConfig),
+  sendTelegramMessage: (target, text, globalConfig) => ipcRenderer.invoke("telegram:send-message", target, text, globalConfig),
+  startTelegramLogin: (globalConfig, phoneNumber) => ipcRenderer.invoke("telegram:login:start", globalConfig, phoneNumber),
+  completeTelegramLoginCode: (code) => ipcRenderer.invoke("telegram:login:code", code),
+  completeTelegramLoginPassword: (password) => ipcRenderer.invoke("telegram:login:password", password),
+  logoutTelegram: () => ipcRenderer.invoke("telegram:logout"),
   onTerminalData: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("terminal:data", listener);

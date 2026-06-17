@@ -2477,6 +2477,16 @@ function getProjectWebApps(project, paneId) {
     });
   }
 
+  for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "dom" })) {
+    webApps.push({
+      id: pluginPane.webAppId,
+      label: pluginPane.title,
+      key: `${paneId}:${pluginPane.key}`,
+      kind: "dom",
+      pluginPane
+    });
+  }
+
   for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "wcv" })) {
     const projectPluginConfig = isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId);
     const context = {
@@ -3391,6 +3401,7 @@ function createWebAppPane(project, paneNode) {
   const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
   const isTerminalPane = selectedWebApp.kind === "terminal";
   const isWidgetPane = selectedWebApp.kind === "widgets";
+  const isDomPane = selectedWebApp.kind === "dom";
   const pane = document.createElement("section");
   pane.className = "webapp-pane";
   pane.classList.toggle("widget-pane", isWidgetPane);
@@ -3429,7 +3440,7 @@ function createWebAppPane(project, paneNode) {
     tabs.append(createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps));
   }
 
-  if (!isTerminalPane && !isWidgetPane) {
+  if (!isTerminalPane && !isWidgetPane && !isDomPane) {
     const homeButton = document.createElement("button");
     homeButton.className = "webapp-tool-button";
     homeButton.type = "button";
@@ -3568,6 +3579,21 @@ function createWebAppPane(project, paneNode) {
     }));
   } else if (isWidgetPane) {
     host.append(createWidgetPaneSurface(project, selectedWebApp.widgetPane));
+  } else if (isDomPane) {
+    const pluginPane = selectedWebApp.pluginPane;
+    const cleanup = pluginPane.render(host, {
+      project,
+      projectId: project.id,
+      projectConfig: isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId),
+      globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId),
+      allProjectPluginConfig: isGlobalWorkspace(project) ? {} : state.pluginConfig?.projects?.[project.id] || {},
+      openProjectWebApp(webAppId, url = "") {
+        return openProjectWebApp(project.id, webAppId, url);
+      }
+    });
+    if (typeof cleanup === "function") {
+      host.boatyardCleanup = cleanup;
+    }
   } else {
     visibleWebAppHosts.set(paneNode.id, {
       webApp: selectedWebApp,
