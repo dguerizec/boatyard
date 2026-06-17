@@ -171,6 +171,7 @@ test("Telegram plugin defaults project topic titles to the project slug", () => 
     {
       chatId: "-1001234567890",
       threadId: "",
+      topicTopMessageId: "",
       topicTitle: "feature-telegram",
       chatTitle: "TARS projects",
       botUsername: "tars_bot"

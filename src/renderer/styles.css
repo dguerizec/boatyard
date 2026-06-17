@@ -1519,6 +1519,7 @@ button {
 }
 
 .telegram-auth-row[hidden],
+.telegram-auth[hidden],
 .telegram-composer[hidden] {
   display: none;
 }

@@ -20,6 +20,7 @@
     return {
       chatId: normalizeText(projectConfig.telegramChatId || globalConfig.telegramDefaultChatId),
       threadId: normalizeText(projectConfig.telegramThreadId),
+      topicTopMessageId: normalizeText(projectConfig.telegramTopicTopMessageId),
       topicTitle: getProjectTopicTitle(project, projectConfig),
       chatTitle: normalizeText(projectConfig.telegramChatTitle || globalConfig.telegramDefaultChatTitle),
       botUsername: normalizeText(projectConfig.telegramBotUsername || globalConfig.telegramBotUsername)
@@ -137,11 +138,15 @@
 
   async function persistResolvedTarget(props = {}, target = {}) {
     const threadId = normalizeText(target.threadId);
+    const topicTopMessageId = normalizeText(target.topicTopMessageId);
     const currentConfig = props.projectConfig || props.pluginConfig || {};
+    const hasUnchangedResolvedTarget =
+      normalizeText(currentConfig.telegramThreadId) === threadId &&
+      normalizeText(currentConfig.telegramTopicTopMessageId) === topicTopMessageId;
     if (
       !props.projectId ||
       !threadId ||
-      normalizeText(currentConfig.telegramThreadId) === threadId ||
+      hasUnchangedResolvedTarget ||
       !globalScope.boatyard?.updateProjectPluginConfig
     ) {
       return;
@@ -150,6 +155,7 @@
     const nextConfig = {
       ...currentConfig,
       telegramThreadId: threadId,
+      telegramTopicTopMessageId: topicTopMessageId,
       telegramTopicTitle: target.topicTitle || currentConfig.telegramTopicTitle || ""
     };
     props.projectConfig = nextConfig;
@@ -157,6 +163,7 @@
 
     await globalScope.boatyard.updateProjectPluginConfig(props.projectId, "boatyard.telegram", {
       telegramThreadId: threadId,
+      telegramTopicTopMessageId: topicTopMessageId,
       telegramTopicTitle: nextConfig.telegramTopicTitle
     });
   }
@@ -262,7 +269,8 @@
 
     function updateAuthState(state) {
       const phase = state?.state || "";
-      auth.hidden = false;
+      const shouldShowAuth = ["authenticating", "notAuthenticated", "codeRequired", "passwordRequired", "ready"].includes(phase);
+      auth.hidden = !shouldShowAuth;
       phoneRow.hidden = phase === "codeRequired" || phase === "passwordRequired";
       if (phase === "ready") {
         phoneRow.hidden = true;

@@ -11,6 +11,7 @@ const CLIENT_OPTIONS = {
 };
 const LOGIN_WAIT_TIMEOUT_MS = 30000;
 const MESSAGE_LIMIT = 50;
+const TOPIC_HISTORY_SCAN_LIMIT = 500;
 
 function normalizeText(value) {
   return String(value || "").trim();
@@ -21,6 +22,7 @@ function normalizeTarget(target = {}) {
   return {
     chatId: normalizeText(source.chatId || source.telegramChatId),
     threadId: normalizeText(source.threadId || source.telegramThreadId),
+    topicTopMessageId: normalizeText(source.topicTopMessageId || source.telegramTopicTopMessageId),
     topicTitle: normalizeText(source.topicTitle || source.telegramTopicTitle),
     chatTitle: normalizeText(source.chatTitle || source.telegramChatTitle),
     botUsername: normalizeText(source.botUsername || source.telegramBotUsername)
@@ -41,6 +43,17 @@ function normalizeApiCredentials(globalConfig = {}) {
 function normalizeThreadId(value) {
   const threadId = Number(normalizeText(value));
   return Number.isInteger(threadId) && threadId > 0 ? threadId : null;
+}
+
+function getMessageTopicIds(message = {}) {
+  const replyTo = message.replyTo || {};
+  return [
+    message.id,
+    replyTo.replyToTopId,
+    replyTo.replyToMsgId
+  ]
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0);
 }
 
 function normalizeTopicTitle(value) {
@@ -394,13 +407,22 @@ class TelegramService {
   }
 
   getTopicThreadId(topic = {}) {
+    const id = Number(topic.id);
+    if (Number.isInteger(id) && id > 0) {
+      return id;
+    }
+
+    const topMessage = Number(topic.topMessage);
+    return Number.isInteger(topMessage) && topMessage > 0 ? topMessage : null;
+  }
+
+  getTopicTopMessageId(topic = {}) {
     const topMessage = Number(topic.topMessage);
     if (Number.isInteger(topMessage) && topMessage > 0) {
       return topMessage;
     }
 
-    const id = Number(topic.id);
-    return Number.isInteger(id) && id > 0 ? id : null;
+    return this.getTopicThreadId(topic);
   }
 
   async listForumTopics(client, target = {}, query = "") {
@@ -429,7 +451,7 @@ class TelegramService {
 
   async resolveProjectTopic(client, target = {}) {
     const normalizedTarget = normalizeTarget(target);
-    if (normalizeThreadId(normalizedTarget.threadId) || !normalizedTarget.topicTitle) {
+    if (!normalizedTarget.topicTitle) {
       return normalizedTarget;
     }
 
@@ -438,6 +460,7 @@ class TelegramService {
       return {
         ...normalizedTarget,
         threadId: String(this.getTopicThreadId(existing) || ""),
+        topicTopMessageId: String(this.getTopicTopMessageId(existing) || ""),
         topicTitle: existing.title || normalizedTarget.topicTitle
       };
     }
@@ -457,13 +480,35 @@ class TelegramService {
     return {
       ...normalizedTarget,
       threadId: String(threadId),
+      topicTopMessageId: String(this.getTopicTopMessageId(created) || threadId),
       topicTitle: created.title || normalizedTarget.topicTitle
     };
+  }
+
+  async resolveProjectTopicWithoutStoredThread(client, target = {}) {
+    return this.resolveProjectTopic(client, {
+      ...normalizeTarget(target),
+      threadId: ""
+    });
   }
 
   getMessageOptions(target = {}) {
     const threadId = normalizeThreadId(target.threadId);
     return threadId ? { replyTo: threadId, topMsgId: threadId } : {};
+  }
+
+  async getTopicMessages(client, target = {}, threadId) {
+    const topicIds = new Set([
+      threadId,
+      normalizeThreadId(target.topicTopMessageId)
+    ].filter(Boolean));
+    const messages = await client.getMessages(this.getPeerValue(target), {
+      limit: TOPIC_HISTORY_SCAN_LIMIT
+    });
+
+    return messages
+      .filter((message) => getMessageTopicIds(message).some((id) => topicIds.has(id)))
+      .slice(0, MESSAGE_LIMIT);
   }
 
   async listMessages(target = {}, globalConfig = {}) {
@@ -481,14 +526,29 @@ class TelegramService {
 
     try {
       const client = await this.getAuthorizedClient(globalConfig);
-      const resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
+      let resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
       const params = { limit: MESSAGE_LIMIT };
       const threadId = normalizeThreadId(resolvedTarget.threadId);
       if (threadId) {
         params.replyTo = threadId;
       }
 
-      const messages = await client.getMessages(this.getPeerValue(resolvedTarget), params);
+      let messages;
+      try {
+        messages = threadId
+          ? await this.getTopicMessages(client, resolvedTarget, threadId)
+          : await client.getMessages(this.getPeerValue(resolvedTarget), params);
+      } catch (error) {
+        if (serializeError(error) !== "TOPIC_ID_INVALID" || !normalizeThreadId(normalizedTarget.threadId)) {
+          throw error;
+        }
+
+        resolvedTarget = await this.resolveProjectTopicWithoutStoredThread(client, normalizedTarget);
+        const retryThreadId = normalizeThreadId(resolvedTarget.threadId);
+        messages = retryThreadId
+          ? await this.getTopicMessages(client, resolvedTarget, retryThreadId)
+          : await client.getMessages(this.getPeerValue(resolvedTarget), { limit: MESSAGE_LIMIT });
+      }
       return {
         status: {
           state: "ready",
