@@ -6,6 +6,7 @@ const {
   aliasTwiccProjectProcessStatuses,
   buildTwiccProjectUrl,
   createTwiccProject,
+  createTwiccProjectCache,
   findTwiccProjectForPath,
   findTwiccProjectMatchForPath,
   getTwiccProjectProcessStatuses,
@@ -98,6 +99,58 @@ test("loadTwiccProjects returns JSON projects from the CLI", async () => {
   });
 
   assert.deepEqual(projects, [{ id: "project", directory: "/workspace/project" }]);
+});
+
+test("createTwiccProjectCache reuses projects until the TTL expires", async () => {
+  let currentTime = 1000;
+  const calls = [];
+  const cache = createTwiccProjectCache({
+    ttlMs: 600000,
+    now: () => currentTime,
+    loadProjects: async () => {
+      calls.push(currentTime);
+      return [{ id: `project-${calls.length}` }];
+    }
+  });
+
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  currentTime += 599999;
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  currentTime += 1;
+  assert.deepEqual(await cache.get(), [{ id: "project-2" }]);
+  assert.deepEqual(calls, [1000, 601000]);
+});
+
+test("createTwiccProjectCache refreshes when processes reference unknown projects", async () => {
+  let calls = 0;
+  const cache = createTwiccProjectCache({
+    loadProjects: async () => {
+      calls += 1;
+      return calls === 1
+        ? [{ id: "known" }]
+        : [{ id: "known" }, { id: "new-project" }];
+    }
+  });
+
+  assert.deepEqual(await cache.get({}, { projectIds: ["known"] }), [{ id: "known" }]);
+  assert.deepEqual(
+    await cache.get({}, { projectIds: ["new-project"] }),
+    [{ id: "known" }, { id: "new-project" }]
+  );
+  assert.equal(calls, 2);
+});
+
+test("createTwiccProjectCache supports explicit invalidation", async () => {
+  let version = 0;
+  const cache = createTwiccProjectCache({
+    loadProjects: async () => [{ id: `project-${++version}` }]
+  });
+
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  cache.invalidate();
+  assert.deepEqual(await cache.get(), [{ id: "project-2" }]);
 });
 
 test("loadTwiccProcesses returns JSON processes from the CLI", async () => {

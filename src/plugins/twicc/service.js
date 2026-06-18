@@ -3,6 +3,7 @@
 const path = require("node:path");
 
 const DEFAULT_TWICC_BASE_URL = "http://localhost:3500";
+const TWICC_PROJECT_CACHE_TTL_MS = 600000;
 
 function normalizePathForMatch(value) {
   const trimmed = typeof value === "string" ? value.trim() : "";
@@ -84,6 +85,43 @@ async function loadTwiccProjects({ execFileAsync }) {
   } catch {
     return [];
   }
+}
+
+function createTwiccProjectCache({
+  loadProjects = loadTwiccProjects,
+  ttlMs = TWICC_PROJECT_CACHE_TTL_MS,
+  now = () => Date.now()
+} = {}) {
+  let projects = [];
+  let loadedAt = 0;
+  let loaded = false;
+
+  function invalidate() {
+    projects = [];
+    loadedAt = 0;
+    loaded = false;
+  }
+
+  function hasUnknownProjectIds(projectIds = []) {
+    const knownIds = new Set(projects.map((project) => String(project?.id || "").trim()).filter(Boolean));
+    return projectIds.some((projectId) => !knownIds.has(String(projectId || "").trim()));
+  }
+
+  async function get(options = {}, { force = false, projectIds = [] } = {}) {
+    const expired = !loaded || now() - loadedAt >= ttlMs;
+    if (force || expired || hasUnknownProjectIds(projectIds)) {
+      projects = await loadProjects(options);
+      loadedAt = now();
+      loaded = true;
+    }
+
+    return projects;
+  }
+
+  return Object.freeze({
+    get,
+    invalidate
+  });
 }
 
 async function loadTwiccProcesses({ execFileAsync }) {
@@ -226,6 +264,10 @@ async function loadTwiccProjectProcessStatuses(options) {
 
 async function inspectTwiccProject(sourcePath, options) {
   const projects = await loadTwiccProjects(options);
+  return inspectTwiccProjectFromProjects(sourcePath, projects);
+}
+
+function inspectTwiccProjectFromProjects(sourcePath, projects) {
   const match = findTwiccProjectMatchForPath(projects, sourcePath);
   return match?.project?.id
     ? {
@@ -253,12 +295,15 @@ async function createTwiccProject(sourcePath, { execFileAsync }) {
 module.exports = {
   aliasTwiccProjectProcessStatuses,
   buildTwiccProjectUrl,
+  createTwiccProjectCache,
   createTwiccProject,
   findTwiccProjectForPath,
   findTwiccProjectMatchForPath,
   getTwiccProjectProcessStatuses,
+  inspectTwiccProjectFromProjects,
   inspectTwiccProject,
   loadTwiccProcesses,
   loadTwiccProjectProcessStatuses,
-  loadTwiccProjects
+  loadTwiccProjects,
+  TWICC_PROJECT_CACHE_TTL_MS
 };
