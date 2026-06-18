@@ -1374,12 +1374,14 @@ button {
 }
 
 .telegram-widget {
-  gap: 10px;
+  gap: 0;
+  padding: 12px;
   overflow: hidden;
 }
 
 .telegram-widget-content {
-  align-content: start;
+  display: block;
+  height: 100%;
   min-height: 0;
 }
 
@@ -1451,7 +1453,8 @@ button {
   color: #f8d79b;
 }
 
-.telegram-pane {
+.telegram-pane,
+.telegram-widget-conversation {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 14px;
@@ -1460,6 +1463,11 @@ button {
   min-height: 0;
   padding: 18px;
   overflow: hidden;
+}
+
+.telegram-widget-conversation {
+  gap: 8px;
+  padding: 0;
 }
 
 .telegram-pane-header {
@@ -1494,6 +1502,11 @@ button {
   background: rgba(22, 29, 38, 0.86);
 }
 
+.telegram-widget-conversation .telegram-message {
+  max-width: 92%;
+  padding: 8px 10px;
+}
+
 .telegram-message.outgoing {
   align-self: flex-end;
   border-color: rgba(65, 184, 131, 0.35);
@@ -1510,6 +1523,10 @@ button {
   display: grid;
   gap: 8px;
   max-width: 560px;
+}
+
+.telegram-widget-conversation .telegram-auth {
+  max-width: none;
 }
 
 .telegram-auth-row {
@@ -1595,6 +1612,15 @@ button {
   outline: none;
 }
 
+.telegram-widget-conversation .telegram-composer {
+  gap: 8px;
+}
+
+.telegram-widget-conversation .telegram-composer textarea {
+  min-height: 44px;
+  resize: none;
+}
+
 .telegram-composer button {
   min-height: 38px;
   border: 1px solid rgba(65, 184, 131, 0.42);
@@ -1603,6 +1629,11 @@ button {
   color: #d9f8e8;
   padding: 0 16px;
   font-weight: 800;
+}
+
+.telegram-widget-conversation .telegram-composer button {
+  min-height: 34px;
+  padding: 0 12px;
 }
 
 .telegram-composer button:disabled {

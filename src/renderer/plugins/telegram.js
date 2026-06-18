@@ -192,17 +192,37 @@
     });
   }
 
-  function createTelegramPane(container, props = {}, service) {
+  function cleanupWhenRemoved(element, cleanup) {
+    if (typeof cleanup !== "function" || typeof globalScope.MutationObserver !== "function" || !document.body) {
+      return;
+    }
+
+    const observer = new globalScope.MutationObserver(() => {
+      if (element.isConnected) {
+        return;
+      }
+
+      cleanup();
+      observer.disconnect();
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+  }
+
+  function createTelegramConversation(container, props = {}, service, options = {}) {
     const project = props.project || {};
     const target = service.getTarget(project, props.projectConfig || props.pluginConfig, props.globalPluginConfig);
+    const compact = options.compact === true;
 
     const shell = document.createElement("section");
-    shell.className = "telegram-pane";
+    shell.className = compact ? "telegram-conversation telegram-widget-conversation" : "telegram-conversation telegram-pane";
 
     const header = document.createElement("header");
-    header.className = "telegram-pane-header";
+    header.className = compact ? "telegram-widget-header" : "telegram-pane-header";
 
     const titleWrap = document.createElement("div");
+    if (compact) {
+      titleWrap.className = "telegram-widget-title";
+    }
     const kicker = document.createElement("p");
     kicker.className = "kicker";
     kicker.textContent = "Telegram";
@@ -215,14 +235,14 @@
 
     const openButton = document.createElement("button");
     openButton.type = "button";
-    openButton.className = "secondary-button";
+    openButton.className = compact ? "telegram-widget-button" : "secondary-button";
     openButton.textContent = "Open";
     openButton.disabled = !service.getWebLink(target);
     openButton.addEventListener("click", () => service.openTelegram(target));
 
     const refreshButton = document.createElement("button");
     refreshButton.type = "button";
-    refreshButton.className = "secondary-button";
+    refreshButton.className = compact ? "telegram-widget-button" : "secondary-button";
     refreshButton.textContent = "Refresh";
     actions.append(openButton, refreshButton);
     header.append(titleWrap, actions);
@@ -284,7 +304,7 @@
     const form = document.createElement("form");
     form.className = "telegram-composer";
     const input = document.createElement("textarea");
-    input.rows = 3;
+    input.rows = compact ? 2 : 3;
     input.placeholder = `Message ${target.botUsername ? `@${target.botUsername.replace(/^@/, "")}` : "TARS"}`;
     const sendButton = document.createElement("button");
     sendButton.type = "submit";
@@ -439,66 +459,18 @@
     return unsubscribeTelegramMessage;
   }
 
+  function createTelegramPane(container, props = {}, service) {
+    return createTelegramConversation(container, props, service);
+  }
+
   function createTelegramWidget(project, props = {}, service) {
-    const target = service.getTarget(project, props.pluginConfig, props.globalPluginConfig);
     const card = document.createElement("article");
     card.className = "widget-card telegram-widget";
 
     const content = document.createElement("div");
     content.className = "widget-content telegram-widget-content";
-
-    const header = document.createElement("div");
-    header.className = "telegram-widget-header";
-
-    const title = document.createElement("div");
-    title.className = "telegram-widget-title";
-    const eyebrow = document.createElement("p");
-    eyebrow.className = "widget-eyebrow";
-    eyebrow.textContent = "Telegram";
-    const heading = document.createElement("h3");
-    heading.textContent = target.topicTitle || project.slug || "Project topic";
-    title.append(eyebrow, heading);
-
-    const openButton = document.createElement("button");
-    openButton.type = "button";
-    openButton.className = "telegram-widget-button";
-    openButton.textContent = "Open";
-    openButton.addEventListener("click", () => {
-      props.openProjectWebApp?.("telegram");
-    });
-
-    header.append(title, openButton);
-
-    const targetText = document.createElement("p");
-    targetText.className = "telegram-widget-target";
-    targetText.textContent = getTargetLabel(target);
-
-    const status = document.createElement("p");
-    status.className = "telegram-status";
-    status.textContent = "Loading Telegram status.";
-
-    content.append(header, targetText, status);
     card.append(content);
-
-    async function load() {
-      try {
-        const data = await service.getMessages(project, {
-          pluginConfig: props.pluginConfig,
-          globalPluginConfig: props.globalPluginConfig,
-          projectId: props.projectId
-        });
-        await persistResolvedTarget(props, data.target);
-        const latest = data.messages?.[data.messages.length - 1];
-        setStatusText(status, latest ? { state: "ready", summary: latest.text } : data.status);
-      } catch (error) {
-        setStatusText(status, {
-          state: "error",
-          summary: error.message
-        });
-      }
-    }
-
-    load();
+    cleanupWhenRemoved(card, createTelegramConversation(content, props, service, { compact: true }));
     return card;
   }
 
@@ -655,8 +627,8 @@
           defaultVisible: false,
           description: "Shows the Telegram project topic connected to the TARS bot.",
           layout: {
-            default: { columns: 3, rows: 2 },
-            min: { columns: 2, rows: 2 }
+            default: { columns: 4, rows: 4 },
+            min: { columns: 3, rows: 3 }
           },
           createElement(project, props = {}) {
             return createTelegramWidget(project, props, service);
