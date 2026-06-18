@@ -214,6 +214,33 @@
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
+  function getComposerLineHeight(input) {
+    const styles = globalScope.getComputedStyle?.(input);
+    const lineHeight = Number.parseFloat(styles?.lineHeight || "");
+    if (Number.isFinite(lineHeight) && lineHeight > 0) {
+      return lineHeight;
+    }
+
+    const fontSize = Number.parseFloat(styles?.fontSize || "");
+    return Number.isFinite(fontSize) && fontSize > 0 ? fontSize * 1.45 : 22;
+  }
+
+  function resizeComposerInput(input, maxLines = 8) {
+    const styles = globalScope.getComputedStyle?.(input);
+    const verticalPadding =
+      Number.parseFloat(styles?.paddingTop || "0") +
+      Number.parseFloat(styles?.paddingBottom || "0");
+    const verticalBorder =
+      Number.parseFloat(styles?.borderTopWidth || "0") +
+      Number.parseFloat(styles?.borderBottomWidth || "0");
+    const maxHeight = Math.ceil(getComposerLineHeight(input) * maxLines + verticalPadding + verticalBorder);
+
+    input.style.height = "auto";
+    const nextHeight = Math.min(input.scrollHeight + verticalBorder, maxHeight);
+    input.style.height = `${nextHeight}px`;
+    input.style.overflowY = input.scrollHeight + verticalBorder > maxHeight ? "auto" : "hidden";
+  }
+
   function createTelegramConversation(container, props = {}, service, options = {}) {
     const project = props.project || {};
     const target = service.getTarget(project, props.projectConfig || props.pluginConfig, props.globalPluginConfig);
@@ -297,12 +324,13 @@
     const form = document.createElement("form");
     form.className = "telegram-composer";
     const input = document.createElement("textarea");
-    input.rows = compact ? 2 : 3;
+    input.rows = 1;
     input.placeholder = `Message ${target.botUsername ? `@${target.botUsername.replace(/^@/, "")}` : "TARS"}`;
     const sendButton = document.createElement("button");
     sendButton.type = "submit";
     sendButton.textContent = "Send";
     form.append(input, sendButton);
+    resizeComposerInput(input);
 
     function updateAuthState(state) {
       const phase = state?.state || "";
@@ -406,6 +434,7 @@
         sendButton.click();
       }
     });
+    input.addEventListener("input", () => resizeComposerInput(input));
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const text = normalizeText(input.value);
@@ -417,6 +446,7 @@
       try {
         await service.sendMessage(project, text, props);
         input.value = "";
+        resizeComposerInput(input);
         await load({ scrollToBottom: true });
       } catch (error) {
         setStatusText(status, {
