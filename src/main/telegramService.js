@@ -2,8 +2,10 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const { EventEmitter } = require("node:events");
 const { safeStorage } = require("electron");
 const { Api, TelegramClient, utils } = require("telegram");
+const { NewMessage } = require("telegram/events");
 const { StringSession } = require("telegram/sessions");
 
 const CLIENT_OPTIONS = {
@@ -56,6 +58,10 @@ function getMessageTopicIds(message = {}) {
     .filter((value) => Number.isInteger(value) && value > 0);
 }
 
+function getMessageChatId(message = {}) {
+  return message.peerId ? utils.getPeerId(message.peerId) : "";
+}
+
 function normalizeTopicTitle(value) {
   return normalizeText(value).toLowerCase();
 }
@@ -93,12 +99,16 @@ function mapMessage(message = {}) {
   };
 }
 
-class TelegramService {
+class TelegramService extends EventEmitter {
   constructor({ sessionFilePath }) {
+    super();
     this.sessionFilePath = sessionFilePath;
     this.client = null;
     this.clientKey = "";
     this.pendingLogin = null;
+    this.messageEventClient = null;
+    this.messageEventBuilder = null;
+    this.messageEventHandler = null;
   }
 
   getStoredSession() {
@@ -147,9 +157,47 @@ class TelegramService {
         throw error;
       }
     }
+    this.detachMessageEventHandler();
     this.client = null;
     this.clientKey = "";
     this.pendingLogin = null;
+  }
+
+  detachMessageEventHandler() {
+    if (!this.messageEventClient || !this.messageEventHandler) {
+      return;
+    }
+
+    this.messageEventClient.removeEventHandler(this.messageEventHandler, this.messageEventBuilder);
+    this.messageEventClient = null;
+    this.messageEventBuilder = null;
+    this.messageEventHandler = null;
+  }
+
+  attachMessageEventHandler(client) {
+    if (this.messageEventClient === client) {
+      return;
+    }
+
+    this.detachMessageEventHandler();
+    const builder = new NewMessage({});
+    const handler = (event) => {
+      const message = event?.message;
+      if (!message) {
+        return;
+      }
+
+      this.emit("message", {
+        chatId: getMessageChatId(message),
+        topicIds: getMessageTopicIds(message).map(String),
+        message: mapMessage(message)
+      });
+    };
+
+    client.addEventHandler(handler, builder);
+    this.messageEventClient = client;
+    this.messageEventBuilder = builder;
+    this.messageEventHandler = handler;
   }
 
   getClientKey(credentials) {
@@ -170,6 +218,7 @@ class TelegramService {
     await client.connect();
     this.client = client;
     this.clientKey = key;
+    this.attachMessageEventHandler(client);
     return client;
   }
 

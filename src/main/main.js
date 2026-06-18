@@ -857,6 +857,11 @@ app.whenReady().then(() => {
   telegramService = new TelegramService({
     sessionFilePath: getTelegramSessionPath()
   });
+  telegramService.on("message", (payload) => {
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send("telegram:message", payload);
+    }
+  });
   passwordManager = new PasswordManager({
     store,
     confirmSave: async ({ origin, username, isUpdate }) => {

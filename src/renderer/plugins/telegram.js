@@ -2,7 +2,6 @@
 
 (function registerTelegramPlugin(globalScope) {
   const registry = globalScope.BoatyardPluginRegistry;
-  const TELEGRAM_REFRESH_MS = 15000;
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
@@ -55,6 +54,28 @@
     return "";
   }
 
+  function isNumericTelegramChatId(value) {
+    return /^-?\d+$/.test(normalizeText(value));
+  }
+
+  function doesTelegramUpdateMatchTarget(update = {}, target = {}) {
+    const updateChatId = normalizeText(update.chatId);
+    const targetChatId = normalizeText(target.chatId);
+    if (targetChatId && isNumericTelegramChatId(targetChatId) && updateChatId !== targetChatId) {
+      return false;
+    }
+
+    const targetTopicIds = new Set([
+      normalizeText(target.threadId),
+      normalizeText(target.topicTopMessageId)
+    ].filter(Boolean));
+    if (!targetTopicIds.size) {
+      return !targetChatId || !isNumericTelegramChatId(targetChatId) || updateChatId === targetChatId;
+    }
+
+    return Array.isArray(update.topicIds) && update.topicIds.some((id) => targetTopicIds.has(normalizeText(id)));
+  }
+
   function createTelegramService() {
     return Object.freeze({
       version: "0.1.0",
@@ -98,6 +119,9 @@
       },
       async logout() {
         return globalScope.boatyard.logoutTelegram();
+      },
+      onMessage(callback) {
+        return globalScope.boatyard?.onTelegramMessage?.(callback) || (() => {});
       },
       openTelegram(target = {}) {
         const link = getTelegramWebLink(target);
@@ -170,7 +194,7 @@
 
   function createTelegramPane(container, props = {}, service) {
     const project = props.project || {};
-    const target = service.getTarget(project, props.projectConfig, props.globalPluginConfig);
+    const target = service.getTarget(project, props.projectConfig || props.pluginConfig, props.globalPluginConfig);
 
     const shell = document.createElement("section");
     shell.className = "telegram-pane";
@@ -402,15 +426,17 @@
     container.append(shell);
     load();
 
-    const refreshInterval = globalScope.setInterval(() => {
+    const unsubscribeTelegramMessage = service.onMessage((update) => {
       if (!shell.isConnected) {
-        globalScope.clearInterval(refreshInterval);
+        unsubscribeTelegramMessage();
         return;
       }
-      load();
-    }, TELEGRAM_REFRESH_MS);
+      if (doesTelegramUpdateMatchTarget(update, service.getTarget(project, props.projectConfig || props.pluginConfig, props.globalPluginConfig))) {
+        load();
+      }
+    });
 
-    return () => globalScope.clearInterval(refreshInterval);
+    return unsubscribeTelegramMessage;
   }
 
   function createTelegramWidget(project, props = {}, service) {

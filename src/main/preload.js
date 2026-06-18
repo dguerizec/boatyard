@@ -48,6 +48,11 @@ contextBridge.exposeInMainWorld("boatyard", {
   completeTelegramLoginCode: (code) => ipcRenderer.invoke("telegram:login:code", code),
   completeTelegramLoginPassword: (password) => ipcRenderer.invoke("telegram:login:password", password),
   logoutTelegram: () => ipcRenderer.invoke("telegram:logout"),
+  onTelegramMessage: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("telegram:message", listener);
+    return () => ipcRenderer.removeListener("telegram:message", listener);
+  },
   onTerminalData: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("terminal:data", listener);
