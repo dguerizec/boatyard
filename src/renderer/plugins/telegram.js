@@ -235,13 +235,6 @@
     const actions = document.createElement("div");
     actions.className = "telegram-pane-actions";
 
-    const openButton = document.createElement("button");
-    openButton.type = "button";
-    openButton.className = compact ? "telegram-widget-button" : "secondary-button";
-    openButton.textContent = "Open";
-    openButton.disabled = !service.getWebLink(target);
-    openButton.addEventListener("click", () => service.openTelegram(target));
-
     const refreshButton = document.createElement("button");
     refreshButton.type = "button";
     refreshButton.className = compact ? "telegram-widget-button" : "secondary-button";
@@ -251,7 +244,7 @@
     status.title = "Loading Telegram status.";
     status.setAttribute("aria-label", "Loading Telegram status.");
     status.setAttribute("role", "status");
-    actions.append(status, openButton, refreshButton);
+    actions.append(status, refreshButton);
     header.append(titleWrap, actions);
 
     const auth = document.createElement("form");
