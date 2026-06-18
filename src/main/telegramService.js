@@ -66,6 +66,32 @@ function normalizeTopicTitle(value) {
   return normalizeText(value).toLowerCase();
 }
 
+function escapeTopicMetadataAttribute(value) {
+  return normalizeText(value)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function getTopicMetadataPrefix(target = {}) {
+  const normalizedTarget = normalizeTarget(target);
+  const topicId = normalizeText(normalizedTarget.threadId || normalizedTarget.topicTopMessageId);
+  const topicName = normalizeText(normalizedTarget.topicTitle);
+  const attributes = [
+    topicId ? `id="${escapeTopicMetadataAttribute(topicId)}"` : "",
+    topicName ? `name="${escapeTopicMetadataAttribute(topicName)}"` : ""
+  ].filter(Boolean);
+
+  return attributes.length ? `<boatyard-topic ${attributes.join(" ")} />` : "";
+}
+
+function addTopicMetadataPrefix(text, target = {}) {
+  const message = normalizeText(text);
+  const prefix = getTopicMetadataPrefix(target);
+  return prefix ? `${prefix}\n${message}` : message;
+}
+
 function serializeError(error) {
   return normalizeText(error?.errorMessage || error?.message) || "Telegram request failed.";
 }
@@ -627,8 +653,9 @@ class TelegramService extends EventEmitter {
     const normalizedTarget = normalizeTarget(target);
     const client = await this.getAuthorizedClient(globalConfig);
     const resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
+    const messageWithMetadata = addTopicMetadataPrefix(message, resolvedTarget);
     const sentMessage = await client.sendMessage(this.getPeerValue(resolvedTarget), {
-      message,
+      message: messageWithMetadata,
       ...this.getMessageOptions(resolvedTarget)
     });
 
@@ -642,5 +669,7 @@ class TelegramService extends EventEmitter {
 
 module.exports = {
   TelegramService,
+  addTopicMetadataPrefix,
+  getTopicMetadataPrefix,
   normalizeTarget
 };

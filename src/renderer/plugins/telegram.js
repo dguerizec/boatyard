@@ -11,6 +11,10 @@
     return String(value || "").trim();
   }
 
+  function stripTopicMetadataPrefix(text) {
+    return String(text || "").replace(/^<boatyard-topic\b[^>]*\/>\s*\n?/, "").trim();
+  }
+
   function getProjectTopicTitle(project = {}, config = {}) {
     return normalizeText(config.telegramTopicTitle || project.slug || project.name);
   }
@@ -156,7 +160,7 @@
       meta.textContent = [message.senderName, message.sentAt].map(normalizeText).filter(Boolean).join(" - ");
 
       const body = document.createElement("p");
-      body.textContent = message.text || "";
+      body.textContent = stripTopicMetadataPrefix(message.text);
       row.append(meta, body);
       list.append(row);
     }
