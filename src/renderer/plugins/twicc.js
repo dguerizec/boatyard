@@ -18,6 +18,10 @@
     throw new Error("Plugin registry is unavailable.");
   }
 
+  function invokePlugin(actionName, payload = {}) {
+    return globalScope.boatyard.invokePlugin("boatyard.twicc", actionName, payload);
+  }
+
   function normalizeBaseUrl(value) {
     return String(value || DEFAULT_TWICC_URL).replace(/\/+$/g, "");
   }
@@ -70,23 +74,23 @@
   }
 
   async function refreshProjectProcessStatuses() {
-    if (!globalScope.boatyard?.getTwiccProjectProcessStatuses) {
+    if (!globalScope.boatyard?.invokePlugin) {
       return;
     }
 
     try {
-      const nextStatuses = await globalScope.boatyard.getTwiccProjectProcessStatuses();
+      const nextStatuses = await invokePlugin("projectProcessStatuses");
       if (JSON.stringify(projectProcessStatuses) !== JSON.stringify(nextStatuses)) {
         projectProcessStatuses = nextStatuses;
-        dispatchProjectBadgeChange();
       }
+      dispatchProjectBadgeChange();
     } catch (error) {
       console.error("Could not refresh Twicc project statuses:", error);
     }
   }
 
   function startProjectStatusRefresh() {
-    if (!globalScope.boatyard?.getTwiccProjectProcessStatuses) {
+    if (!globalScope.boatyard?.invokePlugin) {
       return;
     }
 
@@ -506,11 +510,12 @@
       },
       createElement: createUsageWidget
     });
+    ctx.widgets.registerAlias("boatyard.twicc.projectUsage", "boatyard.twicc.usage");
   }
 
   function syncProjectUrlField(event) {
     const fields = event.fields;
-    const inspected = event.inspected || {};
+    const inspected = event.inspected?.plugins?.["boatyard.twicc"] || {};
     const currentValue = fields?.getValue("twiccProjectUrl") || "";
     const canReplace = !fields?.isEdited("twiccProjectUrl") || !currentValue.trim();
 
@@ -524,9 +529,9 @@
       return;
     }
 
-    if (inspected.twiccProjectUrl && inspected.twiccMatchType === "exact") {
-      fields.setValue("twiccProjectUrl", inspected.twiccProjectUrl);
-    } else if (inspected.twiccMatchType === "parent") {
+    if (inspected.projectUrl && inspected.matchType === "exact") {
+      fields.setValue("twiccProjectUrl", inspected.projectUrl);
+    } else if (inspected.matchType === "parent") {
       fields.setValue("twiccProjectUrl", "");
       fields.setActionVisible("twiccProjectUrl", true);
     }
@@ -607,7 +612,7 @@
                     throw new Error("Source path is required to create a TwiCC project.");
                   }
 
-                  const created = await globalScope.boatyard.createTwiccProject(sourcePath);
+                  const created = await invokePlugin("createProject", { sourcePath });
                   if (!created?.url) {
                     throw new Error("TwiCC project was created but no URL was returned.");
                   }

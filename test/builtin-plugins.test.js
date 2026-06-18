@@ -44,28 +44,49 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
       boatyard: {
         openExternal: () => {},
         writeClipboardText: () => {},
-        getHawserStatusForConfig: async () => ({
-          state: "ready",
-          summary: "Hawser service is available."
-        }),
-        getHawserWidgetDataForConfig: async () => ({}),
-        getTelegramStatus: async () => ({
-          state: "notConfigured",
-          summary: "Telegram API credentials are not configured."
-        }),
-        getTelegramMessages: async () => ({
-          status: {
-            state: "notConfigured",
-            summary: "Telegram API credentials are not configured."
-          },
-          messages: []
-        }),
-        sendTelegramMessage: async () => ({ sent: true }),
-        startTelegramLogin: async () => ({ state: "codeRequired", summary: "Enter the Telegram login code." }),
-        completeTelegramLoginCode: async () => ({ state: "ready", summary: "Telegram user is authenticated." }),
-        completeTelegramLoginPassword: async () => ({ state: "ready", summary: "Telegram user is authenticated." }),
-        logoutTelegram: async () => ({ state: "notAuthenticated", summary: "Telegram user is not authenticated." }),
-        getTwiccProjectProcessStatuses: async () => twiccProjectProcessStatuses
+        invokePlugin: async (pluginId, actionName) => {
+          if (pluginId === "boatyard.twicc" && actionName === "projectProcessStatuses") {
+            return twiccProjectProcessStatuses;
+          }
+          if (pluginId === "boatyard.hawser" && actionName === "statusForConfig") {
+            return {
+              state: "ready",
+              summary: "Hawser service is available."
+            };
+          }
+          if (pluginId === "boatyard.hawser" && actionName === "widgetDataForConfig") {
+            return {};
+          }
+          if (pluginId === "boatyard.telegram" && actionName === "status") {
+            return {
+              state: "notConfigured",
+              summary: "Telegram API credentials are not configured."
+            };
+          }
+          if (pluginId === "boatyard.telegram" && actionName === "messages") {
+            return {
+              status: {
+                state: "notConfigured",
+                summary: "Telegram API credentials are not configured."
+              },
+              messages: []
+            };
+          }
+          if (pluginId === "boatyard.telegram" && actionName === "sendMessage") {
+            return { sent: true };
+          }
+          if (pluginId === "boatyard.telegram" && actionName === "startLogin") {
+            return { state: "codeRequired", summary: "Enter the Telegram login code." };
+          }
+          if (pluginId === "boatyard.telegram" && ["completeLoginCode", "completeLoginPassword"].includes(actionName)) {
+            return { state: "ready", summary: "Telegram user is authenticated." };
+          }
+          if (pluginId === "boatyard.telegram" && actionName === "logout") {
+            return { state: "notAuthenticated", summary: "Telegram user is not authenticated." };
+          }
+          return null;
+        },
+        onPluginEvent: () => (() => {})
       },
       BoatyardHawserUI: {
         createWidget: () => ({})

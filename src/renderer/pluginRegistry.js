@@ -253,6 +253,21 @@
             registered.id
           ]);
           return registered;
+        },
+        registerAlias(alias, targetId) {
+          if (!globalScope.BoatyardWidgetRegistry) {
+            throw new Error("Widget registry is unavailable.");
+          }
+
+          const normalizedAlias = requireId(alias, "Widget alias");
+          const normalizedTargetId = requireId(targetId, "Widget alias target");
+          requireNamespacedContributionId(pluginId, normalizedTargetId, "Widget alias target");
+          const registered = globalScope.BoatyardWidgetRegistry.registerAlias(normalizedAlias, normalizedTargetId);
+          widgetsByPlugin.set(pluginId, [
+            ...(widgetsByPlugin.get(pluginId) || []),
+            registered.alias
+          ]);
+          return registered;
         }
       }),
       services: Object.freeze({
@@ -353,6 +368,7 @@
     if (globalScope.BoatyardWidgetRegistry) {
       for (const widgetId of widgetsByPlugin.get(pluginId) || []) {
         globalScope.BoatyardWidgetRegistry.unregister(widgetId);
+        globalScope.BoatyardWidgetRegistry.unregisterAlias?.(widgetId);
       }
     }
     widgetsByPlugin.delete(pluginId);
@@ -486,7 +502,11 @@
 
   function applyEnabledState(enabledByPlugin = {}) {
     for (const plugin of plugins.values()) {
-      setEnabled(plugin.manifest.id, enabledByPlugin[plugin.manifest.id] !== false);
+      try {
+        setEnabled(plugin.manifest.id, enabledByPlugin[plugin.manifest.id] !== false);
+      } catch (error) {
+        console.error(`Could not apply enabled state for plugin ${plugin.manifest.id}:`, error);
+      }
     }
   }
 

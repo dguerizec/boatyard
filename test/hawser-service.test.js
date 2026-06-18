@@ -19,7 +19,7 @@ const {
   parseHawserSessionName,
   shouldShowWidgetMessage,
   summarizeMessages
-} = require("../src/main/hawserService");
+} = require("../src/plugins/hawser/service");
 
 function makeResponse({ ok, status, body = {} }) {
   return {

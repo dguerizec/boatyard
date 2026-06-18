@@ -5,7 +5,7 @@ const test = require("node:test");
 const {
   addTopicMetadataPrefix,
   getTopicMetadataPrefix
-} = require("../src/main/telegramService");
+} = require("../src/plugins/telegram/service");
 
 test("getTopicMetadataPrefix serializes resolved Telegram topic metadata", () => {
   assert.equal(

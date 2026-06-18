@@ -1,0 +1,8 @@
+{
+  "id": "boatyard.telegram",
+  "name": "Telegram",
+  "version": "0.1.0",
+  "apiVersion": "0.1",
+  "renderer": "../../renderer/plugins/telegram.js",
+  "main": "main.js"
+}

@@ -12,6 +12,10 @@
     throw new Error("Plugin registry is unavailable.");
   }
 
+  function invokePlugin(actionName, payload = {}) {
+    return globalScope.boatyard.invokePlugin("boatyard.hawser", actionName, payload);
+  }
+
   function normalizeApiUrl(value) {
     return String(value || DEFAULT_HAWSER_API_URL).replace(/\/+$/g, "");
   }
@@ -76,23 +80,23 @@
       getMainSession: resolveMainSession,
       getProjectUrl: resolveProjectUrl,
       async getWidgetData(project, options = {}) {
-        const data = await globalScope.boatyard.getHawserWidgetDataForConfig(
-          project.id,
-          {
+        const data = await invokePlugin("widgetDataForConfig", {
+          projectId: project.id,
+          projectConfig: {
             hawserMainSession: resolveMainSession(project, options)
           },
-          {
+          globalConfig: {
             hawserApiUrl: options.globalPluginConfig?.hawserApiUrl,
             hawserToken: options.globalPluginConfig?.hawserToken
           }
-        );
+        });
         return addTwiccSessionUrls(project, data, options);
       }
     });
   }
 
   async function refreshHawserStatus(ctx, globalConfig = {}) {
-    if (typeof globalScope.boatyard.getHawserStatusForConfig !== "function") {
+    if (typeof globalScope.boatyard.invokePlugin !== "function") {
       ctx.status.set({
         state: "degraded",
         summary: "Hawser status probe is unavailable."
@@ -101,7 +105,7 @@
     }
 
     try {
-      ctx.status.set(await globalScope.boatyard.getHawserStatusForConfig(globalConfig));
+      ctx.status.set(await invokePlugin("statusForConfig", { globalConfig }));
     } catch (error) {
       ctx.status.set({
         state: "unavailable",
@@ -122,7 +126,7 @@
 
   function syncProjectRegistrationFields(event) {
     const fields = event.fields;
-    const inspected = event.inspected || {};
+    const inspected = event.inspected?.plugins?.["boatyard.hawser"] || {};
     const coreFields = event.coreFields || {};
 
     if (!fields) {
@@ -131,9 +135,9 @@
 
     fields.setActionVisible("hawserMainSession", false);
 
-    if (inspected.hawserProjectName && inspected.hawserMatchType === "exact") {
-      const mainSession = getMainSession(inspected.hawserProjectName, coreFields.devBranch);
-      const projectUrl = inspected.hawserProjectUrl || getProjectUrl(inspected.hawserProjectName);
+    if (inspected.projectName && inspected.matchType === "exact") {
+      const mainSession = getMainSession(inspected.projectName, coreFields.devBranch);
+      const projectUrl = inspected.projectUrl || getProjectUrl(inspected.projectName);
 
       fields.setValue("hawserMainSession", mainSession, { ifUnedited: true });
       fields.setValue("hawserProjectUrl", projectUrl, { ifUnedited: true });
@@ -249,10 +253,10 @@
                     throw new Error("Source path is required to create a Hawser project.");
                   }
 
-                  const created = await globalScope.boatyard.createHawserProject(
+                  const created = await invokePlugin("createProject", {
                     sourcePath,
-                    getDefaultRuntime(globalConfig)
-                  );
+                    runtime: getDefaultRuntime(globalConfig)
+                  });
                   if (!created?.name) {
                     throw new Error("Hawser project was created but no project name was returned.");
                   }

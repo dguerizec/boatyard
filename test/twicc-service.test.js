@@ -3,15 +3,17 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  aliasTwiccProjectProcessStatuses,
   buildTwiccProjectUrl,
   createTwiccProject,
+  createTwiccProjectCache,
   findTwiccProjectForPath,
   findTwiccProjectMatchForPath,
   getTwiccProjectProcessStatuses,
   loadTwiccProcesses,
   loadTwiccProjectProcessStatuses,
   loadTwiccProjects
-} = require("../src/main/twiccService");
+} = require("../src/plugins/twicc/service");
 
 test("findTwiccProjectForPath matches exact directories first", () => {
   const projects = [
@@ -99,6 +101,58 @@ test("loadTwiccProjects returns JSON projects from the CLI", async () => {
   assert.deepEqual(projects, [{ id: "project", directory: "/workspace/project" }]);
 });
 
+test("createTwiccProjectCache reuses projects until the TTL expires", async () => {
+  let currentTime = 1000;
+  const calls = [];
+  const cache = createTwiccProjectCache({
+    ttlMs: 600000,
+    now: () => currentTime,
+    loadProjects: async () => {
+      calls.push(currentTime);
+      return [{ id: `project-${calls.length}` }];
+    }
+  });
+
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  currentTime += 599999;
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  currentTime += 1;
+  assert.deepEqual(await cache.get(), [{ id: "project-2" }]);
+  assert.deepEqual(calls, [1000, 601000]);
+});
+
+test("createTwiccProjectCache refreshes when processes reference unknown projects", async () => {
+  let calls = 0;
+  const cache = createTwiccProjectCache({
+    loadProjects: async () => {
+      calls += 1;
+      return calls === 1
+        ? [{ id: "known" }]
+        : [{ id: "known" }, { id: "new-project" }];
+    }
+  });
+
+  assert.deepEqual(await cache.get({}, { projectIds: ["known"] }), [{ id: "known" }]);
+  assert.deepEqual(
+    await cache.get({}, { projectIds: ["new-project"] }),
+    [{ id: "known" }, { id: "new-project" }]
+  );
+  assert.equal(calls, 2);
+});
+
+test("createTwiccProjectCache supports explicit invalidation", async () => {
+  let version = 0;
+  const cache = createTwiccProjectCache({
+    loadProjects: async () => [{ id: `project-${++version}` }]
+  });
+
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  assert.deepEqual(await cache.get(), [{ id: "project-1" }]);
+  cache.invalidate();
+  assert.deepEqual(await cache.get(), [{ id: "project-2" }]);
+});
+
 test("loadTwiccProcesses returns JSON processes from the CLI", async () => {
   const processes = await loadTwiccProcesses({
     execFileAsync: async (command, args) => {
@@ -142,6 +196,81 @@ test("getTwiccProjectProcessStatuses groups processes by project with state prio
   assert.equal(statuses["project-a"].sessions[0].state, "done");
   assert.equal(statuses["project-a"].sessions[1].state, "input");
   assert.equal(statuses["project-b"].state, "working");
+});
+
+test("aliasTwiccProjectProcessStatuses exposes statuses by Boatyard project id", () => {
+  const status = {
+    state: "working",
+    count: 1,
+    sessions: [{
+      id: "session-id",
+      title: "Working session",
+      state: "working"
+    }]
+  };
+
+  assert.deepEqual(
+    aliasTwiccProjectProcessStatuses(
+      {
+        "twicc-project": status
+      },
+      [{
+        id: "twicc-project",
+        directory: "/workspace/project",
+        git_root: "/workspace/project"
+      }],
+      [{
+        id: "boatyard-project",
+        sourcePath: "/workspace/project"
+      }]
+    ),
+    {
+      "twicc-project": status,
+      "boatyard-project": status
+    }
+  );
+});
+
+test("aliasTwiccProjectProcessStatuses rolls worktree statuses up to Boatyard parent projects", () => {
+  const status = {
+    state: "working",
+    count: 1,
+    sessions: [{
+      id: "session-id",
+      title: "Working session",
+      state: "working"
+    }]
+  };
+
+  assert.deepEqual(
+    aliasTwiccProjectProcessStatuses(
+      {
+        "twicc-worktree": status
+      },
+      [
+        {
+          id: "twicc-parent",
+          directory: "/workspace/project",
+          git_root: "/workspace/project",
+          worktrees: ["twicc-worktree"]
+        },
+        {
+          id: "twicc-worktree",
+          directory: "/workspace/project/worktrees/feature",
+          git_root: "/workspace/project/worktrees/feature",
+          worktree_of: "twicc-parent"
+        }
+      ],
+      [{
+        id: "boatyard-parent",
+        sourcePath: "/workspace/project"
+      }]
+    ),
+    {
+      "twicc-worktree": status,
+      "boatyard-parent": status
+    }
+  );
 });
 
 test("loadTwiccProjectProcessStatuses returns grouped process statuses", async () => {

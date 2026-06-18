@@ -1,0 +1,8 @@
+{
+  "id": "boatyard.hawser",
+  "name": "Hawser",
+  "version": "0.1.0",
+  "apiVersion": "0.1",
+  "renderer": "../../renderer/plugins/hawser.js",
+  "main": "main.js"
+}

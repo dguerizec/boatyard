@@ -425,8 +425,8 @@ test("normalizePaneLayouts drops invalid layouts", () => {
 
 test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
   assert.deepEqual(normalizeWidgetLayout({
-    order: ["project-summary", "", "project-shell", "project-summary", "pier-urls", "project-preview"],
-    hidden: ["discord", "", "discord", "project-preview"],
+    order: ["project-summary", "", "project-shell", "project-summary", "widget-two", "widget-one"],
+    hidden: ["discord", "", "discord", "widget-one"],
     sizes: {
       "project-summary": {
         columns: 2.4,
@@ -436,7 +436,7 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         columns: 0,
         rows: "3"
       },
-      "pier-urls": {
+      "widget-two": {
         columns: 2,
         rows: 2
       },
@@ -451,7 +451,7 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         x: -3,
         y: "4"
       },
-      "project-preview": {
+      "widget-one": {
         x: 1,
         y: 2
       },
@@ -459,8 +459,8 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
     },
     locked: false
   }), {
-    order: ["project-summary", "project-shell", "boatyard.pier.urls"],
-    hidden: ["discord", "boatyard.pier.urls"],
+    order: ["project-summary", "project-shell", "widget-two", "widget-one"],
+    hidden: ["discord", "widget-one"],
     sizes: {
       "project-summary": {
         columns: 2,
@@ -470,7 +470,7 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         columns: 1,
         rows: 3
       },
-      "boatyard.pier.urls": {
+      "widget-two": {
         columns: 2,
         rows: 2
       }
@@ -484,7 +484,7 @@ test("normalizeWidgetLayout keeps order unique and defaults locked", () => {
         x: 0,
         y: 4
       },
-      "boatyard.pier.urls": {
+      "widget-one": {
         x: 1,
         y: 2
       }
@@ -564,9 +564,7 @@ test("ProjectStore persists configured projects", () => {
   const reloaded = new ProjectStore(filePath);
   const reloadedState = reloaded.load();
   assert.deepEqual(reloadedState.projects, state.projects);
-  assert.deepEqual(reloadedState.pluginConfig.projects[state.projects[0].id]["boatyard.pier"], {
-    pierPreviewUrl: "https://status.example.com/"
-  });
+  assert.deepEqual(reloadedState.pluginConfig.projects, {});
 });
 
 test("ProjectStore persists window state", () => {
@@ -979,7 +977,7 @@ test("ProjectStore persists global terminal state", () => {
   assert.deepEqual(state.terminalTabOrders.__global__, ["@3", "@1", "@2"]);
 });
 
-test("ProjectStore migrates preview URLs into Pier plugin config", () => {
+test("ProjectStore keeps preview URLs as core project data", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
   fs.writeFileSync(filePath, JSON.stringify({
@@ -997,9 +995,7 @@ test("ProjectStore migrates preview URLs into Pier plugin config", () => {
   const state = store.load();
 
   assert.equal(state.projects[0].previewUrl, "http://localhost:5173/");
-  assert.deepEqual(state.pluginConfig.projects["project-id"]["boatyard.pier"], {
-    pierPreviewUrl: "http://localhost:5173/"
-  });
+  assert.deepEqual(state.pluginConfig.projects, {});
 });
 
 test("ProjectStore persists and removes project plugin config", () => {
@@ -1156,9 +1152,7 @@ test("ProjectStore persists project updates and removals", () => {
   const reloaded = new ProjectStore(filePath);
   const reloadedState = reloaded.load();
   assert.deepEqual(reloadedState.projects, moved.projects);
-  assert.deepEqual(reloadedState.pluginConfig.projects[id]["boatyard.pier"], {
-    pierPreviewUrl: "https://project.example.test/"
-  });
+  assert.deepEqual(reloadedState.pluginConfig.projects, {});
 
   const removed = reloaded.removeProject(id);
   assert.equal(removed.webApps[`${id}:twicc`], undefined);

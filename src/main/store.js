@@ -21,10 +21,6 @@ const DEFAULT_WINDOW_BOUNDS = {
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
-const LEGACY_WIDGET_IDS = new Map([
-  ["project-preview", "boatyard.pier.urls"],
-  ["pier-urls", "boatyard.pier.urls"]
-]);
 
 function createDefaultState() {
   return {
@@ -501,7 +497,7 @@ function normalizeTerminalTabOrders(terminalTabOrders = {}, projects = []) {
 
 function normalizeWidgetLayout(layout = {}) {
   const source = layout && typeof layout === "object" ? layout : {};
-  const normalizeWidgetId = (id) => LEGACY_WIDGET_IDS.get(String(id || "").trim()) || String(id || "").trim();
+  const normalizeWidgetId = (id) => String(id || "").trim();
   const seenIds = new Set();
   const order = Array.isArray(source.order)
     ? source.order
@@ -649,7 +645,7 @@ function normalizePluginConfigObject(config = {}) {
   return normalized;
 }
 
-function normalizePluginConfig(pluginConfig = {}, projects = [], { migrateLegacyPreview = false } = {}) {
+function normalizePluginConfig(pluginConfig = {}, projects = []) {
   const source = pluginConfig && typeof pluginConfig === "object" && !Array.isArray(pluginConfig)
     ? pluginConfig
     : {};
@@ -691,25 +687,6 @@ function normalizePluginConfig(pluginConfig = {}, projects = [], { migrateLegacy
         ...(normalized.projects[normalizedProjectId] || {}),
         [normalizedPluginId]: normalizedConfig
       };
-    }
-  }
-
-  if (migrateLegacyPreview) {
-    for (const project of projects) {
-      if (!project.previewUrl) {
-        continue;
-      }
-
-      const pierConfig = normalized.projects[project.id]?.["boatyard.pier"] || {};
-      if (!normalizeText(pierConfig.pierPreviewUrl)) {
-        normalized.projects[project.id] = {
-          ...(normalized.projects[project.id] || {}),
-          "boatyard.pier": {
-            ...pierConfig,
-            pierPreviewUrl: project.previewUrl
-          }
-        };
-      }
     }
   }
 
@@ -879,7 +856,7 @@ class ProjectStore {
         webApps: normalizeWebAppState(parsed.webApps),
         passwordVault: normalizePasswordVault(parsed.passwordVault),
         plugins: normalizePluginsState(parsed.plugins),
-        pluginConfig: normalizePluginConfig(parsed.pluginConfig, projectsWithHomeTabs, { migrateLegacyPreview: true }),
+        pluginConfig: normalizePluginConfig(parsed.pluginConfig, projectsWithHomeTabs),
         globalUrls: normalizeProjectUrls(parsed.globalUrls),
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
