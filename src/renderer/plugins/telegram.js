@@ -276,10 +276,6 @@
     passwordButton.type = "button";
     passwordButton.textContent = "Unlock";
 
-    const logoutButton = document.createElement("button");
-    logoutButton.type = "button";
-    logoutButton.textContent = "Logout";
-
     const phoneRow = document.createElement("div");
     phoneRow.className = "telegram-auth-row";
     phoneRow.append(phoneInput, startLoginButton);
@@ -289,10 +285,7 @@
     const passwordRow = document.createElement("div");
     passwordRow.className = "telegram-auth-row";
     passwordRow.append(passwordInput, passwordButton);
-    const logoutRow = document.createElement("div");
-    logoutRow.className = "telegram-auth-row";
-    logoutRow.append(logoutButton);
-    auth.append(phoneRow, codeRow, passwordRow, logoutRow);
+    auth.append(phoneRow, codeRow, passwordRow);
 
     const list = document.createElement("div");
     list.className = "telegram-message-list";
@@ -310,14 +303,13 @@
     function updateAuthState(state) {
       const phase = state?.state || "";
       const shouldShowAuth = ["authenticating", "notAuthenticated", "codeRequired", "passwordRequired", "ready"].includes(phase);
-      auth.hidden = !shouldShowAuth;
+      auth.hidden = phase === "ready" || !shouldShowAuth;
       phoneRow.hidden = phase === "codeRequired" || phase === "passwordRequired";
       if (phase === "ready") {
         phoneRow.hidden = true;
       }
       codeRow.hidden = phase !== "codeRequired";
       passwordRow.hidden = phase !== "passwordRequired";
-      logoutRow.hidden = phase !== "ready";
       form.hidden = phase !== "ready";
     }
 
@@ -397,12 +389,6 @@
       } finally {
         passwordButton.disabled = false;
       }
-    });
-    logoutButton.addEventListener("click", async () => {
-      const nextStatus = await service.logout();
-      setStatusText(status, nextStatus);
-      updateAuthState(nextStatus);
-      renderMessages(list, []);
     });
     input.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
@@ -560,6 +546,26 @@
               type: "text",
               valueType: "text",
               placeholder: "tars_bot"
+            },
+            {
+              key: "telegramSession",
+              label: "Telegram session",
+              type: "text",
+              valueType: "text",
+              readOnly: true,
+              persist: false,
+              defaultValue: "Stored locally for this OS user",
+              action: {
+                hidden: false,
+                label: "Logout",
+                pendingLabel: "Logging out...",
+                message: "Disconnect the Telegram user session.",
+                async run({ fields }) {
+                  const nextStatus = await service.logout();
+                  ctx.status.set(nextStatus);
+                  fields.setActionMessage("telegramSession", "Telegram user is logged out.");
+                }
+              }
             }
           ]
         });
