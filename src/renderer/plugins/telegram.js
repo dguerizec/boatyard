@@ -281,7 +281,13 @@
       form.hidden = phase !== "ready";
     }
 
-    async function load() {
+    function isScrolledToBottom(element) {
+      return element.scrollHeight - element.scrollTop - element.clientHeight < 24;
+    }
+
+    async function load(options = {}) {
+      const shouldScrollToBottom = options.scrollToBottom === true || isScrolledToBottom(list);
+      const previousScrollTop = list.scrollTop;
       refreshButton.disabled = true;
       try {
         const data = await service.getMessages(project, props);
@@ -289,7 +295,7 @@
         setStatusText(status, data.status);
         updateAuthState(data.status);
         renderMessages(list, data.messages);
-        list.scrollTop = list.scrollHeight;
+        list.scrollTop = shouldScrollToBottom ? list.scrollHeight : previousScrollTop;
       } catch (error) {
         setStatusText(status, {
           state: "error",
@@ -358,6 +364,18 @@
       updateAuthState(nextStatus);
       renderMessages(list, []);
     });
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey)) {
+        return;
+      }
+
+      event.preventDefault();
+      if (typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      } else {
+        sendButton.click();
+      }
+    });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const text = normalizeText(input.value);
@@ -369,7 +387,7 @@
       try {
         await service.sendMessage(project, text, props);
         input.value = "";
-        await load();
+        await load({ scrollToBottom: true });
       } catch (error) {
         setStatusText(status, {
           state: "error",
