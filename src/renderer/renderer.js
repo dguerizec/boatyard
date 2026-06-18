@@ -25,10 +25,7 @@ const WEBAPP_SPLIT_RESIZER_SIZE = 6;
 const WEBAPP_OPEN_SPLIT_RATIO = 2 / 3;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-shell", "terminal-shell"],
-  ["global-shell", "terminal-shell"],
-  ["project-preview", "boatyard.pier.urls"],
-  ["pier-urls", "boatyard.pier.urls"],
-  ["boatyard.twicc.projectUsage", "boatyard.twicc.usage"]
+  ["global-shell", "terminal-shell"]
 ]);
 
 function slugify(value) {
@@ -198,7 +195,6 @@ function getPluginEnabledState() {
 
 function getProjectSummaryTarget(project) {
   return project.sourcePath ||
-    getProjectPluginConfig(project.id, "boatyard.pier").pierPreviewUrl ||
     project.slug;
 }
 
@@ -1488,7 +1484,15 @@ function getProjectWidgetDefinitions(project = null) {
 
 function normalizeWidgetId(widgetId) {
   const id = String(widgetId || "").trim();
-  return LEGACY_WIDGET_IDS.get(id) || id;
+  const mappedId = LEGACY_WIDGET_IDS.get(id) || id;
+  return window.BoatyardWidgetRegistry?.resolveId(mappedId) || mappedId;
+}
+
+function getLegacyWidgetAliases() {
+  return [
+    ...[...LEGACY_WIDGET_IDS.entries()].map(([alias, targetId]) => ({ alias, targetId })),
+    ...(window.BoatyardWidgetRegistry?.listAliases?.() || [])
+  ];
 }
 
 function getMigratedWidgetEntry(entries = {}, widgetId) {
@@ -1500,9 +1504,9 @@ function getMigratedWidgetEntry(entries = {}, widgetId) {
     return entries[widgetId];
   }
 
-  for (const [legacyId, nextId] of LEGACY_WIDGET_IDS) {
-    if (nextId === widgetId && entries[legacyId]) {
-      return entries[legacyId];
+  for (const { alias, targetId } of getLegacyWidgetAliases()) {
+    if (targetId === widgetId && entries[alias]) {
+      return entries[alias];
     }
   }
 
@@ -6565,4 +6569,8 @@ addProjectButton.addEventListener("click", selectCreateProject);
 window.addEventListener("resize", queueWebAppSync);
 workspace.addEventListener("scroll", queueWebAppSync);
 
-loadState();
+window.BoatyardPluginLoader?.ready
+  ?.catch((error) => {
+    console.error("Could not load plugins:", error);
+  })
+  .finally(loadState) || loadState();

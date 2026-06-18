@@ -16,6 +16,10 @@ function createEnvironment() {
     "utf8",
   );
   const context = {
+    console: {
+      ...console,
+      error() {},
+    },
     window: {},
   };
   vm.createContext(context);
@@ -143,6 +147,50 @@ test("Plugin registry requires project nav badges to provide render", () => {
   );
 
   assert.throws(() => registry.setEnabled("vendor.badge", true), /must provide render/);
+});
+
+test("Plugin registry keeps activating remaining plugins after one failure", () => {
+  const registry = createRegistry();
+
+  registry.register(
+    { id: "vendor.bad", name: "Bad" },
+    {
+      activate() {
+        throw new Error("Broken plugin");
+      },
+    },
+  );
+  registry.register(
+    { id: "vendor.good", name: "Good" },
+    {
+      activate(ctx) {
+        ctx.projectNavBadges.register({
+          id: "vendor.good.status",
+          render: () => ({ nodeType: 1 }),
+        });
+      },
+    },
+  );
+
+  registry.applyEnabledState({});
+
+  assert.equal(registry.getStatus("vendor.bad").state, "error");
+  assert.deepEqual(plain(registry.listProjectNavBadges().map((badge) => badge.id)), ["vendor.good.status"]);
+});
+
+test("Plugin registry still throws direct enable failures", () => {
+  const registry = createRegistry();
+
+  registry.register(
+    { id: "vendor.bad", name: "Bad" },
+    {
+      activate() {
+        throw new Error("Broken plugin");
+      },
+    },
+  );
+
+  assert.throws(() => registry.setEnabled("vendor.bad", true), /Broken plugin/);
 });
 
 test("Plugin registry rejects invalid and duplicate contributions", () => {

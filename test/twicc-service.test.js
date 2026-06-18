@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  aliasTwiccProjectProcessStatuses,
   buildTwiccProjectUrl,
   createTwiccProject,
   findTwiccProjectForPath,
@@ -11,7 +12,7 @@ const {
   loadTwiccProcesses,
   loadTwiccProjectProcessStatuses,
   loadTwiccProjects
-} = require("../src/main/twiccService");
+} = require("../src/plugins/twicc/service");
 
 test("findTwiccProjectForPath matches exact directories first", () => {
   const projects = [
@@ -142,6 +143,81 @@ test("getTwiccProjectProcessStatuses groups processes by project with state prio
   assert.equal(statuses["project-a"].sessions[0].state, "done");
   assert.equal(statuses["project-a"].sessions[1].state, "input");
   assert.equal(statuses["project-b"].state, "working");
+});
+
+test("aliasTwiccProjectProcessStatuses exposes statuses by Boatyard project id", () => {
+  const status = {
+    state: "working",
+    count: 1,
+    sessions: [{
+      id: "session-id",
+      title: "Working session",
+      state: "working"
+    }]
+  };
+
+  assert.deepEqual(
+    aliasTwiccProjectProcessStatuses(
+      {
+        "twicc-project": status
+      },
+      [{
+        id: "twicc-project",
+        directory: "/workspace/project",
+        git_root: "/workspace/project"
+      }],
+      [{
+        id: "boatyard-project",
+        sourcePath: "/workspace/project"
+      }]
+    ),
+    {
+      "twicc-project": status,
+      "boatyard-project": status
+    }
+  );
+});
+
+test("aliasTwiccProjectProcessStatuses rolls worktree statuses up to Boatyard parent projects", () => {
+  const status = {
+    state: "working",
+    count: 1,
+    sessions: [{
+      id: "session-id",
+      title: "Working session",
+      state: "working"
+    }]
+  };
+
+  assert.deepEqual(
+    aliasTwiccProjectProcessStatuses(
+      {
+        "twicc-worktree": status
+      },
+      [
+        {
+          id: "twicc-parent",
+          directory: "/workspace/project",
+          git_root: "/workspace/project",
+          worktrees: ["twicc-worktree"]
+        },
+        {
+          id: "twicc-worktree",
+          directory: "/workspace/project/worktrees/feature",
+          git_root: "/workspace/project/worktrees/feature",
+          worktree_of: "twicc-parent"
+        }
+      ],
+      [{
+        id: "boatyard-parent",
+        sourcePath: "/workspace/project"
+      }]
+    ),
+    {
+      "twicc-worktree": status,
+      "boatyard-parent": status
+    }
+  );
 });
 
 test("loadTwiccProjectProcessStatuses returns grouped process statuses", async () => {

@@ -8,9 +8,8 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateNavigation: (navigation) => ipcRenderer.invoke("navigation:update", navigation),
   selectProjectsBasePath: (currentPath) => ipcRenderer.invoke("settings:select-projects-base-path", currentPath),
   inspectSourcePath: (sourcePath) => ipcRenderer.invoke("projects:inspect-source-path", sourcePath),
-  createTwiccProject: (sourcePath) => ipcRenderer.invoke("projects:create-twicc-project", sourcePath),
-  createHawserProject: (sourcePath, runtime) => ipcRenderer.invoke("projects:create-hawser-project", sourcePath, runtime),
-  getTwiccProjectProcessStatuses: () => ipcRenderer.invoke("twicc:project-process-statuses"),
+  listPlugins: () => ipcRenderer.invoke("plugins:list"),
+  invokePlugin: (pluginId, actionName, payload) => ipcRenderer.invoke("plugins:invoke", pluginId, actionName, payload),
   addProject: (project) => ipcRenderer.invoke("projects:add", project),
   updateProject: (id, patch) => ipcRenderer.invoke("projects:update", id, patch),
   updateGlobalUrls: (urls) => ipcRenderer.invoke("global-urls:update", urls),
@@ -37,21 +36,11 @@ contextBridge.exposeInMainWorld("boatyard", {
   detachTerminal: (terminalId) => ipcRenderer.invoke("terminal:detach", terminalId),
   writeTerminalSelection: (text) => ipcRenderer.invoke("terminal:write-selection", text),
   readTerminalSelection: () => ipcRenderer.invoke("terminal:read-selection"),
-  getHawserWidgetDataForConfig: (projectId, projectConfig, globalConfig) => (
-    ipcRenderer.invoke("hawser:widget-data-for-config", projectId, projectConfig, globalConfig)
-  ),
-  getHawserStatusForConfig: (globalConfig) => ipcRenderer.invoke("hawser:status-for-config", globalConfig),
-  getTelegramStatus: (globalConfig) => ipcRenderer.invoke("telegram:status", globalConfig),
-  getTelegramMessages: (target, globalConfig) => ipcRenderer.invoke("telegram:messages", target, globalConfig),
-  sendTelegramMessage: (target, text, globalConfig) => ipcRenderer.invoke("telegram:send-message", target, text, globalConfig),
-  startTelegramLogin: (globalConfig, phoneNumber) => ipcRenderer.invoke("telegram:login:start", globalConfig, phoneNumber),
-  completeTelegramLoginCode: (code) => ipcRenderer.invoke("telegram:login:code", code),
-  completeTelegramLoginPassword: (password) => ipcRenderer.invoke("telegram:login:password", password),
-  logoutTelegram: () => ipcRenderer.invoke("telegram:logout"),
-  onTelegramMessage: (callback) => {
+  onPluginEvent: (pluginId, eventName, callback) => {
+    const channel = `plugins:event:${String(pluginId || "").trim()}:${String(eventName || "").trim()}`;
     const listener = (_event, payload) => callback(payload);
-    ipcRenderer.on("telegram:message", listener);
-    return () => ipcRenderer.removeListener("telegram:message", listener);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
   },
   onTerminalData: (callback) => {
     const listener = (_event, payload) => callback(payload);

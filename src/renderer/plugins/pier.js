@@ -527,6 +527,8 @@
           },
           createElement: (project, props) => createPierWidget(project, props, pierService)
         });
+        ctx.widgets.registerAlias("project-preview", "boatyard.pier.urls");
+        ctx.widgets.registerAlias("pier-urls", "boatyard.pier.urls");
       }
     }
   );

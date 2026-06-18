@@ -4,12 +4,10 @@ const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
-const { createHawserProject, getHawserStatus, getHawserWidgetData, inspectHawserProject } = require("./hawserService");
 const { PasswordManager } = require("./passwordManager");
+const { PluginHost } = require("./pluginHost");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
-const { TelegramService } = require("./telegramService");
-const { createTwiccProject, inspectTwiccProject, loadTwiccProjectProcessStatuses } = require("./twiccService");
 
 const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
@@ -19,7 +17,7 @@ let mainWindow = null;
 let store = null;
 let terminalService = null;
 let passwordManager = null;
-let telegramService = null;
+let pluginHost = null;
 let saveWindowStateTimer = null;
 const webAppViews = new Map();
 let activeWebAppKey = null;
@@ -32,10 +30,6 @@ function getStorePath() {
   }
 
   return path.join(app.getPath("userData"), "boatyard-state.json");
-}
-
-function getTelegramSessionPath() {
-  return path.join(app.getPath("userData"), "telegram-session.json");
 }
 
 function createMainWindow() {
@@ -129,18 +123,16 @@ async function readGitValue(sourcePath, args) {
 
 async function inspectSourcePath(sourcePath) {
   const gitUrl = await readGitValue(sourcePath, ["config", "--get", "remote.origin.url"]);
-  const [twiccProject, hawserProject] = await Promise.all([
-    inspectTwiccProject(sourcePath, { execFileAsync }),
-    inspectHawserProject(sourcePath, { execFileAsync })
-  ]);
+  const plugins = await pluginHost.inspectSourcePath({
+    sourcePath,
+    gitUrl,
+    repoUrl: deriveRepoUrl(gitUrl)
+  });
+
   return {
     gitUrl,
     repoUrl: deriveRepoUrl(gitUrl),
-    twiccMatchType: twiccProject?.matchType || "",
-    twiccProjectUrl: twiccProject?.url || "",
-    hawserMatchType: hawserProject?.matchType || "",
-    hawserProjectName: hawserProject?.name || "",
-    hawserProjectUrl: hawserProject?.url || ""
+    plugins
   };
 }
 
@@ -632,16 +624,12 @@ function registerIpcHandlers() {
     return inspectSourcePath(sourcePath);
   });
 
-  ipcMain.handle("projects:create-twicc-project", async (_event, sourcePath) => {
-    return createTwiccProject(sourcePath, { execFileAsync });
+  ipcMain.handle("plugins:list", () => {
+    return pluginHost.listRendererPlugins();
   });
 
-  ipcMain.handle("projects:create-hawser-project", async (_event, sourcePath, runtime) => {
-    return createHawserProject(sourcePath, runtime, { execFileAsync });
-  });
-
-  ipcMain.handle("twicc:project-process-statuses", async () => {
-    return loadTwiccProjectProcessStatuses({ execFileAsync });
+  ipcMain.handle("plugins:invoke", (_event, pluginId, actionName, payload) => {
+    return pluginHost.invoke(pluginId, actionName, payload);
   });
 
   ipcMain.handle("projects:add", (_event, projectConfig) => {
@@ -740,54 +728,6 @@ function registerIpcHandlers() {
     return clipboard.readText("selection");
   });
 
-  ipcMain.handle("hawser:widget-data-for-config", (_event, projectId, projectConfig = {}, globalConfig = {}) => {
-    const state = store.getState();
-    const project = state.projects.find((item) => item.id === String(projectId || ""));
-    return getHawserWidgetData({
-      ...project,
-      hawserMainSession: projectConfig.hawserMainSession
-    }, {
-      hawserApiUrl: globalConfig.hawserApiUrl,
-      hawserToken: globalConfig.hawserToken
-    });
-  });
-
-  ipcMain.handle("hawser:status-for-config", (_event, globalConfig = {}) => {
-    return getHawserStatus({
-      hawserApiUrl: globalConfig.hawserApiUrl,
-      hawserToken: globalConfig.hawserToken
-    });
-  });
-
-  ipcMain.handle("telegram:status", (_event, globalConfig = {}) => {
-    return telegramService.getStatus(globalConfig);
-  });
-
-  ipcMain.handle("telegram:messages", (_event, target = {}, globalConfig = {}) => {
-    return telegramService.listMessages(target, globalConfig);
-  });
-
-  ipcMain.handle("telegram:send-message", (_event, target = {}, text = "", globalConfig = {}) => {
-    return telegramService.sendMessage(target, text, globalConfig);
-  });
-
-  ipcMain.handle("telegram:login:start", (_event, globalConfig = {}, phoneNumber = "") => {
-    return telegramService.startLogin(globalConfig, phoneNumber);
-  });
-
-  ipcMain.handle("telegram:login:code", (_event, code = "") => {
-    return telegramService.completeLoginCode(code);
-  });
-
-  ipcMain.handle("telegram:login:password", (_event, password = "") => {
-    return telegramService.completeLoginPassword(password);
-  });
-
-  ipcMain.handle("telegram:logout", () => {
-    telegramService.clearSession();
-    return { state: "notAuthenticated", summary: "Telegram user is not authenticated." };
-  });
-
   ipcMain.handle("password-manager:status", () => {
     return passwordManager.getStatus();
   });
@@ -851,17 +791,21 @@ function registerIpcHandlers() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   store = new ProjectStore(getStorePath());
   store.load();
-  telegramService = new TelegramService({
-    sessionFilePath: getTelegramSessionPath()
-  });
-  telegramService.on("message", (payload) => {
-    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-      mainWindow.webContents.send("telegram:message", payload);
+  pluginHost = new PluginHost({
+    store,
+    execFileAsync,
+    userDataPath: app.getPath("userData"),
+    sendToRenderer: (channel, payload) => {
+      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+        mainWindow.webContents.send(channel, payload);
+      }
     }
   });
+  pluginHost.discover();
+  await pluginHost.applyStateMigrations();
   passwordManager = new PasswordManager({
     store,
     confirmSave: async ({ origin, username, isUpdate }) => {

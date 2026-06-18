@@ -157,6 +157,69 @@ function getTwiccProjectProcessStatuses(processes) {
   }, {});
 }
 
+function mergeTwiccProjectProcessStatuses(statuses = []) {
+  const priority = {
+    input: 3,
+    working: 2,
+    done: 1
+  };
+  const merged = {
+    state: "",
+    count: 0,
+    sessions: []
+  };
+
+  for (const status of statuses) {
+    if (!status?.state) {
+      continue;
+    }
+
+    merged.count += Number(status.count) || 0;
+    merged.sessions.push(...(Array.isArray(status.sessions) ? status.sessions : []));
+
+    if (!merged.state || priority[status.state] > priority[merged.state]) {
+      merged.state = status.state;
+    }
+  }
+
+  return merged.state ? merged : null;
+}
+
+function getRelatedTwiccProjectIds(twiccProject, twiccProjects = []) {
+  if (!twiccProject?.id) {
+    return [];
+  }
+
+  const relatedIds = new Set([twiccProject.id]);
+  for (const project of twiccProjects) {
+    if (project?.worktree_of === twiccProject.id) {
+      relatedIds.add(project.id);
+    }
+  }
+
+  for (const worktreeId of Array.isArray(twiccProject.worktrees) ? twiccProject.worktrees : []) {
+    relatedIds.add(worktreeId);
+  }
+
+  return [...relatedIds];
+}
+
+function aliasTwiccProjectProcessStatuses(statuses = {}, twiccProjects = [], boatyardProjects = []) {
+  const aliased = { ...statuses };
+
+  for (const project of Array.isArray(boatyardProjects) ? boatyardProjects : []) {
+    const twiccProject = findTwiccProjectForPath(twiccProjects, project?.sourcePath);
+    const twiccStatus = mergeTwiccProjectProcessStatuses(
+      getRelatedTwiccProjectIds(twiccProject, twiccProjects).map((projectId) => statuses[projectId])
+    );
+    if (project?.id && twiccStatus && !aliased[project.id]) {
+      aliased[project.id] = twiccStatus;
+    }
+  }
+
+  return aliased;
+}
+
 async function loadTwiccProjectProcessStatuses(options) {
   return getTwiccProjectProcessStatuses(await loadTwiccProcesses(options));
 }
@@ -188,6 +251,7 @@ async function createTwiccProject(sourcePath, { execFileAsync }) {
 }
 
 module.exports = {
+  aliasTwiccProjectProcessStatuses,
   buildTwiccProjectUrl,
   createTwiccProject,
   findTwiccProjectForPath,

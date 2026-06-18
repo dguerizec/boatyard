@@ -7,6 +7,10 @@
     throw new Error("Plugin registry is unavailable.");
   }
 
+  function invokePlugin(actionName, payload = {}) {
+    return globalScope.boatyard.invokePlugin("boatyard.telegram", actionName, payload);
+  }
+
   function normalizeText(value) {
     return String(value || "").trim();
   }
@@ -86,17 +90,17 @@
       getTarget,
       getWebLink: getTelegramWebLink,
       async getStatus(options = {}) {
-        if (!globalScope.boatyard?.getTelegramStatus) {
+        if (!globalScope.boatyard?.invokePlugin) {
           return {
             state: "unavailable",
             summary: "Telegram IPC bridge is unavailable."
           };
         }
-        return globalScope.boatyard.getTelegramStatus(options.globalPluginConfig || {});
+        return invokePlugin("status", { globalConfig: options.globalPluginConfig || {} });
       },
       async getMessages(project, options = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
-        if (!globalScope.boatyard?.getTelegramMessages) {
+        if (!globalScope.boatyard?.invokePlugin) {
           return {
             status: {
               state: "unavailable",
@@ -106,26 +110,26 @@
             messages: []
           };
         }
-        return globalScope.boatyard.getTelegramMessages(target, options.globalPluginConfig || {});
+        return invokePlugin("messages", { target, globalConfig: options.globalPluginConfig || {} });
       },
       async sendMessage(project, text, options = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
-        return globalScope.boatyard.sendTelegramMessage(target, text, options.globalPluginConfig || {});
+        return invokePlugin("sendMessage", { target, text, globalConfig: options.globalPluginConfig || {} });
       },
       async startLogin(globalConfig, phoneNumber) {
-        return globalScope.boatyard.startTelegramLogin(globalConfig || {}, phoneNumber);
+        return invokePlugin("startLogin", { globalConfig: globalConfig || {}, phoneNumber });
       },
       async completeLoginCode(code) {
-        return globalScope.boatyard.completeTelegramLoginCode(code);
+        return invokePlugin("completeLoginCode", { code });
       },
       async completeLoginPassword(password) {
-        return globalScope.boatyard.completeTelegramLoginPassword(password);
+        return invokePlugin("completeLoginPassword", { password });
       },
       async logout() {
-        return globalScope.boatyard.logoutTelegram();
+        return invokePlugin("logout");
       },
       onMessage(callback) {
-        return globalScope.boatyard?.onTelegramMessage?.(callback) || (() => {});
+        return globalScope.boatyard?.onPluginEvent?.("boatyard.telegram", "message", callback) || (() => {});
       },
       openTelegram(target = {}) {
         const link = getTelegramWebLink(target);
