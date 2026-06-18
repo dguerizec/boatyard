@@ -8,6 +8,7 @@ const { createHawserProject, getHawserStatus, getHawserWidgetData, inspectHawser
 const { PasswordManager } = require("./passwordManager");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { TerminalService } = require("./terminalService");
+const { TelegramService } = require("./telegramService");
 const { createTwiccProject, inspectTwiccProject, loadTwiccProjectProcessStatuses } = require("./twiccService");
 
 const execFileAsync = promisify(execFile);
@@ -18,6 +19,7 @@ let mainWindow = null;
 let store = null;
 let terminalService = null;
 let passwordManager = null;
+let telegramService = null;
 let saveWindowStateTimer = null;
 const webAppViews = new Map();
 let activeWebAppKey = null;
@@ -30,6 +32,10 @@ function getStorePath() {
   }
 
   return path.join(app.getPath("userData"), "boatyard-state.json");
+}
+
+function getTelegramSessionPath() {
+  return path.join(app.getPath("userData"), "telegram-session.json");
 }
 
 function createMainWindow() {
@@ -753,6 +759,35 @@ function registerIpcHandlers() {
     });
   });
 
+  ipcMain.handle("telegram:status", (_event, globalConfig = {}) => {
+    return telegramService.getStatus(globalConfig);
+  });
+
+  ipcMain.handle("telegram:messages", (_event, target = {}, globalConfig = {}) => {
+    return telegramService.listMessages(target, globalConfig);
+  });
+
+  ipcMain.handle("telegram:send-message", (_event, target = {}, text = "", globalConfig = {}) => {
+    return telegramService.sendMessage(target, text, globalConfig);
+  });
+
+  ipcMain.handle("telegram:login:start", (_event, globalConfig = {}, phoneNumber = "") => {
+    return telegramService.startLogin(globalConfig, phoneNumber);
+  });
+
+  ipcMain.handle("telegram:login:code", (_event, code = "") => {
+    return telegramService.completeLoginCode(code);
+  });
+
+  ipcMain.handle("telegram:login:password", (_event, password = "") => {
+    return telegramService.completeLoginPassword(password);
+  });
+
+  ipcMain.handle("telegram:logout", () => {
+    telegramService.clearSession();
+    return { state: "notAuthenticated", summary: "Telegram user is not authenticated." };
+  });
+
   ipcMain.handle("password-manager:status", () => {
     return passwordManager.getStatus();
   });
@@ -819,6 +854,14 @@ function registerIpcHandlers() {
 app.whenReady().then(() => {
   store = new ProjectStore(getStorePath());
   store.load();
+  telegramService = new TelegramService({
+    sessionFilePath: getTelegramSessionPath()
+  });
+  telegramService.on("message", (payload) => {
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send("telegram:message", payload);
+    }
+  });
   passwordManager = new PasswordManager({
     store,
     confirmSave: async ({ origin, username, isUpdate }) => {
