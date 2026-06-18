@@ -1433,30 +1433,38 @@ button {
   white-space: nowrap;
 }
 
-.telegram-status {
-  margin: 0;
-  color: #c3ccd5;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
+.telegram-status-indicator {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #77818c;
+  box-shadow: 0 0 0 3px rgba(119, 129, 140, 0.14);
 }
 
-.telegram-status.ready {
-  color: #8ee7bb;
+.telegram-status-indicator.ready {
+  background: #70dfa7;
+  box-shadow: 0 0 0 3px rgba(112, 223, 167, 0.14);
 }
 
-.telegram-status.error,
-.telegram-status.unavailable {
-  color: #fca5a5;
+.telegram-status-indicator.error,
+.telegram-status-indicator.unavailable {
+  background: #fca5a5;
+  box-shadow: 0 0 0 3px rgba(252, 165, 165, 0.14);
 }
 
-.telegram-status.notConfigured {
-  color: #f8d79b;
+.telegram-status-indicator.notConfigured,
+.telegram-status-indicator.notAuthenticated,
+.telegram-status-indicator.codeRequired,
+.telegram-status-indicator.passwordRequired {
+  background: #f8d79b;
+  box-shadow: 0 0 0 3px rgba(248, 215, 155, 0.14);
 }
 
 .telegram-pane,
 .telegram-widget-conversation {
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 14px;
   width: 100%;
   height: 100%;

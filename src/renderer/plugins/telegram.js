@@ -131,8 +131,10 @@
   }
 
   function setStatusText(element, status = {}) {
-    element.className = `telegram-status ${status.state || "unknown"}`;
-    element.textContent = status.summary || status.state || "Telegram status unavailable.";
+    const summary = status.summary || status.state || "Telegram status unavailable.";
+    element.className = `telegram-status-indicator ${status.state || "unknown"}`;
+    element.title = summary;
+    element.setAttribute("aria-label", summary);
   }
 
   function renderMessages(list, messages = []) {
@@ -244,12 +246,13 @@
     refreshButton.type = "button";
     refreshButton.className = compact ? "telegram-widget-button" : "secondary-button";
     refreshButton.textContent = "Refresh";
-    actions.append(openButton, refreshButton);
+    const status = document.createElement("span");
+    status.className = "telegram-status-indicator";
+    status.title = "Loading Telegram status.";
+    status.setAttribute("aria-label", "Loading Telegram status.");
+    status.setAttribute("role", "status");
+    actions.append(status, openButton, refreshButton);
     header.append(titleWrap, actions);
-
-    const status = document.createElement("p");
-    status.className = "telegram-status";
-    status.textContent = "Loading Telegram status.";
 
     const auth = document.createElement("form");
     auth.className = "telegram-auth";
@@ -442,7 +445,7 @@
       }
     });
 
-    shell.append(header, status, auth, list, form);
+    shell.append(header, auth, list, form);
     container.append(shell);
     load();
 
