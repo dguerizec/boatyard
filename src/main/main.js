@@ -32,6 +32,7 @@ let terminalService = null;
 let passwordManager = null;
 let pluginHost = null;
 let saveWindowStateTimer = null;
+let updatePreparationPromise = null;
 const webAppViews = new Map();
 let activeWebAppKey = null;
 let visibleWebAppKeys = new Set();
@@ -189,6 +190,7 @@ function getUpdateInstallPaths() {
 
   return {
     binDir: path.join(homePath, ".boatyard", "bin"),
+    stagingDir: path.join(homePath, ".boatyard", "staging"),
     symlinkDir: preferredSymlinkDir,
     symlinkPath: path.join(preferredSymlinkDir, "boatyard")
   };
@@ -211,6 +213,11 @@ function getCurrentAppImagePath() {
 function getManagedAppImagePath(version) {
   const { binDir } = getUpdateInstallPaths();
   return path.join(binDir, `Boatyard-${normalizeVersionTag(version)}.AppImage`);
+}
+
+function getStagedAppImagePath(version) {
+  const { stagingDir } = getUpdateInstallPaths();
+  return path.join(stagingDir, `Boatyard-${normalizeVersionTag(version)}.AppImage`);
 }
 
 function isPathInDirectory(filePath, directoryPath) {
@@ -265,7 +272,7 @@ async function ensureCurrentAppImageInstalled() {
 
   if (!currentAppImagePath) {
     return {
-      supported: true,
+      supported: false,
       managed: false,
       binDir,
       symlinkPath,
@@ -342,13 +349,50 @@ async function cleanupOldAppImages(currentVersion = app.getVersion()) {
   return deleted;
 }
 
+async function getPreparedUpdate() {
+  if (process.platform !== "linux") {
+    return null;
+  }
+
+  const { stagingDir } = getUpdateInstallPaths();
+
+  if (!(await pathExists(stagingDir))) {
+    return null;
+  }
+
+  const currentVersion = normalizeVersionTag(app.getVersion());
+  const entries = await fs.promises.readdir(stagingDir);
+  const prepared = entries
+    .map((name) => {
+      const match = name.match(APPIMAGE_NAME_PATTERN);
+      return match ? { name, version: match[1], filePath: path.join(stagingDir, name) } : null;
+    })
+    .filter(Boolean)
+    .filter((candidate) => compareVersions(candidate.version, currentVersion) > 0)
+    .sort((left, right) => compareVersions(right.version, left.version))[0];
+
+  if (!prepared) {
+    return null;
+  }
+
+  return {
+    latestVersion: prepared.version,
+    assetName: prepared.name,
+    updateAvailable: true,
+    canInstall: true,
+    prepared: true
+  };
+}
+
 async function getUpdateInfo() {
   const install = await ensureCurrentAppImageInstalled();
+  const preparedUpdate = await getPreparedUpdate();
 
   return {
     currentVersion: normalizeVersionTag(app.getVersion()),
     releasesUrl: `https://github.com/${UPDATE_REPOSITORY.owner}/${UPDATE_REPOSITORY.name}/releases`,
-    install
+    install,
+    preparedUpdate
   };
 }
 
@@ -373,31 +417,83 @@ async function downloadFile(url, destinationPath) {
   await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(destinationPath, { mode: 0o755 }));
 }
 
-async function installUpdate(update) {
+async function prepareUpdate() {
+  if (updatePreparationPromise) {
+    return updatePreparationPromise;
+  }
+
+  updatePreparationPromise = (async () => {
+    const update = await checkForUpdates();
+
+    if (!update.updateAvailable || !update.canInstall) {
+      return {
+        ...update,
+        prepared: false
+      };
+    }
+
+    const { stagingDir } = getUpdateInstallPaths();
+    const stagedPath = getStagedAppImagePath(update.latestVersion);
+    const temporaryPath = `${stagedPath}.tmp-${process.pid}`;
+
+    await fs.promises.mkdir(stagingDir, { recursive: true });
+
+    if (!(await pathExists(stagedPath))) {
+      try {
+        await fs.promises.unlink(temporaryPath);
+      } catch {}
+
+      try {
+        await downloadFile(update.downloadUrl, temporaryPath);
+        await fs.promises.chmod(temporaryPath, 0o755);
+        await fs.promises.rename(temporaryPath, stagedPath);
+      } catch (error) {
+        try {
+          await fs.promises.unlink(temporaryPath);
+        } catch {}
+        throw error;
+      }
+    }
+
+    return {
+      ...update,
+      prepared: true
+    };
+  })();
+
+  try {
+    return await updatePreparationPromise;
+  } finally {
+    updatePreparationPromise = null;
+  }
+}
+
+async function restartToUpdate(update) {
   if (process.platform !== "linux") {
     throw new Error("Automatic AppImage updates are only available on Linux.");
   }
 
-  const updateData = update && typeof update === "object" ? update : {};
-  const nextVersion = normalizeVersionTag(updateData.latestVersion);
+  const updateData = update && typeof update === "object"
+    ? update
+    : await getPreparedUpdate();
 
-  if (!updateData.updateAvailable || !nextVersion || !updateData.downloadUrl) {
-    throw new Error("No downloadable update is available.");
+  if (!updateData) {
+    throw new Error("No prepared update is available.");
+  }
+
+  const nextVersion = normalizeVersionTag(updateData.latestVersion);
+  const stagedPath = getStagedAppImagePath(nextVersion);
+
+  if (!updateData.updateAvailable || !nextVersion || !(await pathExists(stagedPath))) {
+    throw new Error("No prepared update is available.");
   }
 
   const { binDir, symlinkPath } = getUpdateInstallPaths();
   const destinationPath = getManagedAppImagePath(nextVersion);
-  const temporaryPath = `${destinationPath}.tmp-${process.pid}`;
 
   await fs.promises.mkdir(binDir, { recursive: true });
-
-  try {
-    await fs.promises.unlink(temporaryPath);
-  } catch {}
-
-  await downloadFile(updateData.downloadUrl, temporaryPath);
-  await fs.promises.chmod(temporaryPath, 0o755);
-  await fs.promises.rename(temporaryPath, destinationPath);
+  await fs.promises.rename(stagedPath, destinationPath);
+  await fs.promises.chmod(destinationPath, 0o755);
   await updateBoatyardSymlink(destinationPath);
 
   const child = spawn(destinationPath, [], {
@@ -1231,8 +1327,12 @@ function registerIpcHandlers() {
     return checkForUpdates();
   });
 
-  ipcMain.handle("updates:install", (_event, update) => {
-    return installUpdate(update);
+  ipcMain.handle("updates:prepare", () => {
+    return prepareUpdate();
+  });
+
+  ipcMain.handle("updates:restart", (_event, update) => {
+    return restartToUpdate(update);
   });
 
   ipcMain.handle("projects:inspect-source-path", (_event, sourcePath) => {

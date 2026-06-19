@@ -105,6 +105,9 @@ let frozenWebAppLayer = null;
 let openWebAppTabMenu = null;
 let openWidgetAddMenu = null;
 let pierWorkloadPaneRefreshFrame = null;
+let preparedUpdate = null;
+let activeUpdateCardUpdater = null;
+let updatePollStarted = false;
 let draggedProjectId = null;
 let draggedWidgetId = null;
 let onboardingDemoProjectVisible = false;
@@ -118,6 +121,7 @@ let pendingTerminalCloseFocus = null;
 const TERMINAL_TAB_SYNC_DELAY_MS = 150;
 const TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS = 250;
 const TERMINAL_CLOSE_FOCUS_TTL_MS = 3000;
+const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
 
 function getProjects() {
   return state.projects;
@@ -4125,8 +4129,6 @@ function createGlobalUpdateCard() {
   const shell = document.createElement("section");
   shell.className = "project-form-page app-update-card";
 
-  let updateResult = null;
-
   const content = document.createElement("div");
   content.className = "app-update-content";
 
@@ -4157,7 +4159,7 @@ function createGlobalUpdateCard() {
   const updateButton = document.createElement("button");
   updateButton.className = "primary-button";
   updateButton.type = "button";
-  updateButton.textContent = "Update";
+  updateButton.textContent = "Restart to update";
   updateButton.hidden = true;
 
   actions.append(checkButton, updateButton);
@@ -4170,9 +4172,21 @@ function createGlobalUpdateCard() {
     checkButton.textContent = isBusy ? label : "Check for updates";
   };
 
+  const showPreparedUpdate = (update) => {
+    preparedUpdate = update;
+    status.textContent = `${formatVersionLabel(update.latestVersion)} ready to install`;
+    updateButton.hidden = false;
+  };
+  activeUpdateCardUpdater = showPreparedUpdate;
+
   window.boatyard.getUpdateInfo()
     .then((info) => {
       version.textContent = `Current version ${formatVersionLabel(info.currentVersion)}`;
+      if (info.preparedUpdate) {
+        showPreparedUpdate(info.preparedUpdate);
+        return;
+      }
+
       if (info.install?.supported && info.install.pathConfigured === false) {
         status.textContent = "Install link directory is not in PATH";
       }
@@ -4183,20 +4197,17 @@ function createGlobalUpdateCard() {
     });
 
   checkButton.addEventListener("click", async () => {
-    setBusy(true);
-    status.textContent = "Checking for updates...";
+    setBusy(true, "Downloading...");
+    status.textContent = "Checking and downloading updates...";
     updateButton.hidden = true;
-    updateResult = null;
 
     try {
-      const result = await window.boatyard.checkForUpdates();
-      updateResult = result;
+      const result = await window.boatyard.prepareUpdate();
       version.textContent = `Current version ${formatVersionLabel(result.currentVersion)}`;
 
       if (result.updateAvailable) {
-        if (result.canInstall) {
-          status.textContent = `Update available: ${formatVersionLabel(result.latestVersion)}`;
-          updateButton.hidden = false;
+        if (result.prepared) {
+          showPreparedUpdate(result);
         } else {
           status.textContent = `Update available: ${formatVersionLabel(result.latestVersion)}, no installable AppImage found.`;
         }
@@ -4211,15 +4222,15 @@ function createGlobalUpdateCard() {
   });
 
   updateButton.addEventListener("click", async () => {
-    if (!updateResult) {
+    if (!preparedUpdate) {
       return;
     }
 
-    setBusy(true, "Updating...");
-    status.textContent = "Downloading update...";
+    setBusy(true, "Restarting...");
+    status.textContent = "Restarting to update...";
 
     try {
-      const result = await window.boatyard.installUpdate(updateResult);
+      const result = await window.boatyard.restartToUpdate(preparedUpdate);
       status.textContent = result.pathConfigured === false
         ? "Installed. Add the link directory to PATH; relaunching now..."
         : "Installed. Relaunching now...";
@@ -7172,6 +7183,7 @@ async function reorderProjects(sourceId, targetId) {
 }
 
 function render() {
+  activeUpdateCardUpdater = null;
   renderProjectList();
 
   const project = getCurrentProject();
@@ -7190,6 +7202,31 @@ function render() {
   }
 }
 
+async function pollForUpdates() {
+  if (typeof window.boatyard.prepareUpdate !== "function") {
+    return;
+  }
+
+  try {
+    const result = await window.boatyard.prepareUpdate();
+    if (result?.prepared) {
+      preparedUpdate = result;
+      activeUpdateCardUpdater?.(result);
+    }
+  } catch (error) {
+    console.warn(`Could not prepare update: ${error.message}`);
+  }
+}
+
+function startUpdatePolling() {
+  if (updatePollStarted) {
+    return;
+  }
+
+  updatePollStarted = true;
+  setInterval(pollForUpdates, UPDATE_POLL_INTERVAL_MS);
+}
+
 async function loadState() {
   state = await window.boatyard.getState();
   window.BoatyardPluginRegistry?.applyEnabledState(getPluginEnabledState());
@@ -7204,6 +7241,7 @@ async function loadState() {
   hydrateTerminalTabOrders();
   restoreNavigation();
   render();
+  startUpdatePolling();
   maybeOpenInitialOnboarding();
 }
 
