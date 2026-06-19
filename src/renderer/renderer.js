@@ -4,6 +4,7 @@ const globalNav = document.querySelector("#global-nav");
 const globalNavRow = document.querySelector("#global-nav-row");
 const globalSettingsButton = document.querySelector("#global-settings");
 const globalViewButton = document.querySelector("#global-view");
+const manualTourButton = document.querySelector("#manual-tour");
 const addProjectButton = document.querySelector("#add-project");
 const projectCount = document.querySelector("#project-count");
 const projectList = document.querySelector("#project-list");
@@ -23,6 +24,7 @@ const WIDGET_GRID_GAP = 12;
 const WIDGET_GRID_SCROLL_GUARD = 10;
 const WEBAPP_SPLIT_RESIZER_SIZE = 6;
 const WEBAPP_OPEN_SPLIT_RATIO = 2 / 3;
+const ONBOARDING_VERSION = window.BoatyardManual?.version || 1;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-shell", "terminal-shell"],
   ["global-shell", "terminal-shell"]
@@ -93,6 +95,8 @@ const widgetLayoutsByProject = new Map();
 const selectedWebAppByPane = new Map();
 const loadedWebAppKeys = new Set();
 const currentWebAppUrlsByKey = new Map();
+const loadedWebAppUrlsByKey = new Map();
+const webAppLoadWaiters = new Set();
 const webAppAutofillEnabledByKey = new Map();
 let visibleWebAppHosts = new Map();
 let webAppBoundsFrame = null;
@@ -103,6 +107,8 @@ let openWidgetAddMenu = null;
 let pierWorkloadPaneRefreshFrame = null;
 let draggedProjectId = null;
 let draggedWidgetId = null;
+let onboardingDemoProjectVisible = false;
+let onboardingTourActive = false;
 const terminalWidgetsBySurface = new Map();
 const terminalWidgetsByTerminal = new Map();
 const terminalTabSyncTimers = new Map();
@@ -125,6 +131,15 @@ function getSettings() {
     widgetRailWidth: 340,
     terminalEnv: "",
     ...(state.settings || {})
+  };
+}
+
+function getManual() {
+  return window.BoatyardManual || {
+    title: "Boatyard Manual",
+    description: "",
+    sections: [],
+    onboarding: []
   };
 }
 
@@ -327,6 +342,59 @@ function getFitAddonConstructor() {
 function nextAnimationFrame() {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve());
+  });
+}
+
+function normalizeComparableUrl(url) {
+  try {
+    return new URL(url).toString();
+  } catch {
+    return String(url || "");
+  }
+}
+
+function matchesWebAppLoad(payload, key, expectedUrl = "") {
+  if (!payload || payload.key !== key) {
+    return false;
+  }
+
+  if (!expectedUrl) {
+    return true;
+  }
+
+  return normalizeComparableUrl(payload.url) === normalizeComparableUrl(expectedUrl);
+}
+
+function hasLoadedWebApp(key, expectedUrl = "") {
+  const loadedUrl = loadedWebAppUrlsByKey.get(key);
+  if (!loadedUrl) {
+    return false;
+  }
+
+  return matchesWebAppLoad({ key, url: loadedUrl }, key, expectedUrl);
+}
+
+function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {
+  if (!key || hasLoadedWebApp(key, expectedUrl)) {
+    return Promise.resolve(true);
+  }
+
+  return new Promise((resolve) => {
+    let timeout = null;
+    let waiter = null;
+    const cleanup = (loaded) => {
+      clearTimeout(timeout);
+      webAppLoadWaiters.delete(waiter);
+      resolve(loaded);
+    };
+    waiter = (payload) => {
+      if (matchesWebAppLoad(payload, key, expectedUrl)) {
+        cleanup(true);
+      }
+    };
+
+    webAppLoadWaiters.add(waiter);
+    timeout = setTimeout(() => cleanup(false), timeoutMs);
   });
 }
 
@@ -2481,6 +2549,14 @@ function getProjectWebApps(project, paneId) {
     });
   }
 
+  webApps.push({
+    id: "manual",
+    label: "Manual",
+    key: `${paneId}:manual`,
+    url: "https://boatyard.dev/",
+    restoreUrl: false
+  });
+
   for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "dom" })) {
     webApps.push({
       id: pluginPane.webAppId,
@@ -2674,6 +2750,10 @@ function getVisibleWebAppProject() {
 }
 
 function persistVisibleWebAppPaneLayout(key, url = "") {
+  if (onboardingTourActive) {
+    return;
+  }
+
   const sourceEntry = getVisibleWebAppEntryByKey(key);
   const project = sourceEntry ? getVisibleWebAppProject() : null;
   if (project) {
@@ -3144,6 +3224,21 @@ function findFirstPaneNode(node) {
   return findFirstPaneNode(node.first) || findFirstPaneNode(node.second);
 }
 
+function collectPaneNodes(node, panes = []) {
+  if (!node) {
+    return panes;
+  }
+
+  if (node.type === "pane") {
+    panes.push(node);
+    return panes;
+  }
+
+  collectPaneNodes(node.first, panes);
+  collectPaneNodes(node.second, panes);
+  return panes;
+}
+
 function findPaneNodeBySelectedWebApp(node, webAppId) {
   if (!node) {
     return null;
@@ -3301,6 +3396,7 @@ async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWe
     item.classList.toggle("child", depth > 0);
     item.classList.toggle("loaded", loadedWebAppKeys.has(webApp.key));
     item.type = "button";
+    item.dataset.webAppId = webApp.id;
     item.setAttribute("role", "menuitem");
     item.setAttribute("aria-current", String(webApp.id === selectedWebApp.id));
     item.setAttribute("data-load-state", loadedWebAppKeys.has(webApp.key) ? "Loaded" : "Not loaded");
@@ -3410,6 +3506,10 @@ function createWebAppPane(project, paneNode) {
   pane.className = "webapp-pane";
   pane.classList.toggle("widget-pane", isWidgetPane);
   pane.dataset.paneId = paneNode.id;
+  pane.dataset.webAppId = selectedWebApp.id;
+  if (selectedWebApp.kind) {
+    pane.dataset.webAppKind = selectedWebApp.kind;
+  }
 
   const header = document.createElement("div");
   header.className = "webapp-pane-header";
@@ -3541,7 +3641,7 @@ function createWebAppPane(project, paneNode) {
   }
 
   const verticalSplitButton = document.createElement("button");
-  verticalSplitButton.className = "webapp-tool-button";
+  verticalSplitButton.className = "webapp-tool-button split-vertical";
   verticalSplitButton.type = "button";
   verticalSplitButton.title = "Split vertically";
   verticalSplitButton.setAttribute("aria-label", "Split vertically");
@@ -3549,7 +3649,7 @@ function createWebAppPane(project, paneNode) {
   verticalSplitButton.addEventListener("click", () => splitPane(project, paneNode.id, "vertical"));
 
   const horizontalSplitButton = document.createElement("button");
-  horizontalSplitButton.className = "webapp-tool-button";
+  horizontalSplitButton.className = "webapp-tool-button split-horizontal";
   horizontalSplitButton.type = "button";
   horizontalSplitButton.title = "Split horizontally";
   horizontalSplitButton.setAttribute("aria-label", "Split horizontally");
@@ -3905,6 +4005,115 @@ function renderGlobalPaneArea() {
   }
 
   currentPaneLayoutElement.replaceWith(paneLayoutElement);
+}
+
+function createManualSection(section) {
+  const card = document.createElement("article");
+  card.className = "manual-section";
+  card.id = `manual-${section.id}`;
+
+  const heading = document.createElement("div");
+  heading.className = "manual-section-heading";
+
+  const title = document.createElement("h3");
+  title.textContent = section.title;
+
+  const summary = document.createElement("p");
+  summary.textContent = section.summary || "";
+  heading.append(title, summary);
+
+  const entries = document.createElement("div");
+  entries.className = "manual-entry-list";
+
+  for (const entry of section.entries || []) {
+    const item = document.createElement("section");
+    item.className = "manual-entry";
+
+    const itemTitle = document.createElement("h4");
+    itemTitle.textContent = entry.title;
+
+    const itemBody = document.createElement("p");
+    itemBody.textContent = entry.body;
+    item.append(itemTitle, itemBody);
+    entries.append(item);
+  }
+
+  card.append(heading, entries);
+  return card;
+}
+
+function createManualSurface({ includeIntroAction = true } = {}) {
+  const manual = getManual();
+  const content = document.createElement("div");
+  content.className = "manual-content";
+
+  const intro = document.createElement("section");
+  intro.className = "manual-intro";
+
+  const introTitle = document.createElement("h3");
+  introTitle.textContent = "Working with Boatyard";
+
+  const introBody = document.createElement("p");
+  introBody.textContent = "Use this manual as an operational reference while configuring projects, arranging panes, and enabling plugins.";
+
+  intro.append(introTitle, introBody);
+
+  if (includeIntroAction) {
+    const introActions = document.createElement("div");
+    introActions.className = "manual-actions";
+
+    const tourButton = document.createElement("button");
+    tourButton.className = "primary-button";
+    tourButton.type = "button";
+    tourButton.textContent = "Start guided tour";
+    tourButton.addEventListener("click", () => openOnboardingTour({ force: true }));
+    introActions.append(tourButton);
+    intro.append(introActions);
+  }
+
+  content.append(intro);
+
+  for (const section of manual.sections || []) {
+    content.append(createManualSection(section));
+  }
+
+  return content;
+}
+
+function renderManualPage() {
+  const manual = getManual();
+  closeWidgetAddMenu();
+  visibleWebAppHosts = new Map();
+  invokeWebApp("hideWebApp");
+  workspace.classList.remove("project-mode");
+  workspaceKicker.textContent = "Help";
+  workspaceTitle.textContent = manual.title;
+  workspaceSummary.textContent = manual.description || "";
+  dashboardGrid.innerHTML = "";
+  dashboardGrid.className = "manual-page";
+  dashboardGrid.style.gridTemplateColumns = "";
+
+  const nav = document.createElement("nav");
+  nav.className = "manual-nav";
+  nav.setAttribute("aria-label", "Manual sections");
+
+  const navTitle = document.createElement("h3");
+  navTitle.textContent = "Contents";
+  nav.append(navTitle);
+
+  for (const section of manual.sections || []) {
+    const link = document.createElement("a");
+    link.href = `#manual-${section.id}`;
+    link.textContent = section.title;
+    nav.append(link);
+  }
+
+  const note = document.createElement("p");
+  note.className = "manual-hosting-note";
+  note.textContent = "Public documentation hosting will use the future Boatyard documentation domain.";
+  nav.append(note);
+
+  dashboardGrid.append(nav, createManualSurface());
 }
 
 function createGlobalProjectsSettingsForm({ settings, onSubmit }) {
@@ -6268,6 +6477,419 @@ async function restoreWebAppsAfterOverlay() {
   queueWebAppSync();
 }
 
+function clearOnboardingHighlight() {
+  document.querySelector(".onboarding-highlight")?.classList.remove("onboarding-highlight");
+}
+
+function removeOnboardingDemoProject() {
+  onboardingDemoProjectVisible = false;
+  document.querySelector(".onboarding-demo-project")?.remove();
+  document.querySelector(".onboarding-hidden-empty")?.classList.remove("onboarding-hidden-empty");
+}
+
+function ensureOnboardingDemoProject() {
+  onboardingDemoProjectVisible = true;
+  const existing = document.querySelector(".onboarding-demo-project");
+  if (existing) {
+    return existing;
+  }
+
+  const emptyCopy = projectList.querySelector(".empty-copy");
+  emptyCopy?.classList.add("onboarding-hidden-empty");
+
+  const row = document.createElement("div");
+  row.className = "project-nav-row onboarding-demo-project";
+
+  const button = document.createElement("button");
+  button.className = "nav-item";
+  button.type = "button";
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "project-nav-title";
+
+  const projectName = document.createElement("span");
+  projectName.className = "project-nav-name";
+  projectName.textContent = "Demo project";
+  titleRow.append(projectName);
+
+  const projectSlug = document.createElement("small");
+  projectSlug.textContent = "demo-project";
+  button.append(titleRow, projectSlug);
+
+  const settingsButton = document.createElement("button");
+  settingsButton.className = "project-settings-button";
+  settingsButton.type = "button";
+  settingsButton.title = "Demo project settings";
+  settingsButton.setAttribute("aria-label", "Demo project settings");
+  settingsButton.textContent = "⚙";
+
+  row.append(button, settingsButton);
+  projectList.append(row);
+  return row;
+}
+
+function getDefaultOnboardingPaneWebAppId(project, paneId) {
+  return getProjectWebApps(project, paneId).find((webApp) => webApp.id !== "manual")?.id || "manual";
+}
+
+function ensureOnboardingSplitPane() {
+  const project = getGlobalWorkspace();
+  let layout = getProjectPaneLayout(project);
+
+  if (countPaneNodes(layout) < 2) {
+    const sourcePane = findFirstPaneNode(layout);
+    if (!sourcePane) {
+      return;
+    }
+
+    const currentWebAppId =
+      selectedWebAppByPane.get(sourcePane.id) ||
+      sourcePane.selectedWebAppId ||
+      selectedWebAppByProject.get(project.id) ||
+      "widgets:widgets-0";
+    const replacement = createSplitNode(project, "vertical", { ...sourcePane });
+    const splitWebAppId = getDefaultOnboardingPaneWebAppId(project, replacement.second.id);
+    replacement.first.selectedWebAppId = currentWebAppId;
+    replacement.second.selectedWebAppId = splitWebAppId;
+    paneLayoutsByProject.set(project.id, replacePaneNode(layout, sourcePane.id, replacement));
+    selectedWebAppByPane.set(replacement.first.id, currentWebAppId);
+    selectedWebAppByPane.set(replacement.second.id, splitWebAppId);
+    layout = replacement;
+  }
+
+  const panes = collectPaneNodes(layout);
+  const targetPane = panes.at(-1);
+  if (!targetPane) {
+    return null;
+  }
+
+  if ((selectedWebAppByPane.get(targetPane.id) || targetPane.selectedWebAppId) === "manual") {
+    const webAppId = getDefaultOnboardingPaneWebAppId(project, targetPane.id);
+    targetPane.selectedWebAppId = webAppId;
+    selectedWebAppByPane.set(targetPane.id, webAppId);
+  }
+
+  renderWorkspaceDashboard(project);
+  return targetPane;
+}
+
+function ensureOnboardingManualPane() {
+  const project = getGlobalWorkspace();
+  const manualPane = ensureOnboardingSplitPane();
+  if (!manualPane) {
+    return;
+  }
+
+  manualPane.selectedWebAppId = "manual";
+  selectedWebAppByPane.set(manualPane.id, "manual");
+  selectedWebAppByProject.set(project.id, "manual");
+  renderWorkspaceDashboard(project);
+}
+
+function getVisibleManualWebApp() {
+  for (const { webApp } of visibleWebAppHosts.values()) {
+    if (webApp.id === "manual") {
+      return webApp;
+    }
+  }
+
+  return null;
+}
+
+async function openOnboardingPaneDropdown() {
+  const project = getGlobalWorkspace();
+  const panes = [...document.querySelectorAll(".webapp-pane")];
+  const pane = panes.at(-1);
+  const button = pane?.querySelector(".webapp-tab-picker");
+  const paneId = pane?.dataset.paneId;
+  const paneNode = paneId ? findPaneNode(getProjectPaneLayout(project), paneId) : null;
+  if (!button || !paneNode) {
+    return;
+  }
+
+  const webApps = getProjectWebApps(project, paneNode.id);
+  const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
+  button.setAttribute("aria-expanded", "true");
+  await openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps);
+}
+
+async function restoreOnboardingGlobalLayout(layout) {
+  if (!layout) {
+    return;
+  }
+
+  const project = getGlobalWorkspace();
+  for (const pane of collectPaneNodes(paneLayoutsByProject.get(project.id))) {
+    selectedWebAppByPane.delete(pane.id);
+  }
+
+  paneLayoutsByProject.set(project.id, structuredClone(layout));
+  selectedWebAppByProject.delete(project.id);
+  for (const pane of collectPaneNodes(layout)) {
+    if (pane.selectedWebAppId) {
+      selectedWebAppByPane.set(pane.id, pane.selectedWebAppId);
+    }
+  }
+
+  try {
+    await window.boatyard.updatePaneLayout(project.id, layout);
+  } catch (error) {
+    console.error("Could not restore onboarding pane layout:", error);
+  }
+
+  if (currentView === "global") {
+    renderWorkspaceDashboard(project);
+  }
+}
+
+function findOnboardingTarget(selector) {
+  if (!selector) {
+    return null;
+  }
+
+  const target = document.querySelector(selector);
+  if (target) {
+    return target;
+  }
+
+  if (selector === ".project-settings-button") {
+    return document.querySelector(".project-nav-row") || addProjectButton;
+  }
+
+  return null;
+}
+
+async function persistOnboardingComplete() {
+  try {
+    state.onboarding = await window.boatyard.updateOnboarding({
+      completedVersion: ONBOARDING_VERSION,
+      completedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Could not persist onboarding state:", error);
+  }
+}
+
+async function openOnboardingTour(options = {}) {
+  const manual = getManual();
+  const steps = manual.onboarding || [];
+  if (!steps.length) {
+    return;
+  }
+
+  if (options.startView !== false && currentView !== "global") {
+    setCurrentView("global", null, { persist: false });
+    render();
+  }
+
+  onboardingTourActive = true;
+  const originalGlobalLayout = structuredClone(getProjectPaneLayout(getGlobalWorkspace()));
+
+  const dialog = document.createElement("dialog");
+  dialog.className = "onboarding-dialog";
+  dialog.setAttribute("aria-label", "Boatyard guided tour");
+
+  const spotlight = document.createElement("div");
+  spotlight.className = "onboarding-spotlight";
+  spotlight.setAttribute("aria-hidden", "true");
+
+  const spotlightHole = document.createElement("div");
+  spotlightHole.className = "onboarding-spotlight-hole";
+  spotlight.append(spotlightHole);
+
+  const panel = document.createElement("div");
+  panel.className = "onboarding-panel";
+
+  const header = document.createElement("div");
+  header.className = "onboarding-header";
+
+  const title = document.createElement("h3");
+  const counter = document.createElement("span");
+  header.append(title, counter);
+
+  const body = document.createElement("p");
+  body.className = "onboarding-body";
+
+  const actions = document.createElement("div");
+  actions.className = "onboarding-actions";
+
+  const skipButton = document.createElement("button");
+  skipButton.className = "secondary-button";
+  skipButton.type = "button";
+  skipButton.textContent = options.force ? "Close" : "Skip";
+
+  const previousButton = document.createElement("button");
+  previousButton.className = "secondary-button";
+  previousButton.type = "button";
+  previousButton.textContent = "Back";
+
+  const nextButton = document.createElement("button");
+  nextButton.className = "primary-button";
+  nextButton.type = "button";
+
+  actions.append(skipButton, previousButton, nextButton);
+  panel.append(header, body, actions);
+  dialog.append(panel);
+  document.body.append(spotlight);
+  document.body.append(dialog);
+
+  let currentStep = 0;
+  let highlightedTarget = null;
+  let dialogClosed = false;
+
+  function updateSpotlight(target) {
+    if (!target) {
+      spotlightHole.hidden = true;
+      return;
+    }
+
+    const rect = target.getBoundingClientRect();
+    const padding = 8;
+    spotlightHole.hidden = false;
+    spotlightHole.style.left = `${Math.max(8, rect.left - padding)}px`;
+    spotlightHole.style.top = `${Math.max(8, rect.top - padding)}px`;
+    spotlightHole.style.width = `${Math.max(1, rect.width + padding * 2)}px`;
+    spotlightHole.style.height = `${Math.max(1, rect.height + padding * 2)}px`;
+  }
+
+  async function renderStep() {
+    clearOnboardingHighlight();
+    const step = steps[currentStep];
+    const isManualStep = step.target === ".webapp-pane[data-web-app-id=\"manual\"] .webapp-tab-picker";
+    const isPaneDropdownStep = step.target === ".webapp-tab-menu-item[data-web-app-id=\"manual\"]";
+    const shouldPrepareBehindTour = (isManualStep || isPaneDropdownStep) && dialog.open;
+    let manualLoadPromise = Promise.resolve(true);
+
+    if (!isPaneDropdownStep) {
+      closeWebAppTabMenu();
+    }
+
+    if (shouldPrepareBehindTour) {
+      dialog.style.visibility = "hidden";
+      spotlight.hidden = true;
+      await restoreWebAppsAfterOverlay();
+    }
+
+    title.textContent = step.title;
+    counter.textContent = `${currentStep + 1} / ${steps.length}`;
+    body.textContent = step.body;
+    previousButton.disabled = currentStep === 0;
+    nextButton.textContent = currentStep === steps.length - 1 ? "Finish" : "Next";
+
+    if (step.target?.startsWith(".onboarding-demo-project")) {
+      ensureOnboardingDemoProject();
+    }
+
+    if (isPaneDropdownStep) {
+      ensureOnboardingSplitPane();
+    }
+
+    if (isManualStep) {
+      ensureOnboardingManualPane();
+      const manualWebApp = getVisibleManualWebApp();
+      manualLoadPromise = waitForWebAppLoad(manualWebApp?.key, manualWebApp?.url);
+    }
+
+    await nextAnimationFrame();
+    await nextAnimationFrame();
+    if (isPaneDropdownStep) {
+      await syncWebAppView();
+      await openOnboardingPaneDropdown();
+      await nextAnimationFrame();
+    }
+    if (isManualStep) {
+      await syncWebAppView();
+      await manualLoadPromise;
+      await nextAnimationFrame();
+    }
+    if (dialogClosed) {
+      return;
+    }
+    if (!isPaneDropdownStep) {
+      await freezeWebAppsForOverlay();
+    }
+    dialog.style.visibility = "";
+    spotlight.hidden = false;
+
+    const target = findOnboardingTarget(step.target);
+    highlightedTarget = target;
+    if (target) {
+      target.classList.add("onboarding-highlight");
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+      requestAnimationFrame(() => updateSpotlight(target));
+    } else {
+      updateSpotlight(null);
+    }
+  }
+
+  async function closeDialog({ complete = false } = {}) {
+    if (dialogClosed) {
+      return;
+    }
+    dialogClosed = true;
+    clearOnboardingHighlight();
+    if (complete) {
+      await persistOnboardingComplete();
+    }
+    dialog.close();
+    dialog.remove();
+    spotlight.remove();
+    removeOnboardingDemoProject();
+    await restoreOnboardingGlobalLayout(originalGlobalLayout);
+    onboardingTourActive = false;
+    await restoreWebAppsAfterOverlay();
+    window.removeEventListener("resize", handleSpotlightViewportChange);
+    window.removeEventListener("scroll", handleSpotlightViewportChange, true);
+    window.removeEventListener("keydown", handleOnboardingKeydown);
+  }
+
+  function handleSpotlightViewportChange() {
+    updateSpotlight(highlightedTarget?.isConnected ? highlightedTarget : null);
+  }
+
+  function handleOnboardingKeydown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDialog({ complete: !options.force });
+    }
+  }
+
+  skipButton.addEventListener("click", () => {
+    closeDialog({ complete: !options.force });
+  });
+
+  previousButton.addEventListener("click", () => {
+    currentStep = Math.max(0, currentStep - 1);
+    renderStep();
+  });
+
+  nextButton.addEventListener("click", () => {
+    if (currentStep >= steps.length - 1) {
+      closeDialog({ complete: true });
+      return;
+    }
+
+    currentStep += 1;
+    renderStep();
+  });
+
+  window.addEventListener("resize", handleSpotlightViewportChange);
+  window.addEventListener("scroll", handleSpotlightViewportChange, true);
+  window.addEventListener("keydown", handleOnboardingKeydown);
+
+  await renderStep();
+  dialog.show();
+  nextButton.focus();
+}
+
+function maybeOpenInitialOnboarding() {
+  if ((state.onboarding?.completedVersion || 0) >= ONBOARDING_VERSION) {
+    return;
+  }
+
+  requestAnimationFrame(() => openOnboardingTour());
+}
+
 function selectGlobal() {
   setCurrentView("global");
   render();
@@ -6320,6 +6942,7 @@ function renderProjectList() {
 
   globalNav.classList.toggle("active", currentView === "global" || currentView === "global-settings");
   globalNavRow.classList.toggle("active", currentView === "global" || currentView === "global-settings");
+  globalViewButton.classList.toggle("active", currentView === "global");
   addProjectButton.classList.toggle("active", currentView === "project-create");
 
   if (projects.length === 0) {
@@ -6327,6 +6950,9 @@ function renderProjectList() {
     empty.className = "empty-copy";
     empty.textContent = "No projects configured yet.";
     projectList.append(empty);
+    if (onboardingDemoProjectVisible) {
+      ensureOnboardingDemoProject();
+    }
     return;
   }
 
@@ -6406,6 +7032,10 @@ function renderProjectList() {
 
     projectList.append(row);
   }
+
+  if (onboardingDemoProjectVisible) {
+    ensureOnboardingDemoProject();
+  }
 }
 
 async function reorderProjects(sourceId, targetId) {
@@ -6457,6 +7087,7 @@ async function loadState() {
   hydrateTerminalTabOrders();
   restoreNavigation();
   render();
+  maybeOpenInitialOnboarding();
 }
 
 window.boatyard.onWebAppUrlChanged(({ key, url }) => {
@@ -6470,6 +7101,19 @@ window.boatyard.onWebAppUrlChanged(({ key, url }) => {
     if (input.dataset.webappKey === key && input !== document.activeElement) {
       input.value = url;
     }
+  }
+});
+
+window.boatyard.onWebAppLoaded?.((payload) => {
+  const { key, url } = payload || {};
+  if (!key || !url) {
+    return;
+  }
+
+  loadedWebAppKeys.add(key);
+  loadedWebAppUrlsByKey.set(key, url);
+  for (const waiter of [...webAppLoadWaiters]) {
+    waiter(payload);
   }
 });
 
@@ -6565,6 +7209,7 @@ window.addEventListener("boatyard:pier-workloads-changed", () => {
 globalNav.addEventListener("click", selectGlobal);
 globalSettingsButton.addEventListener("click", selectGlobalSettings);
 globalViewButton.addEventListener("click", selectGlobal);
+manualTourButton.addEventListener("click", () => openOnboardingTour({ force: true }));
 addProjectButton.addEventListener("click", selectCreateProject);
 window.addEventListener("resize", queueWebAppSync);
 workspace.addEventListener("scroll", queueWebAppSync);

@@ -301,6 +301,18 @@ function loadWebAppUrl(webApp, url) {
   return true;
 }
 
+function sendWebAppLoaded(key, url, status = "loaded") {
+  if (!mainWindow || mainWindow.webContents.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send("webapp:loaded", {
+    key: String(key),
+    url,
+    status
+  });
+}
+
 function handleWebAppWindowOpen(key, details) {
   const url = details?.url || "";
   const webApp = webAppViews.get(key);
@@ -349,6 +361,14 @@ function ensureWebAppView(key) {
   view.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
     if (isMainFrame) {
       persistWebAppUrl(key, url);
+    }
+  });
+  view.webContents.on("did-finish-load", () => {
+    sendWebAppLoaded(key, view.webContents.getURL());
+  });
+  view.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    if (isMainFrame) {
+      sendWebAppLoaded(key, validatedUrl || view.webContents.getURL(), `failed:${errorCode}:${errorDescription}`);
     }
   });
   view.webContents.on("dom-ready", () => {
@@ -413,6 +433,8 @@ function showWebApp({ key, url, bounds, autofillEnabled, restoreUrl = true }) {
 
   if (webApp.url !== parsedUrl.toString()) {
     loadWebAppUrl(webApp, parsedUrl.toString());
+  } else if (!webApp.view.webContents.isLoadingMainFrame()) {
+    sendWebAppLoaded(key, webApp.view.webContents.getURL());
   }
 }
 
@@ -604,6 +626,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("navigation:update", (_event, navigation) => {
     return store.updateNavigation(navigation);
+  });
+
+  ipcMain.handle("onboarding:update", (_event, onboarding) => {
+    return store.updateOnboarding(onboarding);
   });
 
   ipcMain.handle("settings:select-projects-base-path", async (_event, currentPath) => {
