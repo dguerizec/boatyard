@@ -415,6 +415,19 @@ button {
   max-width: 100%;
 }
 
+.global-settings-layout {
+  display: block;
+  column-width: 460px;
+  column-gap: 16px;
+}
+
+.global-settings-layout > .project-form-page {
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 16px;
+  break-inside: avoid;
+}
+
 .danger-zone {
   border-color: rgba(185, 28, 28, 0.72);
 }

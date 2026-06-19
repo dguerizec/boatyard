@@ -5179,7 +5179,7 @@ function renderGlobalSettingsPage() {
   workspaceTitle.textContent = "Global settings";
   workspaceSummary.textContent = "";
   dashboardGrid.innerHTML = "";
-  dashboardGrid.className = "project-form-layout";
+  dashboardGrid.className = "project-form-layout global-settings-layout";
   dashboardGrid.style.gridTemplateColumns = "";
 
   dashboardGrid.append(createGlobalUpdateCard(), createGlobalProjectsSettingsForm({
