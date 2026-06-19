@@ -1171,10 +1171,18 @@ button {
   pointer-events: auto;
 }
 
+.webapp-pane.widget-pane.editing .widget-rail-actions {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .widget-rail-action {
   width: 32px;
   height: 32px;
   min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -1202,6 +1210,7 @@ button {
 }
 
 .widget-trash-dropzone {
+  flex: 0 1 auto;
   min-height: 32px;
   display: inline-flex;
   align-items: center;
@@ -1216,6 +1225,10 @@ button {
   text-transform: uppercase;
   opacity: 0.72;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.webapp-pane.widget-pane.editing .widget-trash-dropzone {
+  flex: 1 1 auto;
 }
 
 .project-widget-rail.dragging-widget .widget-trash-dropzone,
@@ -2597,6 +2610,14 @@ button {
   overflow: hidden;
 }
 
+.webapp-pane.widget-pane.editing .webapp-tabs {
+  flex: 0 1 auto;
+}
+
+.webapp-pane.widget-pane.editing .webapp-actions {
+  flex: 1 1 auto;
+}
+
 .webapp-tab {
   min-height: 32px;
   padding: 0 12px;
@@ -2750,6 +2771,9 @@ button {
   width: 32px;
   height: 32px;
   min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -2757,6 +2781,16 @@ button {
   color: var(--text);
   font-size: 11px;
   font-weight: 800;
+}
+
+.webapp-tool-icon {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
 }
 
 .webapp-tool-button:hover {

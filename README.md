@@ -30,6 +30,17 @@ Optional plugin dependencies:
 
 ## Install
 
+Download the latest Linux AppImage from the GitHub release page, make it executable, and run it:
+
+```sh
+chmod +x Boatyard-x.y.z.AppImage
+./Boatyard-x.y.z.AppImage
+```
+
+On first launch from an AppImage, Boatyard copies itself into `~/.boatyard/bin/` and creates or updates a `boatyard` symlink in `~/.local/bin/` or `~/bin` when possible. Keep one of those directories in your `PATH` to launch Boatyard from a terminal.
+
+For development from a source checkout, install dependencies with:
+
 ```sh
 npm install
 ```

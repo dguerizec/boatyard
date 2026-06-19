@@ -122,6 +122,79 @@ const TERMINAL_TAB_SYNC_DELAY_MS = 150;
 const TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS = 250;
 const TERMINAL_CLOSE_FOCUS_TTL_MS = 3000;
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
+const SVG_NS = "http://www.w3.org/2000/svg";
+const TOOL_ICONS = {
+  arrowLeft: [
+    "M19 12H5",
+    "M12 5l-7 7 7 7"
+  ],
+  arrowRight: [
+    "M5 12h14",
+    "M12 5l7 7-7 7"
+  ],
+  home: [
+    "M4 11.5L12 5l8 6.5",
+    "M6.5 10v9h11v-9",
+    "M10 19v-5h4v5"
+  ],
+  key: [
+    "M15 7.5a4 4 0 1 1-1.18-2.82A4 4 0 0 1 15 7.5z",
+    "M10.6 10.4L4 17v3h3l1.5-1.5H11v-2.5h2.5L16 13"
+  ],
+  lock: [
+    "M6.5 10V7.5a5.5 5.5 0 0 1 11 0V10",
+    "M5.5 10h13a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-7A1.5 1.5 0 0 1 5.5 10z"
+  ],
+  pencil: [
+    "M12 20h9",
+    "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"
+  ],
+  plus: [
+    "M12 5v14",
+    "M5 12h14"
+  ],
+  refresh: [
+    "M20 6v5h-5",
+    "M4 18v-5h5",
+    "M18 11a6.5 6.5 0 0 0-11.42-4.24L4 9",
+    "M6 13a6.5 6.5 0 0 0 11.42 4.24L20 15"
+  ],
+  trash: [
+    "M3 6h18",
+    "M8 6V4h8v2",
+    "M6 6l1 14h10l1-14",
+    "M10 11v5",
+    "M14 11v5"
+  ],
+  splitVertical: [
+    "M4 5.5C4 4.67 4.67 4 5.5 4h13c.83 0 1.5.67 1.5 1.5v13c0 .83-.67 1.5-1.5 1.5h-13C4.67 20 4 19.33 4 18.5z",
+    "M12 4v16"
+  ],
+  splitHorizontal: [
+    "M4 5.5C4 4.67 4.67 4 5.5 4h13c.83 0 1.5.67 1.5 1.5v13c0 .83-.67 1.5-1.5 1.5h-13C4.67 20 4 19.33 4 18.5z",
+    "M4 12h16"
+  ],
+  close: [
+    "M6 6l12 12",
+    "M18 6L6 18"
+  ]
+};
+
+function createToolIcon(name) {
+  const icon = document.createElementNS(SVG_NS, "svg");
+  icon.classList.add("webapp-tool-icon");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("focusable", "false");
+
+  for (const d of TOOL_ICONS[name] || []) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", d);
+    icon.append(path);
+  }
+
+  return icon;
+}
 
 function getProjects() {
   return state.projects;
@@ -2416,7 +2489,8 @@ function createWidgetTrashDropzone(project, columnCount, widgetPaneId = DEFAULT_
   dropzone.className = "widget-trash-dropzone";
   dropzone.setAttribute("role", "button");
   dropzone.setAttribute("aria-label", "Remove dragged widget");
-  dropzone.textContent = "Trash";
+  dropzone.title = "Drop a widget here to remove it";
+  dropzone.append(createToolIcon("trash"));
 
   dropzone.addEventListener("dragover", (event) => {
     if (!draggedWidgetId) {
@@ -2459,11 +2533,28 @@ function createWidgetPaneActions(project, widgetPane, layout, columnCount) {
   const actions = document.createElement("div");
   actions.className = "widget-rail-actions";
 
+  const createActionButton = (action) => {
+    const button = document.createElement("button");
+    button.className = "widget-rail-action";
+    button.type = "button";
+    button.title = action.label;
+    button.setAttribute("aria-label", action.label);
+    button.disabled = action.disabled === true;
+    button.append(createToolIcon(action.icon));
+    if (action.menu) {
+      button.setAttribute("aria-haspopup", "menu");
+      button.setAttribute("aria-expanded", "false");
+    }
+    if (action.onClick) {
+      button.addEventListener("click", action.onClick);
+    }
+    return button;
+  };
+
   const actionConfigs = [
     {
       label: layout.locked ? "Unlock widget layout" : "Lock widget layout",
-      text: layout.locked ? "Edit" : "Lock",
-      wide: true,
+      icon: layout.locked ? "pencil" : "lock",
       onClick: () => toggleWidgetLayoutLock(project, widgetPane.id)
     }
   ];
@@ -2471,9 +2562,10 @@ function createWidgetPaneActions(project, widgetPane, layout, columnCount) {
   const trashDropzone = !layout.locked ? createWidgetTrashDropzone(project, columnCount, widgetPane.id) : null;
 
   if (!layout.locked) {
-    actionConfigs.push({
+    actionConfigs.unshift({
       label: "Add widget",
-      text: "+",
+      icon: "plus",
+      menu: true,
       disabled: !layout.hidden.length,
       onClick: (event) => {
         const rail = getWidgetRailFromControl(event.currentTarget);
@@ -2484,25 +2576,12 @@ function createWidgetPaneActions(project, widgetPane, layout, columnCount) {
     });
   }
 
+  if (trashDropzone) {
+    actions.append(trashDropzone);
+  }
+
   for (const action of actionConfigs) {
-    const button = document.createElement("button");
-    button.className = `widget-rail-action${action.wide ? " wide" : ""}`;
-    button.type = "button";
-    button.title = action.label;
-    button.setAttribute("aria-label", action.label);
-    button.disabled = action.disabled === true;
-    button.textContent = action.text;
-    if (action.text === "+") {
-      button.setAttribute("aria-haspopup", "menu");
-      button.setAttribute("aria-expanded", "false");
-    }
-    if (action.onClick) {
-      button.addEventListener("click", action.onClick);
-    }
-    actions.append(button);
-    if (action.wide && trashDropzone) {
-      actions.append(trashDropzone);
-    }
+    actions.append(createActionButton(action));
   }
 
   return actions;
@@ -3183,7 +3262,7 @@ function editWidgetPaneLabel(project, widgetPane, button) {
   editor.select();
 }
 
-function createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps) {
+function createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps, options = {}) {
   const widgetWebApps = webApps.filter((webApp) => webApp.kind === "widgets");
   const list = document.createElement("div");
   list.className = "widget-pane-tabs";
@@ -3191,6 +3270,10 @@ function createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps) {
   list.setAttribute("aria-label", "Widget pages");
 
   for (const webApp of widgetWebApps) {
+    if (options.editing && webApp.id !== selectedWebApp.id) {
+      continue;
+    }
+
     const button = document.createElement("button");
     button.className = "widget-pane-tab";
     button.type = "button";
@@ -3506,9 +3589,16 @@ function createWebAppPane(project, paneNode) {
   const isTerminalPane = selectedWebApp.kind === "terminal";
   const isWidgetPane = selectedWebApp.kind === "widgets";
   const isDomPane = selectedWebApp.kind === "dom";
+  const widgetFallbackWidth = isWidgetPane
+    ? Math.max(MIN_WIDGET_RAIL_WIDTH, Math.round((dashboardGrid.getBoundingClientRect().width || window.innerWidth) / 2))
+    : null;
+  const widgetGridColumns = isWidgetPane ? getWidgetGridColumnCount(widgetFallbackWidth) : null;
+  const widgetLayout = isWidgetPane ? getProjectWidgetLayout(project, widgetGridColumns, selectedWebApp.widgetPane.id) : null;
+  const isWidgetEditing = Boolean(isWidgetPane && widgetLayout && !widgetLayout.locked);
   const pane = document.createElement("section");
   pane.className = "webapp-pane";
   pane.classList.toggle("widget-pane", isWidgetPane);
+  pane.classList.toggle("editing", isWidgetEditing);
   pane.dataset.paneId = paneNode.id;
   pane.dataset.webAppId = selectedWebApp.id;
   if (selectedWebApp.kind) {
@@ -3545,7 +3635,9 @@ function createWebAppPane(project, paneNode) {
   tabs.append(tabPickerButton);
 
   if (isWidgetPane) {
-    tabs.append(createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps));
+    tabs.append(createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps, {
+      editing: isWidgetEditing
+    }));
   }
 
   if (!isTerminalPane && !isWidgetPane && !isDomPane) {
@@ -3554,7 +3646,7 @@ function createWebAppPane(project, paneNode) {
     homeButton.type = "button";
     homeButton.title = "Go home";
     homeButton.setAttribute("aria-label", "Go home");
-    homeButton.textContent = "⌂";
+    homeButton.append(createToolIcon("home"));
     homeButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "home", selectedWebApp.url));
     homeButton.addEventListener("contextmenu", (event) => {
       openWebAppHomeMenu(event, project, paneNode, selectedWebApp);
@@ -3565,7 +3657,7 @@ function createWebAppPane(project, paneNode) {
     backButton.type = "button";
     backButton.title = "Go back";
     backButton.setAttribute("aria-label", "Go back");
-    backButton.textContent = "←";
+    backButton.append(createToolIcon("arrowLeft"));
     backButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "back"));
 
     const forwardButton = document.createElement("button");
@@ -3573,7 +3665,7 @@ function createWebAppPane(project, paneNode) {
     forwardButton.type = "button";
     forwardButton.title = "Go forward";
     forwardButton.setAttribute("aria-label", "Go forward");
-    forwardButton.textContent = "→";
+    forwardButton.append(createToolIcon("arrowRight"));
     forwardButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "forward"));
 
     const refreshButton = document.createElement("button");
@@ -3581,7 +3673,7 @@ function createWebAppPane(project, paneNode) {
     refreshButton.type = "button";
     refreshButton.title = "Refresh";
     refreshButton.setAttribute("aria-label", "Refresh");
-    refreshButton.textContent = "↻";
+    refreshButton.append(createToolIcon("refresh"));
     refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
 
     const autofillButton = isPasswordManagerEnabled() ? document.createElement("button") : null;
@@ -3589,7 +3681,9 @@ function createWebAppPane(project, paneNode) {
       autofillButton.className = "webapp-tool-button autofill";
       autofillButton.type = "button";
       autofillButton.dataset.webappKey = selectedWebApp.key;
-      autofillButton.textContent = "AF";
+      autofillButton.title = "Autofill credentials";
+      autofillButton.setAttribute("aria-label", "Autofill credentials");
+      autofillButton.append(createToolIcon("key"));
       syncWebAppAutofillButton(autofillButton, isWebAppAutofillEnabled(selectedWebApp));
       autofillButton.addEventListener("click", () => {
         toggleWebAppAutofill(selectedWebApp, autofillButton).catch((error) => {
@@ -3638,9 +3732,6 @@ function createWebAppPane(project, paneNode) {
   actions.className = "webapp-actions";
 
   if (isWidgetPane) {
-    const fallbackWidth = Math.max(MIN_WIDGET_RAIL_WIDTH, Math.round((dashboardGrid.getBoundingClientRect().width || window.innerWidth) / 2));
-    const widgetGridColumns = getWidgetGridColumnCount(fallbackWidth);
-    const widgetLayout = getProjectWidgetLayout(project, widgetGridColumns, selectedWebApp.widgetPane.id);
     actions.append(createWidgetPaneActions(project, selectedWebApp.widgetPane, widgetLayout, widgetGridColumns));
   }
 
@@ -3649,7 +3740,7 @@ function createWebAppPane(project, paneNode) {
   verticalSplitButton.type = "button";
   verticalSplitButton.title = "Split vertically";
   verticalSplitButton.setAttribute("aria-label", "Split vertically");
-  verticalSplitButton.textContent = "V";
+  verticalSplitButton.append(createToolIcon("splitVertical"));
   verticalSplitButton.addEventListener("click", () => splitPane(project, paneNode.id, "vertical"));
 
   const horizontalSplitButton = document.createElement("button");
@@ -3657,7 +3748,7 @@ function createWebAppPane(project, paneNode) {
   horizontalSplitButton.type = "button";
   horizontalSplitButton.title = "Split horizontally";
   horizontalSplitButton.setAttribute("aria-label", "Split horizontally");
-  horizontalSplitButton.textContent = "H";
+  horizontalSplitButton.append(createToolIcon("splitHorizontal"));
   horizontalSplitButton.addEventListener("click", () => splitPane(project, paneNode.id, "horizontal"));
 
   const closePaneButton = document.createElement("button");
@@ -3665,7 +3756,7 @@ function createWebAppPane(project, paneNode) {
   closePaneButton.type = "button";
   closePaneButton.title = "Close pane";
   closePaneButton.setAttribute("aria-label", "Close pane");
-  closePaneButton.textContent = "X";
+  closePaneButton.append(createToolIcon("close"));
   closePaneButton.disabled = countPaneNodes(getProjectPaneLayout(project)) <= 1;
   closePaneButton.addEventListener("click", () => closePane(project, paneNode.id));
 
