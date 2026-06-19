@@ -1,4 +1,41 @@
 {
-  "generatedForVersion": "0.4.4",
-  "releases": []
+  "generatedForVersion": "0.4.5",
+  "releases": [
+    {
+      "version": "0.4.5",
+      "date": "2026-06-20",
+      "features": [
+        {
+          "category": "Added",
+          "title": "What's new after updates",
+          "body": "Boatyard can now show release notes after an update, including highlights from versions you skipped."
+        },
+        {
+          "category": "Changed",
+          "title": "Pane controls",
+          "body": "Split, close, navigation, autofill, and widget-pane actions now use clearer icon buttons."
+        },
+        {
+          "category": "Changed",
+          "title": "Project creation flow",
+          "body": "The source path field now appears first and receives focus so project details can be derived sooner."
+        },
+        {
+          "category": "Changed",
+          "title": "Widget edit dragging",
+          "body": "Moving widgets now shows a better-aligned drop preview, clearer trash dropzone feedback, and calmer inactive tabs."
+        },
+        {
+          "category": "Fixed",
+          "title": "Widget resize feedback",
+          "body": "The active resize border or corner now stays highlighted throughout the resize gesture."
+        },
+        {
+          "category": "Fixed",
+          "title": "What's new filtering",
+          "body": "Documentation-only entries and maintainer workflow notes no longer appear in Boatyard's in-app post-update changelog."
+        }
+      ]
+    }
+  ]
 }

@@ -4,11 +4,11 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
-## [Unreleased]
+## [0.4.5] - 2026-06-20
 
 ### Summary
 
-- **Unreleased: Update and editing polish** — Boatyard adds post-update release notes, improves pane and widget editing feedback, and clarifies Linux install guidance.
+- **v0.4.5: Update and editing polish** — Boatyard adds post-update release notes, improves pane and widget editing feedback, and clarifies Linux install guidance.
 
 ### Added
 
@@ -16,14 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- **Pane controls** — split, close, navigation, autofill, and widget-pane actions now use clearer icon buttons.
-- **Project creation flow** — the source path field now appears first and receives focus so project details can be derived sooner.
-- **Widget edit dragging** — moving widgets now shows a better-aligned drop preview, clearer trash dropzone feedback, and calmer inactive tabs.
+- **Pane controls** — Split, close, navigation, autofill, and widget-pane actions now use clearer icon buttons.
+- **Project creation flow** — The source path field now appears first and receives focus so project details can be derived sooner.
+- **Widget edit dragging** — Moving widgets now shows a better-aligned drop preview, clearer trash dropzone feedback, and calmer inactive tabs.
 
 ### Fixed
 
-- **Widget resize feedback** — the active resize border or corner now stays highlighted throughout the resize gesture.
-- **What's new dialog filtering** — documentation-only entries and maintainer workflow notes no longer appear in Boatyard's in-app post-update changelog.
+- **Widget resize feedback** — The active resize border or corner now stays highlighted throughout the resize gesture.
+- **What's new filtering** — Documentation-only entries and maintainer workflow notes no longer appear in Boatyard's in-app post-update changelog.
 
 ### Documentation
 
@@ -32,4 +32,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Internal
 
 - **Changelog generation** — `make changelog` now generates structured changelog data for both `CHANGELOG.md` and the in-app What's new dialog.
-- **Release workflow** — release preparation now keeps changelog data and app versioning in sync before publishing.
+- **Release workflow** — Release preparation now keeps changelog data and app versioning in sync before publishing.
