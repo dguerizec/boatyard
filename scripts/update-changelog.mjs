@@ -7,6 +7,8 @@ const root = process.cwd();
 const changelogPath = path.join(root, "CHANGELOG.md");
 const generatedPath = path.join(root, "src", "shared", "changelog.json");
 const packagePath = path.join(root, "package.json");
+const releaseCategories = ["Added", "Changed", "Fixed", "Removed", "Deprecated", "Security", "Documentation", "Internal"];
+const appChangelogCategories = new Set(["Added", "Changed", "Fixed", "Removed", "Deprecated", "Security"]);
 const now = new Date();
 const today = [
   now.getFullYear(),
@@ -53,6 +55,7 @@ function parseArgs(argv) {
     mode: "prepare",
     codex: "codex",
     type: "",
+    verbose: false,
     version: ""
   };
 
@@ -69,6 +72,10 @@ function parseArgs(argv) {
       args.mode = "check-release";
     } else if (arg === "--codex") {
       args.codex = argv[index + 1] || "";
+      index += 1;
+    } else if (arg === "--verbose") {
+      const value = argv[index + 1] || "";
+      args.verbose = ["1", "true", "yes", "on"].includes(value.toLowerCase());
       index += 1;
     } else if (arg === "--type") {
       args.type = argv[index + 1] || "";
@@ -252,8 +259,12 @@ function buildAgentPrompt() {
     "Audience and tone:",
     "- Write for users, not maintainers.",
     "- Keep entries concise, concrete, and user-facing.",
-    "- Focus on features, UI changes, workflow changes, packaging/release behavior, update behavior, and fixes that can affect users.",
-    "- Ignore purely internal refactors, variable renames, mechanical cleanup, dependency churn, and implementation details unless they change behavior users can observe.",
+    "- Focus the app-visible categories on features, UI changes, update behavior, and fixes that affect users after the update is installed.",
+    "- Do not put first-install instructions, release-author workflow, CI, packaging internals, variable renames, mechanical cleanup, or dependency churn in app-visible categories.",
+    "- If a documentation-only change is worth noting, put it under `### Documentation`.",
+    "- If a maintainer/release/development workflow change is worth noting, put it under `### Internal`.",
+    "- Use `Documentation` and `Internal` for the human CHANGELOG.md only; they will not be shown in Boatyard's in-app What's new dialog.",
+    "- Ignore purely internal refactors unless they change behavior users can observe.",
     "- Do not mention commit hashes.",
     "- Keep all text in English.",
     "",
@@ -261,7 +272,9 @@ function buildAgentPrompt() {
     "- Start with `## [Unreleased]`.",
     "- Include `### Summary` with exactly one bullet.",
     "- The summary bullet must look like `- **Unreleased: Short release name** — one sentence recap.`",
-    "- Then include only useful Keep a Changelog categories, chosen from `Added`, `Changed`, `Fixed`, `Removed`, `Deprecated`, and `Security`.",
+    "- Then include only useful categories, chosen from `Added`, `Changed`, `Fixed`, `Removed`, `Deprecated`, `Security`, `Documentation`, and `Internal`.",
+    "- `Added`, `Changed`, `Fixed`, `Removed`, `Deprecated`, and `Security` must be useful inside the in-app post-update dialog.",
+    "- `Documentation` and `Internal` must be understandable in CHANGELOG.md but are not app-visible.",
     "- Each item must look like `- **Short title** — brief user-facing explanation.`",
     "- Do not include empty categories.",
     "",
@@ -303,7 +316,7 @@ function buildDraftSection(commits) {
     ""
   ];
 
-  for (const category of ["Added", "Changed", "Fixed", "Removed", "Deprecated", "Security"]) {
+  for (const category of releaseCategories) {
     const items = summary.sections[category] || [];
     if (!items.length) {
       continue;
@@ -370,22 +383,33 @@ function replaceUnreleasedSection(section) {
   fs.writeFileSync(changelogPath, `${content.trimEnd()}\n`);
 }
 
-function runCodexExec(codexCommand, prompt) {
+function tailFile(filePath, lineCount = 80) {
+  try {
+    return fs.readFileSync(filePath, "utf8").trimEnd().split("\n").slice(-lineCount).join("\n");
+  } catch {
+    return "";
+  }
+}
+
+function runCodexExec(codexCommand, prompt, { verbose = false } = {}) {
   if (!codexCommand.trim()) {
     throw new Error("--codex cannot be empty.");
   }
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-changelog-"));
   const outputPath = path.join(tmpDir, "last-message.md");
+  const logPath = path.join(tmpDir, "codex.log");
+  const logFd = verbose ? "inherit" : fs.openSync(logPath, "w");
 
   try {
+    console.log("Generating CHANGELOG.md with Codex...");
     execFileSync(
       "sh",
       ["-lc", `${codexCommand} exec --color never --output-last-message "$2" "$1"`, "codex-changelog", prompt, outputPath],
       {
         cwd: root,
         encoding: "utf8",
-        stdio: ["ignore", "inherit", "inherit"],
+        stdio: ["ignore", logFd, logFd],
         maxBuffer: 1024 * 1024 * 16
       }
     );
@@ -395,15 +419,23 @@ function runCodexExec(codexCommand, prompt) {
     if (error.status === 127) {
       throw new Error(`Cannot run ${codexCommand}. Set CODEX to the Codex CLI command, for example: make changelog CODEX=/path/to/codex`);
     }
+    const logTail = verbose ? "" : tailFile(logPath);
+    if (logTail) {
+      console.error("Codex changelog generation failed. Last log lines:");
+      console.error(logTail);
+    }
     throw error;
   } finally {
+    if (!verbose) {
+      fs.closeSync(logFd);
+    }
     fs.rmSync(tmpDir, { force: true, recursive: true });
   }
 }
 
-function generateUnreleasedWithAgent(codexCommand) {
+function generateUnreleasedWithAgent(codexCommand, options = {}) {
   const prompt = buildAgentPrompt();
-  const output = runCodexExec(codexCommand, prompt);
+  const output = runCodexExec(codexCommand, prompt, options);
   const section = extractUnreleasedSection(output);
   replaceUnreleasedSection(section);
 }
@@ -519,7 +551,7 @@ function parseChangelog(markdown) {
     const features = [];
     for (let categoryIndex = 0; categoryIndex < categories.length; categoryIndex += 1) {
       const category = categories[categoryIndex];
-      if (category.name.toLowerCase() === "summary") {
+      if (category.name.toLowerCase() === "summary" || !appChangelogCategories.has(category.name)) {
         continue;
       }
 
@@ -593,7 +625,7 @@ if (targetVersion && !parseVersion(targetVersion)) {
 }
 
 if (args.mode === "agent") {
-  generateUnreleasedWithAgent(args.codex);
+  generateUnreleasedWithAgent(args.codex, { verbose: args.verbose });
   console.log("Generated CHANGELOG.md [Unreleased] with Codex.");
   generateJson();
   console.log(`Generated ${path.relative(root, generatedPath)} from versioned changelog sections.`);

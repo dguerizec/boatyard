@@ -1,4 +1,5 @@
 CODEX ?= codex
+VERBOSE ?= 0
 
 .PHONY: build changelog check deps dist install major minor package patch release release-major release-minor release-patch run tag
 
@@ -20,7 +21,7 @@ check: deps
 	npm test
 
 changelog:
-	node scripts/update-changelog.mjs --agent --codex "$(CODEX)"
+	@node scripts/update-changelog.mjs --agent --codex "$(CODEX)" --verbose "$(VERBOSE)"
 
 build: check
 	npm run package
