@@ -1357,8 +1357,9 @@ button {
   background: transparent;
 }
 
-.widget-resize-handle:hover,
-.widget-resize-handle:focus-visible {
+.widget-card:not(.resizing-widget) .widget-resize-handle:hover,
+.widget-card:not(.resizing-widget) .widget-resize-handle:focus-visible,
+.widget-resize-handle.resizing {
   background: rgba(65, 184, 131, 0.22);
   outline: none;
 }

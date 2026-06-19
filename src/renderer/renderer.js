@@ -2297,6 +2297,7 @@ function startWidgetResize(event, project, definition, layout, startSize, column
   const startX = event.clientX;
   const startY = event.clientY;
   const startPosition = layout.positions[definition.id] || { x: 0, y: 0 };
+  const handle = event.currentTarget;
   const card = event.currentTarget.closest(".widget-card");
   const rail = event.currentTarget.closest(".project-widget-rail");
   const railWidth = rail?.getBoundingClientRect().width || WIDGET_GRID_MIN_COLUMN_WIDTH;
@@ -2310,6 +2311,8 @@ function startWidgetResize(event, project, definition, layout, startSize, column
   const canResizeSouth = direction.includes("s");
   const canResizeWest = direction.includes("w");
   let lastGeometryKey = `${startPosition.x}:${startPosition.y}:${startSize.columns}:${startSize.rows}`;
+  handle.classList.add("resizing");
+  card?.classList.add("resizing-widget");
 
   function getNextGeometry(deltaColumns, deltaRows) {
     let nextX = startPosition.x;
@@ -2402,6 +2405,8 @@ function startWidgetResize(event, project, definition, layout, startSize, column
   async function onPointerUp() {
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerup", onPointerUp);
+    handle.classList.remove("resizing");
+    card?.classList.remove("resizing-widget");
     await persistWidgetLayout(project);
   }
 
