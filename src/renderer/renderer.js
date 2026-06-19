@@ -4125,6 +4125,13 @@ function formatVersionLabel(version) {
   return normalized ? `v${normalized.replace(/^v/i, "")}` : "Unknown";
 }
 
+function formatUpdateCheckedAt(date = new Date()) {
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
 function createGlobalUpdateCard() {
   const shell = document.createElement("section");
   shell.className = "project-form-page app-update-card";
@@ -4174,7 +4181,7 @@ function createGlobalUpdateCard() {
 
   const showPreparedUpdate = (update) => {
     preparedUpdate = update;
-    status.textContent = `${formatVersionLabel(update.latestVersion)} ready to install`;
+    status.textContent = `${formatVersionLabel(update.latestVersion)} downloaded, restart required. Checked ${formatUpdateCheckedAt()}`;
     updateButton.hidden = false;
   };
   activeUpdateCardUpdater = showPreparedUpdate;
@@ -4212,7 +4219,7 @@ function createGlobalUpdateCard() {
           status.textContent = `Update available: ${formatVersionLabel(result.latestVersion)}, no installable AppImage found.`;
         }
       } else {
-        status.textContent = `Up to date: ${formatVersionLabel(result.currentVersion)}`;
+        status.textContent = `Up to date: ${formatVersionLabel(result.currentVersion)}. Checked ${formatUpdateCheckedAt()}`;
       }
     } catch (error) {
       status.textContent = error.message;
