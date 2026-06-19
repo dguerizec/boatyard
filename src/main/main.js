@@ -1,8 +1,10 @@
 "use strict";
 
-const { execFile } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
 const { PasswordManager } = require("./passwordManager");
@@ -14,6 +16,11 @@ const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
 const CAPTURE_REQUEST_ENV = "BOATYARD_CAPTURE_REQUEST";
+const UPDATE_REPOSITORY = {
+  owner: "dguerizec",
+  name: "boatyard"
+};
+const APPIMAGE_NAME_PATTERN = /^Boatyard-(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)\.AppImage$/;
 
 if (process.env.BOATYARD_USER_DATA_PATH) {
   app.setPath("userData", process.env.BOATYARD_USER_DATA_PATH);
@@ -36,6 +43,380 @@ function getStorePath() {
   }
 
   return path.join(app.getPath("userData"), "boatyard-state.json");
+}
+
+function normalizeVersionTag(version) {
+  return String(version || "").trim().replace(/^v/i, "");
+}
+
+function parseVersion(version) {
+  const normalized = normalizeVersionTag(version);
+  const match = normalized.match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
+
+  if (!match) {
+    return null;
+  }
+
+  return match.slice(1).map((part) => Number.parseInt(part, 10));
+}
+
+function compareVersions(left, right) {
+  const leftParts = parseVersion(left);
+  const rightParts = parseVersion(right);
+
+  if (!leftParts || !rightParts) {
+    return 0;
+  }
+
+  for (let index = 0; index < 3; index += 1) {
+    if (leftParts[index] > rightParts[index]) {
+      return 1;
+    }
+
+    if (leftParts[index] < rightParts[index]) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+async function fetchGitHubJson(pathname) {
+  const url = `https://api.github.com/repos/${UPDATE_REPOSITORY.owner}/${UPDATE_REPOSITORY.name}${pathname}`;
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": `Boatyard/${app.getVersion()}`
+    }
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(`GitHub returned ${response.status} while checking for updates.`);
+  }
+
+  return response.json();
+}
+
+function getPreferredReleaseAsset(release) {
+  const assets = Array.isArray(release?.assets) ? release.assets : [];
+  const platformMatchers = process.platform === "darwin"
+    ? [/\.dmg$/i, /mac.*\.zip$/i, /darwin.*\.zip$/i]
+    : [/\.AppImage$/i];
+
+  for (const matcher of platformMatchers) {
+    const asset = assets.find((candidate) => matcher.test(String(candidate?.name || "")));
+    if (asset?.browser_download_url) {
+      return asset;
+    }
+  }
+
+  return assets.find((asset) => asset?.browser_download_url) || null;
+}
+
+function normalizeUpdateCandidate(candidate) {
+  const tagName = candidate?.tag_name || candidate?.name || "";
+  const version = normalizeVersionTag(tagName);
+
+  if (!parseVersion(version)) {
+    return null;
+  }
+
+  const asset = getPreferredReleaseAsset(candidate);
+  const htmlUrl = candidate?.html_url || `https://github.com/${UPDATE_REPOSITORY.owner}/${UPDATE_REPOSITORY.name}/tree/${encodeURIComponent(tagName || `v${version}`)}`;
+
+  return {
+    latestVersion: version,
+    tagName: tagName || `v${version}`,
+    releaseUrl: htmlUrl,
+    downloadUrl: asset?.browser_download_url || "",
+    assetName: asset?.name || "",
+    source: candidate?.assets ? "release" : "tag"
+  };
+}
+
+async function checkForUpdates() {
+  const currentVersion = normalizeVersionTag(app.getVersion());
+  const candidates = [];
+  const latestRelease = normalizeUpdateCandidate(await fetchGitHubJson("/releases/latest"));
+
+  if (latestRelease) {
+    candidates.push(latestRelease);
+  }
+
+  const tags = await fetchGitHubJson("/tags?per_page=30");
+  candidates.push(
+    ...(Array.isArray(tags) ? tags : [])
+      .map(normalizeUpdateCandidate)
+      .filter(Boolean)
+  );
+
+  candidates.sort((left, right) => compareVersions(right.latestVersion, left.latestVersion));
+  const candidate = candidates[0] || null;
+
+  if (!candidate) {
+    throw new Error("No public release information is available.");
+  }
+
+  const updateAvailable = compareVersions(candidate.latestVersion, currentVersion) > 0;
+
+  return {
+    currentVersion,
+    latestVersion: candidate?.latestVersion || currentVersion,
+    updateAvailable,
+    releaseUrl: candidate?.releaseUrl || `https://github.com/${UPDATE_REPOSITORY.owner}/${UPDATE_REPOSITORY.name}/releases`,
+    downloadUrl: updateAvailable ? candidate?.downloadUrl || "" : "",
+    assetName: updateAvailable ? candidate?.assetName || "" : "",
+    source: candidate?.source || "",
+    canInstall: updateAvailable && process.platform === "linux" && Boolean(candidate?.downloadUrl)
+  };
+}
+
+function getUpdateInstallPaths() {
+  const homePath = app.getPath("home");
+  const localBinDir = path.join(homePath, ".local", "bin");
+  const homeBinDir = path.join(homePath, "bin");
+  const pathEntries = String(process.env.PATH || "")
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((entry) => path.resolve(entry));
+  const preferredSymlinkDir = [localBinDir, homeBinDir]
+    .find((candidate) => pathEntries.includes(path.resolve(candidate)))
+    || localBinDir;
+
+  return {
+    binDir: path.join(homePath, ".boatyard", "bin"),
+    symlinkDir: preferredSymlinkDir,
+    symlinkPath: path.join(preferredSymlinkDir, "boatyard")
+  };
+}
+
+function getCurrentAppImagePath() {
+  const appImagePath = process.env.APPIMAGE || "";
+
+  if (appImagePath && path.basename(appImagePath).endsWith(".AppImage")) {
+    return appImagePath;
+  }
+
+  if (process.execPath && path.basename(process.execPath).endsWith(".AppImage")) {
+    return process.execPath;
+  }
+
+  return "";
+}
+
+function getManagedAppImagePath(version) {
+  const { binDir } = getUpdateInstallPaths();
+  return path.join(binDir, `Boatyard-${normalizeVersionTag(version)}.AppImage`);
+}
+
+function isPathInDirectory(filePath, directoryPath) {
+  const relativePath = path.relative(path.resolve(directoryPath), path.resolve(filePath));
+  return relativePath === "" || Boolean(relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath));
+}
+
+async function pathExists(filePath) {
+  try {
+    await fs.promises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function updateBoatyardSymlink(targetPath) {
+  const { symlinkDir, symlinkPath } = getUpdateInstallPaths();
+  const temporarySymlinkPath = `${symlinkPath}.tmp-${process.pid}`;
+
+  await fs.promises.mkdir(symlinkDir, { recursive: true });
+
+  try {
+    await fs.promises.unlink(temporarySymlinkPath);
+  } catch {}
+
+  await fs.promises.symlink(targetPath, temporarySymlinkPath);
+  await fs.promises.rename(temporarySymlinkPath, symlinkPath);
+
+  return symlinkPath;
+}
+
+function isSymlinkDirInPath() {
+  const { symlinkDir } = getUpdateInstallPaths();
+  const pathEntries = String(process.env.PATH || "")
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map((entry) => path.resolve(entry));
+
+  return pathEntries.includes(path.resolve(symlinkDir));
+}
+
+async function ensureCurrentAppImageInstalled() {
+  if (process.platform !== "linux") {
+    return { supported: false };
+  }
+
+  const currentAppImagePath = getCurrentAppImagePath();
+  const currentVersion = normalizeVersionTag(app.getVersion());
+  const { binDir, symlinkPath } = getUpdateInstallPaths();
+  const managedAppImagePath = getManagedAppImagePath(currentVersion);
+
+  if (!currentAppImagePath) {
+    return {
+      supported: true,
+      managed: false,
+      binDir,
+      symlinkPath,
+      pathConfigured: isSymlinkDirInPath()
+    };
+  }
+
+  await fs.promises.mkdir(binDir, { recursive: true });
+
+  if (
+    path.resolve(currentAppImagePath) !== path.resolve(managedAppImagePath) &&
+    !(await pathExists(managedAppImagePath))
+  ) {
+    await fs.promises.copyFile(currentAppImagePath, managedAppImagePath);
+    await fs.promises.chmod(managedAppImagePath, 0o755);
+  }
+
+  await updateBoatyardSymlink(managedAppImagePath);
+
+  return {
+    supported: true,
+    managed: isPathInDirectory(currentAppImagePath, binDir),
+    installedPath: managedAppImagePath,
+    symlinkPath,
+    pathConfigured: isSymlinkDirInPath()
+  };
+}
+
+async function cleanupOldAppImages(currentVersion = app.getVersion()) {
+  if (process.platform !== "linux") {
+    return [];
+  }
+
+  const { binDir } = getUpdateInstallPaths();
+
+  if (!(await pathExists(binDir))) {
+    return [];
+  }
+
+  const entries = await fs.promises.readdir(binDir);
+  const appImages = entries
+    .map((name) => {
+      const match = name.match(APPIMAGE_NAME_PATTERN);
+      return match ? { name, version: match[1], filePath: path.join(binDir, name) } : null;
+    })
+    .filter(Boolean)
+    .sort((left, right) => compareVersions(right.version, left.version));
+
+  const current = normalizeVersionTag(currentVersion);
+  const kept = new Set([current]);
+
+  for (const appImage of appImages) {
+    if (appImage.version !== current) {
+      kept.add(appImage.version);
+      break;
+    }
+  }
+
+  const deleted = [];
+
+  for (const appImage of appImages) {
+    if (kept.has(appImage.version)) {
+      continue;
+    }
+
+    try {
+      await fs.promises.unlink(appImage.filePath);
+      deleted.push(appImage.filePath);
+    } catch (error) {
+      console.warn(`Could not delete old AppImage ${appImage.filePath}: ${error.message}`);
+    }
+  }
+
+  return deleted;
+}
+
+async function getUpdateInfo() {
+  const install = await ensureCurrentAppImageInstalled();
+
+  return {
+    currentVersion: normalizeVersionTag(app.getVersion()),
+    releasesUrl: `https://github.com/${UPDATE_REPOSITORY.owner}/${UPDATE_REPOSITORY.name}/releases`,
+    install
+  };
+}
+
+async function downloadFile(url, destinationPath) {
+  const parsedUrl = parseHttpUrl(url);
+
+  if (!parsedUrl) {
+    throw new Error("The update download URL is invalid.");
+  }
+
+  const response = await fetch(parsedUrl.toString(), {
+    headers: {
+      Accept: "application/octet-stream",
+      "User-Agent": `Boatyard/${app.getVersion()}`
+    }
+  });
+
+  if (!response.ok || !response.body) {
+    throw new Error(`Download failed with HTTP ${response.status}.`);
+  }
+
+  await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(destinationPath, { mode: 0o755 }));
+}
+
+async function installUpdate(update) {
+  if (process.platform !== "linux") {
+    throw new Error("Automatic AppImage updates are only available on Linux.");
+  }
+
+  const updateData = update && typeof update === "object" ? update : {};
+  const nextVersion = normalizeVersionTag(updateData.latestVersion);
+
+  if (!updateData.updateAvailable || !nextVersion || !updateData.downloadUrl) {
+    throw new Error("No downloadable update is available.");
+  }
+
+  const { binDir, symlinkPath } = getUpdateInstallPaths();
+  const destinationPath = getManagedAppImagePath(nextVersion);
+  const temporaryPath = `${destinationPath}.tmp-${process.pid}`;
+
+  await fs.promises.mkdir(binDir, { recursive: true });
+
+  try {
+    await fs.promises.unlink(temporaryPath);
+  } catch {}
+
+  await downloadFile(updateData.downloadUrl, temporaryPath);
+  await fs.promises.chmod(temporaryPath, 0o755);
+  await fs.promises.rename(temporaryPath, destinationPath);
+  await updateBoatyardSymlink(destinationPath);
+
+  const child = spawn(destinationPath, [], {
+    detached: true,
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      BOATYARD_UPDATED_FROM: getCurrentAppImagePath()
+    }
+  });
+  child.unref();
+
+  setTimeout(() => app.quit(), 250);
+
+  return {
+    installedPath: destinationPath,
+    symlinkPath,
+    pathConfigured: isSymlinkDirInPath()
+  };
 }
 
 function createMainWindow() {
@@ -842,6 +1223,18 @@ function registerIpcHandlers() {
     return result.canceled ? null : result.filePaths[0];
   });
 
+  ipcMain.handle("updates:info", () => {
+    return getUpdateInfo();
+  });
+
+  ipcMain.handle("updates:check", () => {
+    return checkForUpdates();
+  });
+
+  ipcMain.handle("updates:install", (_event, update) => {
+    return installUpdate(update);
+  });
+
   ipcMain.handle("projects:inspect-source-path", (_event, sourcePath) => {
     return inspectSourcePath(sourcePath);
   });
@@ -1016,6 +1409,13 @@ function registerIpcHandlers() {
 app.whenReady().then(async () => {
   store = new ProjectStore(getStorePath());
   store.load();
+  try {
+    await ensureCurrentAppImageInstalled();
+    await cleanupOldAppImages();
+  } catch (error) {
+    console.warn(`Could not prepare AppImage updates: ${error.message}`);
+  }
+
   pluginHost = new PluginHost({
     store,
     execFileAsync,

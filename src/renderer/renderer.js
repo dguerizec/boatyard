@@ -4116,6 +4116,122 @@ function renderManualPage() {
   dashboardGrid.append(nav, createManualSurface());
 }
 
+function formatVersionLabel(version) {
+  const normalized = String(version || "").trim();
+  return normalized ? `v${normalized.replace(/^v/i, "")}` : "Unknown";
+}
+
+function createGlobalUpdateCard() {
+  const shell = document.createElement("section");
+  shell.className = "project-form-page app-update-card";
+
+  let updateResult = null;
+
+  const content = document.createElement("div");
+  content.className = "app-update-content";
+
+  const titleGroup = document.createElement("div");
+  titleGroup.className = "app-update-title";
+
+  const title = document.createElement("h3");
+  title.textContent = "Boatyard";
+
+  const version = document.createElement("p");
+  version.textContent = "Version";
+
+  titleGroup.append(title, version);
+
+  const status = document.createElement("p");
+  status.className = "app-update-status";
+  status.setAttribute("role", "status");
+  status.textContent = "Ready";
+
+  const actions = document.createElement("div");
+  actions.className = "app-update-actions";
+
+  const checkButton = document.createElement("button");
+  checkButton.className = "secondary-button";
+  checkButton.type = "button";
+  checkButton.textContent = "Check for updates";
+
+  const updateButton = document.createElement("button");
+  updateButton.className = "primary-button";
+  updateButton.type = "button";
+  updateButton.textContent = "Update";
+  updateButton.hidden = true;
+
+  actions.append(checkButton, updateButton);
+  content.append(titleGroup, status, actions);
+  shell.append(content);
+
+  const setBusy = (isBusy, label = "Checking...") => {
+    checkButton.disabled = isBusy;
+    updateButton.disabled = isBusy;
+    checkButton.textContent = isBusy ? label : "Check for updates";
+  };
+
+  window.boatyard.getUpdateInfo()
+    .then((info) => {
+      version.textContent = `Current version ${formatVersionLabel(info.currentVersion)}`;
+      if (info.install?.supported && info.install.pathConfigured === false) {
+        status.textContent = "Install link directory is not in PATH";
+      }
+    })
+    .catch((error) => {
+      version.textContent = "Current version unavailable";
+      status.textContent = error.message;
+    });
+
+  checkButton.addEventListener("click", async () => {
+    setBusy(true);
+    status.textContent = "Checking for updates...";
+    updateButton.hidden = true;
+    updateResult = null;
+
+    try {
+      const result = await window.boatyard.checkForUpdates();
+      updateResult = result;
+      version.textContent = `Current version ${formatVersionLabel(result.currentVersion)}`;
+
+      if (result.updateAvailable) {
+        if (result.canInstall) {
+          status.textContent = `Update available: ${formatVersionLabel(result.latestVersion)}`;
+          updateButton.hidden = false;
+        } else {
+          status.textContent = `Update available: ${formatVersionLabel(result.latestVersion)}, no installable AppImage found.`;
+        }
+      } else {
+        status.textContent = `Up to date: ${formatVersionLabel(result.currentVersion)}`;
+      }
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  updateButton.addEventListener("click", async () => {
+    if (!updateResult) {
+      return;
+    }
+
+    setBusy(true, "Updating...");
+    status.textContent = "Downloading update...";
+
+    try {
+      const result = await window.boatyard.installUpdate(updateResult);
+      status.textContent = result.pathConfigured === false
+        ? "Installed. Add the link directory to PATH; relaunching now..."
+        : "Installed. Relaunching now...";
+    } catch (error) {
+      status.textContent = error.message;
+      setBusy(false);
+    }
+  });
+
+  return shell;
+}
+
 function createGlobalProjectsSettingsForm({ settings, onSubmit }) {
   const shell = document.createElement("section");
   shell.className = "project-form-page";
@@ -5066,7 +5182,7 @@ function renderGlobalSettingsPage() {
   dashboardGrid.className = "project-form-layout";
   dashboardGrid.style.gridTemplateColumns = "";
 
-  dashboardGrid.append(createGlobalProjectsSettingsForm({
+  dashboardGrid.append(createGlobalUpdateCard(), createGlobalProjectsSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
       state = await window.boatyard.updateSettings(values);

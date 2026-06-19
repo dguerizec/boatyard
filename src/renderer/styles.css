@@ -2852,6 +2852,63 @@ button {
   box-shadow: var(--shadow);
 }
 
+.app-update-card {
+  padding: 14px 16px;
+}
+
+.app-update-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 16px;
+  align-items: center;
+}
+
+.app-update-title {
+  min-width: 0;
+}
+
+.app-update-title h3,
+.app-update-title p,
+.app-update-status {
+  margin: 0;
+}
+
+.app-update-title h3 {
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.app-update-title p,
+.app-update-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.app-update-status {
+  min-width: 0;
+  grid-column: 1;
+}
+
+.app-update-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.app-update-actions .primary-button,
+.app-update-actions .secondary-button {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .project-form {
   display: grid;
   gap: 16px;
@@ -3112,6 +3169,16 @@ textarea.form-control {
 
   .workspace-summary {
     text-align: left;
+  }
+
+  .app-update-content {
+    grid-template-columns: 1fr;
+  }
+
+  .app-update-actions {
+    grid-column: 1;
+    grid-row: auto;
+    justify-content: flex-start;
   }
 
   .topbar-actions {
