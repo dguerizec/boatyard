@@ -2553,7 +2553,7 @@ function getProjectWebApps(project, paneId) {
     id: "manual",
     label: "Manual",
     key: `${paneId}:manual`,
-    url: "https://boatyard.dev/",
+    url: "https://boatyard.dev/doc/",
     restoreUrl: false
   });
 
@@ -6611,6 +6611,7 @@ async function openOnboardingPaneDropdown() {
   const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
   button.setAttribute("aria-expanded", "true");
   await openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps);
+  document.querySelector(".webapp-tab-menu-item[data-web-app-id=\"manual\"]")?.focus();
 }
 
 async function restoreOnboardingGlobalLayout(layout) {

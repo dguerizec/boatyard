@@ -99,10 +99,11 @@ async function destroyTmuxSession(session) {
 }
 
 class TerminalService {
-  constructor({ getProject, getSettings = () => ({}), sendToRenderer }) {
+  constructor({ getProject, getSettings = () => ({}), sendToRenderer, suppressResizeWarnings = false }) {
     this.findProject = getProject;
     this.getSettings = getSettings;
     this.sendToRenderer = sendToRenderer;
+    this.suppressResizeWarnings = suppressResizeWarnings;
     this.terminals = new Map();
   }
 
@@ -299,7 +300,13 @@ class TerminalService {
 
     const cols = Math.max(20, Math.round(Number(size.cols) || terminal.term.cols));
     const rows = Math.max(5, Math.round(Number(size.rows) || terminal.term.rows));
-    terminal.term.resize(cols, rows);
+    try {
+      terminal.term.resize(cols, rows);
+    } catch (error) {
+      if (!this.suppressResizeWarnings) {
+        console.warn(`Could not resize terminal ${terminalId}: ${error.message}`);
+      }
+    }
     resizeTmuxWindow(terminal.windowId, cols, rows);
   }
 
