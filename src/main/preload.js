@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("boatyard", {
   checkForUpdates: () => ipcRenderer.invoke("updates:check"),
   prepareUpdate: () => ipcRenderer.invoke("updates:prepare"),
   restartToUpdate: (update) => ipcRenderer.invoke("updates:restart", update),
+  getPendingChangelog: () => ipcRenderer.invoke("changelog:pending"),
+  dismissChangelog: () => ipcRenderer.invoke("changelog:dismiss"),
   inspectSourcePath: (sourcePath) => ipcRenderer.invoke("projects:inspect-source-path", sourcePath),
   listPlugins: () => ipcRenderer.invoke("plugins:list"),
   invokePlugin: (pluginId, actionName, payload) => ipcRenderer.invoke("plugins:invoke", pluginId, actionName, payload),

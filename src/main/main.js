@@ -21,6 +21,7 @@ const UPDATE_REPOSITORY = {
   name: "boatyard"
 };
 const APPIMAGE_NAME_PATTERN = /^Boatyard-(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)\.AppImage$/;
+const CHANGELOG_JSON_PATH = path.join(__dirname, "..", "shared", "changelog.json");
 
 if (process.env.BOATYARD_USER_DATA_PATH) {
   app.setPath("userData", process.env.BOATYARD_USER_DATA_PATH);
@@ -80,6 +81,62 @@ function compareVersions(left, right) {
   }
 
   return 0;
+}
+
+function readChangelogEntries(fromVersion, toVersion) {
+  const from = normalizeVersionTag(fromVersion);
+  const to = normalizeVersionTag(toVersion);
+
+  if (!parseVersion(from) || !parseVersion(to) || compareVersions(to, from) <= 0) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(CHANGELOG_JSON_PATH, "utf8"));
+    const releases = Array.isArray(parsed.releases) ? parsed.releases : [];
+
+    return releases
+      .map((release) => ({
+        version: normalizeVersionTag(release?.version),
+        features: Array.isArray(release?.features) ? release.features : []
+      }))
+      .filter((release) => compareVersions(release.version, from) > 0 && compareVersions(release.version, to) <= 0)
+      .sort((left, right) => compareVersions(left.version, right.version))
+      .flatMap((release) => release.features
+        .map((feature) => ({
+          version: release.version,
+          title: String(feature?.title || "").trim(),
+          body: String(feature?.body || feature?.description || "").trim()
+        }))
+        .filter((feature) => feature.title && feature.body));
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.warn(`Could not read changelog data: ${error.message}`);
+    }
+    return [];
+  }
+}
+
+function getPendingChangelog() {
+  const appState = store.getAppState();
+  const currentVersion = normalizeVersionTag(app.getVersion());
+  const fromVersion = normalizeVersionTag(appState.pendingChangelogFromVersion);
+
+  if (!fromVersion || appState.dismissedChangelogVersion === currentVersion) {
+    return null;
+  }
+
+  const features = readChangelogEntries(fromVersion, currentVersion);
+
+  if (!features.length) {
+    return null;
+  }
+
+  return {
+    fromVersion,
+    toVersion: currentVersion,
+    features
+  };
 }
 
 async function fetchGitHubJson(pathname) {
@@ -501,6 +558,7 @@ async function restartToUpdate(update) {
     stdio: "ignore",
     env: {
       ...process.env,
+      BOATYARD_PREVIOUS_VERSION: normalizeVersionTag(app.getVersion()),
       BOATYARD_UPDATED_FROM: getCurrentAppImagePath()
     }
   });
@@ -1335,6 +1393,14 @@ function registerIpcHandlers() {
     return restartToUpdate(update);
   });
 
+  ipcMain.handle("changelog:pending", () => {
+    return getPendingChangelog();
+  });
+
+  ipcMain.handle("changelog:dismiss", () => {
+    return store.dismissChangelog(app.getVersion());
+  });
+
   ipcMain.handle("projects:inspect-source-path", (_event, sourcePath) => {
     return inspectSourcePath(sourcePath);
   });
@@ -1509,6 +1575,7 @@ function registerIpcHandlers() {
 app.whenReady().then(async () => {
   store = new ProjectStore(getStorePath());
   store.load();
+  store.reconcileAppVersion(app.getVersion(), process.env.BOATYARD_PREVIOUS_VERSION);
   try {
     await ensureCurrentAppImageInstalled();
     await cleanupOldAppImages();

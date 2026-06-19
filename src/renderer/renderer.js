@@ -7124,6 +7124,149 @@ async function openOnboardingTour(options = {}) {
   nextButton.focus();
 }
 
+async function openChangelogDialog(changelog) {
+  const features = Array.isArray(changelog?.features) ? changelog.features : [];
+  if (!features.length) {
+    return false;
+  }
+
+  const dialog = document.createElement("dialog");
+  dialog.className = "changelog-dialog";
+  dialog.setAttribute("aria-label", "Boatyard changelog");
+
+  const panel = document.createElement("div");
+  panel.className = "changelog-panel";
+
+  const header = document.createElement("div");
+  header.className = "changelog-header";
+
+  const kicker = document.createElement("p");
+  kicker.className = "kicker";
+  kicker.textContent = `Updated to ${formatVersionLabel(changelog.toVersion)}`;
+
+  const title = document.createElement("h3");
+  title.textContent = "What's new";
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "icon-button";
+  closeButton.type = "button";
+  closeButton.title = "Close changelog";
+  closeButton.setAttribute("aria-label", "Close changelog");
+  closeButton.append(createToolIcon("close"));
+
+  const titleGroup = document.createElement("div");
+  titleGroup.append(kicker, title);
+  header.append(titleGroup, closeButton);
+
+  const featureVersion = document.createElement("p");
+  featureVersion.className = "changelog-version";
+
+  const featureTitle = document.createElement("h4");
+  featureTitle.className = "changelog-feature-title";
+
+  const featureBody = document.createElement("p");
+  featureBody.className = "changelog-feature-body";
+
+  const actions = document.createElement("div");
+  actions.className = "changelog-actions";
+
+  const skipButton = document.createElement("button");
+  skipButton.className = "secondary-button";
+  skipButton.type = "button";
+  skipButton.textContent = "Skip";
+
+  const previousButton = document.createElement("button");
+  previousButton.className = "secondary-button";
+  previousButton.type = "button";
+  previousButton.textContent = "Back";
+
+  const counter = document.createElement("span");
+  counter.className = "changelog-counter";
+
+  const nextButton = document.createElement("button");
+  nextButton.className = "primary-button";
+  nextButton.type = "button";
+
+  actions.append(skipButton, previousButton, counter, nextButton);
+  panel.append(header, featureVersion, featureTitle, featureBody, actions);
+  dialog.append(panel);
+  document.body.append(dialog);
+
+  let currentFeature = 0;
+  let closed = false;
+
+  async function closeDialog() {
+    if (closed) {
+      return;
+    }
+    closed = true;
+    try {
+      await window.boatyard.dismissChangelog?.();
+    } catch (error) {
+      console.error("Could not dismiss changelog:", error);
+    }
+    dialog.close();
+    dialog.remove();
+    window.removeEventListener("keydown", handleKeydown);
+  }
+
+  function renderFeature() {
+    const feature = features[currentFeature];
+    featureVersion.textContent = `${formatVersionLabel(feature.version)} feature`;
+    featureTitle.textContent = feature.title;
+    featureBody.textContent = feature.body;
+    previousButton.disabled = currentFeature === 0;
+    counter.textContent = `${currentFeature + 1} / ${features.length}`;
+    nextButton.textContent = currentFeature === features.length - 1 ? "Close" : "Next";
+  }
+
+  function handleKeydown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeDialog();
+    }
+  }
+
+  closeButton.addEventListener("click", closeDialog);
+  skipButton.addEventListener("click", closeDialog);
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    closeDialog();
+  });
+  previousButton.addEventListener("click", () => {
+    currentFeature = Math.max(0, currentFeature - 1);
+    renderFeature();
+  });
+  nextButton.addEventListener("click", () => {
+    if (currentFeature >= features.length - 1) {
+      closeDialog();
+      return;
+    }
+    currentFeature += 1;
+    renderFeature();
+  });
+
+  renderFeature();
+  window.addEventListener("keydown", handleKeydown);
+  dialog.showModal();
+  nextButton.focus();
+  return true;
+}
+
+async function maybeOpenPendingChangelog() {
+  if (typeof window.boatyard.getPendingChangelog !== "function") {
+    return false;
+  }
+
+  try {
+    const changelog = await window.boatyard.getPendingChangelog();
+    return await openChangelogDialog(changelog);
+  } catch (error) {
+    console.error("Could not open changelog:", error);
+    return false;
+  }
+}
+
 function maybeOpenInitialOnboarding() {
   if ((state.onboarding?.completedVersion || 0) >= ONBOARDING_VERSION) {
     return;
@@ -7356,7 +7499,9 @@ async function loadState() {
   restoreNavigation();
   render();
   startUpdatePolling();
-  maybeOpenInitialOnboarding();
+  if (!(await maybeOpenPendingChangelog())) {
+    maybeOpenInitialOnboarding();
+  }
 }
 
 window.boatyard.onWebAppUrlChanged(({ key, url }) => {

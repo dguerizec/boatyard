@@ -59,6 +59,11 @@ function createDefaultState() {
     onboarding: {
       completedVersion: 0,
       completedAt: ""
+    },
+    app: {
+      lastSeenVersion: "",
+      pendingChangelogFromVersion: "",
+      dismissedChangelogVersion: ""
     }
   };
 }
@@ -264,6 +269,16 @@ function normalizeNavigationState(navigation = {}) {
   return {
     view: projectId || !isProjectView ? view : "global",
     projectId: isProjectView ? projectId : null
+  };
+}
+
+function normalizeAppState(appState = {}) {
+  const source = appState && typeof appState === "object" ? appState : {};
+
+  return {
+    lastSeenVersion: normalizeText(source.lastSeenVersion),
+    pendingChangelogFromVersion: normalizeText(source.pendingChangelogFromVersion),
+    dismissedChangelogVersion: normalizeText(source.dismissedChangelogVersion)
   };
 }
 
@@ -878,7 +893,8 @@ class ProjectStore {
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
         terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, projectsWithHomeTabs),
         terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, projectsWithHomeTabs),
-        onboarding: normalizeOnboardingState(parsed.onboarding)
+        onboarding: normalizeOnboardingState(parsed.onboarding),
+        app: normalizeAppState(parsed.app)
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -901,6 +917,38 @@ class ProjectStore {
 
   getWindowState() {
     return structuredClone(this.state.window);
+  }
+
+  getAppState() {
+    return structuredClone(this.state.app);
+  }
+
+  reconcileAppVersion(currentVersion, previousVersion = "") {
+    const current = normalizeText(currentVersion);
+    const previous = normalizeText(previousVersion) || this.state.app.lastSeenVersion;
+
+    if (!current) {
+      return this.getAppState();
+    }
+
+    this.state.app = normalizeAppState({
+      ...this.state.app,
+      lastSeenVersion: current,
+      pendingChangelogFromVersion: previous && previous !== current ? previous : this.state.app.pendingChangelogFromVersion
+    });
+    this.save();
+    return this.getAppState();
+  }
+
+  dismissChangelog(version) {
+    const dismissedVersion = normalizeText(version);
+    this.state.app = normalizeAppState({
+      ...this.state.app,
+      dismissedChangelogVersion: dismissedVersion,
+      pendingChangelogFromVersion: ""
+    });
+    this.save();
+    return this.getAppState();
   }
 
   updateSettings(patch) {
@@ -1287,6 +1335,7 @@ module.exports = {
   normalizePluginsState,
   normalizePluginConfig,
   normalizeOnboardingState,
+  normalizeAppState,
   normalizePasswordVault,
   normalizeTerminalTabOrders,
   normalizeNavigationState,

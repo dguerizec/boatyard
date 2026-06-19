@@ -710,6 +710,81 @@ button {
   background: rgba(3, 7, 12, 0.72);
 }
 
+.changelog-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.changelog-dialog::backdrop {
+  background: rgba(3, 7, 12, 0.72);
+}
+
+.changelog-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.changelog-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.changelog-header h3,
+.changelog-header p,
+.changelog-feature-title,
+.changelog-feature-body,
+.changelog-version {
+  margin: 0;
+}
+
+.changelog-header h3 {
+  font-size: 20px;
+}
+
+.changelog-version {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.changelog-feature-title {
+  font-size: 18px;
+}
+
+.changelog-feature-body {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.changelog-actions {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.changelog-actions .secondary-button:first-child {
+  justify-self: start;
+}
+
+.changelog-counter {
+  min-width: 48px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
 .plugin-settings-dialog-panel {
   display: grid;
   gap: 16px;
