@@ -5715,9 +5715,9 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   actions.append(cancelButton, submitButton);
   form.append(
     heading,
+    sourcePathLabel,
     nameLabel,
     slugLabel,
-    sourcePathLabel,
     gitUrlLabel,
     repoUrlLabel,
     devBranchLabel,
@@ -5749,7 +5749,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   });
 
   shell.append(form);
-  requestAnimationFrame(() => nameInput.focus());
+  requestAnimationFrame(() => sourcePathInput.focus());
   return shell;
 }
 
