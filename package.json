@@ -45,10 +45,16 @@
       "!scripts/**/*",
       "!dist/**/*",
       "!*.md",
-      "!Makefile"
+      "!Makefile",
+      "!node_modules/node-pty/deps/**/*",
+      "!node_modules/node-pty/prebuilds/**/*",
+      "!node_modules/node-pty/scripts/**/*",
+      "!node_modules/node-pty/src/**/*",
+      "!node_modules/node-pty/lib/**/*.test.js",
+      "!node_modules/node-pty/**/*.ts"
     ],
     "asarUnpack": [
-      "node_modules/node-pty/**/*"
+      "node_modules/node-pty/build/Release/*.node"
     ],
     "linux": {
       "category": "Development",
