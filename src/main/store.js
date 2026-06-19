@@ -55,7 +55,11 @@ function createDefaultState() {
     paneLayouts: {},
     widgetLayouts: {},
     terminalSelections: {},
-    terminalTabOrders: {}
+    terminalTabOrders: {},
+    onboarding: {
+      completedVersion: 0,
+      completedAt: ""
+    }
   };
 }
 
@@ -260,6 +264,18 @@ function normalizeNavigationState(navigation = {}) {
   return {
     view: projectId || !isProjectView ? view : "global",
     projectId: isProjectView ? projectId : null
+  };
+}
+
+function normalizeOnboardingState(onboarding = {}) {
+  const source = onboarding && typeof onboarding === "object" && !Array.isArray(onboarding)
+    ? onboarding
+    : {};
+  const completedVersion = Number(source.completedVersion);
+
+  return {
+    completedVersion: Math.max(0, Number.isFinite(completedVersion) ? Math.floor(completedVersion) : 0),
+    completedAt: normalizeText(source.completedAt)
   };
 }
 
@@ -861,7 +877,8 @@ class ProjectStore {
         paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
         terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, projectsWithHomeTabs),
-        terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, projectsWithHomeTabs)
+        terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, projectsWithHomeTabs),
+        onboarding: normalizeOnboardingState(parsed.onboarding)
       };
     } catch (error) {
       if (error.code !== "ENOENT") {
@@ -909,6 +926,15 @@ class ProjectStore {
     this.state.navigation = normalizeNavigationState(navigation);
     this.save();
     return structuredClone(this.state.navigation);
+  }
+
+  updateOnboarding(onboarding) {
+    this.state.onboarding = normalizeOnboardingState({
+      ...this.state.onboarding,
+      ...onboarding
+    });
+    this.save();
+    return structuredClone(this.state.onboarding);
   }
 
   getWebAppUrl(key) {
@@ -1260,6 +1286,7 @@ module.exports = {
   normalizeWebAppOpenRules,
   normalizePluginsState,
   normalizePluginConfig,
+  normalizeOnboardingState,
   normalizePasswordVault,
   normalizeTerminalTabOrders,
   normalizeNavigationState,

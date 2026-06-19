@@ -1,6 +1,7 @@
 "use strict";
 
 const { execFile } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
@@ -12,6 +13,11 @@ const { TerminalService } = require("./terminalService");
 const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
+const CAPTURE_REQUEST_ENV = "BOATYARD_CAPTURE_REQUEST";
+
+if (process.env.BOATYARD_USER_DATA_PATH) {
+  app.setPath("userData", process.env.BOATYARD_USER_DATA_PATH);
+}
 
 let mainWindow = null;
 let store = null;
@@ -58,6 +64,14 @@ function createMainWindow() {
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
 
+    if (isCaptureMode()) {
+      runCaptureRequest().catch((error) => {
+        console.error(`Capture failed: ${error.stack || error.message}`);
+        app.exit(1);
+      });
+      return;
+    }
+
     if (process.argv.includes("--smoke")) {
       setTimeout(() => app.quit(), 500);
     }
@@ -91,6 +105,188 @@ function saveWindowState() {
 function scheduleWindowStateSave() {
   clearTimeout(saveWindowStateTimer);
   saveWindowStateTimer = setTimeout(saveWindowState, 250);
+}
+
+function isCaptureMode() {
+  return Boolean(process.env[CAPTURE_REQUEST_ENV]);
+}
+
+function readCaptureRequest() {
+  const requestPath = process.env[CAPTURE_REQUEST_ENV];
+  if (!requestPath) {
+    return null;
+  }
+
+  return JSON.parse(fs.readFileSync(requestPath, "utf8"));
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitForCapturePredicate(source, timeoutMs = 8000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const matched = await mainWindow.webContents.executeJavaScript(source, true);
+    if (matched) {
+      return true;
+    }
+    await wait(100);
+  }
+
+  throw new Error(`Timed out waiting for capture predicate: ${source}`);
+}
+
+async function waitForOnboardingStep(stepNumber) {
+  await waitForCapturePredicate(`(() => {
+    const dialog = document.querySelector(".onboarding-dialog");
+    const counter = dialog?.querySelector(".onboarding-header span");
+    return Boolean(
+      dialog &&
+      getComputedStyle(dialog).visibility !== "hidden" &&
+      counter?.textContent.trim().startsWith("${stepNumber} /")
+    );
+  })()`, 12000);
+}
+
+async function waitForCaptureSelector(selector, timeoutMs = 8000) {
+  const quotedSelector = JSON.stringify(String(selector || ""));
+  await waitForCapturePredicate(`Boolean(document.querySelector(${quotedSelector}))`, timeoutMs);
+}
+
+async function runCaptureAction(action) {
+  if (!action || typeof action !== "object") {
+    return;
+  }
+
+  const type = String(action.type || "").trim();
+  const timeoutMs = Number.isFinite(action.timeoutMs) ? action.timeoutMs : 8000;
+  if (type === "wait") {
+    await wait(Math.max(0, Math.round(Number(action.ms) || 0)));
+    return;
+  }
+
+  if (type === "waitFor") {
+    await waitForCaptureSelector(action.selector, timeoutMs);
+    return;
+  }
+
+  if (type === "click") {
+    await waitForCaptureSelector(action.selector, timeoutMs);
+    const quotedSelector = JSON.stringify(String(action.selector || ""));
+    await mainWindow.webContents.executeJavaScript(`document.querySelector(${quotedSelector}).click()`, true);
+    return;
+  }
+
+  if (type === "key") {
+    mainWindow.webContents.sendInputEvent({
+      type: "keyDown",
+      keyCode: String(action.key || "")
+    });
+    mainWindow.webContents.sendInputEvent({
+      type: "keyUp",
+      keyCode: String(action.key || "")
+    });
+    return;
+  }
+
+  if (type === "eval") {
+    await mainWindow.webContents.executeJavaScript(String(action.source || ""), true);
+    return;
+  }
+
+  throw new Error(`Unknown capture action type: ${type}`);
+}
+
+function getOnboardingStepNumber(scenario) {
+  const match = String(scenario || "").match(/^onboarding-step:(\d+)$/);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
+async function applyCaptureScenario(scenario) {
+  const onboardingStep = getOnboardingStepNumber(scenario);
+  if (onboardingStep) {
+    await waitForCapturePredicate("Boolean(document.querySelector('#manual-tour'))");
+    await mainWindow.webContents.executeJavaScript("document.querySelector('#manual-tour').click()", true);
+    await waitForOnboardingStep(1);
+
+    for (let step = 2; step <= onboardingStep; step += 1) {
+      await mainWindow.webContents.executeJavaScript("document.querySelector('.onboarding-dialog .primary-button').click()", true);
+      await waitForOnboardingStep(step);
+    }
+    return;
+  }
+
+  if (!scenario || scenario === "global") {
+    await waitForCapturePredicate("Boolean(document.querySelector('#dashboard-grid'))");
+    return;
+  }
+
+  throw new Error(`Unknown capture scenario: ${scenario}`);
+}
+
+async function applyCaptureActions(actions = []) {
+  for (const action of Array.isArray(actions) ? actions : []) {
+    await runCaptureAction(action);
+  }
+}
+
+async function getCaptureBounds(crop) {
+  if (!crop?.selector) {
+    return null;
+  }
+
+  const quotedSelector = JSON.stringify(String(crop.selector));
+  await waitForCaptureSelector(crop.selector, Number.isFinite(crop.timeoutMs) ? crop.timeoutMs : 8000);
+  return mainWindow.webContents.executeJavaScript(`(() => {
+    const element = document.querySelector(${quotedSelector});
+    if (!element) {
+      return null;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const padding = Math.max(0, Number(${JSON.stringify(crop.padding || 0)}) || 0);
+    return {
+      x: Math.max(0, Math.floor(rect.left - padding)),
+      y: Math.max(0, Math.floor(rect.top - padding)),
+      width: Math.ceil(rect.width + padding * 2),
+      height: Math.ceil(rect.height + padding * 2)
+    };
+  })()`, true);
+}
+
+async function runCaptureRequest() {
+  const request = readCaptureRequest();
+  if (!request?.output) {
+    throw new Error("Capture request must include an output path.");
+  }
+
+  const scenario = request.scenario || "global";
+  await applyCaptureScenario(scenario);
+  await applyCaptureActions(request.actions);
+  await wait(Number.isFinite(request.settleMs) ? request.settleMs : 250);
+  if (request.debug) {
+    const state = await mainWindow.webContents.executeJavaScript(`(() => {
+      const dialog = document.querySelector(".onboarding-dialog");
+      const counter = dialog?.querySelector(".onboarding-header span")?.textContent.trim() || "";
+      return {
+        dialogOpen: dialog?.open || false,
+        dialogVisibility: dialog ? getComputedStyle(dialog).visibility : "",
+        counter,
+        menuItems: [...document.querySelectorAll(".webapp-tab-menu-item")].map((item) => item.textContent.trim()),
+        targetExists: Boolean(document.querySelector(".webapp-tab-menu-item[data-web-app-id='manual']"))
+      };
+    })()`, true);
+    console.log(JSON.stringify(state, null, 2));
+  }
+
+  const bounds = await getCaptureBounds(request.crop);
+  const image = await mainWindow.capturePage(bounds || undefined);
+  fs.mkdirSync(path.dirname(request.output), { recursive: true });
+  fs.writeFileSync(request.output, image.toPNG());
+  app.quit();
 }
 
 function normalizeWebAppBounds(bounds) {
@@ -301,6 +497,18 @@ function loadWebAppUrl(webApp, url) {
   return true;
 }
 
+function sendWebAppLoaded(key, url, status = "loaded") {
+  if (!mainWindow || mainWindow.webContents.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send("webapp:loaded", {
+    key: String(key),
+    url,
+    status
+  });
+}
+
 function handleWebAppWindowOpen(key, details) {
   const url = details?.url || "";
   const webApp = webAppViews.get(key);
@@ -349,6 +557,14 @@ function ensureWebAppView(key) {
   view.webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
     if (isMainFrame) {
       persistWebAppUrl(key, url);
+    }
+  });
+  view.webContents.on("did-finish-load", () => {
+    sendWebAppLoaded(key, view.webContents.getURL());
+  });
+  view.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
+    if (isMainFrame) {
+      sendWebAppLoaded(key, validatedUrl || view.webContents.getURL(), `failed:${errorCode}:${errorDescription}`);
     }
   });
   view.webContents.on("dom-ready", () => {
@@ -413,6 +629,8 @@ function showWebApp({ key, url, bounds, autofillEnabled, restoreUrl = true }) {
 
   if (webApp.url !== parsedUrl.toString()) {
     loadWebAppUrl(webApp, parsedUrl.toString());
+  } else if (!webApp.view.webContents.isLoadingMainFrame()) {
+    sendWebAppLoaded(key, webApp.view.webContents.getURL());
   }
 }
 
@@ -604,6 +822,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("navigation:update", (_event, navigation) => {
     return store.updateNavigation(navigation);
+  });
+
+  ipcMain.handle("onboarding:update", (_event, onboarding) => {
+    return store.updateOnboarding(onboarding);
   });
 
   ipcMain.handle("settings:select-projects-base-path", async (_event, currentPath) => {
@@ -841,7 +1063,8 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.webContents.isDestroyed()) {
         mainWindow.webContents.send(channel, payload);
       }
-    }
+    },
+    suppressResizeWarnings: isCaptureMode()
   });
   registerIpcHandlers();
   createMainWindow();

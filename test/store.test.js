@@ -16,6 +16,7 @@ const {
   normalizeProject,
   normalizeProjectUrls,
   normalizeNavigationState,
+  normalizeOnboardingState,
   normalizePasswordVault,
   normalizeSettings,
   normalizeSlug,
@@ -251,6 +252,27 @@ test("normalizeSettings keeps global settings defaults", () => {
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: false
   }).passwordManagerEnabled, false);
+});
+
+test("normalizeOnboardingState keeps completed tour metadata", () => {
+  assert.deepEqual(normalizeOnboardingState(), {
+    completedVersion: 0,
+    completedAt: ""
+  });
+  assert.deepEqual(normalizeOnboardingState({
+    completedVersion: 2.8,
+    completedAt: "2026-06-19T10:11:12.000Z"
+  }), {
+    completedVersion: 2,
+    completedAt: "2026-06-19T10:11:12.000Z"
+  });
+  assert.deepEqual(normalizeOnboardingState({
+    completedVersion: -4,
+    completedAt: "  done  "
+  }), {
+    completedVersion: 0,
+    completedAt: "done"
+  });
 });
 
 test("normalizePasswordVault keeps encrypted credentials by origin", () => {
@@ -687,6 +709,32 @@ test("ProjectStore persists navigation and clears removed active projects", () =
   assert.deepEqual(removed.navigation, {
     view: "global",
     projectId: null
+  });
+});
+
+test("ProjectStore persists onboarding state", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  assert.deepEqual(store.getState().onboarding, {
+    completedVersion: 0,
+    completedAt: ""
+  });
+
+  assert.deepEqual(store.updateOnboarding({
+    completedVersion: 1,
+    completedAt: "2026-06-19T10:11:12.000Z"
+  }), {
+    completedVersion: 1,
+    completedAt: "2026-06-19T10:11:12.000Z"
+  });
+
+  const reloaded = new ProjectStore(filePath);
+  assert.deepEqual(reloaded.load().onboarding, {
+    completedVersion: 1,
+    completedAt: "2026-06-19T10:11:12.000Z"
   });
 });
 

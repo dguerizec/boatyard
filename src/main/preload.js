@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   getState: () => ipcRenderer.invoke("state:get"),
   updateSettings: (patch) => ipcRenderer.invoke("settings:update", patch),
   updateNavigation: (navigation) => ipcRenderer.invoke("navigation:update", navigation),
+  updateOnboarding: (onboarding) => ipcRenderer.invoke("onboarding:update", onboarding),
   selectProjectsBasePath: (currentPath) => ipcRenderer.invoke("settings:select-projects-base-path", currentPath),
   inspectSourcePath: (sourcePath) => ipcRenderer.invoke("projects:inspect-source-path", sourcePath),
   listPlugins: () => ipcRenderer.invoke("plugins:list"),
@@ -64,6 +65,11 @@ contextBridge.exposeInMainWorld("boatyard", {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("webapp:url-changed", listener);
     return () => ipcRenderer.removeListener("webapp:url-changed", listener);
+  },
+  onWebAppLoaded: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("webapp:loaded", listener);
+    return () => ipcRenderer.removeListener("webapp:loaded", listener);
   },
   onWebAppAutofillChanged: (callback) => {
     const listener = (_event, payload) => callback(payload);
