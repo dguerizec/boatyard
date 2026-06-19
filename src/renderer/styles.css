@@ -1232,7 +1232,12 @@ button {
 }
 
 .project-widget-rail.dragging-widget .widget-trash-dropzone,
-.webapp-pane.dragging-widget .widget-trash-dropzone,
+.webapp-pane.dragging-widget .widget-trash-dropzone {
+  border-color: rgba(248, 113, 113, 0.74);
+  color: #fecaca;
+  opacity: 1;
+}
+
 .widget-trash-dropzone:hover,
 .widget-trash-dropzone.drag-over {
   opacity: 1;

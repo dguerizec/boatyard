@@ -110,6 +110,7 @@ let activeUpdateCardUpdater = null;
 let updatePollStarted = false;
 let draggedProjectId = null;
 let draggedWidgetId = null;
+let draggedWidgetPointerOffset = { x: 0, y: 0 };
 let onboardingDemoProjectVisible = false;
 let onboardingTourActive = false;
 const terminalWidgetsBySurface = new Map();
@@ -2076,7 +2077,7 @@ async function addProjectWidget(project, widgetId, columnCount, widgetPaneId = D
   return true;
 }
 
-function getWidgetGridPositionFromPointer(event, rail, columnCount, size) {
+function getWidgetGridPositionFromPointer(event, rail, columnCount, size, pointerOffset = { x: 0, y: 0 }) {
   const rect = rail.getBoundingClientRect();
   const styles = window.getComputedStyle(rail);
   const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
@@ -2085,10 +2086,14 @@ function getWidgetGridPositionFromPointer(event, rail, columnCount, size) {
   const rowHeight = Number(rail.dataset.widgetGridRowHeight) || WIDGET_GRID_ROW_HEIGHT;
   const contentWidth = Math.max(1, rail.clientWidth - paddingLeft - paddingRight);
   const columnWidth = (contentWidth - WIDGET_GRID_GAP * (columnCount - 1)) / columnCount;
-  const x = Math.floor((event.clientX - rect.left - paddingLeft) / (columnWidth + WIDGET_GRID_GAP));
+  const ghostLeft = event.clientX - pointerOffset.x;
+  const ghostTop = event.clientY - pointerOffset.y;
+  const columnStep = columnWidth + WIDGET_GRID_GAP;
+  const rowStep = rowHeight + WIDGET_GRID_GAP;
+  const x = Math.floor((ghostLeft - rect.left - paddingLeft + columnStep / 2) / columnStep);
   const y = Math.floor(
-    (event.clientY - rect.top - paddingTop) /
-      (rowHeight + WIDGET_GRID_GAP)
+    (ghostTop - rect.top - paddingTop + rowStep / 2) /
+      rowStep
   );
 
   return {
@@ -2173,7 +2178,7 @@ function attachWidgetGridDropHandlers(widgetRail, project, columnCount, widgetPa
     }
 
     event.preventDefault();
-    const position = getWidgetGridPositionFromPointer(event, widgetRail, currentColumnCount, size);
+    const position = getWidgetGridPositionFromPointer(event, widgetRail, currentColumnCount, size, draggedWidgetPointerOffset);
     const available = isWidgetAreaAvailable({
       widgetId: draggedWidgetId,
       position,
@@ -2206,7 +2211,7 @@ function attachWidgetGridDropHandlers(widgetRail, project, columnCount, widgetPa
     }
 
     event.preventDefault();
-    const position = getWidgetGridPositionFromPointer(event, widgetRail, currentColumnCount, size);
+    const position = getWidgetGridPositionFromPointer(event, widgetRail, currentColumnCount, size, draggedWidgetPointerOffset);
     await moveWidgetToGridPosition(project, widgetId, position, currentColumnCount, widgetPaneId);
   });
 }
@@ -2235,6 +2240,11 @@ function createProjectWidget(project, definition, layout, columnCount, widgetPan
     card.draggable = true;
     card.addEventListener("dragstart", (event) => {
       draggedWidgetId = definition.id;
+      const rect = card.getBoundingClientRect();
+      draggedWidgetPointerOffset = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top
+      };
       card.classList.add("dragging");
       card.closest(".project-widget-rail")?.classList.add("dragging-widget");
       card.closest(".webapp-pane")?.classList.add("dragging-widget");
@@ -2243,6 +2253,7 @@ function createProjectWidget(project, definition, layout, columnCount, widgetPan
     });
     card.addEventListener("dragend", () => {
       draggedWidgetId = null;
+      draggedWidgetPointerOffset = { x: 0, y: 0 };
       card.classList.remove("dragging");
       card.closest(".project-widget-rail")?.classList.remove("dragging-widget");
       card.closest(".webapp-pane")?.classList.remove("dragging-widget");
