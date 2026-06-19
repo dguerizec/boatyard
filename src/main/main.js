@@ -117,6 +117,35 @@ function readChangelogEntries(fromVersion, toVersion) {
   }
 }
 
+function readChangelogReleases() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(CHANGELOG_JSON_PATH, "utf8"));
+    const releases = Array.isArray(parsed.releases) ? parsed.releases : [];
+
+    return releases
+      .map((release) => ({
+        version: normalizeVersionTag(release?.version),
+        date: String(release?.date || "").trim(),
+        features: Array.isArray(release?.features)
+          ? release.features
+            .map((feature) => ({
+              category: String(feature?.category || "").trim(),
+              title: String(feature?.title || "").trim(),
+              body: String(feature?.body || feature?.description || "").trim()
+            }))
+            .filter((feature) => feature.title && feature.body)
+          : []
+      }))
+      .filter((release) => parseVersion(release.version) && release.features.length)
+      .sort((left, right) => compareVersions(right.version, left.version));
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.warn(`Could not read changelog data: ${error.message}`);
+    }
+    return [];
+  }
+}
+
 function getPendingChangelog() {
   const appState = store.getAppState();
   const currentVersion = normalizeVersionTag(app.getVersion());
@@ -558,7 +587,6 @@ async function restartToUpdate(update) {
     stdio: "ignore",
     env: {
       ...process.env,
-      BOATYARD_PREVIOUS_VERSION: normalizeVersionTag(app.getVersion()),
       BOATYARD_UPDATED_FROM: getCurrentAppImagePath()
     }
   });
@@ -1397,6 +1425,13 @@ function registerIpcHandlers() {
     return getPendingChangelog();
   });
 
+  ipcMain.handle("changelog:history", () => {
+    return {
+      currentVersion: normalizeVersionTag(app.getVersion()),
+      releases: readChangelogReleases()
+    };
+  });
+
   ipcMain.handle("changelog:dismiss", () => {
     return store.dismissChangelog(app.getVersion());
   });
@@ -1575,7 +1610,7 @@ function registerIpcHandlers() {
 app.whenReady().then(async () => {
   store = new ProjectStore(getStorePath());
   store.load();
-  store.reconcileAppVersion(app.getVersion(), process.env.BOATYARD_PREVIOUS_VERSION);
+  store.reconcileAppVersion(app.getVersion());
   try {
     await ensureCurrentAppImageInstalled();
     await cleanupOldAppImages();

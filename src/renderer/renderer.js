@@ -107,6 +107,8 @@ let openWidgetAddMenu = null;
 let pierWorkloadPaneRefreshFrame = null;
 let preparedUpdate = null;
 let activeUpdateCardUpdater = null;
+let lastUpdateCheckResult = null;
+let lastUpdateCheckedAt = null;
 let updatePollStarted = false;
 let draggedProjectId = null;
 let draggedWidgetId = null;
@@ -4233,7 +4235,7 @@ function formatVersionLabel(version) {
 }
 
 function formatUpdateCheckedAt(date = new Date()) {
-  return date.toLocaleTimeString([], {
+  return date.toLocaleTimeString("en-GB", {
     hour: "2-digit",
     minute: "2-digit"
   });
@@ -4270,34 +4272,67 @@ function createGlobalUpdateCard() {
   checkButton.type = "button";
   checkButton.textContent = "Check for updates";
 
+  const changelogButton = document.createElement("button");
+  changelogButton.className = "secondary-button";
+  changelogButton.type = "button";
+  changelogButton.textContent = "Changelog";
+
   const updateButton = document.createElement("button");
   updateButton.className = "primary-button";
   updateButton.type = "button";
   updateButton.textContent = "Restart to update";
   updateButton.hidden = true;
 
-  actions.append(checkButton, updateButton);
+  actions.append(checkButton, changelogButton, updateButton);
   content.append(titleGroup, status, actions);
   shell.append(content);
 
   const setBusy = (isBusy, label = "Checking...") => {
     checkButton.disabled = isBusy;
+    changelogButton.disabled = isBusy;
     updateButton.disabled = isBusy;
     checkButton.textContent = isBusy ? label : "Check for updates";
   };
 
-  const showPreparedUpdate = (update) => {
+  const showPreparedUpdate = (update, checkedAt = new Date()) => {
     preparedUpdate = update;
-    status.textContent = `${formatVersionLabel(update.latestVersion)} downloaded, restart required. Checked ${formatUpdateCheckedAt()}`;
+    status.textContent = `${formatVersionLabel(update.latestVersion)} downloaded, restart required. Checked at ${formatUpdateCheckedAt(checkedAt)}`;
     updateButton.hidden = false;
   };
-  activeUpdateCardUpdater = showPreparedUpdate;
+
+  const showUpdateResult = (result, checkedAt = new Date()) => {
+    if (!result) {
+      return;
+    }
+
+    version.textContent = `Current version ${formatVersionLabel(result.currentVersion)}`;
+
+    if (result.updateAvailable) {
+      if (result.prepared) {
+        showPreparedUpdate(result, checkedAt);
+      } else {
+        preparedUpdate = null;
+        updateButton.hidden = true;
+        status.textContent = `Update available: ${formatVersionLabel(result.latestVersion)}, no installable AppImage found. Checked at ${formatUpdateCheckedAt(checkedAt)}`;
+      }
+    } else {
+      preparedUpdate = null;
+      updateButton.hidden = true;
+      status.textContent = `Up to date. Checked at ${formatUpdateCheckedAt(checkedAt)}`;
+    }
+  };
+  activeUpdateCardUpdater = showUpdateResult;
 
   window.boatyard.getUpdateInfo()
     .then((info) => {
       version.textContent = `Current version ${formatVersionLabel(info.currentVersion)}`;
       if (info.preparedUpdate) {
-        showPreparedUpdate(info.preparedUpdate);
+        showPreparedUpdate(info.preparedUpdate, lastUpdateCheckedAt || new Date());
+        return;
+      }
+
+      if (lastUpdateCheckResult) {
+        showUpdateResult(lastUpdateCheckResult, lastUpdateCheckedAt || new Date());
         return;
       }
 
@@ -4317,21 +4352,28 @@ function createGlobalUpdateCard() {
 
     try {
       const result = await window.boatyard.prepareUpdate();
-      version.textContent = `Current version ${formatVersionLabel(result.currentVersion)}`;
-
-      if (result.updateAvailable) {
-        if (result.prepared) {
-          showPreparedUpdate(result);
-        } else {
-          status.textContent = `Update available: ${formatVersionLabel(result.latestVersion)}, no installable AppImage found.`;
-        }
-      } else {
-        status.textContent = `Up to date: ${formatVersionLabel(result.currentVersion)}. Checked ${formatUpdateCheckedAt()}`;
-      }
+      lastUpdateCheckedAt = new Date();
+      lastUpdateCheckResult = result;
+      showUpdateResult(result, lastUpdateCheckedAt);
     } catch (error) {
       status.textContent = error.message;
     } finally {
       setBusy(false);
+    }
+  });
+
+  changelogButton.addEventListener("click", async () => {
+    changelogButton.disabled = true;
+    try {
+      const changelog = await window.boatyard.getChangelogHistory?.();
+      const opened = await openChangelogDialog(changelog, { mode: "history" });
+      if (!opened) {
+        status.textContent = "No changelog entries are available yet.";
+      }
+    } catch (error) {
+      status.textContent = error.message;
+    } finally {
+      changelogButton.disabled = false;
     }
   });
 
@@ -7124,8 +7166,24 @@ async function openOnboardingTour(options = {}) {
   nextButton.focus();
 }
 
-async function openChangelogDialog(changelog) {
-  const features = Array.isArray(changelog?.features) ? changelog.features : [];
+function getChangelogReleases(changelog) {
+  const releases = Array.isArray(changelog?.releases) ? changelog.releases : [];
+  return releases
+    .map((release) => ({
+      version: String(release?.version || "").trim(),
+      date: String(release?.date || "").trim(),
+      features: Array.isArray(release?.features) ? release.features : []
+    }))
+    .filter((release) => release.version && release.features.length);
+}
+
+async function openChangelogDialog(changelog, options = {}) {
+  const historyMode = options.mode === "history";
+  const releases = historyMode ? getChangelogReleases(changelog) : [];
+  const features = historyMode
+    ? releases[0]?.features.map((feature) => ({ ...feature, version: releases[0].version })) || []
+    : Array.isArray(changelog?.features) ? changelog.features : [];
+
   if (!features.length) {
     return false;
   }
@@ -7142,10 +7200,12 @@ async function openChangelogDialog(changelog) {
 
   const kicker = document.createElement("p");
   kicker.className = "kicker";
-  kicker.textContent = `Updated to ${formatVersionLabel(changelog.toVersion)}`;
+  kicker.textContent = historyMode
+    ? `Current version ${formatVersionLabel(changelog?.currentVersion)}`
+    : `Updated to ${formatVersionLabel(changelog.toVersion)}`;
 
   const title = document.createElement("h3");
-  title.textContent = "What's new";
+  title.textContent = historyMode ? "Changelog" : "What's new";
 
   const closeButton = document.createElement("button");
   closeButton.className = "icon-button";
@@ -7157,6 +7217,21 @@ async function openChangelogDialog(changelog) {
   const titleGroup = document.createElement("div");
   titleGroup.append(kicker, title);
   header.append(titleGroup, closeButton);
+
+  const versionSelect = document.createElement("select");
+  versionSelect.className = "changelog-version-select";
+  versionSelect.setAttribute("aria-label", "Changelog version");
+
+  if (historyMode) {
+    for (const release of releases) {
+      const option = document.createElement("option");
+      option.value = release.version;
+      option.textContent = release.date
+        ? `${formatVersionLabel(release.version)} - ${release.date}`
+        : formatVersionLabel(release.version);
+      versionSelect.append(option);
+    }
+  }
 
   const featureVersion = document.createElement("p");
   featureVersion.className = "changelog-version";
@@ -7173,7 +7248,7 @@ async function openChangelogDialog(changelog) {
   const skipButton = document.createElement("button");
   skipButton.className = "secondary-button";
   skipButton.type = "button";
-  skipButton.textContent = "Skip";
+  skipButton.textContent = historyMode ? "Close" : "Skip";
 
   const previousButton = document.createElement("button");
   previousButton.className = "secondary-button";
@@ -7188,11 +7263,17 @@ async function openChangelogDialog(changelog) {
   nextButton.type = "button";
 
   actions.append(skipButton, previousButton, counter, nextButton);
-  panel.append(header, featureVersion, featureTitle, featureBody, actions);
+  if (historyMode) {
+    panel.append(header, versionSelect, featureVersion, featureTitle, featureBody, actions);
+  } else {
+    panel.append(header, featureVersion, featureTitle, featureBody, actions);
+  }
   dialog.append(panel);
   document.body.append(dialog);
 
   let currentFeature = 0;
+  let currentFeatures = features;
+  let currentReleaseVersion = historyMode ? releases[0]?.version || "" : "";
   let closed = false;
 
   async function closeDialog() {
@@ -7200,10 +7281,12 @@ async function openChangelogDialog(changelog) {
       return;
     }
     closed = true;
-    try {
-      await window.boatyard.dismissChangelog?.();
-    } catch (error) {
-      console.error("Could not dismiss changelog:", error);
+    if (!historyMode) {
+      try {
+        await window.boatyard.dismissChangelog?.();
+      } catch (error) {
+        console.error("Could not dismiss changelog:", error);
+      }
     }
     dialog.close();
     dialog.remove();
@@ -7211,13 +7294,21 @@ async function openChangelogDialog(changelog) {
   }
 
   function renderFeature() {
-    const feature = features[currentFeature];
-    featureVersion.textContent = `${formatVersionLabel(feature.version)} feature`;
+    const feature = currentFeatures[currentFeature];
+    featureVersion.textContent = `${formatVersionLabel(feature.version || currentReleaseVersion)} feature`;
     featureTitle.textContent = feature.title;
     featureBody.textContent = feature.body;
     previousButton.disabled = currentFeature === 0;
-    counter.textContent = `${currentFeature + 1} / ${features.length}`;
-    nextButton.textContent = currentFeature === features.length - 1 ? "Close" : "Next";
+    counter.textContent = `${currentFeature + 1} / ${currentFeatures.length}`;
+    nextButton.textContent = currentFeature === currentFeatures.length - 1 ? "Close" : "Next";
+  }
+
+  function selectRelease(version) {
+    const release = releases.find((entry) => entry.version === version) || releases[0];
+    currentReleaseVersion = release.version;
+    currentFeatures = release.features.map((feature) => ({ ...feature, version: release.version }));
+    currentFeature = 0;
+    renderFeature();
   }
 
   function handleKeydown(event) {
@@ -7238,12 +7329,15 @@ async function openChangelogDialog(changelog) {
     renderFeature();
   });
   nextButton.addEventListener("click", () => {
-    if (currentFeature >= features.length - 1) {
+    if (currentFeature >= currentFeatures.length - 1) {
       closeDialog();
       return;
     }
     currentFeature += 1;
     renderFeature();
+  });
+  versionSelect.addEventListener("change", () => {
+    selectRelease(versionSelect.value);
   });
 
   renderFeature();
@@ -7466,10 +7560,10 @@ async function pollForUpdates() {
 
   try {
     const result = await window.boatyard.prepareUpdate();
-    if (result?.prepared) {
-      preparedUpdate = result;
-      activeUpdateCardUpdater?.(result);
-    }
+    lastUpdateCheckedAt = new Date();
+    lastUpdateCheckResult = result;
+    preparedUpdate = result?.prepared ? result : null;
+    activeUpdateCardUpdater?.(result, lastUpdateCheckedAt);
   } catch (error) {
     console.warn(`Could not prepare update: ${error.message}`);
   }
@@ -7481,6 +7575,7 @@ function startUpdatePolling() {
   }
 
   updatePollStarted = true;
+  void pollForUpdates();
   setInterval(pollForUpdates, UPDATE_POLL_INTERVAL_MS);
 }
 

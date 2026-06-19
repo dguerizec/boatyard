@@ -757,6 +757,17 @@ button {
   text-transform: uppercase;
 }
 
+.changelog-version-select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--input);
+  color: var(--text);
+  font: inherit;
+}
+
 .changelog-feature-title {
   font-size: 18px;
 }

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   prepareUpdate: () => ipcRenderer.invoke("updates:prepare"),
   restartToUpdate: (update) => ipcRenderer.invoke("updates:restart", update),
   getPendingChangelog: () => ipcRenderer.invoke("changelog:pending"),
+  getChangelogHistory: () => ipcRenderer.invoke("changelog:history"),
   dismissChangelog: () => ipcRenderer.invoke("changelog:dismiss"),
   inspectSourcePath: (sourcePath) => ipcRenderer.invoke("projects:inspect-source-path", sourcePath),
   listPlugins: () => ipcRenderer.invoke("plugins:list"),

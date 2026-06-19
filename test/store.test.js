@@ -738,6 +738,37 @@ test("ProjectStore persists onboarding state", () => {
   });
 });
 
+test("ProjectStore tracks app version upgrades for changelog display", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  store.load();
+  assert.deepEqual(store.reconcileAppVersion("0.4.5"), {
+    lastSeenVersion: "0.4.5",
+    pendingChangelogFromVersion: "",
+    dismissedChangelogVersion: ""
+  });
+
+  assert.deepEqual(store.reconcileAppVersion("0.4.6"), {
+    lastSeenVersion: "0.4.6",
+    pendingChangelogFromVersion: "0.4.5",
+    dismissedChangelogVersion: ""
+  });
+
+  assert.deepEqual(store.dismissChangelog("0.4.6"), {
+    lastSeenVersion: "0.4.6",
+    pendingChangelogFromVersion: "",
+    dismissedChangelogVersion: "0.4.6"
+  });
+
+  assert.deepEqual(store.reconcileAppVersion("0.4.6"), {
+    lastSeenVersion: "0.4.6",
+    pendingChangelogFromVersion: "",
+    dismissedChangelogVersion: "0.4.6"
+  });
+});
+
 test("ProjectStore persists webapp urls", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");

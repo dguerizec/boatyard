@@ -282,6 +282,32 @@ function normalizeAppState(appState = {}) {
   };
 }
 
+function parseVersion(version) {
+  const match = normalizeText(version).match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i);
+  return match ? match.slice(1).map((part) => Number.parseInt(part, 10)) : null;
+}
+
+function compareVersions(left, right) {
+  const leftParts = parseVersion(left);
+  const rightParts = parseVersion(right);
+
+  if (!leftParts || !rightParts) {
+    return 0;
+  }
+
+  for (let index = 0; index < 3; index += 1) {
+    if (leftParts[index] > rightParts[index]) {
+      return 1;
+    }
+
+    if (leftParts[index] < rightParts[index]) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
 function normalizeOnboardingState(onboarding = {}) {
   const source = onboarding && typeof onboarding === "object" && !Array.isArray(onboarding)
     ? onboarding
@@ -923,18 +949,22 @@ class ProjectStore {
     return structuredClone(this.state.app);
   }
 
-  reconcileAppVersion(currentVersion, previousVersion = "") {
+  reconcileAppVersion(currentVersion) {
     const current = normalizeText(currentVersion);
-    const previous = normalizeText(previousVersion) || this.state.app.lastSeenVersion;
+    const previous = normalizeText(this.state.app.lastSeenVersion);
 
     if (!current) {
       return this.getAppState();
     }
 
+    const pendingChangelogFromVersion = previous && compareVersions(current, previous) > 0
+      ? previous
+      : this.state.app.pendingChangelogFromVersion;
+
     this.state.app = normalizeAppState({
       ...this.state.app,
       lastSeenVersion: current,
-      pendingChangelogFromVersion: previous && previous !== current ? previous : this.state.app.pendingChangelogFromVersion
+      pendingChangelogFromVersion
     });
     this.save();
     return this.getAppState();
