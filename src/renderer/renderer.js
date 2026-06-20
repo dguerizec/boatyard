@@ -113,6 +113,16 @@ let lastUpdateCheckedAt = null;
 let updatePollStarted = false;
 let draggedProjectId = null;
 let draggedProjectGroupName = null;
+let draggedProjectListPointerOffsetY = 0;
+let draggedProjectListGhostHeight = 0;
+let draggedProjectListDragImage = null;
+let projectListInsertionTarget = null;
+let projectListInsertionPlaceholder = null;
+let pendingProjectGroupExpandTimer = null;
+let pendingProjectGroupExpandName = "";
+let pendingProjectGroupCollapseTimer = null;
+let pendingProjectGroupCollapseName = "";
+const autoExpandedProjectGroups = new Set();
 let draggedWidgetId = null;
 let draggedWidgetPointerOffset = { x: 0, y: 0 };
 let onboardingDemoProjectVisible = false;
@@ -7600,8 +7610,11 @@ function createProjectNavRow(project, options = {}) {
   row.draggable = true;
   row.dataset.projectId = project.id;
   row.addEventListener("dragstart", (event) => {
+    const rect = row.getBoundingClientRect();
     draggedProjectId = project.id;
     draggedProjectGroupName = null;
+    draggedProjectListPointerOffsetY = event.clientY - rect.top;
+    draggedProjectListGhostHeight = rect.height;
     row.classList.add("dragging");
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", project.id);
@@ -7609,33 +7622,60 @@ function createProjectNavRow(project, options = {}) {
   row.addEventListener("dragend", () => {
     draggedProjectId = null;
     draggedProjectGroupName = null;
+    draggedProjectListPointerOffsetY = 0;
+    draggedProjectListGhostHeight = 0;
+    clearProjectListInsertionPlaceholder();
+    cancelPendingProjectGroupExpand();
     row.classList.remove("dragging");
     for (const item of projectList.querySelectorAll(".project-nav-row, .project-group-row")) {
       item.classList.remove("drag-over");
     }
   });
   row.addEventListener("dragover", (event) => {
-    if (draggedProjectGroupName && draggedProjectGroupName === String(project.group || "").trim()) {
+    if (draggedProjectGroupName) {
       return;
     }
 
-    if (!draggedProjectGroupName && (!draggedProjectId || draggedProjectId === project.id)) {
+    if (options.grouped && draggedProjectId && !draggedProjectGroupName) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = "move";
+      cancelPendingProjectGroupCollapse(options.groupName || "");
+      updateProjectGroupInsertionPlaceholder(row.parentElement, event, options.groupName || "");
+      return;
+    }
+
+    if (!draggedProjectId || draggedProjectId === project.id) {
       return;
     }
 
     event.preventDefault();
+    event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
+    clearProjectListInsertionPlaceholder();
+    cancelPendingProjectGroupExpand();
     row.classList.add("drag-over");
   });
   row.addEventListener("dragleave", () => {
     row.classList.remove("drag-over");
   });
   row.addEventListener("drop", async (event) => {
+    if (draggedProjectGroupName) {
+      return;
+    }
+
     event.preventDefault();
+    event.stopPropagation();
     row.classList.remove("drag-over");
 
-    if (draggedProjectGroupName) {
-      await reorderProjectGroupBeforeProject(draggedProjectGroupName, project.id);
+    if (options.grouped && draggedProjectId && !draggedProjectGroupName) {
+      const target = projectListInsertionTarget;
+      clearProjectListInsertionPlaceholder();
+      await moveProjectToGroupInsertion(
+        draggedProjectId || event.dataTransfer.getData("text/plain"),
+        options.groupName || "",
+        target?.beforeProjectId || project.id
+      );
       return;
     }
 
@@ -7643,7 +7683,7 @@ function createProjectNavRow(project, options = {}) {
     if (!sourceId || sourceId === project.id) {
       return;
     }
-    await reorderProjects(sourceId, project.id);
+    await moveProjectBeforeProject(sourceId, project.id);
   });
 
   const button = document.createElement("button");
@@ -7676,6 +7716,150 @@ function createProjectNavRow(project, options = {}) {
   row.append(settingsButton);
 
   return row;
+}
+
+function getProjectListBlocks() {
+  return [...projectList.children].filter((element) =>
+    element !== projectListInsertionPlaceholder &&
+    (
+      element.classList.contains("project-nav-row") ||
+      element.classList.contains("project-group-row") ||
+      element.classList.contains("project-group-expanded")
+    )
+  );
+}
+
+function getFirstProjectIdForProjectListBlock(block) {
+  if (!block) {
+    return null;
+  }
+
+  if (block.classList.contains("project-nav-row")) {
+    return block.dataset.projectId || null;
+  }
+
+  const groupName = block.dataset.projectGroup || "";
+  return getProjects().find((project) => String(project.group || "").trim() === groupName)?.id || null;
+}
+
+function getProjectListInsertionTarget(clientY) {
+  const blocks = getProjectListBlocks();
+
+  for (const block of blocks) {
+    const rect = block.getBoundingClientRect();
+    if (clientY < rect.top + (rect.height / 2)) {
+      return {
+        beforeNode: block,
+        beforeProjectId: getFirstProjectIdForProjectListBlock(block)
+      };
+    }
+  }
+
+  return {
+    beforeNode: null,
+    beforeProjectId: null
+  };
+}
+
+function getProjectGroupInsertionTarget(container, clientY, groupName) {
+  const rows = [...container.children].filter((element) =>
+    element !== projectListInsertionPlaceholder &&
+    element.classList.contains("project-nav-row")
+  );
+
+  for (const row of rows) {
+    const rect = row.getBoundingClientRect();
+    if (clientY < rect.top + (rect.height / 2)) {
+      return {
+        beforeNode: row,
+        beforeProjectId: row.dataset.projectId || null,
+        groupName
+      };
+    }
+  }
+
+  return {
+    beforeNode: null,
+    beforeProjectId: null,
+    groupName
+  };
+}
+
+function getProjectListDragReferenceY(event) {
+  if (!draggedProjectListGhostHeight) {
+    return event.clientY;
+  }
+
+  return event.clientY - draggedProjectListPointerOffsetY + (draggedProjectListGhostHeight / 2);
+}
+
+function ensureProjectListInsertionPlaceholder() {
+  if (projectListInsertionPlaceholder) {
+    return projectListInsertionPlaceholder;
+  }
+
+  const placeholder = document.createElement("div");
+  placeholder.className = "project-list-insertion-placeholder";
+  placeholder.setAttribute("aria-hidden", "true");
+  placeholder.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  });
+  placeholder.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const target = projectListInsertionTarget;
+    clearProjectListInsertionPlaceholder();
+
+    if (!target) {
+      return;
+    }
+
+    if (draggedProjectGroupName) {
+      await reorderProjectGroupBeforeProject(draggedProjectGroupName, target.beforeProjectId);
+      return;
+    }
+
+    const sourceId = draggedProjectId || event.dataTransfer.getData("text/plain");
+    if (!sourceId) {
+      return;
+    }
+    if (target.groupName) {
+      await moveProjectToGroupInsertion(sourceId, target.groupName, target.beforeProjectId);
+      return;
+    }
+    await moveProjectToUngroupedInsertion(sourceId, target.beforeProjectId);
+  });
+  projectListInsertionPlaceholder = placeholder;
+  return placeholder;
+}
+
+function updateProjectListInsertionPlaceholder(event) {
+  if (!draggedProjectId && !draggedProjectGroupName) {
+    clearProjectListInsertionPlaceholder();
+    return;
+  }
+
+  projectListInsertionTarget = getProjectListInsertionTarget(getProjectListDragReferenceY(event));
+  const placeholder = ensureProjectListInsertionPlaceholder();
+  projectList.insertBefore(placeholder, projectListInsertionTarget.beforeNode);
+}
+
+function updateProjectGroupInsertionPlaceholder(container, event, groupName) {
+  if (!draggedProjectId || draggedProjectGroupName || !container) {
+    clearProjectListInsertionPlaceholder();
+    return;
+  }
+
+  projectListInsertionTarget = getProjectGroupInsertionTarget(container, getProjectListDragReferenceY(event), groupName);
+  const placeholder = ensureProjectListInsertionPlaceholder();
+  container.insertBefore(placeholder, projectListInsertionTarget.beforeNode);
+}
+
+function clearProjectListInsertionPlaceholder() {
+  projectListInsertionTarget = null;
+  projectListInsertionPlaceholder?.remove();
+  projectListInsertionPlaceholder = null;
 }
 
 function appendGroupedProjectBadges(projects, container) {
@@ -7721,6 +7905,7 @@ async function setProjectGroupCollapsed(groupName, collapsed) {
   const collapsedGroups = getCollapsedProjectGroups();
   if (collapsed) {
     collapsedGroups.add(groupName);
+    autoExpandedProjectGroups.delete(groupName);
   } else {
     collapsedGroups.delete(groupName);
   }
@@ -7735,6 +7920,73 @@ async function setProjectGroupCollapsed(groupName, collapsed) {
     navigation
   };
   renderProjectList();
+}
+
+function cancelPendingProjectGroupExpand() {
+  if (pendingProjectGroupExpandTimer) {
+    clearTimeout(pendingProjectGroupExpandTimer);
+  }
+  pendingProjectGroupExpandTimer = null;
+  pendingProjectGroupExpandName = "";
+}
+
+function cancelPendingProjectGroupCollapse(groupName = "") {
+  if (groupName && pendingProjectGroupCollapseName && pendingProjectGroupCollapseName !== groupName) {
+    return;
+  }
+
+  if (pendingProjectGroupCollapseTimer) {
+    clearTimeout(pendingProjectGroupCollapseTimer);
+  }
+  pendingProjectGroupCollapseTimer = null;
+  pendingProjectGroupCollapseName = "";
+}
+
+function scheduleProjectGroupExpand(groupName) {
+  if (!draggedProjectId || draggedProjectGroupName || !getCollapsedProjectGroups().has(groupName)) {
+    return;
+  }
+
+  if (pendingProjectGroupExpandName === groupName) {
+    return;
+  }
+
+  cancelPendingProjectGroupExpand();
+  pendingProjectGroupExpandName = groupName;
+  pendingProjectGroupExpandTimer = setTimeout(() => {
+    const targetGroupName = pendingProjectGroupExpandName;
+    cancelPendingProjectGroupExpand();
+    if (!draggedProjectId || !targetGroupName || !getCollapsedProjectGroups().has(targetGroupName)) {
+      return;
+    }
+    autoExpandedProjectGroups.add(targetGroupName);
+    setProjectGroupCollapsed(targetGroupName, false).catch((error) => {
+      console.error("Could not expand project group:", error);
+    });
+  }, 2000);
+}
+
+function scheduleProjectGroupCollapse(groupName) {
+  if (!autoExpandedProjectGroups.has(groupName) || getCollapsedProjectGroups().has(groupName)) {
+    return;
+  }
+
+  if (pendingProjectGroupCollapseName === groupName) {
+    return;
+  }
+
+  cancelPendingProjectGroupCollapse();
+  pendingProjectGroupCollapseName = groupName;
+  pendingProjectGroupCollapseTimer = setTimeout(() => {
+    const targetGroupName = pendingProjectGroupCollapseName;
+    cancelPendingProjectGroupCollapse();
+    if (!targetGroupName || !autoExpandedProjectGroups.has(targetGroupName) || getCollapsedProjectGroups().has(targetGroupName)) {
+      return;
+    }
+    setProjectGroupCollapsed(targetGroupName, true).catch((error) => {
+      console.error("Could not collapse project group:", error);
+    });
+  }, 2000);
 }
 
 function createProjectGroupRow(groupName, projects, collapsed) {
@@ -7786,6 +8038,42 @@ function createProjectGroupRow(groupName, projects, collapsed) {
   });
   row.append(button);
   return row;
+}
+
+function createProjectGroupDragImage(groupName, projects) {
+  const row = document.createElement("div");
+  row.className = "project-group-row project-group-drag-image collapsed";
+  row.style.width = `${projectList.getBoundingClientRect().width}px`;
+
+  const button = document.createElement("div");
+  button.className = "project-group-button nav-item";
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "project-nav-title";
+
+  const chevron = document.createElement("span");
+  chevron.className = "project-group-chevron";
+  chevron.textContent = ">";
+  chevron.setAttribute("aria-hidden", "true");
+
+  const groupLabel = document.createElement("span");
+  groupLabel.className = "project-nav-name";
+  groupLabel.textContent = groupName;
+
+  titleRow.append(chevron, groupLabel);
+  appendGroupedProjectBadges(projects, titleRow);
+
+  const groupSummary = document.createElement("small");
+  groupSummary.textContent = `${projects.length} ${projects.length === 1 ? "project" : "projects"}`;
+
+  button.append(titleRow, groupSummary);
+  row.append(button);
+  return row;
+}
+
+function clearProjectListDragImage() {
+  draggedProjectListDragImage?.remove();
+  draggedProjectListDragImage = null;
 }
 
 async function updateProjectGroupName(groupName, nextGroupName) {
@@ -8091,10 +8379,24 @@ function openProjectGroupContextMenu(event, groupName, projects) {
   menu.querySelector("button")?.focus();
 }
 
-function attachProjectGroupDragHandlers(element, groupName, projects) {
+function attachProjectGroupDragHandlers(element, groupName, projects, options = {}) {
   element.addEventListener("dragstart", (event) => {
+    const rect = element.getBoundingClientRect();
+    clearProjectListDragImage();
     draggedProjectId = null;
     draggedProjectGroupName = groupName;
+    draggedProjectListPointerOffsetY = event.clientY - rect.top;
+    draggedProjectListGhostHeight = rect.height;
+    if (options.dragImage === "collapsed-group" && event.dataTransfer) {
+      const dragImage = createProjectGroupDragImage(groupName, projects);
+      document.body.append(dragImage);
+      const dragImageRect = dragImage.getBoundingClientRect();
+      const offsetY = dragImageRect.height / 2;
+      draggedProjectListPointerOffsetY = offsetY;
+      draggedProjectListGhostHeight = dragImageRect.height;
+      event.dataTransfer.setDragImage(dragImage, Math.min(24, dragImageRect.width / 2), offsetY);
+      draggedProjectListDragImage = dragImage;
+    }
     element.classList.add("dragging");
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", `group:${groupName}`);
@@ -8102,41 +8404,56 @@ function attachProjectGroupDragHandlers(element, groupName, projects) {
   element.addEventListener("dragend", () => {
     draggedProjectId = null;
     draggedProjectGroupName = null;
+    draggedProjectListPointerOffsetY = 0;
+    draggedProjectListGhostHeight = 0;
+    clearProjectListDragImage();
+    clearProjectListInsertionPlaceholder();
+    cancelPendingProjectGroupExpand();
+    cancelPendingProjectGroupCollapse();
     element.classList.remove("dragging");
     for (const item of projectList.querySelectorAll(".project-nav-row, .project-group-row, .project-group-expanded")) {
       item.classList.remove("drag-over");
     }
   });
   element.addEventListener("dragover", (event) => {
-    if (draggedProjectGroupName === groupName) {
+    if (draggedProjectGroupName) {
       return;
     }
 
-    if (!draggedProjectGroupName && (!draggedProjectId || projects.some((project) => project.id === draggedProjectId))) {
+    if (!draggedProjectId || projects.some((project) => project.id === draggedProjectId)) {
       return;
     }
 
     event.preventDefault();
+    event.stopPropagation();
     event.dataTransfer.dropEffect = "move";
+    clearProjectListInsertionPlaceholder();
+    cancelPendingProjectGroupCollapse(groupName);
+    scheduleProjectGroupExpand(groupName);
     element.classList.add("drag-over");
   });
   element.addEventListener("dragleave", () => {
+    if (pendingProjectGroupExpandName === groupName) {
+      cancelPendingProjectGroupExpand();
+    }
     element.classList.remove("drag-over");
   });
   element.addEventListener("drop", async (event) => {
-    event.preventDefault();
-    element.classList.remove("drag-over");
-
     if (draggedProjectGroupName) {
-      await reorderProjectGroupBeforeGroup(draggedProjectGroupName, groupName);
       return;
     }
+
+    event.preventDefault();
+    event.stopPropagation();
+    element.classList.remove("drag-over");
+    cancelPendingProjectGroupExpand();
+    cancelPendingProjectGroupCollapse();
 
     const sourceId = draggedProjectId || event.dataTransfer.getData("text/plain");
     if (!sourceId || projects.some((project) => project.id === sourceId)) {
       return;
     }
-    await reorderProjects(sourceId, projects[0]?.id);
+    await moveProjectToGroup(sourceId, groupName);
   });
 }
 
@@ -8144,6 +8461,28 @@ function createExpandedProjectGroup(groupName, projects) {
   const group = document.createElement("div");
   group.className = "project-group-expanded";
   group.dataset.projectGroup = groupName;
+  group.addEventListener("dragover", (event) => {
+    if (draggedProjectGroupName) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = "move";
+      clearProjectListInsertionPlaceholder();
+      return;
+    }
+
+    if (!draggedProjectId || draggedProjectGroupName) {
+      return;
+    }
+
+    cancelPendingProjectGroupCollapse(groupName);
+  });
+  group.addEventListener("dragleave", (event) => {
+    if (group.contains(event.relatedTarget)) {
+      return;
+    }
+
+    scheduleProjectGroupCollapse(groupName);
+  });
 
   const rail = document.createElement("button");
   rail.className = "project-group-rail";
@@ -8159,12 +8498,47 @@ function createExpandedProjectGroup(groupName, projects) {
   rail.addEventListener("contextmenu", (event) => {
     openProjectGroupContextMenu(event, groupName, projects);
   });
-  attachProjectGroupDragHandlers(rail, groupName, projects);
+  attachProjectGroupDragHandlers(rail, groupName, projects, { dragImage: "collapsed-group" });
 
   const projectRows = document.createElement("div");
   projectRows.className = "project-group-projects";
+  projectRows.addEventListener("dragover", (event) => {
+    if (!draggedProjectId || draggedProjectGroupName) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    cancelPendingProjectGroupCollapse(groupName);
+    updateProjectGroupInsertionPlaceholder(projectRows, event, groupName);
+  });
+  projectRows.addEventListener("dragleave", (event) => {
+    if (projectRows.contains(event.relatedTarget)) {
+      return;
+    }
+
+    clearProjectListInsertionPlaceholder();
+  });
+  projectRows.addEventListener("drop", async (event) => {
+    if (!projectListInsertionTarget) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    cancelPendingProjectGroupCollapse(groupName);
+    const target = projectListInsertionTarget;
+    clearProjectListInsertionPlaceholder();
+
+    const sourceId = draggedProjectId || event.dataTransfer.getData("text/plain");
+    if (!sourceId) {
+      return;
+    }
+    await moveProjectToGroupInsertion(sourceId, groupName, target.beforeProjectId);
+  });
   for (const groupedProject of projects) {
-    projectRows.append(createProjectNavRow(groupedProject, { grouped: true }));
+    projectRows.append(createProjectNavRow(groupedProject, { grouped: true, groupName }));
   }
 
   group.append(rail, projectRows);
@@ -8237,6 +8611,126 @@ async function reorderProjects(sourceId, targetId) {
   render();
 }
 
+async function moveProjectBeforeProject(sourceId, targetId) {
+  const projects = getProjects();
+  const source = projects.find((project) => project.id === sourceId);
+  const target = projects.find((project) => project.id === targetId);
+
+  if (!source || !target || source.id === target.id) {
+    return;
+  }
+
+  const targetGroup = String(target.group || "").trim();
+  if (String(source.group || "").trim() !== targetGroup) {
+    state = await window.boatyard.updateProject(source.id, {
+      group: targetGroup
+    });
+  }
+
+  await reorderProjects(source.id, target.id);
+}
+
+async function moveProjectToGroup(sourceId, targetGroupName) {
+  const groupName = String(targetGroupName || "").trim();
+  const projects = getProjects();
+  const source = projects.find((project) => project.id === sourceId);
+  const groupProjects = projects.filter((project) => String(project.group || "").trim() === groupName);
+
+  if (!source || !groupName || groupProjects.some((project) => project.id === source.id)) {
+    return;
+  }
+
+  state = await window.boatyard.updateProject(source.id, {
+    group: groupName
+  });
+
+  const updatedProjects = getProjects();
+  const updatedGroupProjects = updatedProjects.filter((project) => String(project.group || "").trim() === groupName);
+  const lastGroupProject = updatedGroupProjects.at(-1);
+  if (!lastGroupProject || lastGroupProject.id === source.id) {
+    render();
+    return;
+  }
+
+  const remaining = updatedProjects.filter((project) => project.id !== source.id);
+  const targetIndex = remaining.findIndex((project) => project.id === lastGroupProject.id);
+  if (targetIndex === -1) {
+    render();
+    return;
+  }
+
+  const reordered = [...remaining];
+  reordered.splice(targetIndex + 1, 0, source);
+  state = await window.boatyard.reorderProjects(reordered.map((project) => project.id));
+  render();
+}
+
+async function moveProjectToGroupInsertion(sourceId, targetGroupName, beforeProjectId = null) {
+  const groupName = String(targetGroupName || "").trim();
+  const projects = getProjects();
+  const source = projects.find((project) => project.id === sourceId);
+
+  if (!source || !groupName) {
+    return;
+  }
+
+  if (String(source.group || "").trim() !== groupName) {
+    state = await window.boatyard.updateProject(source.id, {
+      group: groupName
+    });
+  }
+
+  const updatedProjects = getProjects();
+  const remaining = updatedProjects.filter((project) => project.id !== source.id);
+  const groupProjects = remaining.filter((project) => String(project.group || "").trim() === groupName);
+  const fallbackProjectId = groupProjects.at(-1)?.id || null;
+  const insertionProjectId = beforeProjectId || fallbackProjectId;
+  const targetIndex = insertionProjectId
+    ? remaining.findIndex((project) => project.id === insertionProjectId)
+    : remaining.length;
+
+  if (targetIndex < 0) {
+    render();
+    return;
+  }
+
+  const reordered = [...remaining];
+  reordered.splice(beforeProjectId ? targetIndex : targetIndex + 1, 0, source);
+  state = await window.boatyard.reorderProjects(reordered.map((project) => project.id));
+  render();
+}
+
+async function moveProjectToUngroupedInsertion(sourceId, beforeProjectId = null) {
+  const projects = getProjects();
+  const source = projects.find((project) => project.id === sourceId);
+
+  if (!source) {
+    return;
+  }
+
+  if (String(source.group || "").trim()) {
+    state = await window.boatyard.updateProject(source.id, {
+      group: ""
+    });
+  }
+
+  const updatedProjects = getProjects();
+  const remaining = updatedProjects.filter((project) => project.id !== source.id);
+  const targetIndex = beforeProjectId
+    ? remaining.findIndex((project) => project.id === beforeProjectId)
+    : remaining.length;
+
+  if (targetIndex < 0) {
+    render();
+    return;
+  }
+
+  const reordered = [...remaining];
+  reordered.splice(targetIndex, 0, source);
+  state = await window.boatyard.reorderProjects(reordered.map((project) => project.id));
+  render();
+}
+
 async function reorderProjectGroup(sourceGroupName, targetIndexResolver) {
   const groupName = String(sourceGroupName || "").trim();
   if (!groupName) {
@@ -8262,6 +8756,11 @@ async function reorderProjectGroup(sourceGroupName, targetIndexResolver) {
 }
 
 async function reorderProjectGroupBeforeProject(sourceGroupName, targetProjectId) {
+  if (!targetProjectId) {
+    await reorderProjectGroup(sourceGroupName, (projects) => projects.length);
+    return;
+  }
+
   await reorderProjectGroup(sourceGroupName, (projects) =>
     projects.findIndex((project) => project.id === targetProjectId)
   );
@@ -8296,6 +8795,49 @@ function render() {
     renderGlobalDashboard();
   }
 }
+
+projectList.addEventListener("dragover", (event) => {
+  if (!draggedProjectId && !draggedProjectGroupName) {
+    return;
+  }
+
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+  updateProjectListInsertionPlaceholder(event);
+});
+
+projectList.addEventListener("dragleave", (event) => {
+  if (projectList.contains(event.relatedTarget)) {
+    return;
+  }
+
+  clearProjectListInsertionPlaceholder();
+});
+
+projectList.addEventListener("drop", async (event) => {
+  if (!projectListInsertionTarget) {
+    return;
+  }
+
+  event.preventDefault();
+  const target = projectListInsertionTarget;
+  clearProjectListInsertionPlaceholder();
+
+  if (draggedProjectGroupName) {
+    await reorderProjectGroupBeforeProject(draggedProjectGroupName, target.beforeProjectId);
+    return;
+  }
+
+  const sourceId = draggedProjectId || event.dataTransfer.getData("text/plain");
+  if (!sourceId) {
+    return;
+  }
+  if (target.groupName) {
+    await moveProjectToGroupInsertion(sourceId, target.groupName, target.beforeProjectId);
+    return;
+  }
+  await moveProjectToUngroupedInsertion(sourceId, target.beforeProjectId);
+});
 
 async function pollForUpdates() {
   if (typeof window.boatyard.prepareUpdate !== "function") {

@@ -229,6 +229,14 @@ button {
   padding-left: 14px;
 }
 
+.project-list-insertion-placeholder {
+  min-height: 58px;
+  border: 1px dashed rgba(65, 184, 131, 0.82);
+  border-radius: 8px;
+  background: rgba(65, 184, 131, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(65, 184, 131, 0.14), 0 0 14px rgba(65, 184, 131, 0.16);
+}
+
 .project-group-expanded {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
@@ -244,6 +252,19 @@ button {
 
 .project-group-projects .project-nav-row-grouped {
   padding-left: 0;
+}
+
+.project-group-drag-image {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  pointer-events: none;
+}
+
+.project-group-drag-image .nav-item {
+  border-color: var(--line);
+  background: var(--panel-strong);
+  box-shadow: none;
 }
 
 .project-group-rail {
