@@ -207,7 +207,7 @@ function getProjects() {
 function getSettings() {
   return {
     projectsBasePath: "",
-    blurWebAppOverlays: true,
+    blurWebAppOverlays: false,
     webAppOpenRules: [],
     widgetRailWidth: 340,
     terminalEnv: "",

@@ -26,7 +26,7 @@ function createDefaultState() {
   return {
     settings: {
       projectsBasePath: "",
-      blurWebAppOverlays: true,
+      blurWebAppOverlays: false,
       passwordManagerEnabled: false,
       passwordManagerDisclaimerAccepted: false,
       widgetRailWidth: 340,
@@ -195,7 +195,7 @@ function normalizeSettings(settings = {}) {
 
   return {
     projectsBasePath: normalizeText(source.projectsBasePath),
-    blurWebAppOverlays: source.blurWebAppOverlays !== false,
+    blurWebAppOverlays: source.blurWebAppOverlays === true,
     passwordManagerEnabled: source.passwordManagerEnabled === true && source.passwordManagerDisclaimerAccepted === true,
     passwordManagerDisclaimerAccepted: source.passwordManagerDisclaimerAccepted === true,
     widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340),

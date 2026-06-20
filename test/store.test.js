@@ -193,7 +193,7 @@ test("normalizeWindowState keeps maximized state", () => {
 test("normalizeSettings keeps global settings defaults", () => {
   assert.deepEqual(normalizeSettings(), {
     projectsBasePath: "",
-    blurWebAppOverlays: true,
+    blurWebAppOverlays: false,
     passwordManagerEnabled: false,
     passwordManagerDisclaimerAccepted: false,
     widgetRailWidth: 340,
@@ -202,7 +202,7 @@ test("normalizeSettings keeps global settings defaults", () => {
   });
   assert.deepEqual(normalizeSettings({
     projectsBasePath: "  /workspace/projects  ",
-    blurWebAppOverlays: false,
+    blurWebAppOverlays: true,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 120,
@@ -228,7 +228,7 @@ test("normalizeSettings keeps global settings defaults", () => {
     ]
   }), {
     projectsBasePath: "/workspace/projects",
-    blurWebAppOverlays: false,
+    blurWebAppOverlays: true,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 240,
