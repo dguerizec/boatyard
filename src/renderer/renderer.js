@@ -7892,37 +7892,44 @@ function appendGroupedProjectBadges(projects, container) {
     ["working", 2],
     ["done", 1]
   ]);
-  const badgeSummaries = [];
+  const badgeSummaries = new Map();
 
   for (const project of projects) {
     const scratch = document.createElement("div");
     renderProjectNavBadges(project, scratch, { isActiveProject: false });
     for (const badge of scratch.querySelectorAll(".project-nav-badge")) {
       const stateName = [...badge.classList].find((className) => priority.has(className)) || "";
-      badgeSummaries.push({
+      const key = stateName || badge.textContent || badge.className;
+      const summary = badgeSummaries.get(key) || {
         className: badge.className,
         text: badge.textContent,
-        title: badge.title,
+        titles: [],
         stateName,
-        priority: priority.get(stateName) || 0
-      });
+        priority: priority.get(stateName) || 0,
+        count: 0
+      };
+      summary.count += 1;
+      if (badge.title || badge.textContent) {
+        summary.titles.push(badge.title || badge.textContent);
+      }
+      badgeSummaries.set(key, summary);
     }
   }
 
-  if (!badgeSummaries.length) {
+  if (!badgeSummaries.size) {
     return;
   }
 
-  const topPriority = Math.max(...badgeSummaries.map((badge) => badge.priority));
-  const selected = badgeSummaries.find((badge) => badge.priority === topPriority) || badgeSummaries[0];
-  const badge = document.createElement("span");
-  badge.className = selected.className;
-  badge.textContent = badgeSummaries.length > 1 ? `${selected.text} ${badgeSummaries.length}` : selected.text;
-  badge.title = badgeSummaries
-    .map((summary) => summary.title || summary.text)
-    .filter(Boolean)
-    .join("\n");
-  container.append(badge);
+  const summaries = [...badgeSummaries.values()]
+    .sort((left, right) => right.priority - left.priority || left.text.localeCompare(right.text));
+
+  for (const summary of summaries) {
+    const badge = document.createElement("span");
+    badge.className = summary.className;
+    badge.textContent = summary.count > 1 ? `${summary.text} ${summary.count}` : summary.text;
+    badge.title = summary.titles.join("\n");
+    container.append(badge);
+  }
 }
 
 async function setProjectGroupCollapsed(groupName, collapsed) {
