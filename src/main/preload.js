@@ -66,7 +66,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateWebAppAutofill: (key, enabled) => ipcRenderer.invoke("webapp:autofill:update", key, enabled),
   setVisibleWebApps: (keys) => ipcRenderer.invoke("webapp:set-visible", keys),
   hideWebApp: () => ipcRenderer.invoke("webapp:hide"),
-  freezeWebApps: () => ipcRenderer.invoke("webapp:freeze"),
+  freezeWebApps: (options) => ipcRenderer.invoke("webapp:freeze", options),
   restoreWebApps: () => ipcRenderer.invoke("webapp:restore"),
   onWebAppUrlChanged: (callback) => {
     const listener = (_event, payload) => callback(payload);

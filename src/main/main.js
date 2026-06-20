@@ -37,7 +37,8 @@ let updatePreparationPromise = null;
 const webAppViews = new Map();
 let activeWebAppKey = null;
 let visibleWebAppKeys = new Set();
-let webAppsFrozen = false;
+let allWebAppsFrozen = false;
+let frozenWebAppKeys = new Set();
 
 function getStorePath() {
   if (process.env.BOATYARD_STATE_PATH) {
@@ -1187,7 +1188,11 @@ function showWebApp({ key, url, bounds, autofillEnabled, restoreUrl = true }) {
   }
   webApp.bounds = normalizeWebAppBounds(bounds);
   webApp.view.setBounds(webApp.bounds);
-  webApp.view.setVisible(!webAppsFrozen);
+  webApp.view.setVisible(
+    visibleWebAppKeys.has(String(key)) &&
+    !allWebAppsFrozen &&
+    !frozenWebAppKeys.has(String(key))
+  );
   activeWebAppKey = String(key);
 
   if (webApp.url !== parsedUrl.toString()) {
@@ -1274,7 +1279,7 @@ function setVisibleWebApps(keys) {
   visibleWebAppKeys = new Set(Array.isArray(keys) ? keys.map(String) : []);
 
   for (const [key, item] of webAppViews) {
-    item.view.setVisible(!webAppsFrozen && visibleWebAppKeys.has(key));
+    item.view.setVisible(visibleWebAppKeys.has(key) && !allWebAppsFrozen && !frozenWebAppKeys.has(key));
   }
 
   activeWebAppKey = visibleWebAppKeys.size > 0 ? [...visibleWebAppKeys].at(-1) : null;
@@ -1283,6 +1288,8 @@ function setVisibleWebApps(keys) {
 function hideWebApp() {
   activeWebAppKey = null;
   visibleWebAppKeys = new Set();
+  allWebAppsFrozen = false;
+  frozenWebAppKeys = new Set();
 
   for (const item of webAppViews.values()) {
     item.view.setVisible(false);
@@ -1329,19 +1336,36 @@ async function captureWebAppForFreeze(key) {
   }
 }
 
-async function freezeWebApps() {
-  webAppsFrozen = true;
-  const captures = (await Promise.all([...visibleWebAppKeys].map(captureWebAppForFreeze))).filter(Boolean);
+function getWebAppFreezeKeys(options = {}) {
+  const hasKeyFilter = Object.prototype.hasOwnProperty.call(options || {}, "keys");
+  const requestedKeys = Array.isArray(options?.keys)
+    ? options.keys.map(String).filter(Boolean)
+    : [];
 
-  for (const item of webAppViews.values()) {
-    item.view.setVisible(false);
+  if (!hasKeyFilter) {
+    return [...visibleWebAppKeys];
+  }
+
+  return requestedKeys.filter((key) => visibleWebAppKeys.has(key));
+}
+
+async function freezeWebApps(options = {}) {
+  const hasKeyFilter = Object.prototype.hasOwnProperty.call(options || {}, "keys");
+  const freezeKeys = getWebAppFreezeKeys(options);
+  allWebAppsFrozen = !hasKeyFilter;
+  frozenWebAppKeys = new Set([...frozenWebAppKeys, ...freezeKeys]);
+  const captures = (await Promise.all(freezeKeys.map(captureWebAppForFreeze))).filter(Boolean);
+
+  for (const key of freezeKeys) {
+    webAppViews.get(key)?.view.setVisible(false);
   }
 
   return captures;
 }
 
 function restoreWebApps() {
-  webAppsFrozen = false;
+  allWebAppsFrozen = false;
+  frozenWebAppKeys = new Set();
 
   for (const [key, item] of webAppViews) {
     item.view.setVisible(visibleWebAppKeys.has(key));
@@ -1363,7 +1387,8 @@ function destroyWebAppViews() {
   webAppViews.clear();
   activeWebAppKey = null;
   visibleWebAppKeys = new Set();
-  webAppsFrozen = false;
+  allWebAppsFrozen = false;
+  frozenWebAppKeys = new Set();
 }
 
 function registerIpcHandlers() {
@@ -1590,8 +1615,8 @@ function registerIpcHandlers() {
     hideWebApp();
   });
 
-  ipcMain.handle("webapp:freeze", () => {
-    return freezeWebApps();
+  ipcMain.handle("webapp:freeze", (_event, options) => {
+    return freezeWebApps(options);
   });
 
   ipcMain.handle("webapp:restore", () => {

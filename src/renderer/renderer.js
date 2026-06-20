@@ -3123,10 +3123,10 @@ async function openWebAppOpenUrlDialog(payload = {}) {
   const sourceEntry = getVisibleWebAppEntryByKey(payload.sourceWebAppKey);
   const sourceWebApp = sourceEntry?.webApp || null;
   const sourceBounds = normalizePayloadBounds(payload.sourceBounds) || getWebAppHostBounds(sourceEntry?.host) || null;
-  await freezeWebAppsForOverlay();
 
   const dialog = document.createElement("dialog");
   dialog.className = "plugin-settings-dialog webapp-open-dialog";
+  dialog.style.visibility = "hidden";
   if (sourceBounds) {
     dialog.classList.add("anchored");
     dialog.style.left = `${Math.round(sourceBounds.x + (sourceBounds.width / 2))}px`;
@@ -3260,6 +3260,11 @@ async function openWebAppOpenUrlDialog(payload = {}) {
   });
   document.body.append(dialog);
   dialog.showModal();
+  await nextAnimationFrame();
+  await freezeWebAppsForRect(dialog.getBoundingClientRect(), {
+    margin: 16
+  });
+  dialog.style.visibility = "";
 }
 
 function normalizeAddressInput(rawUrl) {
@@ -3515,7 +3520,9 @@ async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWe
   closeWebAppTabMenu();
 
   const rect = button.getBoundingClientRect();
-  await freezeWebAppsForOverlay();
+  await freezeWebAppsForOverlay({
+    keys: selectedWebApp?.key ? [selectedWebApp.key] : []
+  });
 
   const menu = document.createElement("div");
   menu.className = "webapp-tab-menu";
@@ -3609,7 +3616,9 @@ async function openWebAppHomeMenu(event, project, paneNode, selectedWebApp) {
   event.preventDefault();
   const sourceButton = event.currentTarget;
   closeWebAppTabMenu();
-  await freezeWebAppsForOverlay();
+  await freezeWebAppsForOverlay({
+    keys: selectedWebApp?.key ? [selectedWebApp.key] : []
+  });
 
   const menu = document.createElement("div");
   menu.className = "webapp-tab-menu";
@@ -6720,6 +6729,37 @@ function normalizePayloadBounds(bounds) {
   };
 }
 
+function inflateRect(rect, margin = 0) {
+  const value = Math.max(0, Number(margin) || 0);
+  return {
+    x: rect.x - value,
+    y: rect.y - value,
+    width: rect.width + value * 2,
+    height: rect.height + value * 2
+  };
+}
+
+function rectsIntersect(left, right) {
+  return left.x < right.x + right.width &&
+    left.x + left.width > right.x &&
+    left.y < right.y + right.height &&
+    left.y + left.height > right.y;
+}
+
+function getVisibleWebAppKeysIntersectingRect(rect, { margin = 0 } = {}) {
+  const targetRect = inflateRect(rect, margin);
+  const keys = [];
+
+  for (const { webApp, host } of visibleWebAppHosts.values()) {
+    const hostBounds = getWebAppHostBounds(host);
+    if (hostBounds && rectsIntersect(targetRect, hostBounds)) {
+      keys.push(webApp.key);
+    }
+  }
+
+  return keys;
+}
+
 async function syncWebAppView() {
   webAppBoundsFrame = null;
 
@@ -6800,13 +6840,23 @@ function renderFrozenWebApps(captures) {
   frozenWebAppLayer = layer;
 }
 
-async function freezeWebAppsForOverlay() {
+async function freezeWebAppsForOverlay(options = undefined) {
   try {
-    const captures = await window.boatyard.freezeWebApps();
+    const captures = await window.boatyard.freezeWebApps(options);
     renderFrozenWebApps(captures);
   } catch (error) {
     console.error("Could not freeze webapps:", error);
   }
+}
+
+async function freezeWebAppsForKeys(keys) {
+  const uniqueKeys = [...new Set(keys.map(String).filter(Boolean))];
+  await freezeWebAppsForOverlay({ keys: uniqueKeys });
+}
+
+async function freezeWebAppsForRect(rect, { margin = 0 } = {}) {
+  const keys = getVisibleWebAppKeysIntersectingRect(rect, { margin });
+  await freezeWebAppsForKeys(keys);
 }
 
 async function restoreWebAppsAfterOverlay() {
@@ -6948,7 +6998,7 @@ async function openOnboardingPaneDropdown() {
   const paneId = pane?.dataset.paneId;
   const paneNode = paneId ? findPaneNode(getProjectPaneLayout(project), paneId) : null;
   if (!button || !paneNode) {
-    return;
+    return [];
   }
 
   const webApps = getProjectWebApps(project, paneNode.id);
@@ -6956,6 +7006,7 @@ async function openOnboardingPaneDropdown() {
   button.setAttribute("aria-expanded", "true");
   await openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps);
   document.querySelector(".webapp-tab-menu-item[data-web-app-id=\"manual\"]")?.focus();
+  return selectedWebApp?.key ? [selectedWebApp.key] : [];
 }
 
 async function restoreOnboardingGlobalLayout(layout) {
@@ -7150,9 +7201,7 @@ async function openOnboardingTour(options = {}) {
     if (dialogClosed) {
       return;
     }
-    if (!isPaneDropdownStep) {
-      await freezeWebAppsForOverlay();
-    }
+    await freezeWebAppsForOverlay();
     dialog.style.visibility = "";
     spotlight.hidden = false;
 
