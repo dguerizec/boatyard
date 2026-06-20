@@ -84,6 +84,7 @@ async function resizeTmuxWindow(windowId, cols, rows) {
 async function configureTmuxSession(session) {
   await runTmux(["set-option", "-t", session, "window-size", "latest"]);
   await runTmux(["set-option", "-t", session, "mouse", "on"]);
+  await runTmux(["set-option", "-t", session, "status", "off"]);
 }
 
 async function destroyTmuxSession(session) {
