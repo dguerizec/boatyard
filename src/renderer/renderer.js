@@ -111,6 +111,7 @@ let lastUpdateCheckResult = null;
 let lastUpdateCheckedAt = null;
 let updatePollStarted = false;
 let draggedProjectId = null;
+let draggedProjectGroupName = null;
 let draggedWidgetId = null;
 let draggedWidgetPointerOffset = { x: 0, y: 0 };
 let onboardingDemoProjectVisible = false;
@@ -202,6 +203,37 @@ function createToolIcon(name) {
 
 function getProjects() {
   return state.projects;
+}
+
+function getProjectGroups() {
+  return [...new Set(getProjects()
+    .map((project) => String(project.group || "").trim())
+    .filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+}
+
+function getCollapsedProjectGroups() {
+  return new Set(Array.isArray(state.navigation?.collapsedProjectGroups)
+    ? state.navigation.collapsedProjectGroups
+    : []);
+}
+
+function getProjectGroupsByName(projects = getProjects()) {
+  const groups = new Map();
+
+  for (const project of projects) {
+    const groupName = String(project.group || "").trim();
+    if (!groupName) {
+      continue;
+    }
+
+    if (!groups.has(groupName)) {
+      groups.set(groupName, []);
+    }
+    groups.get(groupName).push(project);
+  }
+
+  return groups;
 }
 
 function getSettings() {
@@ -341,7 +373,8 @@ function persistNavigation() {
 
   window.boatyard.updateNavigation({
     view: currentView,
-    projectId: currentProjectId
+    projectId: currentProjectId,
+    collapsedProjectGroups: [...getCollapsedProjectGroups()]
   }).catch((error) => {
     console.error("Could not persist navigation:", error);
   });
@@ -5525,6 +5558,26 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   slugInput.value = initialValues.slug || "";
   slugLabel.append(slugInput);
 
+  const groupLabel = document.createElement("label");
+  groupLabel.textContent = "Group";
+
+  const groupInput = document.createElement("input");
+  groupInput.name = "group";
+  groupInput.type = "text";
+  groupInput.autocomplete = "off";
+  groupInput.placeholder = "Team, product, or workspace";
+  groupInput.value = initialValues.group || "";
+
+  const groupOptions = document.createElement("datalist");
+  groupOptions.id = `project-group-options-${initialValues.id || "new"}`;
+  for (const groupName of getProjectGroups()) {
+    const option = document.createElement("option");
+    option.value = groupName;
+    groupOptions.append(option);
+  }
+  groupInput.setAttribute("list", groupOptions.id);
+  groupLabel.append(groupInput, groupOptions);
+
   const sourcePathLabel = document.createElement("label");
   sourcePathLabel.textContent = "Source path";
 
@@ -5601,6 +5654,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
   const coreInputs = {
     name: nameInput,
     slug: slugInput,
+    group: groupInput,
     sourcePath: sourcePathInput,
     gitUrl: gitUrlInput,
     repoUrl: repoUrlInput,
@@ -5669,6 +5723,15 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       source: "user"
     });
 
+  });
+
+  groupInput.addEventListener("input", () => {
+    markCoreFieldEdited("group");
+    emitProjectFormEvent("boatyard.projectForm.coreFieldChanged", {
+      field: "group",
+      value: groupInput.value,
+      source: "user"
+    });
   });
 
   gitUrlInput.addEventListener("input", () => {
@@ -5812,6 +5875,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
     sourcePathLabel,
     nameLabel,
     slugLabel,
+    groupLabel,
     gitUrlLabel,
     repoUrlLabel,
     devBranchLabel,
@@ -5830,6 +5894,7 @@ function createProjectFormView({ title, submitLabel, initialValues, onSubmit, on
       await onSubmit({
         name: nameInput.value,
         slug: slugInput.value,
+        group: groupInput.value,
         sourcePath: sourcePathInput.value,
         gitUrl: gitUrlInput.value,
         repoUrl: repoUrlInput.value,
@@ -6591,6 +6656,7 @@ function renderCreateProjectPage() {
       state = await window.boatyard.addProject({
         name: values.name,
         slug: values.slug,
+        group: values.group,
         sourcePath: values.sourcePath,
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
@@ -6627,6 +6693,7 @@ function renderEditProjectPage(project) {
       state = await window.boatyard.updateProject(project.id, {
         name: values.name,
         slug: values.slug,
+        group: values.group,
         sourcePath: values.sourcePath,
         gitUrl: values.gitUrl,
         repoUrl: values.repoUrl,
@@ -7506,6 +7573,246 @@ function restoreReturnView() {
   selectGlobal();
 }
 
+function createProjectNavRow(project, options = {}) {
+  const isActiveProject =
+    (currentView === "project" || currentView === "project-edit") && project.id === currentProjectId;
+  const row = document.createElement("div");
+  row.className = "project-nav-row";
+  row.classList.toggle("project-nav-row-grouped", options.grouped === true);
+  row.classList.toggle("active", isActiveProject);
+  row.draggable = true;
+  row.dataset.projectId = project.id;
+  row.addEventListener("dragstart", (event) => {
+    draggedProjectId = project.id;
+    draggedProjectGroupName = null;
+    row.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", project.id);
+  });
+  row.addEventListener("dragend", () => {
+    draggedProjectId = null;
+    draggedProjectGroupName = null;
+    row.classList.remove("dragging");
+    for (const item of projectList.querySelectorAll(".project-nav-row, .project-group-row")) {
+      item.classList.remove("drag-over");
+    }
+  });
+  row.addEventListener("dragover", (event) => {
+    if (draggedProjectGroupName && draggedProjectGroupName === String(project.group || "").trim()) {
+      return;
+    }
+
+    if (!draggedProjectGroupName && (!draggedProjectId || draggedProjectId === project.id)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    row.classList.add("drag-over");
+  });
+  row.addEventListener("dragleave", () => {
+    row.classList.remove("drag-over");
+  });
+  row.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    row.classList.remove("drag-over");
+
+    if (draggedProjectGroupName) {
+      await reorderProjectGroupBeforeProject(draggedProjectGroupName, project.id);
+      return;
+    }
+
+    const sourceId = event.dataTransfer.getData("text/plain") || draggedProjectId;
+    if (!sourceId || sourceId === project.id) {
+      return;
+    }
+    await reorderProjects(sourceId, project.id);
+  });
+
+  const button = document.createElement("button");
+  button.className = "nav-item";
+  button.type = "button";
+  button.classList.toggle("active", isActiveProject);
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "project-nav-title";
+  const projectName = document.createElement("span");
+  projectName.className = "project-nav-name";
+  projectName.textContent = project.name;
+  titleRow.append(projectName);
+
+  renderProjectNavBadges(project, titleRow, { isActiveProject });
+
+  const projectSlug = document.createElement("small");
+  projectSlug.textContent = project.slug;
+  button.append(titleRow, projectSlug);
+  button.addEventListener("click", () => selectProject(project.id));
+  row.append(button);
+
+  const settingsButton = document.createElement("button");
+  settingsButton.className = "project-settings-button";
+  settingsButton.type = "button";
+  settingsButton.title = "Project settings";
+  settingsButton.setAttribute("aria-label", `${project.name} settings`);
+  settingsButton.textContent = "⚙";
+  settingsButton.addEventListener("click", () => selectEditProject(project.id));
+  row.append(settingsButton);
+
+  return row;
+}
+
+function appendGroupedProjectBadges(projects, container) {
+  const priority = new Map([
+    ["input", 3],
+    ["working", 2],
+    ["done", 1]
+  ]);
+  const badgeSummaries = [];
+
+  for (const project of projects) {
+    const scratch = document.createElement("div");
+    renderProjectNavBadges(project, scratch, { isActiveProject: false });
+    for (const badge of scratch.querySelectorAll(".project-nav-badge")) {
+      const stateName = [...badge.classList].find((className) => priority.has(className)) || "";
+      badgeSummaries.push({
+        className: badge.className,
+        text: badge.textContent,
+        title: badge.title,
+        stateName,
+        priority: priority.get(stateName) || 0
+      });
+    }
+  }
+
+  if (!badgeSummaries.length) {
+    return;
+  }
+
+  const topPriority = Math.max(...badgeSummaries.map((badge) => badge.priority));
+  const selected = badgeSummaries.find((badge) => badge.priority === topPriority) || badgeSummaries[0];
+  const badge = document.createElement("span");
+  badge.className = selected.className;
+  badge.textContent = badgeSummaries.length > 1 ? `${selected.text} ${badgeSummaries.length}` : selected.text;
+  badge.title = badgeSummaries
+    .map((summary) => summary.title || summary.text)
+    .filter(Boolean)
+    .join("\n");
+  container.append(badge);
+}
+
+async function setProjectGroupCollapsed(groupName, collapsed) {
+  const collapsedGroups = getCollapsedProjectGroups();
+  if (collapsed) {
+    collapsedGroups.add(groupName);
+  } else {
+    collapsedGroups.delete(groupName);
+  }
+
+  const navigation = await window.boatyard.updateNavigation({
+    view: currentView,
+    projectId: currentProjectId,
+    collapsedProjectGroups: [...collapsedGroups]
+  });
+  state = {
+    ...state,
+    navigation
+  };
+  renderProjectList();
+}
+
+function createProjectGroupRow(groupName, projects, collapsed) {
+  const hasActiveProject = projects.some((project) =>
+    (currentView === "project" || currentView === "project-edit") && project.id === currentProjectId
+  );
+  const row = document.createElement("div");
+  row.className = "project-group-row";
+  row.classList.toggle("collapsed", collapsed);
+  row.classList.toggle("active", hasActiveProject);
+  row.draggable = true;
+  row.dataset.projectGroup = groupName;
+  row.addEventListener("dragstart", (event) => {
+    draggedProjectId = null;
+    draggedProjectGroupName = groupName;
+    row.classList.add("dragging");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `group:${groupName}`);
+  });
+  row.addEventListener("dragend", () => {
+    draggedProjectId = null;
+    draggedProjectGroupName = null;
+    row.classList.remove("dragging");
+    for (const item of projectList.querySelectorAll(".project-nav-row, .project-group-row")) {
+      item.classList.remove("drag-over");
+    }
+  });
+  row.addEventListener("dragover", (event) => {
+    if (draggedProjectGroupName === groupName) {
+      return;
+    }
+
+    if (!draggedProjectGroupName && (!draggedProjectId || projects.some((project) => project.id === draggedProjectId))) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    row.classList.add("drag-over");
+  });
+  row.addEventListener("dragleave", () => {
+    row.classList.remove("drag-over");
+  });
+  row.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    row.classList.remove("drag-over");
+
+    if (draggedProjectGroupName) {
+      await reorderProjectGroupBeforeGroup(draggedProjectGroupName, groupName);
+      return;
+    }
+
+    const sourceId = draggedProjectId || event.dataTransfer.getData("text/plain");
+    if (!sourceId || projects.some((project) => project.id === sourceId)) {
+      return;
+    }
+    await reorderProjects(sourceId, projects[0]?.id);
+  });
+
+  const button = document.createElement("button");
+  button.className = "project-group-button nav-item";
+  button.type = "button";
+  button.classList.toggle("active", hasActiveProject);
+  button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+
+  const titleRow = document.createElement("div");
+  titleRow.className = "project-nav-title";
+
+  const chevron = document.createElement("span");
+  chevron.className = "project-group-chevron";
+  chevron.textContent = collapsed ? ">" : "v";
+  chevron.setAttribute("aria-hidden", "true");
+
+  const groupLabel = document.createElement("span");
+  groupLabel.className = "project-nav-name";
+  groupLabel.textContent = groupName;
+
+  titleRow.append(chevron, groupLabel);
+  if (collapsed) {
+    appendGroupedProjectBadges(projects, titleRow);
+  }
+
+  const groupSummary = document.createElement("small");
+  groupSummary.textContent = `${projects.length} ${projects.length === 1 ? "project" : "projects"}`;
+
+  button.append(titleRow, groupSummary);
+  button.addEventListener("click", () => {
+    setProjectGroupCollapsed(groupName, !collapsed).catch((error) => {
+      console.error("Could not update project group collapse state:", error);
+    });
+  });
+  row.append(button);
+  return row;
+}
+
 function renderProjectList() {
   const projects = getProjects();
   projectCount.textContent = String(projects.length);
@@ -7527,81 +7834,31 @@ function renderProjectList() {
     return;
   }
 
+  const groups = getProjectGroupsByName(projects);
+  const renderedGroups = new Set();
+  const collapsedGroups = getCollapsedProjectGroups();
+
   for (const project of projects) {
-    const isActiveProject =
-      (currentView === "project" || currentView === "project-edit") && project.id === currentProjectId;
-    const row = document.createElement("div");
-    row.className = "project-nav-row";
-    row.classList.toggle("active", isActiveProject);
-    row.draggable = true;
-    row.dataset.projectId = project.id;
-    row.addEventListener("dragstart", (event) => {
-      draggedProjectId = project.id;
-      row.classList.add("dragging");
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", project.id);
-    });
-    row.addEventListener("dragend", () => {
-      draggedProjectId = null;
-      row.classList.remove("dragging");
-      for (const item of projectList.querySelectorAll(".project-nav-row")) {
-        item.classList.remove("drag-over");
-      }
-    });
-    row.addEventListener("dragover", (event) => {
-      if (!draggedProjectId || draggedProjectId === project.id) {
-        return;
+    const groupName = String(project.group || "").trim();
+    const groupProjects = groupName ? groups.get(groupName) || [] : [];
+
+    if (groupName && groupProjects.length > 0) {
+      if (renderedGroups.has(groupName)) {
+        continue;
       }
 
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "move";
-      row.classList.add("drag-over");
-    });
-    row.addEventListener("dragleave", () => {
-      row.classList.remove("drag-over");
-    });
-    row.addEventListener("drop", async (event) => {
-      event.preventDefault();
-      row.classList.remove("drag-over");
-      const sourceId = event.dataTransfer.getData("text/plain") || draggedProjectId;
-
-      if (!sourceId || sourceId === project.id) {
-        return;
+      renderedGroups.add(groupName);
+      const collapsed = collapsedGroups.has(groupName);
+      projectList.append(createProjectGroupRow(groupName, groupProjects, collapsed));
+      if (!collapsed) {
+        for (const groupedProject of groupProjects) {
+          projectList.append(createProjectNavRow(groupedProject, { grouped: true }));
+        }
       }
+      continue;
+    }
 
-      await reorderProjects(sourceId, project.id);
-    });
-
-    const button = document.createElement("button");
-    button.className = "nav-item";
-    button.type = "button";
-    button.classList.toggle("active", isActiveProject);
-
-    const titleRow = document.createElement("div");
-    titleRow.className = "project-nav-title";
-    const projectName = document.createElement("span");
-    projectName.className = "project-nav-name";
-    projectName.textContent = project.name;
-    titleRow.append(projectName);
-
-    renderProjectNavBadges(project, titleRow, { isActiveProject });
-
-    const projectSlug = document.createElement("small");
-    projectSlug.textContent = project.slug;
-    button.append(titleRow, projectSlug);
-    button.addEventListener("click", () => selectProject(project.id));
-    row.append(button);
-
-    const settingsButton = document.createElement("button");
-    settingsButton.className = "project-settings-button";
-    settingsButton.type = "button";
-    settingsButton.title = "Project settings";
-    settingsButton.setAttribute("aria-label", `${project.name} settings`);
-    settingsButton.textContent = "⚙";
-    settingsButton.addEventListener("click", () => selectEditProject(project.id));
-    row.append(settingsButton);
-
-    projectList.append(row);
+    projectList.append(createProjectNavRow(project));
   }
 
   if (onboardingDemoProjectVisible) {
@@ -7623,6 +7880,46 @@ async function reorderProjects(sourceId, targetId) {
   reordered.splice(targetIndex, 0, moved);
   state = await window.boatyard.reorderProjects(reordered.map((project) => project.id));
   render();
+}
+
+async function reorderProjectGroup(sourceGroupName, targetIndexResolver) {
+  const groupName = String(sourceGroupName || "").trim();
+  if (!groupName) {
+    return;
+  }
+
+  const projects = getProjects();
+  const moved = projects.filter((project) => String(project.group || "").trim() === groupName);
+  if (!moved.length) {
+    return;
+  }
+
+  const remaining = projects.filter((project) => String(project.group || "").trim() !== groupName);
+  const targetIndex = targetIndexResolver(remaining);
+  if (targetIndex < 0) {
+    return;
+  }
+
+  const reordered = [...remaining];
+  reordered.splice(targetIndex, 0, ...moved);
+  state = await window.boatyard.reorderProjects(reordered.map((project) => project.id));
+  render();
+}
+
+async function reorderProjectGroupBeforeProject(sourceGroupName, targetProjectId) {
+  await reorderProjectGroup(sourceGroupName, (projects) =>
+    projects.findIndex((project) => project.id === targetProjectId)
+  );
+}
+
+async function reorderProjectGroupBeforeGroup(sourceGroupName, targetGroupName) {
+  if (sourceGroupName === targetGroupName) {
+    return;
+  }
+
+  await reorderProjectGroup(sourceGroupName, (projects) =>
+    projects.findIndex((project) => String(project.group || "").trim() === targetGroupName)
+  );
 }
 
 function render() {

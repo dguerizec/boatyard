@@ -214,16 +214,45 @@ button {
 }
 
 .global-nav-row,
-.project-nav-row {
+.project-nav-row,
+.project-group-row {
   position: relative;
   min-width: 0;
 }
 
-.project-nav-row.dragging {
+.project-group-row + .project-nav-row-grouped,
+.project-nav-row-grouped + .project-nav-row-grouped {
+  margin-top: -3px;
+}
+
+.project-nav-row-grouped {
+  padding-left: 14px;
+}
+
+.project-group-button {
+  padding-right: 12px;
+}
+
+.project-group-chevron {
+  flex: 0 0 auto;
+  width: 10px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.project-group-row.active .project-group-chevron {
+  color: var(--accent);
+}
+
+.project-nav-row.dragging,
+.project-group-row.dragging {
   opacity: 0.45;
 }
 
-.project-nav-row.drag-over .nav-item {
+.project-nav-row.drag-over .nav-item,
+.project-group-row.drag-over .nav-item {
   border-color: rgba(65, 184, 131, 0.85);
   box-shadow: inset 0 0 0 1px rgba(65, 184, 131, 0.35);
 }

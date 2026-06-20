@@ -40,7 +40,8 @@ function createDefaultState() {
     },
     navigation: {
       view: "global",
-      projectId: null
+      projectId: null,
+      collapsedProjectGroups: []
     },
     webApps: {},
     passwordVault: {},
@@ -265,10 +266,14 @@ function normalizeNavigationState(navigation = {}) {
     ? source.projectId.trim()
     : null;
   const isProjectView = view.startsWith("project");
+  const collapsedProjectGroups = Array.isArray(source.collapsedProjectGroups)
+    ? [...new Set(source.collapsedProjectGroups.map(normalizeText).filter(Boolean))]
+    : [];
 
   return {
     view: projectId || !isProjectView ? view : "global",
-    projectId: isProjectView ? projectId : null
+    projectId: isProjectView ? projectId : null,
+    collapsedProjectGroups
   };
 }
 
@@ -863,6 +868,7 @@ function normalizeProject(project, index = 0) {
     id,
     slug,
     name,
+    group: normalizeText(project.group),
     sourcePath: normalizeText(project.sourcePath),
     gitUrl,
     repoUrl,

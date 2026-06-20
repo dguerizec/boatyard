@@ -59,6 +59,7 @@ test("normalizeProject derives project tool defaults", () => {
     id: "project-id",
     slug: "boatyard",
     name: "Boatyard",
+    group: "",
     sourcePath: "/tmp/boatyard",
     gitUrl: "git@github.com:owner/repo.git",
     repoUrl: "https://github.com/owner/repo",
@@ -298,27 +299,32 @@ test("normalizePasswordVault keeps encrypted credentials by origin", () => {
 test("normalizeNavigationState keeps restorable app pages", () => {
   assert.deepEqual(normalizeNavigationState(), {
     view: "global",
-    projectId: null
+    projectId: null,
+    collapsedProjectGroups: []
   });
   assert.deepEqual(normalizeNavigationState({
     view: "project",
-    projectId: " project-id "
+    projectId: " project-id ",
+    collapsedProjectGroups: ["Raven"]
   }), {
     view: "project",
-    projectId: "project-id"
+    projectId: "project-id",
+    collapsedProjectGroups: ["Raven"]
   });
   assert.deepEqual(normalizeNavigationState({
     view: "project-create",
     projectId: "project-id"
   }), {
     view: "global",
-    projectId: null
+    projectId: null,
+    collapsedProjectGroups: []
   });
   assert.deepEqual(normalizeNavigationState({
     view: "project-edit"
   }), {
     view: "global",
-    projectId: null
+    projectId: null,
+    collapsedProjectGroups: []
   });
 });
 
@@ -575,11 +581,13 @@ test("ProjectStore persists configured projects", () => {
   store.load();
   const state = store.addProject({
     name: "Status",
+    group: "Ops",
     url: "status.example.com"
   });
 
   assert.equal(state.projects.length, 1);
   assert.equal(state.projects[0].name, "Status");
+  assert.equal(state.projects[0].group, "Ops");
   assert.equal(state.projects[0].slug, "status");
   assert.equal(state.projects[0].previewUrl, "https://status.example.com/");
 
@@ -694,12 +702,14 @@ test("ProjectStore persists navigation and clears removed active projects", () =
   const projectId = state.projects[0].id;
   const navigation = store.updateNavigation({
     view: "project",
-    projectId
+    projectId,
+    collapsedProjectGroups: ["Raven", "Raven", "  Tools  ", ""]
   });
 
   assert.deepEqual(navigation, {
     view: "project",
-    projectId
+    projectId,
+    collapsedProjectGroups: ["Raven", "Tools"]
   });
 
   const reloaded = new ProjectStore(filePath);
@@ -708,7 +718,8 @@ test("ProjectStore persists navigation and clears removed active projects", () =
   const removed = reloaded.removeProject(projectId);
   assert.deepEqual(removed.navigation, {
     view: "global",
-    projectId: null
+    projectId: null,
+    collapsedProjectGroups: []
   });
 });
 
