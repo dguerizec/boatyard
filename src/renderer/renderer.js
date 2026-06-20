@@ -7685,6 +7685,9 @@ function createProjectNavRow(project, options = {}) {
     }
     await moveProjectBeforeProject(sourceId, project.id);
   });
+  row.addEventListener("contextmenu", (event) => {
+    openProjectContextMenu(event, project);
+  });
 
   const button = document.createElement("button");
   button.className = "nav-item";
@@ -8137,6 +8140,100 @@ async function explodeProjectGroup(groupName) {
   render();
 }
 
+async function createProjectGroupForProject(project, groupName) {
+  const nextGroup = String(groupName || "").trim();
+  if (!project || !nextGroup) {
+    throw new Error("Group name is required.");
+  }
+
+  if (getProjectGroups().includes(nextGroup)) {
+    throw new Error("This group already exists.");
+  }
+
+  state = await window.boatyard.updateProject(project.id, {
+    group: nextGroup
+  });
+  render();
+}
+
+function openProjectCreateGroupDialog(project) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "plugin-settings-dialog";
+
+  const form = document.createElement("form");
+  form.className = "plugin-settings-dialog-panel";
+
+  const header = document.createElement("header");
+  header.className = "plugin-settings-dialog-header";
+
+  const title = document.createElement("h3");
+  title.textContent = "Create group";
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "icon-button";
+  closeButton.type = "button";
+  closeButton.title = "Close";
+  closeButton.setAttribute("aria-label", "Close");
+  closeButton.textContent = "X";
+  closeButton.addEventListener("click", () => dialog.close());
+  header.append(title, closeButton);
+
+  const label = document.createElement("label");
+  label.textContent = `Group for ${project.name}`;
+
+  const input = document.createElement("input");
+  input.name = "projectGroup";
+  input.type = "text";
+  input.autocomplete = "off";
+  input.placeholder = "Group name";
+  applyFormControl(input);
+  label.append(input);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const cancelButton = document.createElement("button");
+  cancelButton.className = "secondary-button";
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel";
+  cancelButton.addEventListener("click", () => dialog.close());
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Create group";
+
+  actions.append(cancelButton, submitButton);
+  form.append(header, label, error, actions);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+    submitButton.disabled = true;
+
+    try {
+      await createProjectGroupForProject(project, input.value);
+      dialog.close();
+    } catch (createError) {
+      error.textContent = createError.message;
+      error.hidden = false;
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+
+  dialog.append(form);
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  input.focus();
+}
+
 function openProjectGroupRenameDialog(groupName) {
   const dialog = document.createElement("dialog");
   dialog.className = "plugin-settings-dialog";
@@ -8351,6 +8448,59 @@ function openProjectGroupContextMenu(event, groupName, projects) {
   });
 
   menu.append(renameItem, explodeItem);
+  document.body.append(menu);
+  openProjectGroupMenu = menu;
+
+  function onPointerDown(pointerEvent) {
+    if (!menu.contains(pointerEvent.target)) {
+      closeProjectGroupMenu();
+    }
+  }
+
+  function onKeyDown(keyEvent) {
+    if (keyEvent.key === "Escape") {
+      closeProjectGroupMenu();
+    }
+  }
+
+  menu.cleanup = () => {
+    document.removeEventListener("pointerdown", onPointerDown);
+    document.removeEventListener("keydown", onKeyDown);
+  };
+
+  setTimeout(() => {
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+  }, 0);
+
+  menu.querySelector("button")?.focus();
+}
+
+function openProjectContextMenu(event, project) {
+  event.preventDefault();
+  closeProjectGroupMenu();
+
+  const menu = document.createElement("div");
+  menu.className = "webapp-tab-menu project-group-context-menu";
+  menu.setAttribute("role", "menu");
+
+  const menuWidth = 220;
+  const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
+  const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 52));
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+
+  const createGroupItem = document.createElement("button");
+  createGroupItem.className = "webapp-tab-menu-item";
+  createGroupItem.type = "button";
+  createGroupItem.setAttribute("role", "menuitem");
+  createGroupItem.textContent = "Create group";
+  createGroupItem.addEventListener("click", () => {
+    closeProjectGroupMenu();
+    openProjectCreateGroupDialog(project);
+  });
+
+  menu.append(createGroupItem);
   document.body.append(menu);
   openProjectGroupMenu = menu;
 
