@@ -1,6 +1,47 @@
 {
-  "generatedForVersion": "0.4.5",
+  "generatedForVersion": "0.5.0",
   "releases": [
+    {
+      "version": "0.5.0",
+      "date": "2026-06-20",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Changelog history",
+          "body": "The update panel now includes a Changelog button for reviewing release notes from inside Boatyard."
+        },
+        {
+          "category": "Changed",
+          "title": "Terminal display",
+          "body": "Embedded terminals now hide the tmux status bar so the terminal area stays cleaner."
+        },
+        {
+          "category": "Changed",
+          "title": "Web app overlays",
+          "body": "Overlay blur is now off by default, keeping web apps easier to read when dialogs or menus appear."
+        },
+        {
+          "category": "Changed",
+          "title": "Update status",
+          "body": "Update checks now show clearer checked-at timestamps and keep the latest check result visible in the update panel."
+        },
+        {
+          "category": "Fixed",
+          "title": "Terminal rendering stability",
+          "body": "Terminal panes now resize and refresh more reliably, reducing stale layouts and delayed tab updates."
+        },
+        {
+          "category": "Fixed",
+          "title": "Overlay responsiveness",
+          "body": "Web apps are now frozen only when an overlay actually covers them, avoiding unnecessary interruptions in other panes."
+        },
+        {
+          "category": "Fixed",
+          "title": "What's new tracking",
+          "body": "Post-update release notes now use the stored previous app version instead of relying on restart environment state."
+        }
+      ]
+    },
     {
       "version": "0.4.5",
       "date": "2026-06-20",
