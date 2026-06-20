@@ -104,6 +104,7 @@ let nextPaneId = 1;
 let frozenWebAppLayer = null;
 let openWebAppTabMenu = null;
 let openWidgetAddMenu = null;
+let openProjectGroupMenu = null;
 let pierWorkloadPaneRefreshFrame = null;
 let preparedUpdate = null;
 let activeUpdateCardUpdater = null;
@@ -381,6 +382,10 @@ function persistNavigation() {
 }
 
 function setCurrentView(view, projectId = null, { persist = true } = {}) {
+  if (view !== currentView || projectId !== currentProjectId) {
+    closeProjectGroupMenu();
+  }
+
   currentView = view;
   currentProjectId = projectId;
 
@@ -2502,6 +2507,16 @@ function closeWidgetAddMenu() {
   openWidgetAddMenu = null;
 }
 
+function closeProjectGroupMenu() {
+  if (!openProjectGroupMenu) {
+    return;
+  }
+
+  openProjectGroupMenu.cleanup?.();
+  openProjectGroupMenu.remove();
+  openProjectGroupMenu = null;
+}
+
 function openWidgetAddMenuFromButton(button, project, layout, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
   closeWidgetAddMenu();
 
@@ -4170,6 +4185,7 @@ function hydratePaneLayoutSelections(node) {
 function renderGlobalDashboard() {
   const globalWorkspace = getGlobalWorkspace();
   closeWidgetAddMenu();
+  closeProjectGroupMenu();
   visibleWebAppHosts = new Map();
   workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Global";
@@ -4193,6 +4209,7 @@ function renderGlobalPaneArea() {
 
   const globalWorkspace = getGlobalWorkspace();
   closeWebAppTabMenu();
+  closeProjectGroupMenu();
   visibleWebAppHosts = new Map();
   const paneLayoutElement = createPaneLayout(globalWorkspace, getProjectPaneLayout(globalWorkspace));
   const currentPaneLayoutElement = dashboardGrid.lastElementChild;
@@ -7731,6 +7748,9 @@ function createProjectGroupRow(groupName, projects, collapsed) {
   row.draggable = true;
   row.dataset.projectGroup = groupName;
   attachProjectGroupDragHandlers(row, groupName, projects);
+  row.addEventListener("contextmenu", (event) => {
+    openProjectGroupContextMenu(event, groupName, projects);
+  });
 
   const button = document.createElement("button");
   button.className = "project-group-button nav-item";
@@ -7766,6 +7786,309 @@ function createProjectGroupRow(groupName, projects, collapsed) {
   });
   row.append(button);
   return row;
+}
+
+async function updateProjectGroupName(groupName, nextGroupName) {
+  const currentGroup = String(groupName || "").trim();
+  const nextGroup = String(nextGroupName || "").trim();
+
+  if (!currentGroup || !nextGroup || currentGroup === nextGroup) {
+    return;
+  }
+
+  const projects = getProjects().filter((project) => String(project.group || "").trim() === currentGroup);
+  for (const project of projects) {
+    state = await window.boatyard.updateProject(project.id, {
+      group: nextGroup
+    });
+  }
+
+  const collapsedGroups = getCollapsedProjectGroups();
+  if (collapsedGroups.delete(currentGroup)) {
+    collapsedGroups.add(nextGroup);
+    const navigation = await window.boatyard.updateNavigation({
+      view: currentView,
+      projectId: currentProjectId,
+      collapsedProjectGroups: [...collapsedGroups]
+    });
+    state = {
+      ...state,
+      navigation
+    };
+  }
+
+  render();
+}
+
+async function explodeProjectGroup(groupName) {
+  const currentGroup = String(groupName || "").trim();
+  if (!currentGroup) {
+    return;
+  }
+
+  const projects = getProjects().filter((project) => String(project.group || "").trim() === currentGroup);
+  for (const project of projects) {
+    state = await window.boatyard.updateProject(project.id, {
+      group: ""
+    });
+  }
+
+  const collapsedGroups = getCollapsedProjectGroups();
+  if (collapsedGroups.delete(currentGroup)) {
+    const navigation = await window.boatyard.updateNavigation({
+      view: currentView,
+      projectId: currentProjectId,
+      collapsedProjectGroups: [...collapsedGroups]
+    });
+    state = {
+      ...state,
+      navigation
+    };
+  }
+
+  render();
+}
+
+function openProjectGroupRenameDialog(groupName) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "plugin-settings-dialog";
+
+  const form = document.createElement("form");
+  form.className = "plugin-settings-dialog-panel";
+
+  const header = document.createElement("header");
+  header.className = "plugin-settings-dialog-header";
+
+  const title = document.createElement("h3");
+  title.textContent = "Rename group";
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "icon-button";
+  closeButton.type = "button";
+  closeButton.title = "Close";
+  closeButton.setAttribute("aria-label", "Close");
+  closeButton.textContent = "X";
+  closeButton.addEventListener("click", () => dialog.close());
+  header.append(title, closeButton);
+
+  const label = document.createElement("label");
+  label.className = "field";
+  const labelText = document.createElement("span");
+  labelText.textContent = "Group name";
+  const input = document.createElement("input");
+  input.name = "projectGroupName";
+  input.type = "text";
+  input.autocomplete = "off";
+  input.required = true;
+  input.value = groupName;
+  applyFormControl(input);
+  label.append(labelText, input);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const cancelButton = document.createElement("button");
+  cancelButton.className = "secondary-button";
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel";
+  cancelButton.addEventListener("click", () => dialog.close());
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "primary-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Rename";
+
+  actions.append(cancelButton, submitButton);
+  form.append(header, label, error, actions);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+    submitButton.disabled = true;
+
+    try {
+      const nextName = input.value.trim();
+      if (!nextName) {
+        throw new Error("Group name is required.");
+      }
+      await updateProjectGroupName(groupName, nextName);
+      dialog.close();
+    } catch (renameError) {
+      error.textContent = renameError.message;
+      error.hidden = false;
+    } finally {
+      submitButton.disabled = false;
+    }
+  });
+
+  dialog.append(form);
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  input.focus();
+  input.select();
+}
+
+function openProjectGroupExplodeDialog(groupName, projects) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "plugin-settings-dialog";
+
+  const form = document.createElement("form");
+  form.className = "plugin-settings-dialog-panel danger-zone";
+
+  const header = document.createElement("header");
+  header.className = "plugin-settings-dialog-header";
+
+  const title = document.createElement("h3");
+  title.textContent = "Explode group";
+
+  const closeButton = document.createElement("button");
+  closeButton.className = "icon-button";
+  closeButton.type = "button";
+  closeButton.title = "Close";
+  closeButton.setAttribute("aria-label", "Close");
+  closeButton.textContent = "X";
+  closeButton.addEventListener("click", () => dialog.close());
+  header.append(title, closeButton);
+
+  const confirmation = document.createElement("div");
+  confirmation.className = "danger-confirmation";
+
+  const copy = document.createElement("p");
+  copy.textContent = `This removes the "${groupName}" group from ${projects.length} ${projects.length === 1 ? "project" : "projects"}. Projects are not deleted.`;
+
+  const label = document.createElement("label");
+  label.textContent = `Type "${groupName}" to confirm.`;
+
+  const input = document.createElement("input");
+  input.name = "projectGroupConfirmation";
+  input.type = "text";
+  input.autocomplete = "off";
+  applyFormControl(input);
+  label.append(input);
+  confirmation.append(copy, label);
+
+  const error = document.createElement("p");
+  error.className = "form-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+
+  const cancelButton = document.createElement("button");
+  cancelButton.className = "secondary-button";
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel";
+  cancelButton.addEventListener("click", () => dialog.close());
+
+  const submitButton = document.createElement("button");
+  submitButton.className = "danger-button";
+  submitButton.type = "submit";
+  submitButton.textContent = "Explode group";
+  submitButton.disabled = true;
+
+  input.addEventListener("input", () => {
+    submitButton.disabled = input.value !== groupName;
+  });
+
+  actions.append(cancelButton, submitButton);
+  form.append(header, confirmation, error, actions);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.textContent = "";
+    error.hidden = true;
+
+    if (input.value !== groupName) {
+      submitButton.disabled = true;
+      return;
+    }
+
+    submitButton.disabled = true;
+    try {
+      await explodeProjectGroup(groupName);
+      dialog.close();
+    } catch (explodeError) {
+      error.textContent = explodeError.message;
+      error.hidden = false;
+    } finally {
+      submitButton.disabled = input.value !== groupName;
+    }
+  });
+
+  dialog.append(form);
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+  input.focus();
+}
+
+function openProjectGroupContextMenu(event, groupName, projects) {
+  event.preventDefault();
+  closeProjectGroupMenu();
+
+  const menu = document.createElement("div");
+  menu.className = "webapp-tab-menu project-group-context-menu";
+  menu.setAttribute("role", "menu");
+
+  const menuWidth = 220;
+  const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
+  const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 92));
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+
+  const renameItem = document.createElement("button");
+  renameItem.className = "webapp-tab-menu-item";
+  renameItem.type = "button";
+  renameItem.setAttribute("role", "menuitem");
+  renameItem.textContent = "Rename";
+  renameItem.addEventListener("click", () => {
+    closeProjectGroupMenu();
+    openProjectGroupRenameDialog(groupName);
+  });
+
+  const explodeItem = document.createElement("button");
+  explodeItem.className = "webapp-tab-menu-item danger";
+  explodeItem.type = "button";
+  explodeItem.setAttribute("role", "menuitem");
+  explodeItem.textContent = "Explode";
+  explodeItem.addEventListener("click", () => {
+    closeProjectGroupMenu();
+    openProjectGroupExplodeDialog(groupName, projects);
+  });
+
+  menu.append(renameItem, explodeItem);
+  document.body.append(menu);
+  openProjectGroupMenu = menu;
+
+  function onPointerDown(pointerEvent) {
+    if (!menu.contains(pointerEvent.target)) {
+      closeProjectGroupMenu();
+    }
+  }
+
+  function onKeyDown(keyEvent) {
+    if (keyEvent.key === "Escape") {
+      closeProjectGroupMenu();
+    }
+  }
+
+  menu.cleanup = () => {
+    document.removeEventListener("pointerdown", onPointerDown);
+    document.removeEventListener("keydown", onKeyDown);
+  };
+
+  setTimeout(() => {
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+  }, 0);
+
+  menu.querySelector("button")?.focus();
 }
 
 function attachProjectGroupDragHandlers(element, groupName, projects) {
@@ -7832,6 +8155,9 @@ function createExpandedProjectGroup(groupName, projects) {
     setProjectGroupCollapsed(groupName, true).catch((error) => {
       console.error("Could not update project group collapse state:", error);
     });
+  });
+  rail.addEventListener("contextmenu", (event) => {
+    openProjectGroupContextMenu(event, groupName, projects);
   });
   attachProjectGroupDragHandlers(rail, groupName, projects);
 

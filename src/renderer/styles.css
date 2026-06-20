@@ -2921,6 +2921,16 @@ button {
   border-color: var(--line);
 }
 
+.webapp-tab-menu-item.danger {
+  color: #f2a5aa;
+}
+
+.webapp-tab-menu-item.danger:hover,
+.webapp-tab-menu-item.danger:focus-visible {
+  border-color: rgba(224, 108, 117, 0.54);
+  color: #ffd0d3;
+}
+
 .webapp-tab-menu-item[aria-current="true"] {
   border-color: rgba(65, 184, 131, 0.65);
 }
