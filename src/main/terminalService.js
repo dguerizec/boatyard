@@ -81,6 +81,45 @@ async function resizeTmuxWindow(windowId, cols, rows) {
   }
 }
 
+async function getTmuxSessionClients(session) {
+  if (!session) {
+    return [];
+  }
+
+  const output = await runTmux(["list-clients", "-t", session, "-F", "#{client_name}"]);
+  return output.split("\n").filter(Boolean);
+}
+
+async function refreshTmuxSessionClients(session) {
+  if (!session) {
+    return;
+  }
+
+  try {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const clients = await getTmuxSessionClients(session);
+      if (clients.length) {
+        await Promise.all(clients.map((client) => runTmux(["refresh-client", "-S", "-t", client])));
+        return;
+      }
+
+      await sleep(50);
+    }
+  } catch (error) {
+    console.warn(`Could not refresh tmux clients for ${session}: ${error.message}`);
+  }
+}
+
+function scheduleInitialTmuxRefresh(session, windowId, cols, rows) {
+  setTimeout(() => {
+    resizeTmuxWindow(windowId, cols, rows)
+      .then(() => refreshTmuxSessionClients(session))
+      .catch((error) => {
+        console.warn(`Could not schedule initial tmux refresh for ${session}: ${error.message}`);
+      });
+  }, 100);
+}
+
 async function configureTmuxSession(session) {
   await runTmux(["set-option", "-t", session, "window-size", "latest"]);
   await runTmux(["set-option", "-t", session, "mouse", "on"]);
@@ -254,8 +293,6 @@ class TerminalService {
         TERM: "xterm-256color"
       }
     });
-    await resizeTmuxWindow(selectedTab.id, cols, rows);
-
     term.onData((data) => {
       this.sendToRenderer("terminal:data", {
         terminalId,
@@ -279,6 +316,7 @@ class TerminalService {
       windowId: selectedTab.id,
       clientSession
     });
+    scheduleInitialTmuxRefresh(clientSession, selectedTab.id, cols, rows);
 
     return {
       terminalId,

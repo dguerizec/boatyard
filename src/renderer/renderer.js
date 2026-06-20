@@ -123,6 +123,7 @@ let nextTerminalSurfaceId = 1;
 let pendingTerminalCloseFocus = null;
 const TERMINAL_TAB_SYNC_DELAY_MS = 150;
 const TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS = 250;
+const TERMINAL_OUTPUT_TAB_SYNC_THROTTLE_MS = 2000;
 const TERMINAL_CLOSE_FOCUS_TTL_MS = 3000;
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -478,7 +479,7 @@ function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {
   });
 }
 
-function fitTerminal(term, fitAddon) {
+function getTerminalFitSize(term, fitAddon) {
   const dimensions = fitAddon.proposeDimensions();
 
   if (!dimensions) {
@@ -488,11 +489,16 @@ function fitTerminal(term, fitAddon) {
     };
   }
 
-  fitAddon.fit();
   return {
     cols: dimensions.cols,
     rows: dimensions.rows
   };
+}
+
+function fitTerminal(term, fitAddon) {
+  const size = getTerminalFitSize(term, fitAddon);
+  fitAddon.fit();
+  return size;
 }
 
 function getTerminalSurfaceId(card) {
@@ -548,8 +554,25 @@ function detachInactiveProjectTerminals(activeProjectId = null) {
 function setTerminalStatus(card, message) {
   const status = card.querySelector(".terminal-status");
   if (status) {
-    status.textContent = message;
+    status.replaceChildren(document.createTextNode(message));
   }
+}
+
+function setTerminalSessionStatus(card, label, dataChunkCount = 0) {
+  const status = card.querySelector(".terminal-status");
+  if (!status) {
+    return;
+  }
+
+  const name = document.createElement("span");
+  name.className = "terminal-status-name";
+  name.textContent = label;
+
+  const counter = document.createElement("span");
+  counter.className = "terminal-status-counter";
+  counter.textContent = `chunks: ${dataChunkCount}`;
+
+  status.replaceChildren(name, counter);
 }
 
 function getRenderedTerminalTabIds(card) {
@@ -713,6 +736,21 @@ function scheduleTerminalTabSync(terminalId, followupsRemaining = 0) {
   }
 
   scheduleTerminalSurfaceTabSync(terminalSession.surfaceId, followupsRemaining);
+}
+
+function scheduleTerminalOutputTabSync(terminalId) {
+  const terminalSession = terminalWidgetsByTerminal.get(terminalId);
+  if (!terminalSession) {
+    return;
+  }
+
+  const now = Date.now();
+  if (now - (terminalSession.lastOutputTabSyncAt || 0) < TERMINAL_OUTPUT_TAB_SYNC_THROTTLE_MS) {
+    return;
+  }
+
+  terminalSession.lastOutputTabSyncAt = now;
+  scheduleTerminalSurfaceTabSync(terminalSession.surfaceId);
 }
 
 async function refreshProjectTerminalTabLabels(project) {
@@ -1169,9 +1207,9 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
   term.loadAddon(fitAddon);
   term.open(viewport);
   await nextAnimationFrame();
-  const initialSize = fitTerminal(term, fitAddon);
+  let lastFitSize = fitTerminal(term, fitAddon);
 
-  const attachResult = await window.boatyard.attachTerminal(project.id, windowId, initialSize);
+  const attachResult = await window.boatyard.attachTerminal(project.id, windowId, lastFitSize);
   const disposable = term.onData((data) => {
     if (data.includes("\x04")) {
       markTerminalCloseFocus(surfaceId, attachResult.tab.id);
@@ -1286,9 +1324,23 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
   viewport.addEventListener("mousedown", onMiddleMouseDownPaste, true);
   viewport.addEventListener("auxclick", onMiddleAuxClick, true);
   viewport.addEventListener("paste", onNativePaste, true);
+  let resizeAnimationFrame = null;
   const resizeObserver = new ResizeObserver(() => {
-    const size = fitTerminal(term, fitAddon);
-    window.boatyard.resizeTerminal(attachResult.terminalId, size);
+    if (resizeAnimationFrame) {
+      return;
+    }
+
+    resizeAnimationFrame = requestAnimationFrame(() => {
+      resizeAnimationFrame = null;
+      const size = getTerminalFitSize(term, fitAddon);
+      if (size.cols === lastFitSize.cols && size.rows === lastFitSize.rows) {
+        return;
+      }
+
+      fitAddon.fit();
+      lastFitSize = size;
+      window.boatyard.resizeTerminal(attachResult.terminalId, size);
+    });
   });
   resizeObserver.observe(viewport);
   terminalWidgetsBySurface.set(surfaceId, {
@@ -1303,6 +1355,13 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
       selectionDisposable,
       {
         dispose: () => clearTimeout(selectionTimer)
+      },
+      {
+        dispose: () => {
+          if (resizeAnimationFrame) {
+            cancelAnimationFrame(resizeAnimationFrame);
+          }
+        }
       }
     ],
     removeMiddleClickPaste: () => {
@@ -1317,9 +1376,11 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
   terminalWidgetsByTerminal.set(attachResult.terminalId, {
     projectId: project.id,
     surfaceId,
-    term
+    term,
+    dataChunkCount: 0,
+    lastOutputTabSyncAt: 0
   });
-  setTerminalStatus(card, attachResult.tab.name || "attached");
+  setTerminalSessionStatus(card, attachResult.tab.name || "attached", 0);
 
   for (const tabButton of card.querySelectorAll(".terminal-tab")) {
     tabButton.classList.toggle("active", tabButton.dataset.windowId === attachResult.tab.id);
@@ -7657,8 +7718,15 @@ window.boatyard.onWebAppOpenUrlRequested?.((payload) => {
 
 window.boatyard.onTerminalData(({ terminalId, data }) => {
   const session = terminalWidgetsByTerminal.get(terminalId);
-  session?.term.write(data);
-  scheduleTerminalTabSync(terminalId);
+  if (session) {
+    session.term.write(data);
+    session.dataChunkCount += 1;
+    const surface = terminalWidgetsBySurface.get(session.surfaceId);
+    if (surface?.card?.isConnected) {
+      setTerminalSessionStatus(surface.card, surface.card.querySelector(".terminal-tab.active")?.textContent || "attached", session.dataChunkCount);
+    }
+  }
+  scheduleTerminalOutputTabSync(terminalId);
 });
 
 window.boatyard.onTerminalExit(async ({ terminalId, projectId, windowId }) => {

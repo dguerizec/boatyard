@@ -2132,10 +2132,22 @@ button {
 }
 
 .terminal-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.terminal-status-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.terminal-status-counter {
+  flex: none;
 }
 
 .hawser-widget {
