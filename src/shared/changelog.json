@@ -1,6 +1,42 @@
 {
-  "generatedForVersion": "0.5.0",
+  "generatedForVersion": "0.6.0",
   "releases": [
+    {
+      "version": "0.6.0",
+      "date": "2026-06-20",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Project groups",
+          "body": "Projects can now be assigned to named groups and collapsed in the sidebar."
+        },
+        {
+          "category": "Added",
+          "title": "Group management menu",
+          "body": "Project groups can be renamed or exploded from a context menu without editing each project one by one."
+        },
+        {
+          "category": "Changed",
+          "title": "Project sidebar dragging",
+          "body": "Dragging projects now shows insertion targets and supports moving projects into, out of, and between groups."
+        },
+        {
+          "category": "Changed",
+          "title": "Expanded group layout",
+          "body": "Expanded groups now use a compact rail for collapsing and dragging while keeping project rows easy to scan."
+        },
+        {
+          "category": "Changed",
+          "title": "AppImage launcher path",
+          "body": "AppImage installs now consistently use `~/.local/bin/boatyard` for the terminal launcher."
+        },
+        {
+          "category": "Fixed",
+          "title": "Terminal status display",
+          "body": "Terminal panes no longer show diagnostic chunk counters in the status line."
+        }
+      ]
+    },
     {
       "version": "0.5.0",
       "date": "2026-06-20",
