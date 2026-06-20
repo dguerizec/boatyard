@@ -1,8 +1,10 @@
 # Boatyard
 
-Boatyard is an Electron project dock for dashboards, web tools, and local development workflows.
+[Boatyard](https://boatyard.dev) is an Electron project dock for dashboards, web tools, and local development workflows.
 
 It is organized around a global workspace, a project switcher, project-scoped widgets, and project-scoped webapp panes. The app intentionally stays closer to a dashboard/workbench than to a "desktop inside a desktop".
+
+Documentation: [boatyard.dev/doc](https://boatyard.dev/doc/)
 
 ## Features
 
@@ -37,7 +39,13 @@ chmod +x Boatyard-x.y.z.AppImage
 ./Boatyard-x.y.z.AppImage
 ```
 
-On first launch from an AppImage, Boatyard copies itself into `~/.boatyard/bin/` and creates or updates a `boatyard` symlink in `~/.local/bin/` or `~/bin` when possible. Keep one of those directories in your `PATH` to launch Boatyard from a terminal.
+On first launch from an AppImage, Boatyard copies itself into `~/.boatyard/bin/` and creates or updates a `boatyard` symlink in `~/.local/bin/`. Make sure `~/.local/bin` is in your `PATH` to launch Boatyard from a terminal.
+
+After that first launch, start Boatyard with:
+
+```sh
+boatyard
+```
 
 For development from a source checkout, install dependencies with:
 

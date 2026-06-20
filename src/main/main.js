@@ -266,20 +266,12 @@ async function checkForUpdates() {
 function getUpdateInstallPaths() {
   const homePath = app.getPath("home");
   const localBinDir = path.join(homePath, ".local", "bin");
-  const homeBinDir = path.join(homePath, "bin");
-  const pathEntries = String(process.env.PATH || "")
-    .split(path.delimiter)
-    .filter(Boolean)
-    .map((entry) => path.resolve(entry));
-  const preferredSymlinkDir = [localBinDir, homeBinDir]
-    .find((candidate) => pathEntries.includes(path.resolve(candidate)))
-    || localBinDir;
 
   return {
     binDir: path.join(homePath, ".boatyard", "bin"),
     stagingDir: path.join(homePath, ".boatyard", "staging"),
-    symlinkDir: preferredSymlinkDir,
-    symlinkPath: path.join(preferredSymlinkDir, "boatyard")
+    symlinkDir: localBinDir,
+    symlinkPath: path.join(localBinDir, "boatyard")
   };
 }
 
