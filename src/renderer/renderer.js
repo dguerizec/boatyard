@@ -8346,17 +8346,7 @@ function openProjectGroupExplodeDialog(groupName, projects) {
 
   const copy = document.createElement("p");
   copy.textContent = `This removes the "${groupName}" group from ${projects.length} ${projects.length === 1 ? "project" : "projects"}. Projects are not deleted.`;
-
-  const label = document.createElement("label");
-  label.textContent = `Type "${groupName}" to confirm.`;
-
-  const input = document.createElement("input");
-  input.name = "projectGroupConfirmation";
-  input.type = "text";
-  input.autocomplete = "off";
-  applyFormControl(input);
-  label.append(input);
-  confirmation.append(copy, label);
+  confirmation.append(copy);
 
   const error = document.createElement("p");
   error.className = "form-error";
@@ -8376,11 +8366,6 @@ function openProjectGroupExplodeDialog(groupName, projects) {
   submitButton.className = "danger-button";
   submitButton.type = "submit";
   submitButton.textContent = "Explode group";
-  submitButton.disabled = true;
-
-  input.addEventListener("input", () => {
-    submitButton.disabled = input.value !== groupName;
-  });
 
   actions.append(cancelButton, submitButton);
   form.append(header, confirmation, error, actions);
@@ -8388,12 +8373,6 @@ function openProjectGroupExplodeDialog(groupName, projects) {
     event.preventDefault();
     error.textContent = "";
     error.hidden = true;
-
-    if (input.value !== groupName) {
-      submitButton.disabled = true;
-      return;
-    }
-
     submitButton.disabled = true;
     try {
       await explodeProjectGroup(groupName);
@@ -8402,7 +8381,7 @@ function openProjectGroupExplodeDialog(groupName, projects) {
       error.textContent = explodeError.message;
       error.hidden = false;
     } finally {
-      submitButton.disabled = input.value !== groupName;
+      submitButton.disabled = false;
     }
   });
 
@@ -8410,7 +8389,7 @@ function openProjectGroupExplodeDialog(groupName, projects) {
   dialog.addEventListener("close", () => dialog.remove());
   document.body.append(dialog);
   dialog.showModal();
-  input.focus();
+  submitButton.focus();
 }
 
 function openProjectGroupContextMenu(event, groupName, projects) {
