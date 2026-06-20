@@ -7,6 +7,7 @@ const globalViewButton = document.querySelector("#global-view");
 const manualTourButton = document.querySelector("#manual-tour");
 const addProjectButton = document.querySelector("#add-project");
 const projectCount = document.querySelector("#project-count");
+const projectSearchInput = document.querySelector("#project-search");
 const projectList = document.querySelector("#project-list");
 const workspace = document.querySelector(".workspace");
 const dashboardGrid = document.querySelector("#dashboard-grid");
@@ -111,6 +112,7 @@ let activeUpdateCardUpdater = null;
 let lastUpdateCheckResult = null;
 let lastUpdateCheckedAt = null;
 let updatePollStarted = false;
+let projectSearchQuery = "";
 let draggedProjectId = null;
 let draggedProjectGroupName = null;
 let draggedProjectListPointerOffsetY = 0;
@@ -221,6 +223,25 @@ function getProjectGroups() {
     .map((project) => String(project.group || "").trim())
     .filter(Boolean))]
     .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+}
+
+function normalizeProjectSearchText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function projectMatchesSearch(project, query) {
+  const normalizedQuery = normalizeProjectSearchText(query);
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  const groupName = String(project.group || "").trim();
+  return [
+    project.name,
+    project.slug,
+    project.sourcePath,
+    groupName
+  ].some((value) => String(value || "").toLowerCase().includes(normalizedQuery));
 }
 
 function getCollapsedProjectGroups() {
@@ -8676,7 +8697,12 @@ function createExpandedProjectGroup(groupName, projects) {
 
 function renderProjectList() {
   const projects = getProjects();
-  projectCount.textContent = String(projects.length);
+  const query = normalizeProjectSearchText(projectSearchQuery);
+  const visibleProjects = query
+    ? projects.filter((project) => projectMatchesSearch(project, query))
+    : projects;
+  const visibleProjectIds = new Set(visibleProjects.map((project) => project.id));
+  projectCount.textContent = query ? `${visibleProjects.length} / ${projects.length}` : String(projects.length);
   projectList.innerHTML = "";
 
   globalNav.classList.toggle("active", currentView === "global" || currentView === "global-settings");
@@ -8695,11 +8721,23 @@ function renderProjectList() {
     return;
   }
 
-  const groups = getProjectGroupsByName(projects);
+  if (visibleProjects.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "empty-copy";
+    empty.textContent = "No projects match this search.";
+    projectList.append(empty);
+    return;
+  }
+
+  const groups = getProjectGroupsByName(visibleProjects);
   const renderedGroups = new Set();
   const collapsedGroups = getCollapsedProjectGroups();
 
   for (const project of projects) {
+    if (!visibleProjectIds.has(project.id)) {
+      continue;
+    }
+
     const groupName = String(project.group || "").trim();
     const groupProjects = groupName ? groups.get(groupName) || [] : [];
 
@@ -9137,6 +9175,20 @@ globalSettingsButton.addEventListener("click", selectGlobalSettings);
 globalViewButton.addEventListener("click", selectGlobal);
 manualTourButton.addEventListener("click", () => openOnboardingTour({ force: true }));
 addProjectButton.addEventListener("click", selectCreateProject);
+projectSearchInput.addEventListener("input", () => {
+  projectSearchQuery = projectSearchInput.value;
+  renderProjectList();
+});
+projectSearchInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || !projectSearchInput.value) {
+    return;
+  }
+
+  event.preventDefault();
+  projectSearchInput.value = "";
+  projectSearchQuery = "";
+  renderProjectList();
+});
 window.addEventListener("resize", queueWebAppSync);
 workspace.addEventListener("scroll", queueWebAppSync);
 
