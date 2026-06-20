@@ -558,23 +558,6 @@ function setTerminalStatus(card, message) {
   }
 }
 
-function setTerminalSessionStatus(card, label, dataChunkCount = 0) {
-  const status = card.querySelector(".terminal-status");
-  if (!status) {
-    return;
-  }
-
-  const name = document.createElement("span");
-  name.className = "terminal-status-name";
-  name.textContent = label;
-
-  const counter = document.createElement("span");
-  counter.className = "terminal-status-counter";
-  counter.textContent = `chunks: ${dataChunkCount}`;
-
-  status.replaceChildren(name, counter);
-}
-
 function getRenderedTerminalTabIds(card) {
   return [...card.querySelectorAll(".terminal-tab")]
     .map((tabButton) => tabButton.dataset.windowId)
@@ -1377,10 +1360,9 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
     projectId: project.id,
     surfaceId,
     term,
-    dataChunkCount: 0,
     lastOutputTabSyncAt: 0
   });
-  setTerminalSessionStatus(card, attachResult.tab.name || "attached", 0);
+  setTerminalStatus(card, attachResult.tab.name || "attached");
 
   for (const tabButton of card.querySelectorAll(".terminal-tab")) {
     tabButton.classList.toggle("active", tabButton.dataset.windowId === attachResult.tab.id);
@@ -7769,11 +7751,6 @@ window.boatyard.onTerminalData(({ terminalId, data }) => {
   const session = terminalWidgetsByTerminal.get(terminalId);
   if (session) {
     session.term.write(data);
-    session.dataChunkCount += 1;
-    const surface = terminalWidgetsBySurface.get(session.surfaceId);
-    if (surface?.card?.isConnected) {
-      setTerminalSessionStatus(surface.card, surface.card.querySelector(".terminal-tab.active")?.textContent || "attached", session.dataChunkCount);
-    }
   }
   scheduleTerminalOutputTabSync(terminalId);
 });
