@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.6.1] - 2026-06-21
+
+### Summary
+
+- **v0.6.1: Sidebar workflow polish** — Boatyard makes project navigation easier to search and organize, while surfacing ready-to-install updates directly in the sidebar.
+
+### Added
+
+- **Project search** — The sidebar can now filter projects by name, slug, source path, or group.
+- **Create group from project** — Project rows now offer a context menu action for creating a new group around that project.
+- **Sidebar update notice** — Downloaded updates now appear in the sidebar with a restart button when they are ready to install.
+- **Web app hard reload** — Web app panes now offer a hard reload action that clears cache before refreshing.
+
+### Changed
+
+- **Group explode confirmation** — Exploding a project group now uses a simpler confirmation dialog without requiring the group name to be typed.
+- **Grouped project badges** — Collapsed groups now show separate status badges for their projects instead of merging everything into one combined badge.
+
 ## [0.6.0] - 2026-06-20
 
 ### Summary

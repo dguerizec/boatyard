@@ -1,6 +1,42 @@
 {
-  "generatedForVersion": "0.6.0",
+  "generatedForVersion": "0.6.1",
   "releases": [
+    {
+      "version": "0.6.1",
+      "date": "2026-06-21",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Project search",
+          "body": "The sidebar can now filter projects by name, slug, source path, or group."
+        },
+        {
+          "category": "Added",
+          "title": "Create group from project",
+          "body": "Project rows now offer a context menu action for creating a new group around that project."
+        },
+        {
+          "category": "Added",
+          "title": "Sidebar update notice",
+          "body": "Downloaded updates now appear in the sidebar with a restart button when they are ready to install."
+        },
+        {
+          "category": "Added",
+          "title": "Web app hard reload",
+          "body": "Web app panes now offer a hard reload action that clears cache before refreshing."
+        },
+        {
+          "category": "Changed",
+          "title": "Group explode confirmation",
+          "body": "Exploding a project group now uses a simpler confirmation dialog without requiring the group name to be typed."
+        },
+        {
+          "category": "Changed",
+          "title": "Grouped project badges",
+          "body": "Collapsed groups now show separate status badges for their projects instead of merging everything into one combined badge."
+        }
+      ]
+    },
     {
       "version": "0.6.0",
       "date": "2026-06-20",
