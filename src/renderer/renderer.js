@@ -5,6 +5,7 @@ const globalNavRow = document.querySelector("#global-nav-row");
 const globalSettingsButton = document.querySelector("#global-settings");
 const globalViewButton = document.querySelector("#global-view");
 const manualTourButton = document.querySelector("#manual-tour");
+const sidebarUpdateNotice = document.querySelector("#sidebar-update-notice");
 const addProjectButton = document.querySelector("#add-project");
 const projectCount = document.querySelector("#project-count");
 const projectSearchInput = document.querySelector("#project-search");
@@ -4374,6 +4375,57 @@ function formatUpdateCheckedAt(date = new Date()) {
   });
 }
 
+function renderSidebarUpdateNotice() {
+  sidebarUpdateNotice.innerHTML = "";
+
+  if (!preparedUpdate) {
+    sidebarUpdateNotice.hidden = true;
+    return;
+  }
+
+  sidebarUpdateNotice.hidden = false;
+
+  const title = document.createElement("h2");
+  title.textContent = "Update available";
+
+  const version = document.createElement("p");
+  version.textContent = `${formatVersionLabel(preparedUpdate.latestVersion)} is ready to install.`;
+
+  const status = document.createElement("p");
+  status.className = "sidebar-update-status";
+  status.setAttribute("role", "status");
+  status.textContent = lastUpdateCheckedAt
+    ? `Downloaded at ${formatUpdateCheckedAt(lastUpdateCheckedAt)}`
+    : "Downloaded and ready.";
+
+  const restartButton = document.createElement("button");
+  restartButton.className = "primary-button";
+  restartButton.type = "button";
+  restartButton.textContent = "Restart to upgrade";
+  restartButton.addEventListener("click", async () => {
+    if (!preparedUpdate) {
+      return;
+    }
+
+    restartButton.disabled = true;
+    restartButton.textContent = "Restarting...";
+    status.textContent = "Installing and restarting...";
+
+    try {
+      const result = await window.boatyard.restartToUpdate(preparedUpdate);
+      status.textContent = result.pathConfigured === false
+        ? "Installed. Add the link directory to PATH; relaunching now..."
+        : "Installed. Relaunching now...";
+    } catch (error) {
+      status.textContent = error.message;
+      restartButton.disabled = false;
+      restartButton.textContent = "Restart to upgrade";
+    }
+  });
+
+  sidebarUpdateNotice.append(title, version, status, restartButton);
+}
+
 function createGlobalUpdateCard() {
   const shell = document.createElement("section");
   shell.className = "project-form-page app-update-card";
@@ -4431,6 +4483,7 @@ function createGlobalUpdateCard() {
     preparedUpdate = update;
     status.textContent = `${formatVersionLabel(update.latestVersion)} downloaded, restart required. Checked at ${formatUpdateCheckedAt(checkedAt)}`;
     updateButton.hidden = false;
+    renderSidebarUpdateNotice();
   };
 
   const showUpdateResult = (result, checkedAt = new Date()) => {
@@ -4447,11 +4500,13 @@ function createGlobalUpdateCard() {
         preparedUpdate = null;
         updateButton.hidden = true;
         status.textContent = `Update available: ${formatVersionLabel(result.latestVersion)}, no installable AppImage found. Checked at ${formatUpdateCheckedAt(checkedAt)}`;
+        renderSidebarUpdateNotice();
       }
     } else {
       preparedUpdate = null;
       updateButton.hidden = true;
       status.textContent = `Up to date. Checked at ${formatUpdateCheckedAt(checkedAt)}`;
+      renderSidebarUpdateNotice();
     }
   };
   activeUpdateCardUpdater = showUpdateResult;
@@ -8703,6 +8758,8 @@ function createExpandedProjectGroup(groupName, projects) {
 }
 
 function renderProjectList() {
+  renderSidebarUpdateNotice();
+
   const projects = getProjects();
   const query = normalizeProjectSearchText(projectSearchQuery);
   const visibleProjects = query
@@ -9023,6 +9080,7 @@ async function pollForUpdates() {
     lastUpdateCheckedAt = new Date();
     lastUpdateCheckResult = result;
     preparedUpdate = result?.prepared ? result : null;
+    renderSidebarUpdateNotice();
     activeUpdateCardUpdater?.(result, lastUpdateCheckedAt);
   } catch (error) {
     console.warn(`Could not prepare update: ${error.message}`);
@@ -9039,6 +9097,22 @@ function startUpdatePolling() {
   setInterval(pollForUpdates, UPDATE_POLL_INTERVAL_MS);
 }
 
+async function loadPreparedUpdateNotice() {
+  if (typeof window.boatyard.getUpdateInfo !== "function") {
+    return;
+  }
+
+  try {
+    const info = await window.boatyard.getUpdateInfo();
+    if (info.preparedUpdate) {
+      preparedUpdate = info.preparedUpdate;
+      renderSidebarUpdateNotice();
+    }
+  } catch (error) {
+    console.warn(`Could not load prepared update info: ${error.message}`);
+  }
+}
+
 async function loadState() {
   state = await window.boatyard.getState();
   window.BoatyardPluginRegistry?.applyEnabledState(getPluginEnabledState());
@@ -9053,6 +9127,7 @@ async function loadState() {
   hydrateTerminalTabOrders();
   restoreNavigation();
   render();
+  void loadPreparedUpdateNotice();
   startUpdatePolling();
   if (!(await maybeOpenPendingChangelog())) {
     maybeOpenInitialOnboarding();
