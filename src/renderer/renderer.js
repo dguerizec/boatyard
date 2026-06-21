@@ -3733,6 +3733,65 @@ async function openWebAppHomeMenu(event, project, paneNode, selectedWebApp) {
   item.focus();
 }
 
+async function openWebAppRefreshMenu(event, selectedWebApp) {
+  event.preventDefault();
+  const sourceButton = event.currentTarget;
+  closeWebAppTabMenu();
+  await freezeWebAppsForOverlay({
+    keys: selectedWebApp?.key ? [selectedWebApp.key] : []
+  });
+
+  const menu = document.createElement("div");
+  menu.className = "webapp-tab-menu";
+  menu.setAttribute("role", "menu");
+
+  const menuWidth = 180;
+  const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
+  const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 48));
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+
+  const item = document.createElement("button");
+  item.className = "webapp-tab-menu-item";
+  item.type = "button";
+  item.setAttribute("role", "menuitem");
+  item.textContent = "Hard reload";
+  item.addEventListener("click", () => {
+    closeWebAppTabMenu();
+    invokeWebApp("navigateWebApp", selectedWebApp.key, "hard-refresh").catch((error) => {
+      console.error("Could not hard reload webapp:", error);
+    });
+  });
+  menu.append(item);
+
+  document.body.append(menu);
+  openWebAppTabMenu = menu;
+
+  function onPointerDown(pointerEvent) {
+    if (!menu.contains(pointerEvent.target) && pointerEvent.target !== sourceButton) {
+      closeWebAppTabMenu();
+    }
+  }
+
+  function onKeyDown(keyEvent) {
+    if (keyEvent.key === "Escape") {
+      closeWebAppTabMenu();
+    }
+  }
+
+  menu.cleanup = () => {
+    document.removeEventListener("pointerdown", onPointerDown);
+    document.removeEventListener("keydown", onKeyDown);
+  };
+
+  setTimeout(() => {
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+  }, 0);
+
+  item.focus();
+}
+
 function createWebAppPane(project, paneNode) {
   const webApps = getProjectWebApps(project, paneNode.id);
   const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
@@ -3825,6 +3884,9 @@ function createWebAppPane(project, paneNode) {
     refreshButton.setAttribute("aria-label", "Refresh");
     refreshButton.append(createToolIcon("refresh"));
     refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
+    refreshButton.addEventListener("contextmenu", (event) => {
+      openWebAppRefreshMenu(event, selectedWebApp);
+    });
 
     const autofillButton = isPasswordManagerEnabled() ? document.createElement("button") : null;
     if (autofillButton) {

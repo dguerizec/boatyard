@@ -1203,7 +1203,7 @@ function setWebAppBounds(bounds) {
   webApp?.view.setBounds(normalizeWebAppBounds(bounds));
 }
 
-function navigateWebApp(key, action, url) {
+async function navigateWebApp(key, action, url) {
   const webApp = webAppViews.get(String(key || ""));
 
   if (!webApp || webApp.view.webContents.isDestroyed()) {
@@ -1244,6 +1244,12 @@ function navigateWebApp(key, action, url) {
 
   if (action === "refresh") {
     webApp.view.webContents.reload();
+    return true;
+  }
+
+  if (action === "hard-refresh") {
+    await webApp.view.webContents.session.clearCache();
+    webApp.view.webContents.reloadIgnoringCache();
     return true;
   }
 
