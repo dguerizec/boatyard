@@ -1,6 +1,37 @@
 {
-  "generatedForVersion": "0.7.0",
+  "generatedForVersion": "0.7.1",
   "releases": [
+    {
+      "version": "0.7.1",
+      "date": "2026-06-22",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Terminal tab context menu",
+          "body": "Right-click a shell tab to rename it, open a new shell to its right, or close it."
+        },
+        {
+          "category": "Added",
+          "title": "Scrollable shell tabs",
+          "body": "Terminal tab bars now support horizontal scrolling with arrow controls and mouse wheel gestures when many shells are open."
+        },
+        {
+          "category": "Changed",
+          "title": "New shell placement",
+          "body": "Creating a shell from a terminal pane now places it next to the active shell instead of always appending it at the end."
+        },
+        {
+          "category": "Changed",
+          "title": "Pane terminal tabs",
+          "body": "Terminal panes now keep shell tabs in the pane tab area, making multi-pane terminal layouts easier to scan."
+        },
+        {
+          "category": "Changed",
+          "title": "Shell closing flow",
+          "body": "Closing a shell now happens from the tab menu, with the close action disabled when only one shell remains."
+        }
+      ]
+    },
     {
       "version": "0.7.0",
       "date": "2026-06-22",

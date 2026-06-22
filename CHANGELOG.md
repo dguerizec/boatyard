@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.7.1] - 2026-06-22
+
+### Summary
+
+- **v0.7.1: Terminal tab controls** — Boatyard makes terminal shell tabs easier to manage, scroll, and organize in pane layouts.
+
+### Added
+
+- **Terminal tab context menu** — Right-click a shell tab to rename it, open a new shell to its right, or close it.
+- **Scrollable shell tabs** — Terminal tab bars now support horizontal scrolling with arrow controls and mouse wheel gestures when many shells are open.
+
+### Changed
+
+- **New shell placement** — Creating a shell from a terminal pane now places it next to the active shell instead of always appending it at the end.
+- **Pane terminal tabs** — Terminal panes now keep shell tabs in the pane tab area, making multi-pane terminal layouts easier to scan.
+- **Shell closing flow** — Closing a shell now happens from the tab menu, with the close action disabled when only one shell remains.
+
 ## [0.7.0] - 2026-06-22
 
 ### Summary
