@@ -2211,8 +2211,33 @@ button {
 .terminal-tabs {
   min-width: 0;
   display: flex;
+  flex: 1 1 auto;
   gap: 4px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.terminal-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.terminal-tabs-strip {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pane-terminal-tabs-slot {
+  min-width: 0;
+  flex: 1 1 0;
+  display: flex;
+}
+
+.terminal-pane-tabs {
+  flex: 1 1 auto;
 }
 
 .terminal-tab,
@@ -2228,6 +2253,7 @@ button {
 }
 
 .terminal-tab {
+  flex: 0 0 auto;
   min-width: 0;
   max-width: 120px;
   padding: 0 8px;
@@ -2268,8 +2294,17 @@ button {
 }
 
 .terminal-action {
+  flex: 0 0 26px;
   width: 26px;
   padding: 0;
+}
+
+.terminal-tab-scroll-button {
+  flex: 0 0 26px;
+}
+
+.terminal-tab-scroll-button[hidden] {
+  display: none;
 }
 
 .terminal-viewport {
@@ -2949,6 +2984,7 @@ button {
 }
 
 .webapp-tab-picker {
+  flex: 0 0 auto;
   max-width: min(260px, 34vw);
   display: inline-flex;
   align-items: center;
@@ -3022,6 +3058,17 @@ button {
   border-color: var(--line);
 }
 
+.webapp-tab-menu-item:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.webapp-tab-menu-item:disabled:hover {
+  color: #6f7e8c;
+  background: transparent;
+  border-color: transparent;
+}
+
 .webapp-tab-menu-item.danger {
   color: #f2a5aa;
 }
@@ -3030,6 +3077,11 @@ button {
 .webapp-tab-menu-item.danger:focus-visible {
   border-color: rgba(224, 108, 117, 0.54);
   color: #ffd0d3;
+}
+
+.webapp-tab-menu-item.danger:disabled:hover {
+  border-color: transparent;
+  color: #f2a5aa;
 }
 
 .webapp-tab-menu-item[aria-current="true"] {

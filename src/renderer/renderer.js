@@ -105,6 +105,7 @@ let webAppBoundsFrame = null;
 let nextPaneId = 1;
 let frozenWebAppLayer = null;
 let openWebAppTabMenu = null;
+let openTerminalTabMenu = null;
 let openWidgetAddMenu = null;
 let openProjectGroupMenu = null;
 let pierWorkloadPaneRefreshFrame = null;
@@ -428,6 +429,7 @@ function persistNavigation() {
 function setCurrentView(view, projectId = null, { persist = true } = {}) {
   if (view !== currentView || projectId !== currentProjectId) {
     closeProjectGroupMenu();
+    closeTerminalTabMenu();
   }
 
   currentView = view;
@@ -611,6 +613,7 @@ function detachTerminalSurface(surfaceId) {
   }
   session.removeMiddleClickPaste?.();
   session.resizeObserver?.disconnect();
+  session.tabsResizeObserver?.disconnect();
   session.term?.dispose();
   clearTimeout(terminalTabSyncTimers.get(surfaceId)?.timer);
   terminalTabSyncTimers.delete(surfaceId);
@@ -640,8 +643,99 @@ function setTerminalStatus(card, message) {
   }
 }
 
-function getRenderedTerminalTabIds(card) {
-  return [...card.querySelectorAll(".terminal-tab")]
+function getTerminalTabList(card) {
+  return card.terminalTabsElement || card.querySelector(".terminal-tabs");
+}
+
+function getTerminalTabButtons(card) {
+  return [...(getTerminalTabList(card)?.querySelectorAll(".terminal-tab") || [])];
+}
+
+function updateTerminalTabScrollControls(card) {
+  const controls = card?.terminalTabsScrollControls;
+  if (!controls) {
+    return;
+  }
+
+  const { tabs, leftButton, rightButton } = controls;
+  const hasOverflow = tabs.scrollWidth > tabs.clientWidth + 1;
+  const atStart = tabs.scrollLeft <= 1;
+  const atEnd = tabs.scrollLeft + tabs.clientWidth >= tabs.scrollWidth - 1;
+
+  leftButton.hidden = !hasOverflow || atStart;
+  rightButton.hidden = !hasOverflow || atEnd;
+}
+
+function scrollTerminalTabs(card, direction) {
+  const controls = card?.terminalTabsScrollControls;
+  if (!controls) {
+    return;
+  }
+
+  const amount = Math.max(80, Math.round(controls.tabs.clientWidth * 0.75));
+  controls.tabs.scrollBy({
+    left: direction * amount,
+    behavior: "smooth"
+  });
+}
+
+function createTerminalTabScrollButton(card, direction) {
+  const button = document.createElement("button");
+  button.className = "terminal-action terminal-tab-scroll-button";
+  button.type = "button";
+  button.title = direction < 0 ? "Scroll shells left" : "Scroll shells right";
+  button.setAttribute("aria-label", button.title);
+  button.append(createToolIcon(direction < 0 ? "arrowLeft" : "arrowRight"));
+  button.hidden = true;
+  button.addEventListener("click", () => scrollTerminalTabs(card, direction));
+  return button;
+}
+
+function createTerminalTabStrip(card, tabs) {
+  const strip = document.createElement("div");
+  strip.className = "terminal-tabs-strip";
+
+  const leftButton = createTerminalTabScrollButton(card, -1);
+  const rightButton = createTerminalTabScrollButton(card, 1);
+  strip.append(leftButton, tabs, rightButton);
+
+  card.terminalTabsScrollControls = {
+    tabs,
+    leftButton,
+    rightButton
+  };
+
+  tabs.addEventListener("scroll", () => updateTerminalTabScrollControls(card));
+  tabs.addEventListener("wheel", (event) => {
+    if (tabs.scrollWidth <= tabs.clientWidth + 1) {
+      return;
+    }
+
+    const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      ? event.deltaX
+      : event.deltaY;
+    if (!delta) {
+      return;
+    }
+
+    event.preventDefault();
+    tabs.scrollLeft += delta;
+    updateTerminalTabScrollControls(card);
+  }, { passive: false });
+
+  const resizeObserver = new ResizeObserver(() => updateTerminalTabScrollControls(card));
+  resizeObserver.observe(tabs);
+  card.terminalTabsResizeObserver = resizeObserver;
+
+  return strip;
+}
+
+function getRenderedTerminalTabIds(cardOrTabList) {
+  const tabList = cardOrTabList?.classList?.contains("terminal-tabs")
+    ? cardOrTabList
+    : getTerminalTabList(cardOrTabList);
+
+  return [...(tabList?.querySelectorAll(".terminal-tab") || [])]
     .map((tabButton) => tabButton.dataset.windowId)
     .filter(Boolean);
 }
@@ -827,7 +921,7 @@ async function refreshProjectTerminalTabLabels(project) {
       continue;
     }
 
-    for (const tabButton of session.card.querySelectorAll(".terminal-tab")) {
+    for (const tabButton of getTerminalTabButtons(session.card)) {
       if (tabButton.classList.contains("terminal-tab-editor")) {
         continue;
       }
@@ -986,11 +1080,12 @@ async function selectTerminalTab(project, card, tab) {
 }
 
 function selectAdjacentTerminalTab(project, card, direction) {
-  if (card.querySelector(".terminal-tab-editor")) {
+  const tabList = getTerminalTabList(card);
+  if (tabList?.querySelector(".terminal-tab-editor")) {
     return;
   }
 
-  const tabButtons = [...card.querySelectorAll(".terminal-tab[data-window-id]")];
+  const tabButtons = [...(tabList?.querySelectorAll(".terminal-tab[data-window-id]") || [])];
   if (tabButtons.length <= 1) {
     return;
   }
@@ -1163,7 +1258,7 @@ function attachTerminalTabDragHandlers(card, tab, tabButton, tabList) {
   tabButton.draggable = true;
 
   tabButton.addEventListener("dragstart", (event) => {
-    if (card.querySelector(".terminal-tab-editor")) {
+    if (tabList.querySelector(".terminal-tab-editor")) {
       event.preventDefault();
       return;
     }
@@ -1183,7 +1278,12 @@ function attachTerminalTabDragHandlers(card, tab, tabButton, tabList) {
 }
 
 async function refreshTerminalTabs(project, card, activeWindowId = null, knownTabs = null, { focus = false } = {}) {
-  const tabList = card.querySelector(".terminal-tabs");
+  const tabList = getTerminalTabList(card);
+  if (!tabList) {
+    setTerminalStatus(card, "Terminal tabs unavailable.");
+    return;
+  }
+
   tabList.innerHTML = "";
   bindTerminalTabDropHandlers(project, card, tabList);
 
@@ -1213,8 +1313,17 @@ async function refreshTerminalTabs(project, card, activeWindowId = null, knownTa
         event.stopPropagation();
         editTerminalTabName(project, card, tab, tabButton);
       });
+      tabButton.addEventListener("contextmenu", (event) => {
+        openTerminalTabContextMenu(event, project, card, tab, tabButton, tabList);
+      });
       tabList.append(tabButton);
     }
+
+    tabList.querySelector(".terminal-tab.active")?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest"
+    });
+    requestAnimationFrame(() => updateTerminalTabScrollControls(card));
 
     if (selectedTab) {
       if (!card.isConnected) {
@@ -1236,6 +1345,142 @@ async function refreshTerminalSurfaceAfterClosedTab(project, card, closedWindowI
     : null;
 
   await refreshTerminalTabs(project, card, activeWindowId, orderedTabs, { focus });
+}
+
+async function createTerminalTab(project, card, insertAfterWindowId = null) {
+  const tab = await window.boatyard.createTerminalTab(project.id, "shell");
+  let tabs = await window.boatyard.listTerminalTabs(project.id);
+
+  if (insertAfterWindowId) {
+    const renderedTabIds = getRenderedTerminalTabIds(card).filter((windowId) => windowId !== tab.id);
+    const targetIndex = renderedTabIds.indexOf(String(insertAfterWindowId));
+    const nextTabIds = [...renderedTabIds];
+    nextTabIds.splice(targetIndex === -1 ? nextTabIds.length : targetIndex + 1, 0, tab.id);
+    persistTerminalTabOrder(project.id, nextTabIds);
+    tabs = getOrderedTerminalTabs(project.id, tabs);
+  }
+
+  await refreshTerminalTabs(project, card, tab.id, tabs, { focus: true });
+}
+
+function closeTerminalTabMenu() {
+  if (!openTerminalTabMenu) {
+    return;
+  }
+
+  openTerminalTabMenu.cleanup?.();
+  openTerminalTabMenu.remove();
+  openTerminalTabMenu = null;
+}
+
+async function closeTerminalTab(project, card, windowId) {
+  const normalizedWindowId = String(windowId || "");
+  if (!normalizedWindowId) {
+    return;
+  }
+
+  const surfaceId = getTerminalSurfaceId(card);
+  const session = terminalWidgetsBySurface.get(surfaceId);
+  const activeWindowId = session?.activeWindowId || "";
+
+  try {
+    const allTabs = await window.boatyard.listTerminalTabs(project.id);
+    if (allTabs.length <= 1) {
+      return;
+    }
+
+    if (activeWindowId === normalizedWindowId) {
+      markTerminalCloseFocus(surfaceId, normalizedWindowId);
+    }
+
+    const remainingTabs = (await window.boatyard.closeTerminalTab(project.id, normalizedWindowId))
+      .filter((tab) => tab.id !== normalizedWindowId);
+    const nextActiveWindowId = activeWindowId === normalizedWindowId
+      ? getTerminalReplacementWindowId(card, normalizedWindowId, remainingTabs)
+      : activeWindowId;
+    await refreshTerminalTabs(project, card, nextActiveWindowId, remainingTabs, {
+      focus: activeWindowId === normalizedWindowId
+    });
+  } catch (error) {
+    setTerminalStatus(card, `Could not close shell: ${error.message}`);
+  }
+}
+
+function openTerminalTabContextMenu(event, project, card, tab, tabButton, tabList) {
+  event.preventDefault();
+  event.stopPropagation();
+  closeTerminalTabMenu();
+
+  const menu = document.createElement("div");
+  menu.className = "webapp-tab-menu terminal-tab-context-menu";
+  menu.setAttribute("role", "menu");
+
+  const menuWidth = 180;
+  const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
+  const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 84));
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+
+  const renameItem = document.createElement("button");
+  renameItem.className = "webapp-tab-menu-item";
+  renameItem.type = "button";
+  renameItem.setAttribute("role", "menuitem");
+  renameItem.textContent = "Rename";
+  renameItem.addEventListener("click", () => {
+    closeTerminalTabMenu();
+    editTerminalTabName(project, card, tab, tabButton);
+  });
+
+  const newShellItem = document.createElement("button");
+  newShellItem.className = "webapp-tab-menu-item";
+  newShellItem.type = "button";
+  newShellItem.setAttribute("role", "menuitem");
+  newShellItem.textContent = "New shell to the right";
+  newShellItem.addEventListener("click", () => {
+    closeTerminalTabMenu();
+    createTerminalTab(project, card, tab.id).catch((error) => {
+      setTerminalStatus(card, `Could not create shell: ${error.message}`);
+    });
+  });
+
+  const closeItem = document.createElement("button");
+  closeItem.className = "webapp-tab-menu-item danger";
+  closeItem.type = "button";
+  closeItem.setAttribute("role", "menuitem");
+  closeItem.textContent = "Close";
+  closeItem.disabled = tabList.querySelectorAll(".terminal-tab[data-window-id]").length <= 1;
+  closeItem.addEventListener("click", () => {
+    closeTerminalTabMenu();
+    closeTerminalTab(project, card, tab.id);
+  });
+
+  menu.append(renameItem, newShellItem, closeItem);
+  document.body.append(menu);
+  openTerminalTabMenu = menu;
+
+  function onPointerDown(pointerEvent) {
+    if (!menu.contains(pointerEvent.target)) {
+      closeTerminalTabMenu();
+    }
+  }
+
+  function onKeyDown(keyEvent) {
+    if (keyEvent.key === "Escape") {
+      closeTerminalTabMenu();
+    }
+  }
+
+  menu.cleanup = () => {
+    document.removeEventListener("pointerdown", onPointerDown);
+    document.removeEventListener("keydown", onKeyDown);
+  };
+
+  setTimeout(() => {
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+  }, 0);
+
+  menu.querySelector("button")?.focus();
 }
 
 async function attachTerminalTab(project, card, windowId, { focus = false } = {}) {
@@ -1436,7 +1681,8 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
       viewport.removeEventListener("auxclick", onMiddleAuxClick, true);
       viewport.removeEventListener("paste", onNativePaste, true);
     },
-    resizeObserver
+    resizeObserver,
+    tabsResizeObserver: card.terminalTabsResizeObserver
   });
   terminalWidgetsByTerminal.set(attachResult.terminalId, {
     projectId: project.id,
@@ -1446,7 +1692,7 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
   });
   setTerminalStatus(card, attachResult.tab.name || "attached");
 
-  for (const tabButton of card.querySelectorAll(".terminal-tab")) {
+  for (const tabButton of getTerminalTabButtons(card)) {
     tabButton.classList.toggle("active", tabButton.dataset.windowId === attachResult.tab.id);
   }
 
@@ -1458,7 +1704,9 @@ async function attachTerminalTab(project, card, windowId, { focus = false } = {}
 function createTerminalSurface(project, {
   tagName = "article",
   className = "widget-card terminal-widget",
-  storageKey = "widget:default"
+  storageKey = "widget:default",
+  tabsContainer = null,
+  actionsContainer = null
 } = {}) {
   const card = document.createElement(tagName);
   card.className = className;
@@ -1475,7 +1723,9 @@ function createTerminalSurface(project, {
   actions.className = "terminal-widget-actions";
 
   const tabs = document.createElement("div");
-  tabs.className = "terminal-tabs";
+  tabs.className = tabsContainer ? "terminal-tabs terminal-pane-tabs" : "terminal-tabs";
+  card.terminalTabsElement = tabs;
+  const tabStrip = createTerminalTabStrip(card, tabs);
 
   const addButton = document.createElement("button");
   addButton.className = "terminal-action";
@@ -1484,44 +1734,16 @@ function createTerminalSurface(project, {
   addButton.setAttribute("aria-label", "New shell");
   addButton.textContent = "+";
   addButton.addEventListener("click", async () => {
-    const tab = await window.boatyard.createTerminalTab(project.id, "shell");
-    await refreshTerminalTabs(project, card, tab.id);
+    const activeWindowId = getTerminalSurfaceSession(card)?.activeWindowId || null;
+    await createTerminalTab(project, card, activeWindowId);
   });
 
-  const closeButton = document.createElement("button");
-  closeButton.className = "terminal-action";
-  closeButton.type = "button";
-  closeButton.title = "Close current shell";
-  closeButton.setAttribute("aria-label", "Close current shell");
-  closeButton.textContent = "x";
-  closeButton.addEventListener("click", async () => {
-    const surfaceId = getTerminalSurfaceId(card);
-    const session = terminalWidgetsBySurface.get(surfaceId);
-    if (!session) {
-      return;
-    }
-
-    closeButton.disabled = true;
-    const activeWindowId = session.activeWindowId;
-    try {
-      const allTabs = await window.boatyard.listTerminalTabs(project.id);
-      if (!activeWindowId || allTabs.length <= 1) {
-        return;
-      }
-
-      markTerminalCloseFocus(surfaceId, activeWindowId);
-      const remainingTabs = (await window.boatyard.closeTerminalTab(project.id, activeWindowId))
-        .filter((tab) => tab.id !== activeWindowId);
-      await refreshTerminalSurfaceAfterClosedTab(project, card, activeWindowId, remainingTabs, { focus: true });
-    } catch (error) {
-      setTerminalStatus(card, `Could not close shell: ${error.message}`);
-    } finally {
-      closeButton.disabled = false;
-    }
-  });
-
-  actions.append(addButton, closeButton);
-  header.append(title, tabs, actions);
+  if (tabsContainer || actionsContainer) {
+    tabsContainer?.append(addButton, tabStrip);
+  } else {
+    actions.append(addButton);
+    header.append(title, tabStrip, actions);
+  }
 
   const viewport = document.createElement("div");
   viewport.className = "terminal-viewport";
@@ -1534,7 +1756,11 @@ function createTerminalSurface(project, {
     handleTerminalTabShortcut(project, card, event);
   }, true);
 
-  card.append(header, viewport, status);
+  if (!tabsContainer && !actionsContainer) {
+    card.append(header);
+  }
+
+  card.append(viewport, status);
   queueMicrotask(() => {
     refreshTerminalTabs(project, card);
   });
@@ -3592,6 +3818,7 @@ function closeWebAppTabMenu() {
 
 async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps) {
   closeWebAppTabMenu();
+  closeTerminalTabMenu();
 
   const rect = button.getBoundingClientRect();
   await freezeWebAppsForOverlay({
@@ -3690,6 +3917,7 @@ async function openWebAppHomeMenu(event, project, paneNode, selectedWebApp) {
   event.preventDefault();
   const sourceButton = event.currentTarget;
   closeWebAppTabMenu();
+  closeTerminalTabMenu();
   await freezeWebAppsForOverlay({
     keys: selectedWebApp?.key ? [selectedWebApp.key] : []
   });
@@ -3749,6 +3977,7 @@ async function openWebAppRefreshMenu(event, selectedWebApp) {
   event.preventDefault();
   const sourceButton = event.currentTarget;
   closeWebAppTabMenu();
+  closeTerminalTabMenu();
   await freezeWebAppsForOverlay({
     keys: selectedWebApp?.key ? [selectedWebApp.key] : []
   });
@@ -3959,6 +4188,12 @@ function createWebAppPane(project, paneNode) {
     actions.append(createWidgetPaneActions(project, selectedWebApp.widgetPane, widgetLayout, widgetGridColumns));
   }
 
+  const terminalPaneTabs = isTerminalPane ? document.createElement("div") : null;
+  if (terminalPaneTabs) {
+    terminalPaneTabs.className = "pane-terminal-tabs-slot";
+    tabs.append(terminalPaneTabs);
+  }
+
   const expansionState = getPaneExpansionState(project, paneNode.id);
   const expandPaneButton = document.createElement("button");
   expandPaneButton.className = "webapp-tool-button";
@@ -4017,7 +4252,8 @@ function createWebAppPane(project, paneNode) {
     host.append(createTerminalSurface(project, {
       tagName: "div",
       className: "terminal-pane-surface terminal-widget",
-      storageKey: `pane:${paneNode.id}`
+      storageKey: `pane:${paneNode.id}`,
+      tabsContainer: terminalPaneTabs
     }));
   } else if (isWidgetPane) {
     host.append(createWidgetPaneSurface(project, selectedWebApp.widgetPane));
@@ -4373,6 +4609,7 @@ function renderGlobalDashboard() {
   const globalWorkspace = getGlobalWorkspace();
   closeWidgetAddMenu();
   closeProjectGroupMenu();
+  closeTerminalTabMenu();
   visibleWebAppHosts = new Map();
   workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Global";
@@ -4397,6 +4634,7 @@ function renderGlobalPaneArea() {
   const globalWorkspace = getGlobalWorkspace();
   closeWebAppTabMenu();
   closeProjectGroupMenu();
+  closeTerminalTabMenu();
   visibleWebAppHosts = new Map();
   const paneLayoutElement = createPaneLayout(globalWorkspace, getProjectPaneLayout(globalWorkspace));
   const currentPaneLayoutElement = dashboardGrid.lastElementChild;
@@ -5682,6 +5920,7 @@ function createGlobalPluginSettingsForm(section, options = {}) {
 
 function renderGlobalSettingsPage() {
   closeWidgetAddMenu();
+  closeTerminalTabMenu();
   visibleWebAppHosts = new Map();
   invokeWebApp("hideWebApp");
   workspace.classList.remove("project-mode");
@@ -5740,6 +5979,7 @@ function renderGlobalSettingsPage() {
 
 function renderProjectDashboard(project) {
   closeWidgetAddMenu();
+  closeTerminalTabMenu();
   detachProjectTerminal(project.id);
   workspace.classList.add("project-mode");
   workspaceKicker.textContent = "Project";
@@ -5764,6 +6004,7 @@ function renderProjectPaneArea(project) {
   }
 
   closeWebAppTabMenu();
+  closeTerminalTabMenu();
   visibleWebAppHosts = new Map();
   const paneLayoutElement = createPaneLayout(project, getProjectPaneLayout(project));
   const currentPaneLayoutElement = dashboardGrid.lastElementChild;
