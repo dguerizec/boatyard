@@ -3554,17 +3554,11 @@ async function openWebAppOpenUrlDialog(payload = {}) {
   });
 
   dialog.append(panel);
-  dialog.addEventListener("close", () => {
-    dialog.remove();
-    restoreWebAppsAfterOverlay();
+  await showOverlayDialog(dialog, {
+    freeze: "overlap",
+    removeOnClose: true,
+    freezeMargin: 16
   });
-  document.body.append(dialog);
-  dialog.showModal();
-  await nextAnimationFrame();
-  await freezeWebAppsForRect(dialog.getBoundingClientRect(), {
-    margin: 16
-  });
-  dialog.style.visibility = "";
 }
 
 function normalizeAddressInput(rawUrl) {
@@ -5496,11 +5490,16 @@ function openWebAppOpenRuleSettingsDialog(rule = {}, { onSave, onRemove } = {}) 
   });
 
   dialog.append(form);
-  dialog.addEventListener("close", () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
-  patternInput.focus();
-  patternInput.select();
+  void showOverlayDialog(dialog, {
+    freeze: "overlap",
+    removeOnClose: true
+  }).then((shown) => {
+    if (!shown) {
+      return;
+    }
+    patternInput.focus();
+    patternInput.select();
+  });
 }
 
 function createGlobalWebAppOpenRulesSettingsForm({ settings, onSubmit }) {
@@ -5798,9 +5797,10 @@ function openGlobalPluginSettingsDialog(plugin, sections) {
   }
 
   dialog.append(panel);
-  dialog.addEventListener("close", () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
+  void showOverlayDialog(dialog, {
+    freeze: "overlap",
+    removeOnClose: true
+  });
 }
 
 function createGlobalPluginSettingsForm(section, options = {}) {
@@ -7419,6 +7419,56 @@ async function restoreWebAppsAfterOverlay() {
   queueWebAppSync();
 }
 
+async function showOverlayDialog(dialog, {
+  freeze = "overlap",
+  freezeMargin = 16,
+  onClose = null,
+  removeOnClose = false
+} = {}) {
+  let closed = false;
+  let didFreeze = false;
+
+  dialog.style.visibility = "hidden";
+  if (!dialog.isConnected) {
+    document.body.append(dialog);
+  }
+
+  dialog.addEventListener("close", () => {
+    closed = true;
+    if (didFreeze) {
+      restoreWebAppsAfterOverlay();
+    }
+    if (removeOnClose) {
+      dialog.remove();
+    }
+    onClose?.();
+  }, { once: true });
+
+  dialog.showModal();
+  await nextAnimationFrame();
+
+  if (closed) {
+    return false;
+  }
+
+  if (freeze === "all") {
+    didFreeze = true;
+    await freezeWebAppsForOverlay();
+  } else if (freeze === "overlap") {
+    didFreeze = true;
+    await freezeWebAppsForRect(dialog.getBoundingClientRect(), {
+      margin: freezeMargin
+    });
+  }
+
+  if (closed) {
+    return false;
+  }
+
+  dialog.style.visibility = "";
+  return true;
+}
+
 function clearOnboardingHighlight() {
   document.querySelector(".onboarding-highlight")?.classList.remove("onboarding-highlight");
 }
@@ -7927,7 +7977,6 @@ async function openChangelogDialog(changelog, options = {}) {
     panel.append(header, featureVersion, featureTitle, featureBody, actions);
   }
   dialog.append(panel);
-  document.body.append(dialog);
 
   let currentFeature = 0;
   let currentFeatures = features;
@@ -8000,7 +8049,14 @@ async function openChangelogDialog(changelog, options = {}) {
 
   renderFeature();
   window.addEventListener("keydown", handleKeydown);
-  dialog.showModal();
+  const shown = await showOverlayDialog(dialog, {
+    freeze: "overlap",
+    freezeMargin: 16
+  });
+  if (!shown) {
+    window.removeEventListener("keydown", handleKeydown);
+    return false;
+  }
   nextButton.focus();
   return true;
 }
@@ -8707,10 +8763,15 @@ function openProjectCreateGroupDialog(project) {
   });
 
   dialog.append(form);
-  dialog.addEventListener("close", () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
-  input.focus();
+  void showOverlayDialog(dialog, {
+    freeze: "overlap",
+    removeOnClose: true
+  }).then((shown) => {
+    if (!shown) {
+      return;
+    }
+    input.focus();
+  });
 }
 
 function openProjectGroupRenameDialog(groupName) {
@@ -8791,11 +8852,16 @@ function openProjectGroupRenameDialog(groupName) {
   });
 
   dialog.append(form);
-  dialog.addEventListener("close", () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
-  input.focus();
-  input.select();
+  void showOverlayDialog(dialog, {
+    freeze: "overlap",
+    removeOnClose: true
+  }).then((shown) => {
+    if (!shown) {
+      return;
+    }
+    input.focus();
+    input.select();
+  });
 }
 
 function openProjectGroupExplodeDialog(groupName, projects) {
@@ -8865,10 +8931,15 @@ function openProjectGroupExplodeDialog(groupName, projects) {
   });
 
   dialog.append(form);
-  dialog.addEventListener("close", () => dialog.remove());
-  document.body.append(dialog);
-  dialog.showModal();
-  submitButton.focus();
+  void showOverlayDialog(dialog, {
+    freeze: "overlap",
+    removeOnClose: true
+  }).then((shown) => {
+    if (!shown) {
+      return;
+    }
+    submitButton.focus();
+  });
 }
 
 function openProjectGroupContextMenu(event, groupName, projects) {
