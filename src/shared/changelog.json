@@ -1,6 +1,22 @@
 {
-  "generatedForVersion": "0.6.1",
+  "generatedForVersion": "0.7.0",
   "releases": [
+    {
+      "version": "0.7.0",
+      "date": "2026-06-22",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Pane expand and shrink controls",
+          "body": "Web app panes now include toolbar buttons for temporarily focusing one pane and returning to the previous split layout."
+        },
+        {
+          "category": "Added",
+          "title": "Remembered pane focus",
+          "body": "Expanded pane state is now saved with the project layout, so focused panes stay consistent after the workspace reloads."
+        }
+      ]
+    },
     {
       "version": "0.6.1",
       "date": "2026-06-21",
