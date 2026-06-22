@@ -5824,6 +5824,12 @@ function createGlobalPluginSettingsForm(section, options = {}) {
     input.dataset.defaultValue = String(defaultValue || "");
     input.value = pluginConfig[field.key] || input.dataset.defaultValue;
     label.append(input);
+    if (field.description) {
+      const description = document.createElement("small");
+      description.className = "plugin-settings-field-description";
+      description.textContent = field.description;
+      label.append(description);
+    }
     const fieldState = { field, input, action: null };
 
     if (field.action) {
@@ -6575,6 +6581,12 @@ function createProjectPluginSettingsControls(initialValues = {}, options = {}) {
         input.dataset.edited = "true";
       });
       label.append(input);
+      if (field.description) {
+        const description = document.createElement("small");
+        description.className = "plugin-settings-field-description";
+        description.textContent = field.description;
+        label.append(description);
+      }
       const fieldState = { field, input, action: null };
 
       if (field.action) {
@@ -7468,6 +7480,10 @@ async function showOverlayDialog(dialog, {
   dialog.style.visibility = "";
   return true;
 }
+
+window.BoatyardOverlayDialog = Object.freeze({
+  show: showOverlayDialog
+});
 
 function clearOnboardingHighlight() {
   document.querySelector(".onboarding-highlight")?.classList.remove("onboarding-highlight");

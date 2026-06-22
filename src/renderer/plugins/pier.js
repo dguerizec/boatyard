@@ -2,12 +2,16 @@
 
 (function registerPierPlugin(globalScope) {
   const registry = globalScope.BoatyardPluginRegistry;
-  const DEFAULT_PIER_API_URL = "http://127.0.0.1:60080";
   const DEFAULT_PIER_URL = "http://pier.test";
+  const DEFAULT_PIER_WORKTREE_PATTERN = "<repo>/worktrees/<worktree>";
   const workloadCacheByProject = new Map();
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
+  }
+
+  function invokePlugin(actionName, payload = {}) {
+    return globalScope.boatyard.invokePlugin("boatyard.pier", actionName, payload);
   }
 
   function normalizePath(value) {
@@ -15,7 +19,7 @@
   }
 
   function normalizeApiUrl(value) {
-    return String(value || DEFAULT_PIER_API_URL).replace(/\/+$/g, "");
+    return String(value || DEFAULT_PIER_URL).replace(/\/+$/g, "");
   }
 
   function pathsOverlap(left, right) {
@@ -58,12 +62,47 @@
       .replace(/^-+|-+$/g, "");
   }
 
+  function getPierWorktreePattern(options = {}) {
+    const configuredPattern = String(options.globalPluginConfig?.pierWorktreePattern || "").trim();
+    const legacyDirectory = String(options.globalPluginConfig?.pierWorktreeDirectory || "").trim();
+    if (configuredPattern) {
+      return configuredPattern;
+    }
+    if (legacyDirectory) {
+      return `<repo>/${legacyDirectory.replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")}/<worktree>`;
+    }
+    return DEFAULT_PIER_WORKTREE_PATTERN;
+  }
+
+  function getDefaultWorktreePath(project = {}, branchName = "", options = {}) {
+    const sourcePath = normalizePath(project.sourcePath);
+    const branchSlug = normalizeHostnameLabel(branchName);
+    if (!sourcePath || !branchSlug) {
+      return "";
+    }
+
+    const projectSlug = normalizeHostnameLabel(project.slug) || normalizeHostnameLabel(project.name) || "project";
+    const tokens = {
+      repo: sourcePath,
+      project: projectSlug,
+      worktree: branchSlug
+    };
+    const pattern = getPierWorktreePattern(options);
+    return pattern.replace(/\{(repo|project|worktree)\}|<(repo|project|worktree)>/g, (_match, bracedToken, angledToken) => (
+      tokens[bracedToken || angledToken]
+    ));
+  }
+
+  function isCurrentProjectWorktree(project, entry) {
+    return entry?.slug === "main" || normalizePath(project?.sourcePath) === normalizePath(entry?.worktreePath);
+  }
+
   function getDefaultPierProjectName(project = {}) {
     return normalizeHostnameLabel(project.slug);
   }
 
   function getPierUrl(options = {}) {
-    return normalizeApiUrl(options.globalPluginConfig?.pierUrl || DEFAULT_PIER_URL);
+    return normalizeApiUrl(options.globalPluginConfig?.pierUrl || options.globalPluginConfig?.pierApiUrl);
   }
 
   function getDefaultPreviewUrl(project = {}) {
@@ -82,7 +121,7 @@
   }
 
   function getPierApiUrl(options = {}) {
-    return normalizeApiUrl(options.globalPluginConfig?.pierApiUrl);
+    return normalizeApiUrl(options.globalPluginConfig?.pierUrl || options.globalPluginConfig?.pierApiUrl);
   }
 
   function getWorkloadCacheKey(project, options = {}) {
@@ -196,6 +235,32 @@
           }
         );
       },
+      createWorktree(project, payload = {}) {
+        if (typeof globalScope.boatyard?.invokePlugin !== "function") {
+          throw new Error("Plugin actions are unavailable.");
+        }
+
+        return invokePlugin("createWorktree", {
+          cwd: project?.sourcePath || "",
+          worktreePath: payload.worktreePath,
+          branchName: payload.branchName,
+          fromRef: payload.fromRef,
+          startAfterCreate: payload.startAfterCreate
+        });
+      },
+      removeWorktree(project, payload = {}) {
+        if (typeof globalScope.boatyard?.invokePlugin !== "function") {
+          throw new Error("Plugin actions are unavailable.");
+        }
+
+        return invokePlugin("removeWorktree", {
+          cwd: project?.sourcePath || "",
+          worktreePath: payload.worktreePath,
+          force: payload.force,
+          purge: payload.purge,
+          skipDown: payload.skipDown
+        });
+      },
       openUrl(entry, options = {}) {
         const url = typeof entry === "string" ? entry : entry?.url;
         const slug = typeof entry === "string" ? "" : entry?.slug;
@@ -236,6 +301,10 @@
     row.pierActionButton.classList.toggle("stop", entry.running);
     row.pierActionButton.classList.toggle("start", !entry.running);
     row.pierActionButton.disabled = false;
+    row.pierRemoveButton.disabled = isCurrentProjectWorktree(row.pierProject, entry);
+    row.pierRemoveButton.title = row.pierRemoveButton.disabled
+      ? "The current project worktree cannot be removed from here."
+      : `Remove ${entry.slug}`;
   }
 
   function createPierUrlRow(props, service, onRefresh, onError) {
@@ -284,17 +353,32 @@
       }
     });
 
+    const removeButton = document.createElement("button");
+    removeButton.className = "pier-remove-button";
+    removeButton.type = "button";
+    removeButton.textContent = "Remove";
+    removeButton.addEventListener("click", () => {
+      const row = removeButton.closest(".pier-url-row");
+      const entry = row?.pierEntry || {};
+      if (!entry.worktreePath || removeButton.disabled) {
+        return;
+      }
+
+      openPierRemoveWorktreeDialog(row.pierProject, entry, service, onRefresh, onError);
+    });
+
     const row = document.createElement("div");
     row.className = "pier-url-row";
     row.pierLink = link;
     row.pierPathButton = pathButton;
     row.pierPathText = pathText;
     row.pierActionButton = actionButton;
-    row.append(link, pathButton, actionButton);
+    row.pierRemoveButton = removeButton;
+    row.append(link, pathButton, actionButton, removeButton);
     return row;
   }
 
-  function renderPierUrlRows(list, urls, props, service, onRefresh, onError) {
+  function renderPierUrlRows(list, urls, project, props, service, onRefresh, onError) {
     const existingRows = new Map([...list.querySelectorAll(".pier-url-row")]
       .map((row) => [row.dataset.key, row]));
     const nextKeys = new Set();
@@ -304,6 +388,7 @@
       nextKeys.add(key);
       const row = existingRows.get(key) || createPierUrlRow(props, service, onRefresh, onError);
       row.dataset.key = key;
+      row.pierProject = project;
       updatePierUrlRow(row, entry);
       list.append(row);
     }
@@ -313,6 +398,258 @@
         row.remove();
       }
     }
+  }
+
+  function createPierDialog(titleText) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "plugin-settings-dialog pier-worktree-dialog";
+
+    const form = document.createElement("form");
+    form.className = "plugin-settings-dialog-panel";
+
+    const header = document.createElement("header");
+    header.className = "plugin-settings-dialog-header";
+
+    const title = document.createElement("h3");
+    title.textContent = titleText;
+
+    const closeButton = document.createElement("button");
+    closeButton.className = "icon-button";
+    closeButton.type = "button";
+    closeButton.title = "Close";
+    closeButton.setAttribute("aria-label", "Close");
+    closeButton.textContent = "X";
+    closeButton.addEventListener("click", () => dialog.close());
+
+    header.append(title, closeButton);
+    form.append(header);
+    dialog.append(form);
+    dialog.addEventListener("close", () => dialog.remove());
+    return { dialog, form };
+  }
+
+  function createField(labelText, input) {
+    const label = document.createElement("label");
+    label.className = "field";
+    const labelCopy = document.createElement("span");
+    labelCopy.textContent = labelText;
+    label.append(labelCopy, input);
+    return label;
+  }
+
+  function createCheckbox(labelText, input) {
+    const label = document.createElement("label");
+    label.className = "pier-checkbox-field";
+    const copy = document.createElement("span");
+    copy.textContent = labelText;
+    label.append(input, copy);
+    return label;
+  }
+
+  function createSwitch(labelText, input) {
+    const label = document.createElement("label");
+    label.className = "switch-row pier-switch-row";
+
+    const copy = document.createElement("span");
+    copy.className = "switch-copy";
+    const title = document.createElement("strong");
+    title.textContent = labelText;
+    copy.append(title);
+
+    const switchTrack = document.createElement("span");
+    switchTrack.className = "switch-track";
+    switchTrack.setAttribute("aria-hidden", "true");
+
+    label.append(copy, input, switchTrack);
+    return label;
+  }
+
+  function createDialogError() {
+    const error = document.createElement("p");
+    error.className = "form-error";
+    error.setAttribute("role", "alert");
+    error.hidden = true;
+    return error;
+  }
+
+  function setDialogError(error, message) {
+    error.textContent = message || "";
+    error.hidden = !message;
+  }
+
+  function showPierDialog(dialog, focusTarget) {
+    if (typeof globalScope.BoatyardOverlayDialog?.show === "function") {
+      void globalScope.BoatyardOverlayDialog.show(dialog, {
+        freeze: "overlap",
+        freezeMargin: 16
+      }).then((shown) => {
+        if (shown) {
+          focusTarget?.focus();
+        }
+      });
+      return;
+    }
+
+    document.body.append(dialog);
+    dialog.showModal();
+    requestAnimationFrame(() => focusTarget?.focus());
+  }
+
+  function openPierCreateWorktreeDialog(project, props, service, onRefresh, onError) {
+    const { dialog, form } = createPierDialog("New Pier worktree");
+
+    const branchInput = document.createElement("input");
+    branchInput.name = "branchName";
+    branchInput.type = "text";
+    branchInput.autocomplete = "off";
+    branchInput.required = true;
+    branchInput.placeholder = "feature-branch";
+
+    const pathInput = document.createElement("input");
+    pathInput.name = "worktreePath";
+    pathInput.type = "text";
+    pathInput.autocomplete = "off";
+    pathInput.required = true;
+    pathInput.placeholder = "/workspace/project/worktrees/feature-branch";
+
+    const fromInput = document.createElement("input");
+    fromInput.name = "fromRef";
+    fromInput.type = "text";
+    fromInput.autocomplete = "off";
+    fromInput.placeholder = "main";
+
+    const startInput = document.createElement("input");
+    startInput.name = "startAfterCreate";
+    startInput.type = "checkbox";
+    startInput.checked = true;
+
+    const error = createDialogError();
+
+    const actions = document.createElement("div");
+    actions.className = "form-actions";
+
+    const cancelButton = document.createElement("button");
+    cancelButton.className = "secondary-button";
+    cancelButton.type = "button";
+    cancelButton.textContent = "Cancel";
+    cancelButton.addEventListener("click", () => dialog.close());
+
+    const submitButton = document.createElement("button");
+    submitButton.className = "primary-button";
+    submitButton.type = "submit";
+    submitButton.textContent = "Create worktree";
+
+    let pathEdited = false;
+    branchInput.addEventListener("input", () => {
+      if (!pathEdited) {
+        pathInput.value = getDefaultWorktreePath(project, branchInput.value, props);
+      }
+    });
+    pathInput.addEventListener("input", () => {
+      pathEdited = true;
+    });
+
+    actions.append(cancelButton, submitButton);
+    form.append(
+      createField("Branch name", branchInput),
+      createField("Worktree path", pathInput),
+      createField("From ref", fromInput),
+      createSwitch("Start after creation", startInput),
+      error,
+      actions
+    );
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setDialogError(error, "");
+      submitButton.disabled = true;
+      submitButton.textContent = "Creating";
+      try {
+        await service.createWorktree(project, {
+          branchName: branchInput.value,
+          worktreePath: pathInput.value,
+          fromRef: fromInput.value,
+          startAfterCreate: startInput.checked
+        });
+        dialog.close();
+        await onRefresh();
+      } catch (createError) {
+        setDialogError(error, createError.message);
+        onError(createError);
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Create worktree";
+      }
+    });
+
+    showPierDialog(dialog, branchInput);
+  }
+
+  function openPierRemoveWorktreeDialog(project, entry, service, onRefresh, onError) {
+    const { dialog, form } = createPierDialog("Remove Pier worktree");
+
+    const confirmation = document.createElement("div");
+    confirmation.className = "danger-confirmation";
+    const copy = document.createElement("p");
+    copy.textContent = `This stops the workload and removes the "${entry.slug}" worktree directory. The Boatyard project entry is not removed.`;
+    const pathCopy = document.createElement("code");
+    pathCopy.textContent = entry.worktreePath;
+    confirmation.append(copy, pathCopy);
+
+    const purgeInput = document.createElement("input");
+    purgeInput.name = "purge";
+    purgeInput.type = "checkbox";
+
+    const forceInput = document.createElement("input");
+    forceInput.name = "force";
+    forceInput.type = "checkbox";
+
+    const error = createDialogError();
+
+    const actions = document.createElement("div");
+    actions.className = "form-actions";
+
+    const cancelButton = document.createElement("button");
+    cancelButton.className = "secondary-button";
+    cancelButton.type = "button";
+    cancelButton.textContent = "Cancel";
+    cancelButton.addEventListener("click", () => dialog.close());
+
+    const submitButton = document.createElement("button");
+    submitButton.className = "danger-button";
+    submitButton.type = "submit";
+    submitButton.textContent = "Remove worktree";
+
+    actions.append(cancelButton, submitButton);
+    form.append(
+      confirmation,
+      createCheckbox("Purge snapshots", purgeInput),
+      createCheckbox("Force removal", forceInput),
+      error,
+      actions
+    );
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      setDialogError(error, "");
+      submitButton.disabled = true;
+      submitButton.textContent = "Removing";
+      try {
+        await service.removeWorktree(project, {
+          worktreePath: entry.worktreePath,
+          purge: purgeInput.checked,
+          force: forceInput.checked
+        });
+        dialog.close();
+        await onRefresh();
+      } catch (removeError) {
+        setDialogError(error, removeError.message);
+        onError(removeError);
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = "Remove worktree";
+      }
+    });
+
+    showPierDialog(dialog, submitButton);
   }
 
   function createPierWidget(project, props = {}, service) {
@@ -325,16 +662,27 @@
     const header = document.createElement("div");
     header.className = "pier-widget-header";
 
-    const eyebrow = document.createElement("p");
-    eyebrow.className = "widget-eyebrow";
-    eyebrow.textContent = "Pier";
+    const title = document.createElement("div");
+    title.className = "pier-widget-title";
+    const heading = document.createElement("h3");
+    heading.textContent = "Pier";
+    title.append(heading);
 
     const refreshButton = document.createElement("button");
     refreshButton.className = "pier-refresh-button";
     refreshButton.type = "button";
     refreshButton.textContent = "Refresh";
 
-    header.append(eyebrow, refreshButton);
+    const newButton = document.createElement("button");
+    newButton.className = "pier-refresh-button";
+    newButton.type = "button";
+    newButton.textContent = "New";
+
+    const headerActions = document.createElement("div");
+    headerActions.className = "pier-widget-actions";
+    headerActions.append(newButton, refreshButton);
+
+    header.append(title, headerActions);
 
     const body = document.createElement("p");
     body.className = "pier-widget-status";
@@ -361,7 +709,7 @@
         const urls = await service.listProjectWorkloads(project, props);
         body.hidden = urls.length > 0;
         body.textContent = urls.length ? "" : "No Pier worktree.";
-        renderPierUrlRows(list, urls, props, service, load, (error) => {
+        renderPierUrlRows(list, urls, project, props, service, load, (error) => {
           body.hidden = false;
           body.textContent = error.message;
         });
@@ -375,6 +723,12 @@
 
     refreshButton.addEventListener("click", () => {
       load();
+    });
+    newButton.addEventListener("click", () => {
+      openPierCreateWorktreeDialog(project, props, service, load, (error) => {
+        body.hidden = false;
+        body.textContent = error.message;
+      });
     });
 
     load();
@@ -437,18 +791,18 @@
           title: "Pier",
           fields: [
             {
-              key: "pierApiUrl",
-              label: "Pier API URL",
-              type: "text",
-              valueType: "url",
-              placeholder: DEFAULT_PIER_API_URL
-            },
-            {
               key: "pierUrl",
               label: "Pier URL",
               type: "text",
               valueType: "url",
               placeholder: DEFAULT_PIER_URL
+            },
+            {
+              key: "pierWorktreePattern",
+              label: "Worktree path pattern",
+              type: "text",
+              placeholder: DEFAULT_PIER_WORKTREE_PATTERN,
+              description: "Tokens: <repo> is the project source path, <project> is the project slug, and <worktree> is the worktree slug. Example: <repo>/../<project>-<worktree>."
             }
           ]
         });
