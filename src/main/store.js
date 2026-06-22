@@ -463,7 +463,7 @@ function normalizePaneLayoutNode(node, seenIds = new Set()) {
     }
 
     seenIds.add(id);
-    return {
+    const normalized = {
       type: "split",
       id,
       direction,
@@ -471,6 +471,12 @@ function normalizePaneLayoutNode(node, seenIds = new Set()) {
       first,
       second
     };
+
+    if (node.expandedChild === "first" || node.expandedChild === "second") {
+      normalized.expandedChild = node.expandedChild;
+    }
+
+    return normalized;
   }
 
   return null;

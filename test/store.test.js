@@ -383,6 +383,7 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
     id: "project:split:1",
     direction: "horizontal",
     ratio: 0.94,
+    expandedChild: "first",
     first: {
       type: "pane",
       id: "project:pane:1",
@@ -405,6 +406,7 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
     id: "project:split:1",
     direction: "horizontal",
     ratio: 0.85,
+    expandedChild: "first",
     first: {
       type: "pane",
       id: "project:pane:1",

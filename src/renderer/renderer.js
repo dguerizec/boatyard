@@ -193,6 +193,18 @@ const TOOL_ICONS = {
     "M4 5.5C4 4.67 4.67 4 5.5 4h13c.83 0 1.5.67 1.5 1.5v13c0 .83-.67 1.5-1.5 1.5h-13C4.67 20 4 19.33 4 18.5z",
     "M4 12h16"
   ],
+  expandPane: [
+    "M8 3H3v5",
+    "M3 3l7 7",
+    "M16 21h5v-5",
+    "M21 21l-7-7"
+  ],
+  shrinkPane: [
+    "M10 3v7H3",
+    "M10 10L3 3",
+    "M14 21v-7h7",
+    "M14 14l7 7"
+  ],
   close: [
     "M6 6l12 12",
     "M18 6L6 18"
@@ -3947,6 +3959,25 @@ function createWebAppPane(project, paneNode) {
     actions.append(createWidgetPaneActions(project, selectedWebApp.widgetPane, widgetLayout, widgetGridColumns));
   }
 
+  const expansionState = getPaneExpansionState(project, paneNode.id);
+  const expandPaneButton = document.createElement("button");
+  expandPaneButton.className = "webapp-tool-button";
+  expandPaneButton.type = "button";
+  expandPaneButton.title = "Expand pane";
+  expandPaneButton.setAttribute("aria-label", "Expand pane");
+  expandPaneButton.append(createToolIcon("expandPane"));
+  expandPaneButton.disabled = !expansionState.canExpand;
+  expandPaneButton.addEventListener("click", () => expandPane(project, paneNode.id));
+
+  const shrinkPaneButton = document.createElement("button");
+  shrinkPaneButton.className = "webapp-tool-button";
+  shrinkPaneButton.type = "button";
+  shrinkPaneButton.title = "Shrink pane";
+  shrinkPaneButton.setAttribute("aria-label", "Shrink pane");
+  shrinkPaneButton.append(createToolIcon("shrinkPane"));
+  shrinkPaneButton.disabled = !expansionState.canShrink;
+  shrinkPaneButton.addEventListener("click", () => shrinkPane(project, paneNode.id));
+
   const verticalSplitButton = document.createElement("button");
   verticalSplitButton.className = "webapp-tool-button split-vertical";
   verticalSplitButton.type = "button";
@@ -3972,7 +4003,7 @@ function createWebAppPane(project, paneNode) {
   closePaneButton.disabled = countPaneNodes(getProjectPaneLayout(project)) <= 1;
   closePaneButton.addEventListener("click", () => closePane(project, paneNode.id));
 
-  actions.append(verticalSplitButton, horizontalSplitButton, closePaneButton);
+  actions.append(expandPaneButton, shrinkPaneButton, verticalSplitButton, horizontalSplitButton, closePaneButton);
   header.append(tabs, actions);
 
   const host = document.createElement("div");
@@ -4049,6 +4080,64 @@ function replacePaneNode(node, paneId, replacement) {
     first: replacePaneNode(node.first, paneId, replacement),
     second: replacePaneNode(node.second, paneId, replacement)
   };
+}
+
+function getPaneAncestorPath(node, paneId, path = []) {
+  if (!node) {
+    return null;
+  }
+
+  if (node.type === "pane") {
+    return node.id === paneId ? path : null;
+  }
+
+  return getPaneAncestorPath(node.first, paneId, [
+    ...path,
+    {
+      node,
+      side: "first"
+    }
+  ]) || getPaneAncestorPath(node.second, paneId, [
+    ...path,
+    {
+      node,
+      side: "second"
+    }
+  ]);
+}
+
+function getPaneExpansionState(project, paneId) {
+  const path = getPaneAncestorPath(getProjectPaneLayout(project), paneId) || [];
+  return {
+    canExpand: path.some(({ node }) => !node.expandedChild),
+    canShrink: path.some(({ node, side }) => node.expandedChild === side)
+  };
+}
+
+function expandPane(project, paneId) {
+  const path = getPaneAncestorPath(getProjectPaneLayout(project), paneId) || [];
+  const target = [...path].reverse().find(({ node }) => !node.expandedChild);
+
+  if (!target) {
+    return;
+  }
+
+  target.node.expandedChild = target.side;
+  persistPaneLayout(project);
+  renderWorkspaceDashboard(project);
+}
+
+function shrinkPane(project, paneId) {
+  const path = getPaneAncestorPath(getProjectPaneLayout(project), paneId) || [];
+  const target = path.find(({ node, side }) => node.expandedChild === side);
+
+  if (!target) {
+    return;
+  }
+
+  delete target.node.expandedChild;
+  persistPaneLayout(project);
+  renderWorkspaceDashboard(project);
 }
 
 function countPaneNodes(node) {
@@ -4198,6 +4287,10 @@ function applySplitRatio(splitElement, splitNode) {
 function createPaneLayout(project, node) {
   if (node.type === "pane") {
     return createWebAppPane(project, node);
+  }
+
+  if (node.expandedChild === "first" || node.expandedChild === "second") {
+    return createPaneLayout(project, node[node.expandedChild]);
   }
 
   const split = document.createElement("div");
