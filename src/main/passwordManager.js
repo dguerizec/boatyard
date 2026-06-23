@@ -1,7 +1,27 @@
+// @ts-check
 "use strict";
 
 const { safeStorage } = require("electron");
 
+/**
+ * @typedef {{ passwordManagerEnabled?: boolean, passwordManagerDisclaimerAccepted?: boolean }} PasswordSettings
+ * @typedef {{ username: string, encryptedPassword: string }} StoredPasswordCredential
+ * @typedef {{
+ *   getState(): { settings: PasswordSettings },
+ *   getPasswordCredential(origin: string): StoredPasswordCredential | null,
+ *   updatePasswordCredential(origin: string, credential: StoredPasswordCredential): unknown
+ * }} PasswordStore
+ * @typedef {(payload: { origin: string, username: string, isUpdate: boolean }) => boolean | Promise<boolean>} ConfirmSaveCallback
+ * @typedef {{ origin: string, username: string, password: string }} PasswordCredential
+ * @typedef {{ enabled: boolean, encryptionAvailable: boolean }} PasswordManagerStatus
+ * @typedef {{ url?: unknown, username?: unknown, password?: unknown }} SaveCredentialInput
+ * @typedef {{ saved: true } | { saved: false, reason: "disabled" | "encryption-unavailable" | "empty" | "unchanged" | "cancelled" }} SaveCredentialResult
+ */
+
+/**
+ * @param {unknown} rawUrl
+ * @returns {string}
+ */
 function getCredentialOrigin(rawUrl) {
   try {
     const parsed = new URL(String(rawUrl || ""));
@@ -12,16 +32,27 @@ function getCredentialOrigin(rawUrl) {
 }
 
 class PasswordManager {
+  /**
+   * @param {{ store: PasswordStore, confirmSave: ConfirmSaveCallback }} options
+   */
   constructor({ store, confirmSave }) {
+    /** @type {PasswordStore} */
     this.store = store;
+    /** @type {ConfirmSaveCallback} */
     this.confirmSave = confirmSave;
   }
 
+  /**
+   * @returns {boolean}
+   */
   isEnabled() {
     const settings = this.store.getState().settings;
     return settings.passwordManagerEnabled === true && settings.passwordManagerDisclaimerAccepted === true;
   }
 
+  /**
+   * @returns {PasswordManagerStatus}
+   */
   getStatus() {
     return {
       enabled: this.isEnabled(),
@@ -29,6 +60,10 @@ class PasswordManager {
     };
   }
 
+  /**
+   * @param {unknown} url
+   * @returns {PasswordCredential | null}
+   */
   getCredential(url) {
     if (!this.isEnabled() || !safeStorage.isEncryptionAvailable()) {
       return null;
@@ -47,11 +82,16 @@ class PasswordManager {
         password: safeStorage.decryptString(Buffer.from(credential.encryptedPassword, "base64"))
       };
     } catch (error) {
-      console.warn(`Could not decrypt password for ${origin}: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`Could not decrypt password for ${origin}: ${message}`);
       return null;
     }
   }
 
+  /**
+   * @param {SaveCredentialInput} input
+   * @returns {Promise<SaveCredentialResult>}
+   */
   async saveCredential({ url, username, password }) {
     if (!this.isEnabled()) {
       return { saved: false, reason: "disabled" };
