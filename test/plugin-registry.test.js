@@ -12,7 +12,7 @@ function createEnvironment() {
     "utf8",
   );
   const pluginRegistrySource = fs.readFileSync(
-    path.join(__dirname, "../src/renderer/pluginRegistry.js"),
+    path.join(__dirname, "../build/renderer/pluginRegistry.js"),
     "utf8",
   );
   const context = {

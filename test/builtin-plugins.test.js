@@ -120,7 +120,7 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
 
   for (const file of [
     path.join(__dirname, "../build/renderer/widgetRegistry.js"),
-    path.join(__dirname, "../src/renderer/pluginRegistry.js"),
+    path.join(__dirname, "../build/renderer/pluginRegistry.js"),
     ...builtinPluginDirs.map(readBuiltinPluginRendererPath)
   ]) {
     vm.runInContext(fs.readFileSync(file, "utf8"), context);
