@@ -8,7 +8,7 @@ const vm = require("node:vm");
 
 function createEnvironment() {
   const widgetRegistrySource = fs.readFileSync(
-    path.join(__dirname, "../src/renderer/widgetRegistry.js"),
+    path.join(__dirname, "../build/renderer/widgetRegistry.js"),
     "utf8",
   );
   const pluginRegistrySource = fs.readFileSync(

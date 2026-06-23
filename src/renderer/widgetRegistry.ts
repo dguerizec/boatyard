@@ -1,77 +1,88 @@
-// @ts-check
-"use strict";
+type WidgetGridSize = {
+  columns: number;
+  rows: number;
+};
 
-/**
- * @typedef {{ columns: number, rows: number }} WidgetGridSize
- * @typedef {{ default?: Partial<WidgetGridSize>, min?: Partial<WidgetGridSize>, max?: Partial<WidgetGridSize> }} WidgetLayoutInput
- * @typedef {{ default: WidgetGridSize, min: WidgetGridSize, max?: WidgetGridSize }} WidgetLayout
- * @typedef {{
- *   id?: unknown,
- *   name?: unknown,
- *   title?: unknown,
- *   scope?: unknown,
- *   scopes?: unknown[],
- *   category?: unknown,
- *   status?: unknown,
- *   description?: unknown,
- *   provider?: unknown,
- *   layout?: WidgetLayoutInput,
- *   requires?: unknown,
- *   create?: unknown,
- *   createElement?: unknown,
- *   [key: string]: unknown
- * }} WidgetDefinitionInput
- * @typedef {WidgetDefinitionInput & {
- *   id: string,
- *   name: string,
- *   title: string,
- *   scope: string,
- *   scopes: string[],
- *   category: string,
- *   status: "stable" | "experimental",
- *   description: string,
- *   provider: string,
- *   layout: WidgetLayout,
- *   requires: unknown[]
- * }} WidgetDefinition
- * @typedef {{ scope?: string, status?: "stable" | "experimental" }} WidgetListFilter
- * @typedef {{ alias: string, targetId: string }} WidgetAlias
- * @typedef {{
- *   register(definition: WidgetDefinitionInput): WidgetDefinition,
- *   registerAlias(alias: unknown, targetId: unknown): WidgetAlias,
- *   list(filter?: WidgetListFilter): WidgetDefinition[],
- *   get(id: unknown): WidgetDefinition | null,
- *   resolveId(id: unknown): string,
- *   listAliases(): WidgetAlias[],
- *   unregister(id: unknown): boolean,
- *   unregisterAlias(alias: unknown): boolean
- * }} WidgetRegistryApi
- */
+type WidgetLayoutInput = {
+  default?: Partial<WidgetGridSize>;
+  min?: Partial<WidgetGridSize>;
+  max?: Partial<WidgetGridSize>;
+};
 
-/**
- * @param {Window & { BoatyardWidgetRegistry?: WidgetRegistryApi }} globalScope
- */
-(function registerWidgetRegistry(globalScope) {
-  /** @type {Map<string, WidgetDefinition>} */
+type WidgetLayout = {
+  default: WidgetGridSize;
+  min: WidgetGridSize;
+  max?: WidgetGridSize;
+};
+
+type WidgetStatus = "stable" | "experimental";
+
+type WidgetDefinitionInput = {
+  id?: unknown;
+  name?: unknown;
+  title?: unknown;
+  scope?: unknown;
+  scopes?: unknown[];
+  category?: unknown;
+  status?: unknown;
+  description?: unknown;
+  provider?: unknown;
+  layout?: WidgetLayoutInput;
+  requires?: unknown;
+  create?: unknown;
+  createElement?: unknown;
+  [key: string]: unknown;
+};
+
+type WidgetDefinition = WidgetDefinitionInput & {
+  id: string;
+  name: string;
+  title: string;
+  scope: string;
+  scopes: string[];
+  category: string;
+  status: WidgetStatus;
+  description: string;
+  provider: string;
+  layout: WidgetLayout;
+  requires: unknown[];
+};
+
+type WidgetListFilter = {
+  scope?: string;
+  status?: WidgetStatus;
+};
+
+type WidgetAlias = {
+  alias: string;
+  targetId: string;
+};
+
+type WidgetRegistryApi = {
+  register(definition: WidgetDefinitionInput): WidgetDefinition;
+  registerAlias(alias: unknown, targetId: unknown): WidgetAlias;
+  list(filter?: WidgetListFilter): WidgetDefinition[];
+  get(id: unknown): WidgetDefinition | null;
+  resolveId(id: unknown): string;
+  listAliases(): WidgetAlias[];
+  unregister(id: unknown): boolean;
+  unregisterAlias(alias: unknown): boolean;
+};
+
+type WidgetRegistryWindow = Window & {
+  BoatyardWidgetRegistry?: WidgetRegistryApi;
+};
+
+(function registerWidgetRegistry(globalScope: WidgetRegistryWindow) {
   const widgets = new Map();
-  /** @type {Map<string, string>} */
   const aliases = new Map();
-  /** @type {Set<WidgetDefinition["status"]>} */
-  const allowedStatuses = new Set(["stable", "experimental"]);
+  const allowedStatuses = new Set<WidgetStatus>(["stable", "experimental"]);
 
-  /**
-   * @param {unknown} value
-   * @returns {string}
-   */
-  function normalizeText(value) {
+  function normalizeText(value: unknown) {
     return String(value || "").trim();
   }
 
-  /**
-   * @param {WidgetDefinitionInput} definition
-   * @returns {string[]}
-   */
-  function normalizeScopes(definition) {
+  function normalizeScopes(definition: WidgetDefinitionInput) {
     const source = Array.isArray(definition.scopes)
       ? definition.scopes
       : [definition.scope || "project"];
@@ -82,12 +93,7 @@
     return scopes.length ? scopes : ["project"];
   }
 
-  /**
-   * @param {Partial<WidgetGridSize> | undefined} size
-   * @param {WidgetGridSize} fallback
-   * @returns {WidgetGridSize}
-   */
-  function normalizeGridSize(size, fallback) {
+  function normalizeGridSize(size: Partial<WidgetGridSize> | undefined, fallback: WidgetGridSize) {
     const source = size && typeof size === "object" ? size : fallback;
     return {
       columns: Math.max(
@@ -98,16 +104,12 @@
     };
   }
 
-  /**
-   * @param {WidgetLayoutInput} layout
-   * @returns {WidgetLayout}
-   */
-  function normalizeLayout(layout = {}) {
+  function normalizeLayout(layout: WidgetLayoutInput = {}) {
     const defaultSize = normalizeGridSize(layout.default, {
       columns: 1,
       rows: 2,
     });
-    const normalized = {
+    const normalized: WidgetLayout = {
       default: defaultSize,
       min: normalizeGridSize(layout.min, { columns: 1, rows: 1 }),
     };
@@ -119,11 +121,7 @@
     return normalized;
   }
 
-  /**
-   * @param {WidgetDefinitionInput} definition
-   * @returns {WidgetDefinition}
-   */
-  function normalizeWidgetDefinition(definition) {
+  function normalizeWidgetDefinition(definition: WidgetDefinitionInput): WidgetDefinition {
     if (!definition || typeof definition !== "object") {
       throw new Error("Widget definition must be an object.");
     }
@@ -132,8 +130,8 @@
     const name = normalizeText(definition.name || definition.title);
     const scopes = normalizeScopes(definition);
     const rawStatus = normalizeText(definition.status);
-    const status = allowedStatuses.has(/** @type {WidgetDefinition["status"]} */ (rawStatus))
-      ? /** @type {WidgetDefinition["status"]} */ (rawStatus)
+    const status = allowedStatuses.has(rawStatus as WidgetStatus)
+      ? rawStatus as WidgetStatus
       : "experimental";
 
     if (!id) {
@@ -167,11 +165,7 @@
     };
   }
 
-  /**
-   * @param {WidgetDefinitionInput} definition
-   * @returns {WidgetDefinition}
-   */
-  function register(definition) {
+  function register(definition: WidgetDefinitionInput) {
     const normalized = normalizeWidgetDefinition(definition);
 
     if (widgets.has(normalized.id)) {
@@ -182,29 +176,17 @@
     return normalized;
   }
 
-  /**
-   * @param {WidgetListFilter} filter
-   * @returns {WidgetDefinition[]}
-   */
-  function list(filter = {}) {
+  function list(filter: WidgetListFilter = {}) {
     return [...widgets.values()]
       .filter((widget) => !filter.scope || widget.scopes.includes(filter.scope))
       .filter((widget) => !filter.status || widget.status === filter.status);
   }
 
-  /**
-   * @param {unknown} id
-   * @returns {WidgetDefinition | null}
-   */
-  function get(id) {
+  function get(id: unknown) {
     return widgets.get(resolveId(id)) || null;
   }
 
-  /**
-   * @param {unknown} id
-   * @returns {boolean}
-   */
-  function unregister(id) {
+  function unregister(id: unknown) {
     const normalizedId = String(id || "");
     for (const [alias, targetId] of aliases) {
       if (alias === normalizedId || targetId === normalizedId) {
@@ -214,12 +196,7 @@
     return widgets.delete(normalizedId);
   }
 
-  /**
-   * @param {unknown} alias
-   * @param {unknown} targetId
-   * @returns {WidgetAlias}
-   */
-  function registerAlias(alias, targetId) {
+  function registerAlias(alias: unknown, targetId: unknown) {
     const normalizedAlias = normalizeText(alias);
     const normalizedTargetId = normalizeText(targetId);
 
@@ -235,26 +212,15 @@
     return { alias: normalizedAlias, targetId: normalizedTargetId };
   }
 
-  /**
-   * @param {unknown} alias
-   * @returns {boolean}
-   */
-  function unregisterAlias(alias) {
+  function unregisterAlias(alias: unknown) {
     return aliases.delete(String(alias || ""));
   }
 
-  /**
-   * @param {unknown} id
-   * @returns {string}
-   */
-  function resolveId(id) {
+  function resolveId(id: unknown) {
     const normalizedId = String(id || "").trim();
     return aliases.get(normalizedId) || normalizedId;
   }
 
-  /**
-   * @returns {WidgetAlias[]}
-   */
   function listAliases() {
     return [...aliases.entries()].map(([alias, targetId]) => ({ alias, targetId }));
   }
@@ -269,4 +235,4 @@
     unregister,
     unregisterAlias,
   });
-})(/** @type {Window & { BoatyardWidgetRegistry?: WidgetRegistryApi }} */ (window));
+})(window as WidgetRegistryWindow);

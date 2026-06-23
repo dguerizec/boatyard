@@ -119,7 +119,7 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
   vm.createContext(context);
 
   for (const file of [
-    path.join(__dirname, "../src/renderer/widgetRegistry.js"),
+    path.join(__dirname, "../build/renderer/widgetRegistry.js"),
     path.join(__dirname, "../src/renderer/pluginRegistry.js"),
     ...builtinPluginDirs.map(readBuiltinPluginRendererPath)
   ]) {
