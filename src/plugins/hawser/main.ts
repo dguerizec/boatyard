@@ -1,4 +1,3 @@
-// @ts-check
 "use strict";
 
 const {
@@ -28,11 +27,11 @@ const {
  * @param {HawserPluginContext} ctx
  */
 function activate(ctx) {
-  ctx.actions.handle("createProject", ({ sourcePath, runtime } = {}) => {
+  ctx.actions.handle("createProject", ({ sourcePath, runtime }: any = {}) => {
     return createHawserProject(sourcePath, runtime, { execFileAsync: ctx.execFileAsync });
   });
 
-  ctx.actions.handle("widgetDataForConfig", ({ projectId, projectConfig = {}, globalConfig = {} } = {}) => {
+  ctx.actions.handle("widgetDataForConfig", ({ projectId, projectConfig = {}, globalConfig = {} }: any = {}) => {
     const state = ctx.getState();
     const project = state?.projects?.find((item) => item.id === String(projectId || ""));
 
@@ -45,14 +44,14 @@ function activate(ctx) {
     });
   });
 
-  ctx.actions.handle("statusForConfig", ({ globalConfig = {} } = {}) => {
+  ctx.actions.handle("statusForConfig", ({ globalConfig = {} }: any = {}) => {
     return getHawserStatus({
       hawserApiUrl: globalConfig.hawserApiUrl,
       hawserToken: globalConfig.hawserToken
     });
   });
 
-  ctx.projectInspectors.register(async ({ sourcePath } = {}) => {
+  ctx.projectInspectors.register(async ({ sourcePath }: any = {}) => {
     const project = await inspectHawserProject(sourcePath, { execFileAsync: ctx.execFileAsync });
     return {
       matchType: project?.matchType || "",
@@ -62,4 +61,4 @@ function activate(ctx) {
   });
 }
 
-module.exports = { activate };
+export { activate };

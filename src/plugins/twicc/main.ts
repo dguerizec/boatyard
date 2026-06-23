@@ -1,4 +1,3 @@
-// @ts-check
 "use strict";
 
 const {
@@ -31,7 +30,7 @@ const {
 function activate(ctx) {
   const projectCache = createTwiccProjectCache();
 
-  ctx.actions.handle("createProject", async ({ sourcePath } = {}) => {
+  ctx.actions.handle("createProject", async ({ sourcePath }: any = {}) => {
     const project = await createTwiccProject(sourcePath, { execFileAsync: ctx.execFileAsync });
     projectCache.invalidate();
     return project;
@@ -51,7 +50,7 @@ function activate(ctx) {
     );
   });
 
-  ctx.projectInspectors.register(async ({ sourcePath } = {}) => {
+  ctx.projectInspectors.register(async ({ sourcePath }: any = {}) => {
     const project = inspectTwiccProjectFromProjects(
       sourcePath,
       await projectCache.get({ execFileAsync: ctx.execFileAsync }, { force: true })
@@ -63,4 +62,4 @@ function activate(ctx) {
   });
 }
 
-module.exports = { activate };
+export { activate };
