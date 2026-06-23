@@ -44,9 +44,55 @@ function copyStaticAssets(directory) {
   }
 }
 
+function copyFileFromSource(sourcePath) {
+  const targetPath = join(buildRoot, relative(sourceRoot, sourcePath));
+  mkdirSync(dirname(targetPath), { recursive: true });
+  cpSync(sourcePath, targetPath);
+}
+
+function copyBrowserScripts(directory) {
+  for (const entry of readdirSync(directory)) {
+    const sourcePath = join(directory, entry);
+    const stats = statSync(sourcePath);
+
+    if (stats.isDirectory()) {
+      copyBrowserScripts(sourcePath);
+      continue;
+    }
+
+    if (extname(entry) === ".js") {
+      copyFileFromSource(sourcePath);
+    }
+  }
+}
+
+function copyPluginRendererScripts() {
+  const pluginsRoot = join(sourceRoot, "plugins");
+  for (const pluginName of readdirSync(pluginsRoot)) {
+    const pluginPath = join(pluginsRoot, pluginName);
+    if (!statSync(pluginPath).isDirectory()) {
+      continue;
+    }
+
+    const rendererPath = join(pluginPath, "renderer.js");
+    try {
+      if (statSync(rendererPath).isFile()) {
+        copyFileFromSource(rendererPath);
+      }
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+    }
+  }
+}
+
 rmSync(buildRoot, { recursive: true, force: true });
 run("npx", ["tsc", "-p", "tsconfig.build.json"]);
 copyStaticAssets(sourceRoot);
+copyBrowserScripts(join(sourceRoot, "renderer"));
+copyFileFromSource(join(sourceRoot, "shared", "boatyardManual.js"));
+copyPluginRendererScripts();
 writeFileSync(
   join(buildRoot, "package.json"),
   `${JSON.stringify({ main: "main/main.js" }, null, 2)}\n`
