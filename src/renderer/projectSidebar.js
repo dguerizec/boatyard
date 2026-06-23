@@ -1166,7 +1166,7 @@
         empty.className = "empty-copy";
         empty.textContent = "No projects configured yet.";
         projectList.append(empty);
-        if (onboardingDemoProjectVisible) {
+        if (isOnboardingDemoProjectVisible()) {
           ensureOnboardingDemoProject();
         }
         return;
@@ -1208,7 +1208,7 @@
         projectList.append(createProjectNavRow(project));
       }
 
-      if (onboardingDemoProjectVisible) {
+      if (isOnboardingDemoProjectVisible()) {
         ensureOnboardingDemoProject();
       }
     }
