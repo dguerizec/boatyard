@@ -1,6 +1,25 @@
+// @ts-check
 "use strict";
 
+/**
+ * @typedef {{ title: string, body: string }} ManualEntry
+ * @typedef {{ id: string, title: string, summary: string, entries: ManualEntry[] }} ManualSection
+ * @typedef {{ title: string, body: string, target: string }} ManualOnboardingStep
+ * @typedef {{
+ *   version: number,
+ *   title: string,
+ *   description: string,
+ *   publicUrlStatus: string,
+ *   sections: ManualSection[],
+ *   onboarding: ManualOnboardingStep[]
+ * }} BoatyardManual
+ */
+
+/**
+ * @param {typeof globalThis & { BoatyardManual?: BoatyardManual }} root
+ */
 (function exposeManual(root) {
+  /** @type {BoatyardManual} */
   const manual = {
     version: 1,
     title: "Boatyard Manual",
