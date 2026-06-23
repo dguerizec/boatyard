@@ -1,3 +1,4 @@
+// @ts-check
 "use strict";
 
 const { execFile } = require("node:child_process");
@@ -5,8 +6,30 @@ const { randomUUID } = require("node:crypto");
 const { promisify } = require("node:util");
 const pty = require("node-pty");
 
+/**
+ * @typedef {import("../plugins/pluginTypes").ExecFileAsync} ExecFileAsync
+ * @typedef {ReturnType<typeof pty.spawn>} PtyProcess
+ * @typedef {{ id?: string, slug?: string, name?: string, sourcePath?: string, terminalEnv?: string }} TerminalProject
+ * @typedef {{ terminalEnv?: string }} TerminalSettings
+ * @typedef {{ id: string, index: number, name: string, cwd: string }} TerminalTab
+ * @typedef {{ cols?: number, rows?: number }} TerminalSize
+ * @typedef {{ terminalId: string, tab: TerminalTab }} TerminalAttachResult
+ * @typedef {{ term: PtyProcess, projectId?: string, windowId: string, clientSession: string }} TerminalRecord
+ * @typedef {{
+ *   getProject: (projectId: string) => TerminalProject | null | undefined,
+ *   getSettings?: () => TerminalSettings,
+ *   sendToRenderer: (channel: string, payload: unknown) => void,
+ *   suppressResizeWarnings?: boolean
+ * }} TerminalServiceOptions
+ */
+
 const execFileAsync = promisify(execFile);
 
+/**
+ * @param {unknown} value
+ * @param {string} fallback
+ * @returns {string}
+ */
 function slugifyTmuxName(value, fallback = "session") {
   const normalized = String(value || "")
     .trim()
@@ -16,19 +39,38 @@ function slugifyTmuxName(value, fallback = "session") {
   return normalized || fallback;
 }
 
+/**
+ * @param {TerminalProject} project
+ * @returns {string}
+ */
 function getProjectTmuxSessionName(project) {
   return `boatyard-${slugifyTmuxName(project.slug || project.name || project.id, "project")}`;
 }
 
+/**
+ * @param {string} projectSession
+ * @param {unknown} terminalId
+ * @returns {string}
+ */
 function getTerminalClientSessionName(projectSession, terminalId) {
   return `${projectSession}-client-${slugifyTmuxName(String(terminalId).slice(0, 8), "terminal")}`;
 }
 
+/**
+ * @param {TerminalProject} project
+ * @returns {string}
+ */
 function getProjectCwd(project) {
   return String(project.sourcePath || process.cwd()).trim() || process.cwd();
 }
 
+/**
+ * @param {unknown} text
+ * @param {string} label
+ * @returns {Record<string, string>}
+ */
 function parseTerminalEnv(text, label = "terminal environment") {
+  /** @type {Record<string, string>} */
   const env = {};
 
   String(text || "")
@@ -53,10 +95,18 @@ function parseTerminalEnv(text, label = "terminal environment") {
   return env;
 }
 
+/**
+ * @param {Record<string, string>} env
+ * @returns {string[]}
+ */
 function getTmuxEnvironmentArgs(env = {}) {
   return Object.entries(env).flatMap(([key, value]) => ["-e", `${key}=${value}`]);
 }
 
+/**
+ * @param {string[]} args
+ * @returns {Promise<string>}
+ */
 async function runTmux(args) {
   const { stdout } = await execFileAsync("tmux", args, {
     timeout: 5000,
@@ -65,10 +115,20 @@ async function runTmux(args) {
   return stdout.trim();
 }
 
+/**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * @param {unknown} windowId
+ * @param {number} cols
+ * @param {number} rows
+ * @returns {Promise<void>}
+ */
 async function resizeTmuxWindow(windowId, cols, rows) {
   if (!windowId) {
     return;
@@ -77,10 +137,14 @@ async function resizeTmuxWindow(windowId, cols, rows) {
   try {
     await runTmux(["resize-window", "-t", String(windowId), "-x", String(cols), "-y", String(rows)]);
   } catch (error) {
-    console.warn(`Could not resize tmux window ${windowId}: ${error.message}`);
+    console.warn(`Could not resize tmux window ${windowId}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
+/**
+ * @param {string} session
+ * @returns {Promise<string[]>}
+ */
 async function getTmuxSessionClients(session) {
   if (!session) {
     return [];
@@ -90,6 +154,10 @@ async function getTmuxSessionClients(session) {
   return output.split("\n").filter(Boolean);
 }
 
+/**
+ * @param {string} session
+ * @returns {Promise<void>}
+ */
 async function refreshTmuxSessionClients(session) {
   if (!session) {
     return;
@@ -106,26 +174,40 @@ async function refreshTmuxSessionClients(session) {
       await sleep(50);
     }
   } catch (error) {
-    console.warn(`Could not refresh tmux clients for ${session}: ${error.message}`);
+    console.warn(`Could not refresh tmux clients for ${session}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
+/**
+ * @param {string} session
+ * @param {string} windowId
+ * @param {number} cols
+ * @param {number} rows
+ */
 function scheduleInitialTmuxRefresh(session, windowId, cols, rows) {
   setTimeout(() => {
     resizeTmuxWindow(windowId, cols, rows)
       .then(() => refreshTmuxSessionClients(session))
       .catch((error) => {
-        console.warn(`Could not schedule initial tmux refresh for ${session}: ${error.message}`);
+        console.warn(`Could not schedule initial tmux refresh for ${session}: ${error instanceof Error ? error.message : String(error)}`);
       });
   }, 100);
 }
 
+/**
+ * @param {string} session
+ * @returns {Promise<void>}
+ */
 async function configureTmuxSession(session) {
   await runTmux(["set-option", "-t", session, "window-size", "latest"]);
   await runTmux(["set-option", "-t", session, "mouse", "on"]);
   await runTmux(["set-option", "-t", session, "status", "off"]);
 }
 
+/**
+ * @param {string | undefined} session
+ * @returns {Promise<void>}
+ */
 async function destroyTmuxSession(session) {
   if (!session) {
     return;
@@ -134,19 +216,27 @@ async function destroyTmuxSession(session) {
   try {
     await runTmux(["kill-session", "-t", session]);
   } catch (error) {
-    console.warn(`Could not kill tmux session ${session}: ${error.message}`);
+    console.warn(`Could not kill tmux session ${session}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 class TerminalService {
+  /**
+   * @param {TerminalServiceOptions} options
+   */
   constructor({ getProject, getSettings = () => ({}), sendToRenderer, suppressResizeWarnings = false }) {
     this.findProject = getProject;
     this.getSettings = getSettings;
     this.sendToRenderer = sendToRenderer;
     this.suppressResizeWarnings = suppressResizeWarnings;
+    /** @type {Map<string, TerminalRecord>} */
     this.terminals = new Map();
   }
 
+  /**
+   * @param {string} projectId
+   * @returns {TerminalProject}
+   */
   getProject(projectId) {
     const project = this.findProject(projectId);
 
@@ -157,6 +247,10 @@ class TerminalService {
     return project;
   }
 
+  /**
+   * @param {TerminalProject} project
+   * @returns {Record<string, string>}
+   */
   getProjectTerminalEnv(project) {
     return {
       ...parseTerminalEnv(this.getSettings().terminalEnv, "global terminal environment"),
@@ -164,6 +258,10 @@ class TerminalService {
     };
   }
 
+  /**
+   * @param {TerminalProject} project
+   * @returns {Promise<string>}
+   */
   async ensureProjectSession(project) {
     const session = getProjectTmuxSessionName(project);
     const envArgs = getTmuxEnvironmentArgs(this.getProjectTerminalEnv(project));
@@ -179,12 +277,20 @@ class TerminalService {
     }
   }
 
+  /**
+   * @param {string} projectId
+   * @returns {Promise<TerminalTab[]>}
+   */
   async listTabs(projectId) {
     const project = this.getProject(projectId);
     const session = await this.ensureProjectSession(project);
     return this.listSessionTabs(session);
   }
 
+  /**
+   * @param {string} session
+   * @returns {Promise<TerminalTab[]>}
+   */
   async listSessionTabs(session) {
     const output = await runTmux([
       "list-windows",
@@ -208,6 +314,11 @@ class TerminalService {
       });
   }
 
+  /**
+   * @param {string} projectId
+   * @param {unknown} name
+   * @returns {Promise<TerminalTab>}
+   */
   async createTab(projectId, name = "shell") {
     const project = this.getProject(projectId);
     const session = await this.ensureProjectSession(project);
@@ -239,6 +350,12 @@ class TerminalService {
     };
   }
 
+  /**
+   * @param {string} projectId
+   * @param {string} windowId
+   * @param {unknown} name
+   * @returns {Promise<TerminalTab | null>}
+   */
   async renameTab(projectId, windowId, name) {
     const project = this.getProject(projectId);
     await this.ensureProjectSession(project);
@@ -252,6 +369,11 @@ class TerminalService {
     return tabs.find((tab) => tab.id === windowId) || null;
   }
 
+  /**
+   * @param {string} projectId
+   * @param {string} windowId
+   * @returns {Promise<TerminalTab[]>}
+   */
   async closeTab(projectId, windowId) {
     const project = this.getProject(projectId);
     const session = await this.ensureProjectSession(project);
@@ -270,6 +392,12 @@ class TerminalService {
     return (await this.listSessionTabs(session)).filter((tab) => tab.id !== closedWindowId);
   }
 
+  /**
+   * @param {string} projectId
+   * @param {string | undefined} windowId
+   * @param {TerminalSize} size
+   * @returns {Promise<TerminalAttachResult>}
+   */
   async attach(projectId, windowId, size = {}) {
     const project = this.getProject(projectId);
     const projectSession = await this.ensureProjectSession(project);
@@ -324,6 +452,10 @@ class TerminalService {
     };
   }
 
+  /**
+   * @param {unknown} terminalId
+   * @param {unknown} data
+   */
   write(terminalId, data) {
     const term = this.terminals.get(String(terminalId));
     if (term) {
@@ -331,6 +463,10 @@ class TerminalService {
     }
   }
 
+  /**
+   * @param {unknown} terminalId
+   * @param {TerminalSize} size
+   */
   resize(terminalId, size = {}) {
     const terminal = this.terminals.get(String(terminalId));
     if (!terminal) {
@@ -343,12 +479,15 @@ class TerminalService {
       terminal.term.resize(cols, rows);
     } catch (error) {
       if (!this.suppressResizeWarnings) {
-        console.warn(`Could not resize terminal ${terminalId}: ${error.message}`);
+        console.warn(`Could not resize terminal ${terminalId}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     resizeTmuxWindow(terminal.windowId, cols, rows);
   }
 
+  /**
+   * @param {unknown} terminalId
+   */
   detach(terminalId) {
     const terminal = this.terminals.get(String(terminalId));
     if (!terminal) {
