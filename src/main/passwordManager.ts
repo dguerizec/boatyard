@@ -1,28 +1,51 @@
-// @ts-check
 "use strict";
 
 const { safeStorage } = require("electron");
 
-/**
- * @typedef {{ passwordManagerEnabled?: boolean, passwordManagerDisclaimerAccepted?: boolean }} PasswordSettings
- * @typedef {{ username: string, encryptedPassword: string }} StoredPasswordCredential
- * @typedef {{
- *   getState(): { settings: PasswordSettings },
- *   getPasswordCredential(origin: string): StoredPasswordCredential | null,
- *   updatePasswordCredential(origin: string, credential: StoredPasswordCredential): unknown
- * }} PasswordStore
- * @typedef {(payload: { origin: string, username: string, isUpdate: boolean }) => boolean | Promise<boolean>} ConfirmSaveCallback
- * @typedef {{ origin: string, username: string, password: string }} PasswordCredential
- * @typedef {{ enabled: boolean, encryptionAvailable: boolean }} PasswordManagerStatus
- * @typedef {{ url?: unknown, username?: unknown, password?: unknown }} SaveCredentialInput
- * @typedef {{ saved: true } | { saved: false, reason: "disabled" | "encryption-unavailable" | "empty" | "unchanged" | "cancelled" }} SaveCredentialResult
- */
+type PasswordSettings = {
+  passwordManagerEnabled?: boolean;
+  passwordManagerDisclaimerAccepted?: boolean;
+};
 
-/**
- * @param {unknown} rawUrl
- * @returns {string}
- */
-function getCredentialOrigin(rawUrl) {
+type StoredPasswordCredential = {
+  username: string;
+  encryptedPassword: string;
+};
+
+type PasswordStore = {
+  getState(): { settings: PasswordSettings };
+  getPasswordCredential(origin: string): StoredPasswordCredential | null;
+  updatePasswordCredential(origin: string, credential: StoredPasswordCredential): unknown;
+};
+
+type ConfirmSaveCallback = (payload: {
+  origin: string;
+  username: string;
+  isUpdate: boolean;
+}) => boolean | Promise<boolean>;
+
+type PasswordCredential = {
+  origin: string;
+  username: string;
+  password: string;
+};
+
+type PasswordManagerStatus = {
+  enabled: boolean;
+  encryptionAvailable: boolean;
+};
+
+type SaveCredentialInput = {
+  url?: unknown;
+  username?: unknown;
+  password?: unknown;
+};
+
+type SaveCredentialResult =
+  | { saved: true }
+  | { saved: false; reason: "disabled" | "encryption-unavailable" | "empty" | "unchanged" | "cancelled" };
+
+function getCredentialOrigin(rawUrl: unknown): string {
   try {
     const parsed = new URL(String(rawUrl || ""));
     return ["http:", "https:"].includes(parsed.protocol) ? parsed.origin : "";
@@ -32,39 +55,27 @@ function getCredentialOrigin(rawUrl) {
 }
 
 class PasswordManager {
-  /**
-   * @param {{ store: PasswordStore, confirmSave: ConfirmSaveCallback }} options
-   */
-  constructor({ store, confirmSave }) {
-    /** @type {PasswordStore} */
+  private store: PasswordStore;
+  private confirmSave: ConfirmSaveCallback;
+
+  constructor({ store, confirmSave }: { store: PasswordStore; confirmSave: ConfirmSaveCallback }) {
     this.store = store;
-    /** @type {ConfirmSaveCallback} */
     this.confirmSave = confirmSave;
   }
 
-  /**
-   * @returns {boolean}
-   */
-  isEnabled() {
+  isEnabled(): boolean {
     const settings = this.store.getState().settings;
     return settings.passwordManagerEnabled === true && settings.passwordManagerDisclaimerAccepted === true;
   }
 
-  /**
-   * @returns {PasswordManagerStatus}
-   */
-  getStatus() {
+  getStatus(): PasswordManagerStatus {
     return {
       enabled: this.isEnabled(),
       encryptionAvailable: safeStorage.isEncryptionAvailable()
     };
   }
 
-  /**
-   * @param {unknown} url
-   * @returns {PasswordCredential | null}
-   */
-  getCredential(url) {
+  getCredential(url: unknown): PasswordCredential | null {
     if (!this.isEnabled() || !safeStorage.isEncryptionAvailable()) {
       return null;
     }
@@ -88,11 +99,7 @@ class PasswordManager {
     }
   }
 
-  /**
-   * @param {SaveCredentialInput} input
-   * @returns {Promise<SaveCredentialResult>}
-   */
-  async saveCredential({ url, username, password }) {
+  async saveCredential({ url, username, password }: SaveCredentialInput): Promise<SaveCredentialResult> {
     if (!this.isEnabled()) {
       return { saved: false, reason: "disabled" };
     }

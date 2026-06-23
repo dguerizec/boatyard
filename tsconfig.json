@@ -12,6 +12,7 @@
   },
   "include": [
     "src/**/*.js",
+    "src/**/*.ts",
     "scripts/**/*.mjs",
     "test/**/*.js"
   ],

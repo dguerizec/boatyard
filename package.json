@@ -12,7 +12,7 @@
     "capture:doc": "npm run build:app && node scripts/capture-doc-screenshot.mjs",
     "lint": "node scripts/check-js.mjs",
     "typecheck": "tsc --noEmit",
-    "test": "node --test",
+    "test": "npm run build:app && node --test",
     "package": "npm run build:app && electron-builder --dir",
     "dist": "npm run build:app && electron-builder --publish never",
     "dist:linux": "npm run build:app && electron-builder --linux AppImage --x64 --publish never",
