@@ -13,7 +13,7 @@ const {
   loadTwiccProcesses,
   loadTwiccProjectProcessStatuses,
   loadTwiccProjects
-} = require("../src/plugins/twicc/service");
+} = require(["..", "build", "plugins", "twicc", "service"].join("/"));
 
 test("findTwiccProjectForPath matches exact directories first", () => {
   const projects = [

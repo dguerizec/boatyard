@@ -1,4 +1,3 @@
-// @ts-check
 "use strict";
 
 const path = require("node:path");
@@ -120,7 +119,7 @@ function buildTwiccProjectUrl(projectId, baseUrl = DEFAULT_TWICC_BASE_URL) {
  * @param {TwiccCommandOptions} options
  * @returns {Promise<TwiccProject[]>}
  */
-async function loadTwiccProjects({ execFileAsync }) {
+async function loadTwiccProjects({ execFileAsync }: { execFileAsync?: any } = {}) {
   if (typeof execFileAsync !== "function") {
     return [];
   }
@@ -191,7 +190,7 @@ function createTwiccProjectCache({
  * @param {TwiccCommandOptions} options
  * @returns {Promise<TwiccProcess[]>}
  */
-async function loadTwiccProcesses({ execFileAsync }) {
+async function loadTwiccProcesses({ execFileAsync }: { execFileAsync?: any } = {}) {
   if (typeof execFileAsync !== "function") {
     return [];
   }
@@ -407,7 +406,7 @@ async function createTwiccProject(sourcePath, { execFileAsync }) {
   return inspectTwiccProject(normalizedSourcePath, { execFileAsync });
 }
 
-module.exports = {
+export {
   aliasTwiccProjectProcessStatuses,
   buildTwiccProjectUrl,
   createTwiccProjectCache,
