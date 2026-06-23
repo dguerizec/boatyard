@@ -291,9 +291,27 @@
     return Math.abs(number) <= 2 ? number * 100 : number;
   }
 
-  function getBurnRateArc(value) {
+  function getBurnRateArcSegments(value) {
     const percent = normalizeBurnRatePercent(value);
-    return Number.isFinite(percent) ? Math.max(0, Math.min(50, percent / 4)) : 0;
+    if (!Number.isFinite(percent) || percent <= 0) {
+      return {
+        safe: 0,
+        danger: 0
+      };
+    }
+
+    if (percent <= 100) {
+      const safe = Math.max(0, Math.min(50, percent / 2));
+      return {
+        safe,
+        danger: safe
+      };
+    }
+
+    return {
+      safe: Math.max(0, Math.min(50, (100 / percent) * 50)),
+      danger: 50
+    };
   }
 
   function getBurnRateTone(value) {
@@ -333,9 +351,11 @@
   }
 
   function createBurnRateGauge(label, value) {
+    const arcs = getBurnRateArcSegments(value);
     const gauge = document.createElement("div");
     gauge.className = `twicc-usage-burn-gauge ${getBurnRateTone(value)}`;
-    gauge.style.setProperty("--twicc-burn-arc", `${getBurnRateArc(value)}%`);
+    gauge.style.setProperty("--twicc-burn-safe-arc", `${arcs.safe}%`);
+    gauge.style.setProperty("--twicc-burn-danger-arc", `${arcs.danger}%`);
 
     const dial = document.createElement("span");
     dial.className = "twicc-usage-burn-dial";

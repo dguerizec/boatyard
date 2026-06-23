@@ -2748,20 +2748,12 @@ button {
 }
 
 .twicc-usage-burn-gauge {
-  --twicc-burn-color: #41b883;
-  --twicc-burn-arc: 0%;
+  --twicc-burn-safe-arc: 0%;
+  --twicc-burn-danger-arc: 0%;
   min-width: 72px;
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.twicc-usage-burn-gauge.warn {
-  --twicc-burn-color: #facc15;
-}
-
-.twicc-usage-burn-gauge.danger {
-  --twicc-burn-color: #f87171;
 }
 
 .twicc-usage-burn-dial {
@@ -2781,7 +2773,13 @@ button {
   height: 28px;
   border-radius: 999px;
   background:
-    conic-gradient(from 270deg, var(--twicc-burn-color) 0 var(--twicc-burn-arc), rgba(148, 163, 184, 0.22) var(--twicc-burn-arc) 50%, transparent 50%);
+    conic-gradient(
+      from 270deg,
+      #41b883 0 var(--twicc-burn-safe-arc),
+      #f87171 var(--twicc-burn-safe-arc) var(--twicc-burn-danger-arc),
+      rgba(148, 163, 184, 0.22) var(--twicc-burn-danger-arc) 50%,
+      transparent 50%
+    );
   -webkit-mask: radial-gradient(circle at center, transparent 0 53%, #000 55%);
   mask: radial-gradient(circle at center, transparent 0 53%, #000 55%);
 }
