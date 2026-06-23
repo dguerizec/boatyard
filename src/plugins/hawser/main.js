@@ -1,3 +1,4 @@
+// @ts-check
 "use strict";
 
 const {
@@ -7,6 +8,25 @@ const {
   inspectHawserProject
 } = require("./service");
 
+/**
+ * @typedef {import("../pluginTypes").ExecFileAsync} ExecFileAsync
+ * @typedef {import("../pluginTypes").PluginActions} PluginActions
+ * @typedef {import("../pluginTypes").PluginProjectInspectors} PluginProjectInspectors
+ * @typedef {{ id: string, hawserMainSession?: string }} HawserProject
+ * @typedef {{ projects?: HawserProject[] }} HawserState
+ * @typedef {{ hawserMainSession?: unknown }} HawserProjectConfig
+ * @typedef {{ hawserApiUrl?: unknown, hawserToken?: unknown }} HawserGlobalConfig
+ * @typedef {{
+ *   actions: PluginActions,
+ *   execFileAsync: ExecFileAsync,
+ *   getState(): HawserState,
+ *   projectInspectors: PluginProjectInspectors
+ * }} HawserPluginContext
+ */
+
+/**
+ * @param {HawserPluginContext} ctx
+ */
 function activate(ctx) {
   ctx.actions.handle("createProject", ({ sourcePath, runtime } = {}) => {
     return createHawserProject(sourcePath, runtime, { execFileAsync: ctx.execFileAsync });

@@ -1,3 +1,5 @@
+import type { ChildProcess } from "node:child_process";
+
 export type PluginActionHandler<TPayload = any, TResult = unknown> = (
   payload?: TPayload
 ) => TResult | Promise<TResult>;
@@ -18,11 +20,20 @@ export interface PluginStateMigrations<TState = unknown, TResult = unknown> {
   register(handler: (payload: { state: TState }) => TResult): void;
 }
 
-export type ExecFileAsync = (
-  file: string,
-  args: string[],
-  options?: Record<string, unknown>
-) => Promise<{ stdout?: string, stderr?: string }>;
+export interface PromiseWithChild<T> extends Promise<T> {
+  child: ChildProcess;
+}
+
+export interface ExecFileAsync {
+  (file: string): PromiseWithChild<any>;
+  (file: string, args: readonly string[]): PromiseWithChild<any>;
+  (
+    file: string,
+    args: readonly string[],
+    options: Record<string, unknown>
+  ): PromiseWithChild<any>;
+  (file: string, options: Record<string, unknown>): PromiseWithChild<any>;
+}
 
 export interface PluginMetadata {
   id: string;
