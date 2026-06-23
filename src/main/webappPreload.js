@@ -1,3 +1,4 @@
+// @ts-check
 "use strict";
 
 const { ipcRenderer } = require("electron");
@@ -6,8 +7,18 @@ const PASSWORD_SELECTOR = 'input[type="password"]';
 const USERNAME_TYPES = new Set(["email", "text", "tel", "url"]);
 let autofillEnabled = false;
 
+/**
+ * @typedef {{ url: string, username: string, password: string }} WebAppCredential
+ * @typedef {{ form: ParentNode, usernameInput: HTMLInputElement | null, passwordInput: HTMLInputElement | null }} LoginFields
+ */
+
+/**
+ * @param {unknown} input
+ * @param {HTMLInputElement | null} passwordInput
+ * @returns {input is HTMLInputElement}
+ */
 function isUsernameInput(input, passwordInput = null) {
-  if (!input || input === passwordInput || input.disabled || input.readOnly) {
+  if (!(input instanceof HTMLInputElement) || input === passwordInput || input.disabled || input.readOnly) {
     return false;
   }
 
@@ -16,12 +27,20 @@ function isUsernameInput(input, passwordInput = null) {
     /user|email|login|identifier/i.test(`${input.name} ${input.id} ${input.autocomplete}`);
 }
 
+/**
+ * @param {ParentNode} scope
+ * @param {HTMLInputElement | null} passwordInput
+ * @returns {HTMLInputElement | null}
+ */
 function findUsernameInput(scope = document, passwordInput = null) {
-  return [...(scope.querySelectorAll?.("input") || [])].find((input) => isUsernameInput(input, passwordInput)) || null;
+  return [...scope.querySelectorAll("input")].find((input) => isUsernameInput(input, passwordInput)) || null;
 }
 
+/**
+ * @returns {LoginFields}
+ */
 function findLoginFields() {
-  const passwordInput = document.querySelector(PASSWORD_SELECTOR);
+  const passwordInput = /** @type {HTMLInputElement | null} */ (document.querySelector(PASSWORD_SELECTOR));
   const form = passwordInput?.closest("form") || document;
   const usernameInput = findUsernameInput(form, passwordInput) || findUsernameInput(document, passwordInput);
 
@@ -32,10 +51,16 @@ function findLoginFields() {
   };
 }
 
+/**
+ * @returns {string}
+ */
 function getPendingUsernameKey() {
   return `boatyard:password-manager:${window.location.origin}:username`;
 }
 
+/**
+ * @returns {string}
+ */
 function getPendingUsername() {
   try {
     return sessionStorage.getItem(getPendingUsernameKey()) || "";
@@ -44,6 +69,9 @@ function getPendingUsername() {
   }
 }
 
+/**
+ * @param {unknown} username
+ */
 function setPendingUsername(username) {
   const normalizedUsername = String(username || "").trim();
   if (!normalizedUsername) {
@@ -57,6 +85,10 @@ function setPendingUsername(username) {
   }
 }
 
+/**
+ * @param {HTMLInputElement | null} input
+ * @param {unknown} value
+ */
 function setInputValue(input, value) {
   if (!input || !value) {
     return;
@@ -66,13 +98,16 @@ function setInputValue(input, value) {
   if (valueSetter) {
     valueSetter.call(input, value);
   } else {
-    input.value = value;
+    input.value = String(value);
   }
 
   input.dispatchEvent(new Event("input", { bubbles: true }));
   input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+/**
+ * @returns {Promise<void>}
+ */
 async function autofillCredential() {
   if (!autofillEnabled) {
     return;
@@ -84,20 +119,21 @@ async function autofillCredential() {
   }
 
   const credential = await ipcRenderer.invoke("password-manager:get-credential", window.location.href);
-  if (!credential) {
+  if (!credential || typeof credential !== "object") {
     return;
   }
 
+  const normalizedCredential = /** @type {Partial<WebAppCredential>} */ (credential);
   let didAutofill = false;
   if (loginFields.usernameInput && loginFields.usernameInput.dataset.boatyardAutofilled !== "true") {
-    setInputValue(loginFields.usernameInput, credential.username);
+    setInputValue(loginFields.usernameInput, normalizedCredential.username);
     loginFields.usernameInput.dataset.boatyardAutofilled = "true";
-    setPendingUsername(credential.username);
+    setPendingUsername(normalizedCredential.username);
     didAutofill = true;
   }
 
   if (loginFields.passwordInput && loginFields.passwordInput.dataset.boatyardAutofilled !== "true") {
-    setInputValue(loginFields.passwordInput, credential.password);
+    setInputValue(loginFields.passwordInput, normalizedCredential.password);
     loginFields.passwordInput.dataset.boatyardAutofilled = "true";
     didAutofill = true;
   }
@@ -108,8 +144,14 @@ async function autofillCredential() {
   }
 }
 
+/**
+ * @param {ParentNode} form
+ * @returns {WebAppCredential | null}
+ */
 function readCredentialFromForm(form) {
-  const passwordInput = form.querySelector?.(PASSWORD_SELECTOR) || document.querySelector(PASSWORD_SELECTOR);
+  const passwordInput = /** @type {HTMLInputElement | null} */ (
+    form.querySelector(PASSWORD_SELECTOR) || document.querySelector(PASSWORD_SELECTOR)
+  );
   if (!passwordInput) {
     return null;
   }
@@ -127,16 +169,24 @@ function readCredentialFromForm(form) {
     : null;
 }
 
+/**
+ * @param {EventTarget | null} target
+ */
 function rememberUsernameFrom(target) {
-  const form = target?.closest?.("form") || document;
+  const element = target instanceof Element ? target : null;
+  const form = element?.closest("form") || document;
   const usernameInput = findUsernameInput(form) || findUsernameInput(document);
   setPendingUsername(usernameInput?.value);
 }
 
+/**
+ * @param {EventTarget | null} target
+ */
 function maybeSaveCredentialFrom(target) {
   rememberUsernameFrom(target);
 
-  const form = target?.closest?.("form") || document;
+  const element = target instanceof Element ? target : null;
+  const form = element?.closest("form") || document;
   const credential = readCredentialFromForm(form);
   if (credential) {
     ipcRenderer.invoke("password-manager:save-credential", credential).catch(() => {});
@@ -149,13 +199,16 @@ function installSubmitCapture() {
   }, true);
 
   document.addEventListener("click", (event) => {
-    const target = event.target?.closest?.("button, input, [role='button']");
+    const target = event.target instanceof Element
+      ? event.target.closest("button, input, [role='button']")
+      : null;
     if (!target) {
       return;
     }
 
-    const type = String(target.type || "").toLowerCase();
-    const label = `${target.textContent || ""} ${target.value || ""} ${target.getAttribute("aria-label") || ""}`;
+    const typedTarget = /** @type {HTMLElement & { type?: string, value?: string }} */ (target);
+    const type = String(typedTarget.type || "").toLowerCase();
+    const label = `${typedTarget.textContent || ""} ${typedTarget.value || ""} ${typedTarget.getAttribute("aria-label") || ""}`;
     if (type === "submit" || /sign|log.?in|continue|connect|next/i.test(label)) {
       rememberUsernameFrom(target);
       maybeSaveCredentialFrom(target);
@@ -163,11 +216,12 @@ function installSubmitCapture() {
   }, true);
 
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && event.target?.matches?.("input")) {
+    const target = event.target instanceof Element ? event.target : null;
+    if (event.key === "Enter" && target?.matches("input")) {
       rememberUsernameFrom(event.target);
     }
 
-    if (event.key === "Enter" && event.target?.matches?.(PASSWORD_SELECTOR)) {
+    if (event.key === "Enter" && target?.matches(PASSWORD_SELECTOR)) {
       maybeSaveCredentialFrom(event.target);
     }
   }, true);
