@@ -1,4 +1,3 @@
-// @ts-check
 "use strict";
 
 const { execFile } = require("node:child_process");
@@ -65,7 +64,7 @@ const execFileAsync = promisify(execFile);
  * @param {HawserSettings} settings
  * @returns {string}
  */
-function getHawserApiUrl(settings = {}) {
+function getHawserApiUrl(settings: any = {}) {
   return String(settings.hawserApiUrl || DEFAULT_HAWSER_API_URL).replace(/\/+$/, "");
 }
 
@@ -240,7 +239,7 @@ async function getHawserCliStatus(runCommand = execFileAsync) {
  * @param {HawserSettings} settings
  * @param {HawserStatusOptions} options
  */
-async function getHawserStatus(settings = {}, options = {}) {
+async function getHawserStatus(settings: any = {}, options: any = {}) {
   const apiUrl = getHawserApiUrl(settings);
   const token = String(settings.hawserToken || "").trim();
   const fetchImpl = options.fetchImpl || fetch;
@@ -323,7 +322,7 @@ async function getHawserStatus(settings = {}, options = {}) {
  * @param {BoatyardProject} project
  * @returns {string}
  */
-function parseHawserProjectName(project = {}) {
+function parseHawserProjectName(project: any = {}) {
   const sessionTarget = String(project.hawserMainSession || "").trim();
   const sessionProject = sessionTarget.includes(":") ? sessionTarget.split(":")[0] : "";
   return sessionProject || project.slug || "";
@@ -333,7 +332,7 @@ function parseHawserProjectName(project = {}) {
  * @param {BoatyardProject} project
  * @returns {string}
  */
-function parseHawserSessionName(project = {}) {
+function parseHawserSessionName(project: any = {}) {
   const sessionTarget = String(project.hawserMainSession || "").trim();
   return sessionTarget.includes(":") ? sessionTarget.split(":").slice(1).join(":") : "";
 }
@@ -405,7 +404,7 @@ function normalizeMessage(message, projectName) {
  * @param {Partial<HawserMessage>} message
  * @returns {HawserSessionTarget}
  */
-function getMessageSessionTarget(message = {}) {
+function getMessageSessionTarget(message: any = {}) {
   const useOutboundTarget = message.direction === "out";
   return {
     project: useOutboundTarget ? message.toProject || "" : message.fromProject || "",
@@ -463,7 +462,7 @@ function shouldShowWidgetMessage(message) {
  * @param {HawserSettings} settings
  * @returns {Promise<unknown>}
  */
-async function fetchHawserJson(pathname, settings = {}) {
+async function fetchHawserJson(pathname, settings: any = {}) {
   const token = String(settings.hawserToken || "").trim();
 
   if (!token) {
@@ -692,7 +691,7 @@ async function getHawserWidgetData(project, settings = {}) {
   }
 }
 
-module.exports = {
+export {
   DEFAULT_HAWSER_API_URL,
   DEFAULT_HAWSER_RUNTIME,
   buildHawserProjectUrl,
