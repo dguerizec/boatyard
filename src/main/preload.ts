@@ -1,12 +1,9 @@
-// @ts-check
 "use strict";
 
 const { contextBridge, ipcRenderer } = require("electron");
 
-/**
- * @typedef {(payload: unknown) => void} BridgeCallback
- * @typedef {() => void} Unsubscribe
- */
+type BridgeCallback = (payload: unknown) => void;
+type Unsubscribe = () => void;
 
 contextBridge.exposeInMainWorld("boatyard", {
   getState: () => ipcRenderer.invoke("state:get"),
