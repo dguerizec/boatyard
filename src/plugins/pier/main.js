@@ -1,15 +1,49 @@
+// @ts-check
 "use strict";
 
+/**
+ * @typedef {{ stdout?: string }} ExecFileResult
+ * @typedef {(file: string, args: string[], options: { cwd: string, timeout: number, windowsHide: boolean }) => Promise<ExecFileResult>} ExecFileAsync
+ * @typedef {{ cwd?: unknown, execFileAsync: ExecFileAsync }} WorktreeCommandOptions
+ * @typedef {{ worktreePath?: unknown, branchName?: unknown, fromRef?: unknown, startAfterCreate?: unknown }} WorktreeAddInput
+ * @typedef {{ worktreePath?: unknown, force?: unknown, purge?: unknown, skipDown?: unknown }} WorktreeRemoveInput
+ * @typedef {{ id: string }} PluginMetadata
+ * @typedef {{ id: string, previewUrl?: string }} PierProject
+ * @typedef {{ pierPreviewUrl?: unknown }} PierProjectConfig
+ * @typedef {{ projects?: Record<string, Record<string, PierProjectConfig>> }} PluginProjectConfig
+ * @typedef {{ projects?: PierProject[], pluginConfig?: { projects?: PluginProjectConfig["projects"] } }} PierState
+ * @typedef {{
+ *   actions: { handle(name: string, handler: (payload?: any) => unknown): void },
+ *   stateMigrations: { register(handler: (payload: { state: PierState }) => { projectPluginConfig: Array<{ projectId: string, config: { pierPreviewUrl: string } }> }): void },
+ *   plugin: PluginMetadata,
+ *   execFileAsync: ExecFileAsync
+ * }} PierPluginContext
+ */
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function normalizeText(value) {
   return String(value || "").trim();
 }
 
+/**
+ * @param {unknown} error
+ * @returns {string}
+ */
 function normalizeCommandError(error) {
-  const stderr = normalizeText(error?.stderr);
-  const stdout = normalizeText(error?.stdout);
-  return stderr || stdout || error?.message || "Pier command failed.";
+  const commandError = /** @type {{ stderr?: unknown, stdout?: unknown, message?: unknown }} */ (error || {});
+  const stderr = normalizeText(commandError.stderr);
+  const stdout = normalizeText(commandError.stdout);
+  return stderr || stdout || normalizeText(commandError.message) || "Pier command failed.";
 }
 
+/**
+ * @param {string[]} args
+ * @param {WorktreeCommandOptions} options
+ * @returns {Promise<{ output: string }>}
+ */
 async function runPierWorktreeCommand(args, { cwd, execFileAsync }) {
   const sourcePath = normalizeText(cwd);
   if (!sourcePath) {
@@ -28,6 +62,10 @@ async function runPierWorktreeCommand(args, { cwd, execFileAsync }) {
   }
 }
 
+/**
+ * @param {WorktreeAddInput} input
+ * @returns {string[]}
+ */
 function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCreate } = {}) {
   const targetPath = normalizeText(worktreePath);
   if (!targetPath) {
@@ -52,6 +90,10 @@ function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCre
   return args;
 }
 
+/**
+ * @param {WorktreeRemoveInput} input
+ * @returns {string[]}
+ */
 function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown } = {}) {
   const targetPath = normalizeText(worktreePath);
   if (!targetPath) {
@@ -71,6 +113,9 @@ function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown } = {}) 
   return args;
 }
 
+/**
+ * @param {PierPluginContext} ctx
+ */
 function activate(ctx) {
   ctx.actions.handle("createWorktree", ({ cwd, worktreePath, branchName, fromRef, startAfterCreate } = {}) => {
     return runPierWorktreeCommand(
