@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": false,
+    "target": "ES2023"
+  },
+  "include": [
+    "src/**/*.js",
+    "scripts/**/*.mjs",
+    "test/**/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}
