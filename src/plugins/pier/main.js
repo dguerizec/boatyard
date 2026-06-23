@@ -2,19 +2,21 @@
 "use strict";
 
 /**
- * @typedef {{ stdout?: string }} ExecFileResult
- * @typedef {(file: string, args: string[], options: { cwd: string, timeout: number, windowsHide: boolean }) => Promise<ExecFileResult>} ExecFileAsync
+ * @typedef {import("../pluginTypes").ExecFileAsync} ExecFileAsync
+ * @typedef {import("../pluginTypes").PluginActions} PluginActions
+ * @typedef {import("../pluginTypes").PluginMetadata} PluginMetadata
  * @typedef {{ cwd?: unknown, execFileAsync: ExecFileAsync }} WorktreeCommandOptions
  * @typedef {{ worktreePath?: unknown, branchName?: unknown, fromRef?: unknown, startAfterCreate?: unknown }} WorktreeAddInput
  * @typedef {{ worktreePath?: unknown, force?: unknown, purge?: unknown, skipDown?: unknown }} WorktreeRemoveInput
- * @typedef {{ id: string }} PluginMetadata
  * @typedef {{ id: string, previewUrl?: string }} PierProject
  * @typedef {{ pierPreviewUrl?: unknown }} PierProjectConfig
  * @typedef {{ projects?: Record<string, Record<string, PierProjectConfig>> }} PluginProjectConfig
  * @typedef {{ projects?: PierProject[], pluginConfig?: { projects?: PluginProjectConfig["projects"] } }} PierState
+ * @typedef {{ projectId: string, config: { pierPreviewUrl: string } }} PierProjectConfigMigration
+ * @typedef {{ projectPluginConfig: PierProjectConfigMigration[] }} PierStateMigrationResult
  * @typedef {{
- *   actions: { handle(name: string, handler: (payload?: any) => unknown): void },
- *   stateMigrations: { register(handler: (payload: { state: PierState }) => { projectPluginConfig: Array<{ projectId: string, config: { pierPreviewUrl: string } }> }): void },
+ *   actions: PluginActions,
+ *   stateMigrations: { register(handler: (payload: { state: PierState }) => PierStateMigrationResult): void },
  *   plugin: PluginMetadata,
  *   execFileAsync: ExecFileAsync
  * }} PierPluginContext
