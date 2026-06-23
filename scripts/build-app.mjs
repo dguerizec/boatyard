@@ -91,7 +91,6 @@ rmSync(buildRoot, { recursive: true, force: true });
 run("npx", ["tsc", "-p", "tsconfig.build.json"]);
 copyStaticAssets(sourceRoot);
 copyBrowserScripts(join(sourceRoot, "renderer"));
-copyFileFromSource(join(sourceRoot, "shared", "boatyardManual.js"));
 copyPluginRendererScripts();
 writeFileSync(
   join(buildRoot, "package.json"),

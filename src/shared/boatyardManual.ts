@@ -1,26 +1,36 @@
-// @ts-check
-"use strict";
+type ManualEntry = {
+  title: string;
+  body: string;
+};
 
-/**
- * @typedef {{ title: string, body: string }} ManualEntry
- * @typedef {{ id: string, title: string, summary: string, entries: ManualEntry[] }} ManualSection
- * @typedef {{ title: string, body: string, target: string }} ManualOnboardingStep
- * @typedef {{
- *   version: number,
- *   title: string,
- *   description: string,
- *   publicUrlStatus: string,
- *   sections: ManualSection[],
- *   onboarding: ManualOnboardingStep[]
- * }} BoatyardManual
- */
+type ManualSection = {
+  id: string;
+  title: string;
+  summary: string;
+  entries: ManualEntry[];
+};
 
-/**
- * @param {typeof globalThis & { BoatyardManual?: BoatyardManual }} root
- */
-(function exposeManual(root) {
-  /** @type {BoatyardManual} */
-  const manual = {
+type ManualOnboardingStep = {
+  title: string;
+  body: string;
+  target: string;
+};
+
+type BoatyardManual = {
+  version: number;
+  title: string;
+  description: string;
+  publicUrlStatus: string;
+  sections: ManualSection[];
+  onboarding: ManualOnboardingStep[];
+};
+
+type BoatyardManualGlobal = typeof globalThis & {
+  BoatyardManual?: BoatyardManual;
+};
+
+(function exposeManual(root: BoatyardManualGlobal) {
+  const manual: BoatyardManual = {
     version: 1,
     title: "Boatyard Manual",
     description: "A practical guide to project dashboards, webapp panes, widgets, terminals, plugins, and settings.",
