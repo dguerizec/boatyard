@@ -1,6 +1,12 @@
+// @ts-check
 "use strict";
 
 const { contextBridge, ipcRenderer } = require("electron");
+
+/**
+ * @typedef {(payload: unknown) => void} BridgeCallback
+ * @typedef {() => void} Unsubscribe
+ */
 
 contextBridge.exposeInMainWorld("boatyard", {
   getState: () => ipcRenderer.invoke("state:get"),
@@ -44,17 +50,31 @@ contextBridge.exposeInMainWorld("boatyard", {
   detachTerminal: (terminalId) => ipcRenderer.invoke("terminal:detach", terminalId),
   writeTerminalSelection: (text) => ipcRenderer.invoke("terminal:write-selection", text),
   readTerminalSelection: () => ipcRenderer.invoke("terminal:read-selection"),
+  /**
+   * @param {unknown} pluginId
+   * @param {unknown} eventName
+   * @param {BridgeCallback} callback
+   * @returns {Unsubscribe}
+   */
   onPluginEvent: (pluginId, eventName, callback) => {
     const channel = `plugins:event:${String(pluginId || "").trim()}:${String(eventName || "").trim()}`;
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on(channel, listener);
     return () => ipcRenderer.removeListener(channel, listener);
   },
+  /**
+   * @param {BridgeCallback} callback
+   * @returns {Unsubscribe}
+   */
   onTerminalData: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("terminal:data", listener);
     return () => ipcRenderer.removeListener("terminal:data", listener);
   },
+  /**
+   * @param {BridgeCallback} callback
+   * @returns {Unsubscribe}
+   */
   onTerminalExit: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("terminal:exit", listener);
@@ -68,21 +88,37 @@ contextBridge.exposeInMainWorld("boatyard", {
   hideWebApp: () => ipcRenderer.invoke("webapp:hide"),
   freezeWebApps: (options) => ipcRenderer.invoke("webapp:freeze", options),
   restoreWebApps: () => ipcRenderer.invoke("webapp:restore"),
+  /**
+   * @param {BridgeCallback} callback
+   * @returns {Unsubscribe}
+   */
   onWebAppUrlChanged: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("webapp:url-changed", listener);
     return () => ipcRenderer.removeListener("webapp:url-changed", listener);
   },
+  /**
+   * @param {BridgeCallback} callback
+   * @returns {Unsubscribe}
+   */
   onWebAppLoaded: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("webapp:loaded", listener);
     return () => ipcRenderer.removeListener("webapp:loaded", listener);
   },
+  /**
+   * @param {BridgeCallback} callback
+   * @returns {Unsubscribe}
+   */
   onWebAppAutofillChanged: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("webapp:autofill-changed", listener);
     return () => ipcRenderer.removeListener("webapp:autofill-changed", listener);
   },
+  /**
+   * @param {BridgeCallback} callback
+   * @returns {Unsubscribe}
+   */
   onWebAppOpenUrlRequested: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("webapp:open-url-requested", listener);
