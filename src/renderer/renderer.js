@@ -1909,11 +1909,17 @@ function getWebAppHostBounds(host) {
     return null;
   }
 
+  const x = Math.ceil(rect.x);
+  const y = Math.ceil(rect.y);
+  const right = Math.floor(rect.right);
+  const bottom = Math.floor(rect.bottom);
+  const wcvInset = 2;
+
   return {
-    x: rect.x,
-    y: rect.y,
-    width: rect.width,
-    height: rect.height
+    x: x + wcvInset,
+    y: y + wcvInset,
+    width: Math.max(1, right - x - (wcvInset * 2)),
+    height: Math.max(1, bottom - y - (wcvInset * 2))
   };
 }
 
