@@ -7,7 +7,7 @@ const {
   getProjectTmuxSessionName,
   parseTerminalEnv,
   slugifyTmuxName
-} = require("../src/main/terminalService");
+} = require(["..", "build", "main", "terminalService"].join("/"));
 
 test("slugifyTmuxName keeps tmux target names stable", () => {
   assert.equal(slugifyTmuxName("Boatyard Main"), "boatyard-main");
