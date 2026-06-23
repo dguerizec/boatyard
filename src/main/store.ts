@@ -1,5 +1,3 @@
-"use strict";
-
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
@@ -21,6 +19,8 @@ const DEFAULT_WINDOW_BOUNDS = {
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
+
+type UnknownRecord = Record<string, any>;
 
 function createDefaultState() {
   return {
@@ -69,7 +69,7 @@ function createDefaultState() {
   };
 }
 
-function normalizeUrl(rawUrl) {
+function normalizeUrl(rawUrl: unknown) {
   const trimmed = String(rawUrl || "").trim();
 
   if (!trimmed) {
@@ -90,24 +90,24 @@ function normalizeUrl(rawUrl) {
   return parsed.toString();
 }
 
-function normalizeOptionalUrl(rawUrl) {
+function normalizeOptionalUrl(rawUrl: unknown) {
   const trimmed = String(rawUrl || "").trim();
   return trimmed ? normalizeUrl(trimmed) : "";
 }
 
-function normalizeText(value) {
+function normalizeText(value: unknown) {
   return String(value || "").trim();
 }
 
-function normalizeMultilineText(value) {
+function normalizeMultilineText(value: unknown) {
   return String(value || "").replace(/\r\n?/g, "\n").trim();
 }
 
-function stripGitSuffix(pathname) {
+function stripGitSuffix(pathname: string) {
   return pathname.replace(/\/+$/g, "").replace(/\.git$/i, "");
 }
 
-function deriveRepoUrl(gitUrl) {
+function deriveRepoUrl(gitUrl: unknown) {
   const trimmed = normalizeText(gitUrl);
 
   if (!trimmed) {
@@ -136,7 +136,7 @@ function deriveRepoUrl(gitUrl) {
   return "";
 }
 
-function slugify(value) {
+function slugify(value: unknown) {
   return String(value || "")
     .trim()
     .normalize("NFKD")
@@ -146,7 +146,7 @@ function slugify(value) {
     .replace(/^-+|-+$/g, "");
 }
 
-function normalizeSlug(slug, name) {
+function normalizeSlug(slug: unknown, name: unknown) {
   const normalized = slugify(slug || name);
 
   if (!normalized) {
@@ -156,8 +156,8 @@ function normalizeSlug(slug, name) {
   return normalized;
 }
 
-function normalizeBounds(bounds, fallback = DEFAULT_BOUNDS) {
-  const source = bounds && typeof bounds === "object" ? bounds : {};
+function normalizeBounds(bounds: unknown, fallback = DEFAULT_BOUNDS) {
+  const source: UnknownRecord = bounds && typeof bounds === "object" ? bounds : {};
   const next = {
     x: Number.isFinite(source.x) ? source.x : fallback.x,
     y: Number.isFinite(source.y) ? source.y : fallback.y,
@@ -173,7 +173,7 @@ function normalizeBounds(bounds, fallback = DEFAULT_BOUNDS) {
   };
 }
 
-function normalizeWindowBounds(bounds, fallback = DEFAULT_WINDOW_BOUNDS) {
+function normalizeWindowBounds(bounds: unknown, fallback = DEFAULT_WINDOW_BOUNDS) {
   const normalized = normalizeBounds(bounds, fallback);
 
   return {
@@ -183,15 +183,15 @@ function normalizeWindowBounds(bounds, fallback = DEFAULT_WINDOW_BOUNDS) {
   };
 }
 
-function normalizeWindowState(windowState = {}) {
+function normalizeWindowState(windowState: UnknownRecord = {}) {
   return {
     bounds: normalizeWindowBounds(windowState.bounds),
     isMaximized: windowState.isMaximized === true
   };
 }
 
-function normalizeSettings(settings = {}) {
-  const source = settings && typeof settings === "object" ? settings : {};
+function normalizeSettings(settings: UnknownRecord = {}) {
+  const source: UnknownRecord = settings && typeof settings === "object" ? settings : {};
   const widgetRailWidth = Number(source.widgetRailWidth);
 
   return {
@@ -205,14 +205,14 @@ function normalizeSettings(settings = {}) {
   };
 }
 
-function normalizeWebAppOpenRules(rules = []) {
+function normalizeWebAppOpenRules(rules: unknown = []) {
   const source = Array.isArray(rules) ? rules : [];
   const allowedTargets = new Set(["same-pane", "split-pane", "external"]);
   const allowedScopes = new Set(["exact", "host", "path-prefix"]);
   const normalized = [];
 
   for (const rule of source) {
-    const entry = rule && typeof rule === "object" ? rule : {};
+    const entry: UnknownRecord = rule && typeof rule === "object" ? rule : {};
     const pattern = normalizeText(entry.pattern || entry.match);
     const target = normalizeText(entry.target);
     const scope = normalizeText(entry.scope || "exact");
@@ -232,14 +232,14 @@ function normalizeWebAppOpenRules(rules = []) {
   return normalized;
 }
 
-function normalizePasswordVault(vault = {}) {
+function normalizePasswordVault(vault: unknown = {}) {
   if (!vault || typeof vault !== "object" || Array.isArray(vault)) {
     return {};
   }
 
-  const normalized = {};
+  const normalized: UnknownRecord = {};
   for (const [origin, entry] of Object.entries(vault)) {
-    const source = entry && typeof entry === "object" ? entry : {};
+    const source: UnknownRecord = entry && typeof entry === "object" ? entry : {};
     const normalizedOrigin = normalizeText(origin);
     const username = normalizeText(source.username);
     const encryptedPassword = normalizeText(source.encryptedPassword);
@@ -258,8 +258,8 @@ function normalizePasswordVault(vault = {}) {
   return normalized;
 }
 
-function normalizeNavigationState(navigation = {}) {
-  const source = navigation && typeof navigation === "object" ? navigation : {};
+function normalizeNavigationState(navigation: UnknownRecord = {}) {
+  const source: UnknownRecord = navigation && typeof navigation === "object" ? navigation : {};
   const allowedViews = new Set(["global", "global-settings", "project", "project-edit"]);
   const view = allowedViews.has(source.view) ? source.view : "global";
   const projectId = typeof source.projectId === "string" && source.projectId.trim()
@@ -277,8 +277,8 @@ function normalizeNavigationState(navigation = {}) {
   };
 }
 
-function normalizeAppState(appState = {}) {
-  const source = appState && typeof appState === "object" ? appState : {};
+function normalizeAppState(appState: UnknownRecord = {}) {
+  const source: UnknownRecord = appState && typeof appState === "object" ? appState : {};
 
   return {
     lastSeenVersion: normalizeText(source.lastSeenVersion),
@@ -287,12 +287,12 @@ function normalizeAppState(appState = {}) {
   };
 }
 
-function parseVersion(version) {
+function parseVersion(version: unknown) {
   const match = normalizeText(version).match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i);
   return match ? match.slice(1).map((part) => Number.parseInt(part, 10)) : null;
 }
 
-function compareVersions(left, right) {
+function compareVersions(left: unknown, right: unknown) {
   const leftParts = parseVersion(left);
   const rightParts = parseVersion(right);
 
@@ -313,8 +313,8 @@ function compareVersions(left, right) {
   return 0;
 }
 
-function normalizeOnboardingState(onboarding = {}) {
-  const source = onboarding && typeof onboarding === "object" && !Array.isArray(onboarding)
+function normalizeOnboardingState(onboarding: UnknownRecord = {}) {
+  const source: UnknownRecord = onboarding && typeof onboarding === "object" && !Array.isArray(onboarding)
     ? onboarding
     : {};
   const completedVersion = Number(source.completedVersion);
@@ -325,12 +325,12 @@ function normalizeOnboardingState(onboarding = {}) {
   };
 }
 
-function normalizeWebAppState(webApps = {}) {
+function normalizeWebAppState(webApps: unknown = {}) {
   if (!webApps || typeof webApps !== "object" || Array.isArray(webApps)) {
     return {};
   }
 
-  const normalized = {};
+  const normalized: UnknownRecord = {};
   for (const [key, webApp] of Object.entries(webApps)) {
     if (!webApp || typeof webApp !== "object") {
       continue;
@@ -348,7 +348,7 @@ function normalizeWebAppState(webApps = {}) {
   return normalized;
 }
 
-function normalizeWebAppHomeTabList(tabs = []) {
+function normalizeWebAppHomeTabList(tabs: unknown = []) {
   if (!Array.isArray(tabs)) {
     return [];
   }
@@ -356,7 +356,7 @@ function normalizeWebAppHomeTabList(tabs = []) {
   const seenIds = new Set();
   const normalized = [];
   for (const tab of tabs) {
-    const source = tab && typeof tab === "object" ? tab : {};
+    const source: UnknownRecord = tab && typeof tab === "object" ? tab : {};
     const id = normalizeText(source.id);
     const parentWebAppId = normalizeText(source.parentWebAppId);
     const label = normalizeText(source.label);
@@ -382,13 +382,13 @@ function normalizeWebAppHomeTabList(tabs = []) {
   return normalized;
 }
 
-function normalizeWebAppHomeTabs(homeTabs = {}, projects = []) {
+function normalizeWebAppHomeTabs(homeTabs: unknown = {}, projects: UnknownRecord[] = []) {
   if (!homeTabs || typeof homeTabs !== "object" || Array.isArray(homeTabs)) {
     return {};
   }
 
   const projectIds = new Set([GLOBAL_WORKSPACE_ID, ...projects.map((project) => project.id)]);
-  const normalized = {};
+  const normalized: UnknownRecord = {};
 
   for (const [projectId, tabs] of Object.entries(homeTabs)) {
     const normalizedProjectId = normalizeText(projectId);
@@ -405,7 +405,7 @@ function normalizeWebAppHomeTabs(homeTabs = {}, projects = []) {
   return normalized;
 }
 
-function normalizePaneLayoutNode(node, seenIds = new Set()) {
+function normalizePaneLayoutNode(node: any, seenIds = new Set<string>()) {
   if (!node || typeof node !== "object") {
     return null;
   }
@@ -418,7 +418,7 @@ function normalizePaneLayoutNode(node, seenIds = new Set()) {
     }
 
     seenIds.add(id);
-    const normalized = {
+    const normalized: UnknownRecord = {
       type: "pane",
       id
     };
@@ -463,7 +463,7 @@ function normalizePaneLayoutNode(node, seenIds = new Set()) {
     }
 
     seenIds.add(id);
-    const normalized = {
+    const normalized: UnknownRecord = {
       type: "split",
       id,
       direction,
@@ -482,12 +482,12 @@ function normalizePaneLayoutNode(node, seenIds = new Set()) {
   return null;
 }
 
-function normalizePaneLayouts(paneLayouts = {}) {
+function normalizePaneLayouts(paneLayouts: unknown = {}) {
   if (!paneLayouts || typeof paneLayouts !== "object" || Array.isArray(paneLayouts)) {
     return {};
   }
 
-  const normalized = {};
+  const normalized: UnknownRecord = {};
   for (const [projectId, layout] of Object.entries(paneLayouts)) {
     const normalizedLayout = normalizePaneLayoutNode(layout);
     if (normalizedLayout) {
@@ -498,14 +498,14 @@ function normalizePaneLayouts(paneLayouts = {}) {
   return normalized;
 }
 
-function normalizeTerminalSelections(terminalSelections = {}, projects = []) {
+function normalizeTerminalSelections(terminalSelections: unknown = {}, projects: UnknownRecord[] = []) {
   if (!terminalSelections || typeof terminalSelections !== "object" || Array.isArray(terminalSelections)) {
     return {};
   }
 
   const projectIds = new Set(projects.map((project) => project.id));
   projectIds.add(GLOBAL_WORKSPACE_ID);
-  const normalized = {};
+  const normalized: UnknownRecord = {};
 
   for (const [projectId, selections] of Object.entries(terminalSelections)) {
     const normalizedProjectId = normalizeText(projectId);
@@ -513,7 +513,7 @@ function normalizeTerminalSelections(terminalSelections = {}, projects = []) {
       continue;
     }
 
-    const normalizedSelections = {};
+    const normalizedSelections: UnknownRecord = {};
     for (const [surfaceKey, windowId] of Object.entries(selections)) {
       const normalizedSurfaceKey = normalizeText(surfaceKey);
       const normalizedWindowId = normalizeText(windowId);
@@ -530,14 +530,14 @@ function normalizeTerminalSelections(terminalSelections = {}, projects = []) {
   return normalized;
 }
 
-function normalizeTerminalTabOrders(terminalTabOrders = {}, projects = []) {
+function normalizeTerminalTabOrders(terminalTabOrders: unknown = {}, projects: UnknownRecord[] = []) {
   if (!terminalTabOrders || typeof terminalTabOrders !== "object" || Array.isArray(terminalTabOrders)) {
     return {};
   }
 
   const projectIds = new Set(projects.map((project) => project.id));
   projectIds.add(GLOBAL_WORKSPACE_ID);
-  const normalized = {};
+  const normalized: UnknownRecord = {};
 
   for (const [projectId, windowIds] of Object.entries(terminalTabOrders)) {
     const normalizedProjectId = normalizeText(projectId);
@@ -563,10 +563,10 @@ function normalizeTerminalTabOrders(terminalTabOrders = {}, projects = []) {
   return normalized;
 }
 
-function normalizeWidgetLayout(layout = {}) {
-  const source = layout && typeof layout === "object" ? layout : {};
-  const normalizeWidgetId = (id) => String(id || "").trim();
-  const seenIds = new Set();
+function normalizeWidgetLayout(layout: unknown = {}) {
+  const source: UnknownRecord = layout && typeof layout === "object" ? layout : {};
+  const normalizeWidgetId = (id: unknown) => String(id || "").trim();
+  const seenIds = new Set<string>();
   const order = Array.isArray(source.order)
     ? source.order
         .map(normalizeWidgetId)
@@ -579,7 +579,7 @@ function normalizeWidgetLayout(layout = {}) {
           return true;
         })
     : [];
-  const seenHiddenIds = new Set();
+  const seenHiddenIds = new Set<string>();
   const hidden = Array.isArray(source.hidden)
     ? source.hidden
         .map(normalizeWidgetId)
@@ -598,16 +598,17 @@ function normalizeWidgetLayout(layout = {}) {
   const rawPositions = source.positions && typeof source.positions === "object" && !Array.isArray(source.positions)
     ? source.positions
     : {};
-  const sizes = {};
-  const positions = {};
+  const sizes: UnknownRecord = {};
+  const positions: UnknownRecord = {};
 
   for (const [widgetId, size] of Object.entries(rawSizes)) {
     if (!size || typeof size !== "object") {
       continue;
     }
 
-    const columns = Number(size.columns);
-    const rows = Number(size.rows);
+    const widgetSize = size as UnknownRecord;
+    const columns = Number(widgetSize.columns);
+    const rows = Number(widgetSize.rows);
 
     if (Number.isFinite(columns) && Number.isFinite(rows)) {
       sizes[normalizeWidgetId(widgetId)] = {
@@ -622,8 +623,9 @@ function normalizeWidgetLayout(layout = {}) {
       continue;
     }
 
-    const x = Number(position.x);
-    const y = Number(position.y);
+    const widgetPosition = position as UnknownRecord;
+    const x = Number(widgetPosition.x);
+    const y = Number(widgetPosition.y);
 
     if (Number.isFinite(x) && Number.isFinite(y)) {
       positions[normalizeWidgetId(widgetId)] = {
@@ -642,12 +644,12 @@ function normalizeWidgetLayout(layout = {}) {
   };
 }
 
-function normalizeWidgetLayouts(widgetLayouts = {}) {
+function normalizeWidgetLayouts(widgetLayouts: unknown = {}) {
   if (!widgetLayouts || typeof widgetLayouts !== "object" || Array.isArray(widgetLayouts)) {
     return {};
   }
 
-  const normalized = {};
+  const normalized: UnknownRecord = {};
   for (const [projectId, layout] of Object.entries(widgetLayouts)) {
     normalized[String(projectId)] = normalizeProjectWidgetLayout(layout);
   }
@@ -655,8 +657,8 @@ function normalizeWidgetLayouts(widgetLayouts = {}) {
   return normalized;
 }
 
-function normalizeProjectWidgetLayout(layout = {}) {
-  const source = layout && typeof layout === "object" && !Array.isArray(layout)
+function normalizeProjectWidgetLayout(layout: unknown = {}) {
+  const source: UnknownRecord = layout && typeof layout === "object" && !Array.isArray(layout)
     ? layout
     : {};
   const paneLayouts = source.panes && typeof source.panes === "object" && !Array.isArray(source.panes)
@@ -671,7 +673,7 @@ function normalizeProjectWidgetLayout(layout = {}) {
     };
   }
 
-  const normalizedPanes = {};
+  const normalizedPanes: UnknownRecord = {};
   for (const [paneId, paneLayout] of Object.entries(paneLayouts)) {
     const normalizedPaneId = normalizeText(paneId);
     if (normalizedPaneId) {
@@ -688,12 +690,12 @@ function normalizeProjectWidgetLayout(layout = {}) {
   };
 }
 
-function normalizePluginConfigObject(config = {}) {
+function normalizePluginConfigObject(config: unknown = {}) {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
     return {};
   }
 
-  const normalized = {};
+  const normalized: UnknownRecord = {};
   for (const [key, value] of Object.entries(config)) {
     const normalizedKey = normalizeText(key);
     if (!normalizedKey) {
@@ -713,11 +715,11 @@ function normalizePluginConfigObject(config = {}) {
   return normalized;
 }
 
-function normalizePluginConfig(pluginConfig = {}, projects = []) {
-  const source = pluginConfig && typeof pluginConfig === "object" && !Array.isArray(pluginConfig)
+function normalizePluginConfig(pluginConfig: unknown = {}, projects: UnknownRecord[] = []) {
+  const source: UnknownRecord = pluginConfig && typeof pluginConfig === "object" && !Array.isArray(pluginConfig)
     ? pluginConfig
     : {};
-  const normalized = {
+  const normalized: UnknownRecord = {
     global: {},
     projects: {}
   };
@@ -761,14 +763,14 @@ function normalizePluginConfig(pluginConfig = {}, projects = []) {
   return normalized;
 }
 
-function normalizePluginsState(plugins = {}) {
-  const source = plugins && typeof plugins === "object" && !Array.isArray(plugins)
+function normalizePluginsState(plugins: unknown = {}) {
+  const source: UnknownRecord = plugins && typeof plugins === "object" && !Array.isArray(plugins)
     ? plugins
     : {};
   const enabledSource = source.enabled && typeof source.enabled === "object" && !Array.isArray(source.enabled)
     ? source.enabled
     : {};
-  const enabled = {};
+  const enabled: UnknownRecord = {};
 
   for (const [pluginId, value] of Object.entries(enabledSource)) {
     const normalizedPluginId = normalizeText(pluginId);
@@ -780,7 +782,7 @@ function normalizePluginsState(plugins = {}) {
   return { enabled };
 }
 
-function normalizeProjectUrls(urls = []) {
+function normalizeProjectUrls(urls: unknown = []) {
   if (!Array.isArray(urls)) {
     return [];
   }
@@ -788,7 +790,7 @@ function normalizeProjectUrls(urls = []) {
   const seenIds = new Set();
   return urls
     .map((entry, index) => {
-      const source = entry && typeof entry === "object" ? entry : {};
+      const source: UnknownRecord = entry && typeof entry === "object" ? entry : {};
       const label = normalizeText(source.label);
       const rawUrl = normalizeText(source.url);
 
@@ -823,12 +825,12 @@ function normalizeProjectUrls(urls = []) {
     .filter(Boolean);
 }
 
-function normalizeProjectWidgetPanes(widgetPanes = []) {
+function normalizeProjectWidgetPanes(widgetPanes: unknown = []) {
   const source = Array.isArray(widgetPanes) ? widgetPanes : [];
   const seenIds = new Set();
   const normalized = source
     .map((entry, index) => {
-      const pane = entry && typeof entry === "object" ? entry : {};
+      const pane: UnknownRecord = entry && typeof entry === "object" ? entry : {};
       const label = normalizeText(pane.label || pane.name);
 
       if (!label) {
@@ -857,7 +859,7 @@ function normalizeProjectWidgetPanes(widgetPanes = []) {
       }];
 }
 
-function normalizeProject(project, index = 0) {
+function normalizeProject(project: UnknownRecord, index = 0) {
   const id = String(project.id || crypto.randomUUID());
   const name = String(project.name || "").trim();
 
@@ -895,7 +897,10 @@ function normalizeProject(project, index = 0) {
 }
 
 class ProjectStore {
-  constructor(filePath) {
+  filePath: string;
+  state: UnknownRecord;
+
+  constructor(filePath: string) {
     this.filePath = filePath;
     this.state = createDefaultState();
   }
@@ -1358,7 +1363,7 @@ class ProjectStore {
   }
 }
 
-module.exports = {
+export {
   DEFAULT_BOUNDS,
   DEFAULT_WINDOW_BOUNDS,
   normalizeBounds,

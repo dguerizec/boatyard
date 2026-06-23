@@ -26,7 +26,7 @@ const {
   normalizeWebAppState,
   normalizeWindowBounds,
   normalizeWindowState
-} = require("../src/main/store");
+} = require(["..", "build", "main", "store"].join("/"));
 
 test("normalizeUrl adds https and rejects unsupported schemes", () => {
   assert.equal(normalizeUrl("example.com"), "https://example.com/");
