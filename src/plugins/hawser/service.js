@@ -1,23 +1,87 @@
+// @ts-check
 "use strict";
 
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
 
+/**
+ * @typedef {import("../pluginTypes").ExecFileAsync} ExecFileAsync
+ * @typedef {{ hawserApiUrl?: string, hawserToken?: string }} HawserSettings
+ * @typedef {{ hawserMainSession?: string, slug?: string }} BoatyardProject
+ * @typedef {{ name: string, workspace: string, path: string }} HawserProject
+ * @typedef {{ project: HawserProject, matchType: "exact" }} HawserProjectMatch
+ * @typedef {{ name: string, matchType: "exact", url: string }} HawserProjectInspection
+ * @typedef {{ available: boolean, version?: string, error?: string }} HawserCliStatus
+ * @typedef {{ fetchImpl?: typeof fetch, execFileAsync?: ExecFileAsync }} HawserStatusOptions
+ * @typedef {{ kind?: string, id?: string }} ExternalRef
+ * @typedef {{ external_refs?: ExternalRef[], externalRefs?: ExternalRef[] }} ExternalRefContainer
+ * @typedef {{
+ *   id?: string,
+ *   kind?: string,
+ *   status?: string,
+ *   priority?: string,
+ *   subject?: string,
+ *   body?: string,
+ *   from_project?: string,
+ *   from_session?: string,
+ *   to_project?: string,
+ *   to_session?: string,
+ *   created_at?: string,
+ *   started_at?: string
+ * }} HawserApiMessage
+ * @typedef {{ content?: string, twicc_session_id?: string, codex_session_id?: string, runtime_session_id?: string, worktree?: unknown }} HawserMessageEnvelope
+ * @typedef {{ project: string, session: string }} HawserSessionTarget
+ * @typedef {{
+ *   id?: string,
+ *   direction: "in" | "out",
+ *   kind: string,
+ *   status: string,
+ *   priority: string,
+ *   subject: string,
+ *   fromProject: string,
+ *   fromSession: string,
+ *   toProject: string,
+ *   toSession: string,
+ *   createdAt: string,
+ *   startedAt: string,
+ *   preview: string,
+ *   twiccSessionId: string,
+ *   sessionTarget: HawserSessionTarget,
+ *   worktree: unknown
+ * }} HawserMessage
+ * @typedef {{ unread: number, queued: number, processing: number, activeTasks: number }} HawserMessageCounts
+ * @typedef {{ project: string, source: string, live: boolean, counts: HawserMessageCounts, messages: HawserMessage[], error?: string }} HawserWidgetData
+ * @typedef {{ execFileAsync?: ExecFileAsync }} HawserCommandOptions
+ * @typedef {(projectName: string, sessionName: string, settings?: HawserSettings) => Promise<ExternalRef[]>} FetchSessionRefs
+ */
+
 const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082";
 const DEFAULT_HAWSER_WEB_URL = "http://localhost:60082";
 const DEFAULT_HAWSER_RUNTIME = "codex";
 const execFileAsync = promisify(execFile);
 
+/**
+ * @param {HawserSettings} settings
+ * @returns {string}
+ */
 function getHawserApiUrl(settings = {}) {
   return String(settings.hawserApiUrl || DEFAULT_HAWSER_API_URL).replace(/\/+$/, "");
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function normalizePathForMatch(value) {
   const trimmed = typeof value === "string" ? value.trim() : "";
   return trimmed ? path.resolve(trimmed) : "";
 }
 
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
 function normalizeHawserRuntime(value) {
   const runtime = String(value || DEFAULT_HAWSER_RUNTIME).trim();
   if (!/^[A-Za-z0-9_.-]+$/.test(runtime)) {
@@ -27,6 +91,11 @@ function normalizeHawserRuntime(value) {
   return runtime;
 }
 
+/**
+ * @param {unknown} projectName
+ * @param {string} baseUrl
+ * @returns {string}
+ */
 function buildHawserProjectUrl(projectName, baseUrl = DEFAULT_HAWSER_WEB_URL) {
   const name = String(projectName || "").trim();
   if (!name) {
@@ -43,6 +112,10 @@ function buildHawserProjectUrl(projectName, baseUrl = DEFAULT_HAWSER_WEB_URL) {
   }
 }
 
+/**
+ * @param {unknown} stdout
+ * @returns {HawserProject[]}
+ */
 function parseHawserProjectList(stdout) {
   return String(stdout || "")
     .split(/\r?\n/)
@@ -58,9 +131,14 @@ function parseHawserProjectList(stdout) {
         path: parts.slice(2).join(" ")
       };
     })
-    .filter(Boolean);
+    .filter((project) => Boolean(project));
 }
 
+/**
+ * @param {unknown} projects
+ * @param {unknown} sourcePath
+ * @returns {HawserProjectMatch | null}
+ */
 function findHawserProjectMatchForPath(projects, sourcePath) {
   if (!Array.isArray(projects)) {
     return null;
@@ -71,15 +149,20 @@ function findHawserProjectMatchForPath(projects, sourcePath) {
     return null;
   }
 
-  const exactMatch = projects.find((project) => normalizePathForMatch(project.path) === normalizedSourcePath);
+  const projectList = /** @type {HawserProject[]} */ (projects);
+  const exactMatch = projectList.find((project) => normalizePathForMatch(project.path) === normalizedSourcePath);
   return exactMatch
     ? {
         project: exactMatch,
-        matchType: "exact"
+        matchType: /** @type {"exact"} */ ("exact")
       }
     : null;
 }
 
+/**
+ * @param {HawserCommandOptions} options
+ * @returns {Promise<HawserProject[]>}
+ */
 async function loadHawserProjects({ execFileAsync: runCommand = execFileAsync } = {}) {
   try {
     const { stdout } = await runCommand("hawser", ["list"], {
@@ -92,6 +175,11 @@ async function loadHawserProjects({ execFileAsync: runCommand = execFileAsync } 
   }
 }
 
+/**
+ * @param {unknown} sourcePath
+ * @param {HawserCommandOptions} options
+ * @returns {Promise<HawserProjectInspection | null>}
+ */
 async function inspectHawserProject(sourcePath, options = {}) {
   const projects = await loadHawserProjects(options);
   const match = findHawserProjectMatchForPath(projects, sourcePath);
@@ -104,6 +192,12 @@ async function inspectHawserProject(sourcePath, options = {}) {
     : null;
 }
 
+/**
+ * @param {unknown} sourcePath
+ * @param {unknown} runtime
+ * @param {HawserCommandOptions} options
+ * @returns {Promise<HawserProjectInspection | null>}
+ */
 async function createHawserProject(sourcePath, runtime = DEFAULT_HAWSER_RUNTIME, { execFileAsync: runCommand = execFileAsync } = {}) {
   const normalizedSourcePath = normalizePathForMatch(sourcePath);
   if (!normalizedSourcePath) {
@@ -119,6 +213,10 @@ async function createHawserProject(sourcePath, runtime = DEFAULT_HAWSER_RUNTIME,
   return inspectHawserProject(normalizedSourcePath, { execFileAsync: runCommand });
 }
 
+/**
+ * @param {ExecFileAsync} runCommand
+ * @returns {Promise<HawserCliStatus>}
+ */
 async function getHawserCliStatus(runCommand = execFileAsync) {
   try {
     const { stdout } = await runCommand("hawser", ["--version"], {
@@ -130,13 +228,18 @@ async function getHawserCliStatus(runCommand = execFileAsync) {
       version: String(stdout || "").trim()
     };
   } catch (error) {
+    const cliError = /** @type {NodeJS.ErrnoException} */ (error);
     return {
       available: false,
-      error: error.code === "ENOENT" ? "Hawser CLI was not found in PATH." : error.message
+      error: cliError.code === "ENOENT" ? "Hawser CLI was not found in PATH." : cliError.message
     };
   }
 }
 
+/**
+ * @param {HawserSettings} settings
+ * @param {HawserStatusOptions} options
+ */
 async function getHawserStatus(settings = {}, options = {}) {
   const apiUrl = getHawserApiUrl(settings);
   const token = String(settings.hawserToken || "").trim();
@@ -210,23 +313,35 @@ async function getHawserStatus(settings = {}, options = {}) {
         cliAvailable: cli.available,
         cliVersion: cli.version || "",
         cliError: cli.error || "",
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       }
     };
   }
 }
 
+/**
+ * @param {BoatyardProject} project
+ * @returns {string}
+ */
 function parseHawserProjectName(project = {}) {
   const sessionTarget = String(project.hawserMainSession || "").trim();
   const sessionProject = sessionTarget.includes(":") ? sessionTarget.split(":")[0] : "";
   return sessionProject || project.slug || "";
 }
 
+/**
+ * @param {BoatyardProject} project
+ * @returns {string}
+ */
 function parseHawserSessionName(project = {}) {
   const sessionTarget = String(project.hawserMainSession || "").trim();
   return sessionTarget.includes(":") ? sessionTarget.split(":").slice(1).join(":") : "";
 }
 
+/**
+ * @param {unknown} body
+ * @returns {HawserMessageEnvelope | null}
+ */
 function parseEnvelope(body) {
   const trimmed = String(body || "").trim();
 
@@ -236,18 +351,27 @@ function parseEnvelope(body) {
 
   try {
     const parsed = JSON.parse(trimmed);
-    return parsed && typeof parsed === "object" ? parsed : null;
+    return parsed && typeof parsed === "object" ? /** @type {HawserMessageEnvelope} */ (parsed) : null;
   } catch {
     return null;
   }
 }
 
+/**
+ * @param {HawserApiMessage} message
+ * @returns {string}
+ */
 function getMessagePreview(message) {
   const envelope = parseEnvelope(message.body);
   const body = envelope?.content || message.body || "";
   return String(body).replace(/\s+/g, " ").trim();
 }
 
+/**
+ * @param {HawserApiMessage} message
+ * @param {string} projectName
+ * @returns {HawserMessage}
+ */
 function normalizeMessage(message, projectName) {
   const direction = message.to_project === projectName ? "in" : "out";
   const envelope = parseEnvelope(message.body);
@@ -277,6 +401,10 @@ function normalizeMessage(message, projectName) {
   };
 }
 
+/**
+ * @param {Partial<HawserMessage>} message
+ * @returns {HawserSessionTarget}
+ */
 function getMessageSessionTarget(message = {}) {
   const useOutboundTarget = message.direction === "out";
   return {
@@ -285,6 +413,10 @@ function getMessageSessionTarget(message = {}) {
   };
 }
 
+/**
+ * @param {HawserMessage[]} messages
+ * @returns {HawserMessageCounts}
+ */
 function summarizeMessages(messages) {
   return {
     unread: messages.filter((message) => message.direction === "in" && message.status === "unread").length,
@@ -294,22 +426,43 @@ function summarizeMessages(messages) {
   };
 }
 
+/**
+ * @param {Pick<HawserMessage, "direction" | "status">} message
+ * @returns {boolean}
+ */
 function isQueuedRemoteMessage(message) {
   return message.direction === "out" && message.status === "unread";
 }
 
+/**
+ * @param {Pick<HawserMessage, "kind" | "status">} message
+ * @returns {boolean}
+ */
 function isRunningTask(message) {
   return message.kind === "task" && message.status === "processing";
 }
 
+/**
+ * @param {Pick<HawserMessage, "kind" | "status">} message
+ * @returns {boolean}
+ */
 function isActiveTask(message) {
   return message.kind === "task" && (message.status === "unread" || isRunningTask(message));
 }
 
+/**
+ * @param {Pick<HawserMessage, "status" | "twiccSessionId">} message
+ * @returns {boolean}
+ */
 function shouldShowWidgetMessage(message) {
   return ["unread", "processing"].includes(message.status) || Boolean(message.twiccSessionId);
 }
 
+/**
+ * @param {string} pathname
+ * @param {HawserSettings} settings
+ * @returns {Promise<unknown>}
+ */
 async function fetchHawserJson(pathname, settings = {}) {
   const token = String(settings.hawserToken || "").trim();
 
@@ -330,6 +483,11 @@ async function fetchHawserJson(pathname, settings = {}) {
   return response.json();
 }
 
+/**
+ * @param {string} pathname
+ * @param {HawserSettings} settings
+ * @returns {Promise<unknown>}
+ */
 async function fetchOptionalHawserJson(pathname, settings = {}) {
   try {
     return await fetchHawserJson(pathname, settings);
@@ -338,22 +496,31 @@ async function fetchOptionalHawserJson(pathname, settings = {}) {
   }
 }
 
+/**
+ * @param {unknown} value
+ * @returns {ExternalRef[]}
+ */
 function normalizeExternalRefs(value) {
   if (Array.isArray(value)) {
-    return value;
+    return /** @type {ExternalRef[]} */ (value);
   }
 
-  if (Array.isArray(value?.external_refs)) {
-    return value.external_refs;
+  const container = /** @type {ExternalRefContainer | null | undefined} */ (value);
+  if (Array.isArray(container?.external_refs)) {
+    return container.external_refs;
   }
 
-  if (Array.isArray(value?.externalRefs)) {
-    return value.externalRefs;
+  if (Array.isArray(container?.externalRefs)) {
+    return container.externalRefs;
   }
 
   return [];
 }
 
+/**
+ * @param {unknown} refs
+ * @returns {string}
+ */
 function getTwiccSessionIdFromRefs(refs = []) {
   const ref = normalizeExternalRefs(refs).find((candidate) => (
     candidate?.kind === "twicc-session" && String(candidate.id || "").trim()
@@ -361,17 +528,29 @@ function getTwiccSessionIdFromRefs(refs = []) {
   return ref ? String(ref.id).trim() : "";
 }
 
+/**
+ * @param {unknown} sessions
+ * @param {string} sessionName
+ * @returns {ExternalRef[]}
+ */
 function getSessionRefsFromSessionList(sessions, sessionName) {
   if (!Array.isArray(sessions)) {
     return [];
   }
 
   const session = sessions.find((candidate) => (
-    candidate?.name === sessionName || candidate?.session === sessionName
+    /** @type {{ name?: string, session?: string }} */ (candidate)?.name === sessionName
+      || /** @type {{ name?: string, session?: string }} */ (candidate)?.session === sessionName
   ));
   return normalizeExternalRefs(session);
 }
 
+/**
+ * @param {string} projectName
+ * @param {string} sessionName
+ * @param {HawserSettings} settings
+ * @returns {Promise<ExternalRef[]>}
+ */
 async function fetchHawserSessionRefs(projectName, sessionName, settings = {}) {
   const encodedProject = encodeURIComponent(projectName);
   const encodedSession = encodeURIComponent(sessionName);
@@ -388,7 +567,14 @@ async function fetchHawserSessionRefs(projectName, sessionName, settings = {}) {
   return getSessionRefsFromSessionList(sessions, sessionName);
 }
 
+/**
+ * @param {HawserMessage[]} messages
+ * @param {HawserSettings} settings
+ * @param {FetchSessionRefs} fetchSessionRefs
+ * @returns {Promise<HawserMessage[]>}
+ */
 async function addSessionRefsToMessages(messages, settings = {}, fetchSessionRefs = fetchHawserSessionRefs) {
+  /** @type {Map<string, HawserSessionTarget>} */
   const targetKeys = new Map();
 
   for (const message of messages) {
@@ -417,6 +603,12 @@ async function addSessionRefsToMessages(messages, settings = {}, fetchSessionRef
   });
 }
 
+/**
+ * @param {string} projectName
+ * @param {BoatyardProject} project
+ * @param {HawserSettings} settings
+ * @returns {Promise<HawserWidgetData>}
+ */
 async function getHawserWidgetDataFromHttp(projectName, project = {}, settings = {}) {
   const sessionName = parseHawserSessionName(project);
   const inboxParams = new URLSearchParams({ all: "true" });
@@ -432,7 +624,10 @@ async function getHawserWidgetDataFromHttp(projectName, project = {}, settings =
     fetchHawserJson(`/api/projects/${encodeURIComponent(projectName)}/inbox?${inboxParams.toString()}`, settings),
     fetchHawserJson(`/api/projects/${encodeURIComponent(projectName)}/sent?${sentParams.toString()}`, settings)
   ]);
-  const normalizedMessages = [...inbox, ...sent]
+  const normalizedMessages = [
+    .../** @type {HawserApiMessage[]} */ (inbox),
+    .../** @type {HawserApiMessage[]} */ (sent)
+  ]
     .map((message) => normalizeMessage(message, projectName))
     .sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)))
     .slice(0, 80);
@@ -454,6 +649,11 @@ async function getHawserWidgetDataFromHttp(projectName, project = {}, settings =
   };
 }
 
+/**
+ * @param {BoatyardProject} project
+ * @param {HawserSettings} settings
+ * @returns {Promise<HawserWidgetData>}
+ */
 async function getHawserWidgetData(project, settings = {}) {
   const projectName = parseHawserProjectName(project);
 
@@ -487,7 +687,7 @@ async function getHawserWidgetData(project, settings = {}) {
         activeTasks: 0
       },
       messages: [],
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }
