@@ -5,7 +5,7 @@ const test = require("node:test");
 const {
   readFieldValue,
   resolveFieldDefault
-} = require("../src/renderer/pluginSettingsFields");
+} = require(["..", "build", "renderer", "pluginSettingsFields"].join("/"));
 
 test("plugin settings fields persist dynamic defaults when user value is empty", () => {
   const input = {

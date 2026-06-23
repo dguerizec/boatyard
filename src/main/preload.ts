@@ -124,3 +124,5 @@ contextBridge.exposeInMainWorld("boatyard", {
   writeClipboardText: (text) => ipcRenderer.invoke("clipboard:write-text", text),
   openExternal: (url) => ipcRenderer.invoke("shell:open-external", url)
 });
+
+export {};

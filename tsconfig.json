@@ -3,6 +3,7 @@
     "allowJs": true,
     "checkJs": false,
     "module": "NodeNext",
+    "moduleDetection": "legacy",
     "moduleResolution": "NodeNext",
     "noEmit": true,
     "resolveJsonModule": true,

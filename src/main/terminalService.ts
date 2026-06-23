@@ -419,3 +419,5 @@ module.exports = {
   getTerminalClientSessionName,
   slugifyTmuxName
 };
+
+export {};

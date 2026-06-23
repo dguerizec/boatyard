@@ -144,3 +144,5 @@ module.exports = {
   PasswordManager,
   getCredentialOrigin
 };
+
+export {};

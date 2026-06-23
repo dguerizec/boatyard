@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
-const { resolveFieldDefault } = require("../src/renderer/pluginSettingsFields");
+const { resolveFieldDefault } = require(["..", "build", "renderer", "pluginSettingsFields"].join("/"));
 
 const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette"];
 

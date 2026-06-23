@@ -1715,3 +1715,5 @@ app.on("activate", () => {
     createMainWindow();
   }
 });
+
+export {};

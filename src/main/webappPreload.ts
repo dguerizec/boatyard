@@ -254,3 +254,5 @@ window.addEventListener("DOMContentLoaded", () => {
     subtree: true
   });
 });
+
+export {};
