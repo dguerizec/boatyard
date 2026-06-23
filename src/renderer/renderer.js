@@ -4196,6 +4196,10 @@ function createWebAppPane(project, paneNode) {
   expandPaneButton.setAttribute("aria-label", "Expand pane");
   expandPaneButton.append(createToolIcon("expandPane"));
   expandPaneButton.disabled = !expansionState.canExpand;
+  expandPaneButton.addEventListener("mouseenter", () => previewPaneExpansion(project, paneNode.id, !expandPaneButton.disabled));
+  expandPaneButton.addEventListener("mouseleave", clearPaneExpansionPreview);
+  expandPaneButton.addEventListener("focus", () => previewPaneExpansion(project, paneNode.id, !expandPaneButton.disabled));
+  expandPaneButton.addEventListener("blur", clearPaneExpansionPreview);
   expandPaneButton.addEventListener("click", () => expandPane(project, paneNode.id));
 
   const shrinkPaneButton = document.createElement("button");
@@ -4205,6 +4209,7 @@ function createWebAppPane(project, paneNode) {
   shrinkPaneButton.setAttribute("aria-label", "Shrink pane");
   shrinkPaneButton.append(createToolIcon("shrinkPane"));
   shrinkPaneButton.disabled = !expansionState.canShrink;
+  shrinkPaneButton.classList.toggle("active", expansionState.canShrink);
   shrinkPaneButton.addEventListener("click", () => shrinkPane(project, paneNode.id));
 
   const verticalSplitButton = document.createElement("button");
@@ -4344,9 +4349,37 @@ function getPaneExpansionState(project, paneId) {
   };
 }
 
-function expandPane(project, paneId) {
+function getPaneExpansionTarget(project, paneId) {
   const path = getPaneAncestorPath(getProjectPaneLayout(project), paneId) || [];
-  const target = [...path].reverse().find(({ node }) => !node.expandedChild);
+  return [...path].reverse().find(({ node }) => !node.expandedChild) || null;
+}
+
+function clearPaneExpansionPreview() {
+  document.querySelectorAll(".webapp-split.pane-expand-preview").forEach((split) => {
+    split.classList.remove("pane-expand-preview");
+  });
+}
+
+function previewPaneExpansion(project, paneId, enabled) {
+  clearPaneExpansionPreview();
+
+  if (!enabled) {
+    return;
+  }
+
+  const target = getPaneExpansionTarget(project, paneId);
+  if (!target) {
+    return;
+  }
+
+  const split = [...document.querySelectorAll(".webapp-split")].find((candidate) => candidate.dataset.splitId === target.node.id);
+  if (split) {
+    split.classList.add("pane-expand-preview");
+  }
+}
+
+function expandPane(project, paneId) {
+  const target = getPaneExpansionTarget(project, paneId);
 
   if (!target) {
     return;
@@ -4525,6 +4558,7 @@ function createPaneLayout(project, node) {
 
   const split = document.createElement("div");
   split.className = `webapp-split ${node.direction}`;
+  split.dataset.splitId = node.id;
   applySplitRatio(split, node);
   split.append(
     createPaneLayout(project, node.first),
