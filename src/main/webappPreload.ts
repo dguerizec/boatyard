@@ -1,4 +1,3 @@
-// @ts-check
 "use strict";
 
 const { ipcRenderer } = require("electron");
@@ -7,17 +6,15 @@ const PASSWORD_SELECTOR = 'input[type="password"]';
 const USERNAME_TYPES = new Set(["email", "text", "tel", "url"]);
 let autofillEnabled = false;
 
-/**
- * @typedef {{ url: string, username: string, password: string }} WebAppCredential
- * @typedef {{ form: ParentNode, usernameInput: HTMLInputElement | null, passwordInput: HTMLInputElement | null }} LoginFields
- */
+type WebAppCredential = { url: string; username: string; password: string };
+type LoginFields = { form: ParentNode; usernameInput: HTMLInputElement | null; passwordInput: HTMLInputElement | null };
 
 /**
  * @param {unknown} input
  * @param {HTMLInputElement | null} passwordInput
  * @returns {input is HTMLInputElement}
  */
-function isUsernameInput(input, passwordInput = null) {
+function isUsernameInput(input: unknown, passwordInput: HTMLInputElement | null = null): input is HTMLInputElement {
   if (!(input instanceof HTMLInputElement) || input === passwordInput || input.disabled || input.readOnly) {
     return false;
   }
@@ -32,15 +29,15 @@ function isUsernameInput(input, passwordInput = null) {
  * @param {HTMLInputElement | null} passwordInput
  * @returns {HTMLInputElement | null}
  */
-function findUsernameInput(scope = document, passwordInput = null) {
+function findUsernameInput(scope: ParentNode = document, passwordInput: HTMLInputElement | null = null): HTMLInputElement | null {
   return [...scope.querySelectorAll("input")].find((input) => isUsernameInput(input, passwordInput)) || null;
 }
 
 /**
  * @returns {LoginFields}
  */
-function findLoginFields() {
-  const passwordInput = /** @type {HTMLInputElement | null} */ (document.querySelector(PASSWORD_SELECTOR));
+function findLoginFields(): LoginFields {
+  const passwordInput = document.querySelector<HTMLInputElement>(PASSWORD_SELECTOR);
   const form = passwordInput?.closest("form") || document;
   const usernameInput = findUsernameInput(form, passwordInput) || findUsernameInput(document, passwordInput);
 
@@ -148,10 +145,10 @@ async function autofillCredential() {
  * @param {ParentNode} form
  * @returns {WebAppCredential | null}
  */
-function readCredentialFromForm(form) {
-  const passwordInput = /** @type {HTMLInputElement | null} */ (
+function readCredentialFromForm(form: ParentNode): WebAppCredential | null {
+  const passwordInput = (
     form.querySelector(PASSWORD_SELECTOR) || document.querySelector(PASSWORD_SELECTOR)
-  );
+  ) as HTMLInputElement | null;
   if (!passwordInput) {
     return null;
   }
@@ -172,7 +169,7 @@ function readCredentialFromForm(form) {
 /**
  * @param {EventTarget | null} target
  */
-function rememberUsernameFrom(target) {
+function rememberUsernameFrom(target: EventTarget | null): void {
   const element = target instanceof Element ? target : null;
   const form = element?.closest("form") || document;
   const usernameInput = findUsernameInput(form) || findUsernameInput(document);
@@ -182,7 +179,7 @@ function rememberUsernameFrom(target) {
 /**
  * @param {EventTarget | null} target
  */
-function maybeSaveCredentialFrom(target) {
+function maybeSaveCredentialFrom(target: EventTarget | null): void {
   rememberUsernameFrom(target);
 
   const element = target instanceof Element ? target : null;
@@ -206,7 +203,7 @@ function installSubmitCapture() {
       return;
     }
 
-    const typedTarget = /** @type {HTMLElement & { type?: string, value?: string }} */ (target);
+    const typedTarget = target as HTMLElement & { type?: string, value?: string };
     const type = String(typedTarget.type || "").toLowerCase();
     const label = `${typedTarget.textContent || ""} ${typedTarget.value || ""} ${typedTarget.getAttribute("aria-label") || ""}`;
     if (type === "submit" || /sign|log.?in|continue|connect|next/i.test(label)) {
@@ -227,8 +224,9 @@ function installSubmitCapture() {
   }, true);
 
   document.addEventListener("input", (event) => {
-    if (isUsernameInput(event.target)) {
-      setPendingUsername(event.target.value);
+    const target = event.target;
+    if (isUsernameInput(target)) {
+      setPendingUsername(target.value);
     }
   }, true);
 }
