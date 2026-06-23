@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { PluginHost, getPluginEventChannel } = require("../src/main/pluginHost");
+const { PluginHost, getPluginEventChannel } = require(["..", "build", "main", "pluginHost"].join("/"));
 
 function createPluginFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-plugin-host-"));

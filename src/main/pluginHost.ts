@@ -1,4 +1,3 @@
-// @ts-check
 "use strict";
 
 const fs = require("node:fs");
@@ -115,10 +114,20 @@ function getPluginEventChannel(pluginId, eventName) {
 }
 
 class PluginHost {
+  pluginRoot;
+  store;
+  execFileAsync;
+  userDataPath;
+  sendToRenderer;
+  actions;
+  inspectors;
+  stateMigrations;
+  plugins;
+
   /**
    * @param {PluginHostOptions} options
    */
-  constructor(options = {}) {
+  constructor(options: any = {}) {
     this.pluginRoot = options.pluginRoot || path.join(__dirname, "../plugins");
     this.store = options.store || null;
     this.execFileAsync = options.execFileAsync;
@@ -347,7 +356,7 @@ class PluginHost {
   }
 }
 
-module.exports = {
+export {
   PluginHost,
   getPluginEventChannel,
   listPluginManifestPaths,
