@@ -1,6 +1,17 @@
 {
-  "generatedForVersion": "0.7.2",
+  "generatedForVersion": "0.7.3",
   "releases": [
+    {
+      "version": "0.7.3",
+      "date": "2026-06-23",
+      "features": [
+        {
+          "category": "Fixed",
+          "title": "Overlay dialogs over web apps",
+          "body": "Dialogs that freeze overlapping web app content now wait for web app visibility to sync and use the visible dialog content bounds, reducing stale or incorrect freeze areas."
+        }
+      ]
+    },
     {
       "version": "0.7.2",
       "date": "2026-06-23",
