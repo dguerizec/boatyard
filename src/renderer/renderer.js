@@ -91,9 +91,6 @@ let state = { projects: [] };
 let currentView = "global";
 let currentProjectId = null;
 let returnView = { view: "global", projectId: null };
-const selectedWebAppByProject = new Map();
-const paneLayoutsByProject = new Map();
-const selectedWebAppByPane = new Map();
 const loadedWebAppKeys = new Set();
 const currentWebAppUrlsByKey = new Map();
 const loadedWebAppUrlsByKey = new Map();
@@ -101,7 +98,6 @@ const webAppLoadWaiters = new Set();
 const webAppAutofillEnabledByKey = new Map();
 let visibleWebAppHosts = new Map();
 let webAppBoundsFrame = null;
-let nextPaneId = 1;
 let frozenWebAppLayer = null;
 let pierWorkloadPaneRefreshFrame = null;
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
@@ -517,6 +513,10 @@ function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {
     timeout = setTimeout(() => cleanup(false), timeoutMs);
   });
 }
+
+const paneLayoutState = window.BoatyardPaneLayoutState.create({
+  updatePaneLayout: (projectId, layout) => window.boatyard.updatePaneLayout(projectId, layout)
+});
 
 const terminalSurfaces = window.BoatyardTerminalSurfaces.create({
   boatyard: window.boatyard,
@@ -958,37 +958,12 @@ function getProjectWebApps(project, paneId) {
   return webApps;
 }
 
-function createPaneNode(project, selectedWebAppId = null) {
-  const id = `${project.id}:pane:${nextPaneId}`;
-  nextPaneId += 1;
-
-  if (selectedWebAppId) {
-    selectedWebAppByPane.set(id, selectedWebAppId);
-  }
-
-  return {
-    type: "pane",
-    id,
-    selectedWebAppId: selectedWebAppId || null
-  };
-}
-
 function getProjectPaneLayout(project) {
-  if (!paneLayoutsByProject.has(project.id)) {
-    paneLayoutsByProject.set(project.id, createPaneNode(project));
-  }
-
-  return paneLayoutsByProject.get(project.id);
+  return paneLayoutState.getProjectPaneLayout(project);
 }
 
 function getSelectedWebApp(project, paneId, webApps) {
-  const paneNode = findPaneNode(getProjectPaneLayout(project), paneId);
-  const selectedId =
-    selectedWebAppByPane.get(paneId) ||
-    paneNode?.selectedWebAppId ||
-    selectedWebAppByProject.get(project.id) ||
-    webApps[0].id;
-  return webApps.find((webApp) => webApp.id === selectedId) || webApps[0];
+  return paneLayoutState.getSelectedWebApp(project, paneId, webApps);
 }
 
 function invokeWebApp(action, ...payload) {
@@ -1102,46 +1077,15 @@ function persistVisibleWebAppPaneLayout(key, url = "") {
 }
 
 function findFirstPaneNode(node) {
-  if (!node) {
-    return null;
-  }
-
-  if (node.type === "pane") {
-    return node;
-  }
-
-  return findFirstPaneNode(node.first) || findFirstPaneNode(node.second);
+  return paneLayoutState.findFirstPaneNode(node);
 }
 
 function collectPaneNodes(node, panes = []) {
-  if (!node) {
-    return panes;
-  }
-
-  if (node.type === "pane") {
-    panes.push(node);
-    return panes;
-  }
-
-  collectPaneNodes(node.first, panes);
-  collectPaneNodes(node.second, panes);
-  return panes;
+  return paneLayoutState.collectPaneNodes(node, panes);
 }
 
 function findPaneNodeBySelectedWebApp(node, webAppId) {
-  if (!node) {
-    return null;
-  }
-
-  if (node.type === "pane") {
-    const selectedWebAppId =
-      selectedWebAppByPane.get(node.id) ||
-      node.selectedWebAppId ||
-      null;
-    return selectedWebAppId === webAppId ? node : null;
-  }
-
-  return findPaneNodeBySelectedWebApp(node.first, webAppId) || findPaneNodeBySelectedWebApp(node.second, webAppId);
+  return paneLayoutState.findPaneNodeBySelectedWebApp(node, webAppId);
 }
 
 function openProjectWebApp(projectId, webAppId, url = "") {
@@ -1161,9 +1105,9 @@ function openProjectWebApp(projectId, webAppId, url = "") {
     return false;
   }
 
-  selectedWebAppByPane.set(paneNode.id, webApp.id);
+  paneLayoutState.setSelectedWebAppForPane(paneNode.id, webApp.id);
   paneNode.selectedWebAppId = webApp.id;
-  selectedWebAppByProject.set(project.id, webApp.id);
+  paneLayoutState.setSelectedWebAppForProject(project.id, webApp.id);
 
   if (url) {
     currentWebAppUrlsByKey.set(webApp.key, url);
@@ -1441,38 +1385,15 @@ function createWebAppPane(project, paneNode) {
 }
 
 function createSplitNode(project, direction, first, selectedWebAppId = null) {
-  return {
-    type: "split",
-    id: `${project.id}:split:${nextPaneId++}`,
-    direction,
-    ratio: 0.5,
-    first,
-    second: createPaneNode(project, selectedWebAppId)
-  };
+  return paneLayoutState.createSplitNode(project, direction, first, selectedWebAppId);
 }
 
 function findPaneNode(node, paneId) {
-  if (!node) {
-    return null;
-  }
-
-  if (node.type === "pane") {
-    return node.id === paneId ? node : null;
-  }
-
-  return findPaneNode(node.first, paneId) || findPaneNode(node.second, paneId);
+  return paneLayoutState.findPaneNode(node, paneId);
 }
 
 function replacePaneNode(node, paneId, replacement) {
-  if (node.type === "pane") {
-    return node.id === paneId ? replacement : node;
-  }
-
-  return {
-    ...node,
-    first: replacePaneNode(node.first, paneId, replacement),
-    second: replacePaneNode(node.second, paneId, replacement)
-  };
+  return paneLayoutState.replacePaneNode(node, paneId, replacement);
 }
 
 function getPaneAncestorPath(node, paneId, path = []) {
@@ -1500,16 +1421,11 @@ function getPaneAncestorPath(node, paneId, path = []) {
 }
 
 function getPaneExpansionState(project, paneId) {
-  const path = getPaneAncestorPath(getProjectPaneLayout(project), paneId) || [];
-  return {
-    canExpand: path.some(({ node }) => !node.expandedChild),
-    canShrink: path.some(({ node, side }) => node.expandedChild === side)
-  };
+  return paneLayoutState.getPaneExpansionState(project, paneId);
 }
 
 function getPaneExpansionTarget(project, paneId) {
-  const path = getPaneAncestorPath(getProjectPaneLayout(project), paneId) || [];
-  return [...path].reverse().find(({ node }) => !node.expandedChild) || null;
+  return paneLayoutState.getPaneExpansionTarget(project, paneId);
 }
 
 function clearPaneExpansionPreview() {
@@ -1562,76 +1478,25 @@ function shrinkPane(project, paneId) {
 }
 
 function countPaneNodes(node) {
-  if (!node) {
-    return 0;
-  }
-
-  if (node.type === "pane") {
-    return 1;
-  }
-
-  return countPaneNodes(node.first) + countPaneNodes(node.second);
+  return paneLayoutState.countPaneNodes(node);
 }
 
 function removePaneNode(node, paneId) {
-  if (!node || node.type === "pane") {
-    return {
-      node,
-      removed: false
-    };
-  }
-
-  if (node.first.type === "pane" && node.first.id === paneId) {
-    return {
-      node: node.second,
-      removed: true
-    };
-  }
-
-  if (node.second.type === "pane" && node.second.id === paneId) {
-    return {
-      node: node.first,
-      removed: true
-    };
-  }
-
-  const firstResult = removePaneNode(node.first, paneId);
-  if (firstResult.removed) {
-    return {
-      node: {
-        ...node,
-        first: firstResult.node
-      },
-      removed: true
-    };
-  }
-
-  const secondResult = removePaneNode(node.second, paneId);
-  if (secondResult.removed) {
-    return {
-      node: {
-        ...node,
-        second: secondResult.node
-      },
-      removed: true
-    };
-  }
-
-  return {
-    node,
-    removed: false
-  };
+  return paneLayoutState.removePaneNode(node, paneId);
 }
 
 function splitPane(project, paneId, direction) {
   const layout = getProjectPaneLayout(project);
   const webApps = getProjectWebApps(project, paneId);
-  const currentWebAppId = selectedWebAppByPane.get(paneId) || selectedWebAppByProject.get(project.id) || webApps[0].id;
+  const currentWebAppId =
+    paneLayoutState.getSelectedWebAppForPane(paneId) ||
+    paneLayoutState.getSelectedWebAppForProject(project.id) ||
+    webApps[0].id;
   const nextWebAppId = webApps.find((webApp) => webApp.id !== currentWebAppId)?.id || currentWebAppId;
   const replacement = createSplitNode(project, direction, { type: "pane", id: paneId }, nextWebAppId);
   replacement.first.selectedWebAppId = currentWebAppId;
-  paneLayoutsByProject.set(project.id, replacePaneNode(layout, paneId, replacement));
-  selectedWebAppByPane.set(paneId, currentWebAppId);
+  paneLayoutState.setPaneLayout(project.id, replacePaneNode(layout, paneId, replacement));
+  paneLayoutState.setSelectedWebAppForPane(paneId, currentWebAppId);
   persistPaneLayout(project);
   renderWorkspaceDashboard(project);
 }
@@ -1648,8 +1513,8 @@ function closePane(project, paneId) {
     return;
   }
 
-  selectedWebAppByPane.delete(paneId);
-  paneLayoutsByProject.set(project.id, result.node);
+  paneLayoutState.deleteSelectedWebAppForPane(paneId);
+  paneLayoutState.setPaneLayout(project.id, result.node);
   persistPaneLayout(project);
   renderWorkspaceDashboard(project);
 }
@@ -1727,23 +1592,11 @@ function createPaneLayout(project, node) {
 }
 
 function persistPaneLayout(project) {
-  const layout = paneLayoutsByProject.get(project.id);
-  if (!layout) {
-    return;
-  }
-
-  window.boatyard.updatePaneLayout(project.id, layout).catch((error) => {
-    console.error("Could not persist pane layout:", error);
-  });
+  paneLayoutState.persistPaneLayout(project);
 }
 
 function hydratePaneLayouts() {
-  const persistedLayouts = state.paneLayouts || {};
-
-  for (const [projectId, layout] of Object.entries(persistedLayouts)) {
-    paneLayoutsByProject.set(projectId, layout);
-    hydratePaneLayoutSelections(layout);
-  }
+  paneLayoutState.hydratePaneLayouts(state.paneLayouts || {});
 }
 
 function hydrateWidgetLayouts() {
@@ -1752,31 +1605,6 @@ function hydrateWidgetLayouts() {
 
 function hydrateTerminalTabOrders() {
   terminalSurfaces.hydrateTerminalTabOrders();
-}
-
-function hydratePaneLayoutSelections(node) {
-  if (!node) {
-    return;
-  }
-
-  if (node.type === "pane") {
-    if (node.selectedWebAppId) {
-      selectedWebAppByPane.set(node.id, node.selectedWebAppId);
-    }
-
-    const idMatch = node.id.match(/:pane:(\d+)$/);
-    if (idMatch) {
-      nextPaneId = Math.max(nextPaneId, Number(idMatch[1]) + 1);
-    }
-    return;
-  }
-
-  const splitMatch = node.id.match(/:split:(\d+)$/);
-  if (splitMatch) {
-    nextPaneId = Math.max(nextPaneId, Number(splitMatch[1]) + 1);
-  }
-  hydratePaneLayoutSelections(node.first);
-  hydratePaneLayoutSelections(node.second);
 }
 
 function renderGlobalDashboard() {
@@ -2043,17 +1871,11 @@ const webAppMenus = window.BoatyardWebAppMenus.create({
   findPaneNode,
   createSplitNode,
   replacePaneNode,
-  setPaneLayout: (projectId, layout) => {
-    paneLayoutsByProject.set(projectId, layout);
-  },
-  setSelectedWebAppForPane: (paneId, webAppId) => {
-    selectedWebAppByPane.set(paneId, webAppId);
-  },
-  getSelectedWebAppForPane: (paneId) => selectedWebAppByPane.get(paneId),
-  setSelectedWebAppForProject: (projectId, webAppId) => {
-    selectedWebAppByProject.set(projectId, webAppId);
-  },
-  getSelectedWebAppForProject: (projectId) => selectedWebAppByProject.get(projectId),
+  setPaneLayout: paneLayoutState.setPaneLayout,
+  setSelectedWebAppForPane: paneLayoutState.setSelectedWebAppForPane,
+  getSelectedWebAppForPane: paneLayoutState.getSelectedWebAppForPane,
+  setSelectedWebAppForProject: paneLayoutState.setSelectedWebAppForProject,
+  getSelectedWebAppForProject: paneLayoutState.getSelectedWebAppForProject,
   setCurrentWebAppUrl: (key, url) => {
     currentWebAppUrlsByKey.set(key, url);
   },
@@ -2177,24 +1999,14 @@ const onboardingTour = window.BoatyardOnboardingTour.create({
   countPaneNodes,
   createSplitNode,
   replacePaneNode,
-  setPaneLayout: (projectId, layout) => {
-    paneLayoutsByProject.set(projectId, layout);
-  },
-  getPaneLayout: (projectId) => paneLayoutsByProject.get(projectId),
-  setSelectedWebAppForPane: (paneId, webAppId) => {
-    selectedWebAppByPane.set(paneId, webAppId);
-  },
-  getSelectedWebAppForPane: (paneId) => selectedWebAppByPane.get(paneId),
-  setSelectedWebAppForProject: (projectId, webAppId) => {
-    selectedWebAppByProject.set(projectId, webAppId);
-  },
-  getSelectedWebAppForProject: (projectId) => selectedWebAppByProject.get(projectId),
-  deleteSelectedWebAppForPane: (paneId) => {
-    selectedWebAppByPane.delete(paneId);
-  },
-  deleteSelectedWebAppForProject: (projectId) => {
-    selectedWebAppByProject.delete(projectId);
-  },
+  setPaneLayout: paneLayoutState.setPaneLayout,
+  getPaneLayout: paneLayoutState.getPaneLayout,
+  setSelectedWebAppForPane: paneLayoutState.setSelectedWebAppForPane,
+  getSelectedWebAppForPane: paneLayoutState.getSelectedWebAppForPane,
+  setSelectedWebAppForProject: paneLayoutState.setSelectedWebAppForProject,
+  getSelectedWebAppForProject: paneLayoutState.getSelectedWebAppForProject,
+  deleteSelectedWebAppForPane: paneLayoutState.deleteSelectedWebAppForPane,
+  deleteSelectedWebAppForProject: paneLayoutState.deleteSelectedWebAppForProject,
   getVisibleWebAppEntries: () => visibleWebAppHosts.values(),
   renderWorkspaceDashboard,
   closeWebAppTabMenu,
