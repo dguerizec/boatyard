@@ -1,9 +1,24 @@
+// @ts-check
 "use strict";
 
 const { TelegramService } = require("./service");
 const fs = require("node:fs");
 const path = require("node:path");
 
+/**
+ * @typedef {import("../pluginTypes").PluginActions} PluginActions
+ * @typedef {import("../pluginTypes").PluginEvents} PluginEvents
+ * @typedef {import("../pluginTypes").PluginPaths} PluginPaths
+ * @typedef {{
+ *   actions: PluginActions,
+ *   events: PluginEvents,
+ *   paths: PluginPaths
+ * }} TelegramPluginContext
+ */
+
+/**
+ * @param {TelegramPluginContext} ctx
+ */
 function activate(ctx) {
   const legacySessionPath = path.join(ctx.paths.userData, "telegram-session.json");
   const pluginSessionPath = path.join(ctx.paths.pluginData, "telegram-session.json");
