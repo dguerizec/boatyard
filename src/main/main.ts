@@ -1,5 +1,3 @@
-"use strict";
-
 const { execFile, spawn } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -20,6 +18,8 @@ const UPDATE_REPOSITORY = {
   owner: "dguerizec",
   name: "boatyard"
 };
+type UnknownRecord = Record<string, any>;
+
 const APPIMAGE_NAME_PATTERN = /^Boatyard-(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)\.AppImage$/;
 const CHANGELOG_JSON_PATH = path.join(__dirname, "..", "shared", "changelog.json");
 
@@ -988,7 +988,7 @@ function openExternalUrl(url) {
   return shell.openExternal(String(url || ""));
 }
 
-function sendWebAppOpenUrlRequest(sourceWebAppKey, url, source = "window-open", options = {}) {
+function sendWebAppOpenUrlRequest(sourceWebAppKey, url, source = "window-open", options: UnknownRecord = {}) {
   if (!mainWindow || mainWindow.webContents.isDestroyed()) {
     return false;
   }
@@ -1343,7 +1343,7 @@ async function captureWebAppForFreeze(key) {
   }
 }
 
-function getWebAppFreezeKeys(options = {}) {
+function getWebAppFreezeKeys(options: UnknownRecord = {}) {
   const hasKeyFilter = Object.prototype.hasOwnProperty.call(options || {}, "keys");
   const requestedKeys = Array.isArray(options?.keys)
     ? options.keys.map(String).filter(Boolean)
@@ -1424,7 +1424,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("settings:select-projects-base-path", async (_event, currentPath) => {
-    const dialogOptions = {
+    const dialogOptions: UnknownRecord = {
       title: "Select projects base path",
       properties: ["openDirectory", "createDirectory"]
     };

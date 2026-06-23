@@ -8,7 +8,8 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": false,
-    "target": "ES2023"
+    "target": "ES2023",
+    "types": ["node"]
   },
   "include": [
     "src/**/*.js",
