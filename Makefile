@@ -1,7 +1,7 @@
 CODEX ?= codex
 VERBOSE ?= 0
 
-.PHONY: build changelog check deps dist install major minor package patch release release-major release-minor release-patch run tag typecheck
+.PHONY: app-build build changelog check deps dist install major minor package patch release release-major release-minor release-patch run tag typecheck
 
 deps: node_modules/.package-lock.stamp
 
@@ -13,13 +13,16 @@ install:
 	npm install
 	touch node_modules/.package-lock.stamp
 
+app-build: deps
+	npm run build:app
+
 run: deps
 	DISPLAY=:0 BOATYARD_STATE_PATH=.boatyard-state.json npm start -- --no-sandbox
 
 typecheck: deps
 	npm run typecheck
 
-check: deps typecheck
+check: deps typecheck app-build
 	npm run lint
 	npm test
 
