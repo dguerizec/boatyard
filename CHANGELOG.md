@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.7.2] - 2026-06-23
+
+### Summary
+
+- **v0.7.2: Pier worktree controls** — Boatyard adds hands-on Pier worktree management and polishes pane controls and overlay behavior.
+
+### Added
+
+- **Pier worktree creation** — Create a new Pier worktree from the Pier widget, with branch, base ref, path, and start-after-create options.
+- **Pier worktree removal** — Remove Pier worktrees from the widget, with confirmation options for forced removal and snapshot purging.
+- **Worktree path pattern** — Configure the default Pier worktree path using project, repository, and worktree tokens.
+
+### Changed
+
+- **Pier widget actions** — The Pier widget now groups New and Refresh controls in the header and shows per-worktree removal controls.
+- **Widget titles** — Project widgets use more consistent, compact title styling across Pier, terminal, Hawser, Telegram, and color palette widgets.
+- **Pane expansion controls** — Hovering or focusing the expand control now previews the pane group that will expand, and active shrink controls are easier to recognize.
+
+### Fixed
+
+- **Overlay dialogs over web apps** — Settings, changelog, group, and URL dialogs now freeze overlapping web app content more consistently to prevent embedded views from interfering with dialogs.
+
 ## [0.7.1] - 2026-06-22
 
 ### Summary
