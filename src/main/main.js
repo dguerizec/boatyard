@@ -617,6 +617,15 @@ function createMainWindow() {
   }
 
   mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+  if (isCaptureMode()) {
+    mainWindow.webContents.on("console-message", (event) => {
+      const details = event;
+      console.log(`[capture renderer:${details.level}] ${details.message} (${details.sourceId}:${details.lineNumber})`);
+    });
+    mainWindow.webContents.on("render-process-gone", (_event, details) => {
+      console.error(`[capture renderer gone] ${details.reason}`);
+    });
+  }
   mainWindow.once("ready-to-show", () => {
     mainWindow.show();
 
