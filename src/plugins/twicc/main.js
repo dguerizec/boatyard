@@ -1,3 +1,4 @@
+// @ts-check
 "use strict";
 
 const {
@@ -10,6 +11,23 @@ const {
   getTwiccProjectProcessStatuses
 } = require("./service");
 
+/**
+ * @typedef {import("../pluginTypes").ExecFileAsync} ExecFileAsync
+ * @typedef {import("../pluginTypes").PluginActions} PluginActions
+ * @typedef {import("../pluginTypes").PluginProjectInspectors} PluginProjectInspectors
+ * @typedef {{ id: string, sourcePath?: string }} BoatyardProject
+ * @typedef {{ projects?: BoatyardProject[] }} TwiccState
+ * @typedef {{
+ *   actions: PluginActions,
+ *   execFileAsync: ExecFileAsync,
+ *   getState(): TwiccState,
+ *   projectInspectors: PluginProjectInspectors
+ * }} TwiccPluginContext
+ */
+
+/**
+ * @param {TwiccPluginContext} ctx
+ */
 function activate(ctx) {
   const projectCache = createTwiccProjectCache();
 
