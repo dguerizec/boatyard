@@ -7226,10 +7226,16 @@ function renderEditProjectPage(project) {
   workspaceTitle.textContent = `${project.name} settings`;
   workspaceSummary.textContent = project.slug;
   dashboardGrid.innerHTML = "";
-  dashboardGrid.className = "project-form-layout";
+  dashboardGrid.className = "project-form-layout project-settings-layout";
   dashboardGrid.style.gridTemplateColumns = "";
 
-  dashboardGrid.append(createProjectFormView({
+  const primaryColumn = document.createElement("div");
+  primaryColumn.className = "project-settings-primary";
+
+  const secondaryColumn = document.createElement("div");
+  secondaryColumn.className = "project-settings-secondary";
+
+  primaryColumn.append(createProjectFormView({
     title: "Project settings",
     submitLabel: "Save changes",
     initialValues: project,
@@ -7250,7 +7256,9 @@ function renderEditProjectPage(project) {
       );
       reloadProjectSettings(project.id);
     }
-  }), createProjectTerminalSettingsForm({
+  }));
+
+  secondaryColumn.append(createProjectTerminalSettingsForm({
     project,
     onSubmit: async (values) => {
       state = await window.boatyard.updateProject(project.id, values);
@@ -7281,6 +7289,8 @@ function renderEditProjectPage(project) {
       selectGlobal();
     }
   }));
+
+  dashboardGrid.append(primaryColumn, secondaryColumn);
 }
 
 function getWebAppHostBounds(host) {

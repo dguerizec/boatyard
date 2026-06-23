@@ -596,6 +596,66 @@ button {
   break-inside: avoid;
 }
 
+.project-settings-layout {
+  grid-template-columns: minmax(min(420px, 100%), 460px) minmax(min(420px, 100%), 460px);
+  gap: 14px;
+  align-items: start;
+}
+
+.project-settings-primary,
+.project-settings-secondary {
+  min-width: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.project-settings-layout .project-form-page {
+  padding: 16px;
+}
+
+.project-settings-layout .project-form,
+.project-settings-layout .plugin-project-settings-section {
+  gap: 10px;
+}
+
+.project-settings-layout .form-heading {
+  gap: 3px;
+  margin-bottom: 0;
+}
+
+.project-settings-layout .form-heading h3 {
+  font-size: 17px;
+}
+
+.project-settings-layout .form-heading p {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.project-settings-layout .project-form label {
+  gap: 4px;
+  font-size: 10px;
+}
+
+.project-settings-layout input.form-control {
+  min-height: 34px;
+}
+
+.project-settings-layout textarea.form-control {
+  min-height: 72px;
+  padding: 8px 10px;
+}
+
+.project-settings-layout .path-picker {
+  gap: 6px;
+}
+
+.project-settings-layout .path-picker .secondary-button,
+.project-settings-layout .primary-button,
+.project-settings-layout .secondary-button {
+  min-height: 32px;
+}
+
 .danger-zone {
   border-color: rgba(185, 28, 28, 0.72);
 }
