@@ -278,6 +278,7 @@
       findPaneNodeBySelectedWebApp,
       getPaneExpansionState,
       getPaneExpansionTarget,
+      getPaneAncestorPath,
       getPaneLayout,
       getProjectPaneLayout,
       getSelectedWebApp,
