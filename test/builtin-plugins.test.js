@@ -7,6 +7,14 @@ const test = require("node:test");
 const vm = require("node:vm");
 const { resolveFieldDefault } = require("../src/renderer/pluginSettingsFields");
 
+const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette"];
+
+function readBuiltinPluginRendererPath(pluginDir) {
+  const manifestPath = path.join(__dirname, "../src/plugins", pluginDir, "plugin.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  return path.join(path.dirname(manifestPath), manifest.renderer);
+}
+
 function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
   "twicc-project": {
     state: "working",
@@ -111,15 +119,11 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
   vm.createContext(context);
 
   for (const file of [
-    "../src/renderer/widgetRegistry.js",
-    "../src/renderer/pluginRegistry.js",
-    "../src/renderer/plugins/twicc.js",
-    "../src/renderer/plugins/pier.js",
-    "../src/renderer/plugins/hawser.js",
-    "../src/renderer/plugins/telegram.js",
-    "../src/renderer/plugins/colorPalette.js"
+    path.join(__dirname, "../src/renderer/widgetRegistry.js"),
+    path.join(__dirname, "../src/renderer/pluginRegistry.js"),
+    ...builtinPluginDirs.map(readBuiltinPluginRendererPath)
   ]) {
-    vm.runInContext(fs.readFileSync(path.join(__dirname, file), "utf8"), context);
+    vm.runInContext(fs.readFileSync(file, "utf8"), context);
   }
 
   return {
