@@ -7386,7 +7386,7 @@ async function syncWebAppView() {
   for (const key of visibleKeys) {
     loadedWebAppKeys.add(key);
   }
-  invokeWebApp("setVisibleWebApps", visibleKeys);
+  await invokeWebApp("setVisibleWebApps", visibleKeys);
 }
 
 function queueWebAppSync() {
@@ -7395,6 +7395,15 @@ function queueWebAppSync() {
   }
 
   webAppBoundsFrame = requestAnimationFrame(syncWebAppView);
+}
+
+async function flushWebAppSync() {
+  if (webAppBoundsFrame !== null) {
+    cancelAnimationFrame(webAppBoundsFrame);
+    webAppBoundsFrame = null;
+  }
+
+  await syncWebAppView();
 }
 
 function clearFrozenWebAppLayer() {
@@ -7453,6 +7462,15 @@ async function freezeWebAppsForRect(rect, { margin = 0 } = {}) {
   await freezeWebAppsForKeys(keys);
 }
 
+function getOverlayDialogFreezeRect(dialog) {
+  const contentRect = dialog.firstElementChild?.getBoundingClientRect();
+  if (contentRect?.width > 0 && contentRect.height > 0) {
+    return contentRect;
+  }
+
+  return dialog.getBoundingClientRect();
+}
+
 async function restoreWebAppsAfterOverlay() {
   clearFrozenWebAppLayer();
 
@@ -7491,7 +7509,10 @@ async function showOverlayDialog(dialog, {
   }, { once: true });
 
   dialog.showModal();
-  await nextAnimationFrame();
+
+  if (freeze === "all" || freeze === "overlap") {
+    await flushWebAppSync();
+  }
 
   if (closed) {
     return false;
@@ -7502,7 +7523,7 @@ async function showOverlayDialog(dialog, {
     await freezeWebAppsForOverlay();
   } else if (freeze === "overlap") {
     didFreeze = true;
-    await freezeWebAppsForRect(dialog.getBoundingClientRect(), {
+    await freezeWebAppsForRect(getOverlayDialogFreezeRect(dialog), {
       margin: freezeMargin
     });
   }
