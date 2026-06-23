@@ -1,4 +1,3 @@
-// @ts-check
 "use strict";
 
 const { TelegramService } = require("./service");
@@ -34,27 +33,27 @@ function activate(ctx) {
     ctx.events.emit("message", payload);
   });
 
-  ctx.actions.handle("status", ({ globalConfig = {} } = {}) => {
+  ctx.actions.handle("status", ({ globalConfig = {} }: any = {}) => {
     return service.getStatus(globalConfig);
   });
 
-  ctx.actions.handle("messages", ({ target = {}, globalConfig = {} } = {}) => {
+  ctx.actions.handle("messages", ({ target = {}, globalConfig = {} }: any = {}) => {
     return service.listMessages(target, globalConfig);
   });
 
-  ctx.actions.handle("sendMessage", ({ target = {}, text = "", globalConfig = {} } = {}) => {
+  ctx.actions.handle("sendMessage", ({ target = {}, text = "", globalConfig = {} }: any = {}) => {
     return service.sendMessage(target, text, globalConfig);
   });
 
-  ctx.actions.handle("startLogin", ({ globalConfig = {}, phoneNumber = "" } = {}) => {
+  ctx.actions.handle("startLogin", ({ globalConfig = {}, phoneNumber = "" }: any = {}) => {
     return service.startLogin(globalConfig, phoneNumber);
   });
 
-  ctx.actions.handle("completeLoginCode", ({ code = "" } = {}) => {
+  ctx.actions.handle("completeLoginCode", ({ code = "" }: any = {}) => {
     return service.completeLoginCode(code);
   });
 
-  ctx.actions.handle("completeLoginPassword", ({ password = "" } = {}) => {
+  ctx.actions.handle("completeLoginPassword", ({ password = "" }: any = {}) => {
     return service.completeLoginPassword(password);
   });
 
@@ -64,4 +63,4 @@ function activate(ctx) {
   });
 }
 
-module.exports = { activate };
+export { activate };
