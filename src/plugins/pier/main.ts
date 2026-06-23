@@ -1,4 +1,3 @@
-// @ts-check
 "use strict";
 
 /**
@@ -68,7 +67,7 @@ async function runPierWorktreeCommand(args, { cwd, execFileAsync }) {
  * @param {WorktreeAddInput} input
  * @returns {string[]}
  */
-function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCreate } = {}) {
+function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCreate }: any = {}) {
   const targetPath = normalizeText(worktreePath);
   if (!targetPath) {
     throw new Error("Worktree path is required.");
@@ -96,7 +95,7 @@ function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCre
  * @param {WorktreeRemoveInput} input
  * @returns {string[]}
  */
-function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown } = {}) {
+function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }: any = {}) {
   const targetPath = normalizeText(worktreePath);
   if (!targetPath) {
     throw new Error("Worktree path is required.");
@@ -119,14 +118,14 @@ function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown } = {}) 
  * @param {PierPluginContext} ctx
  */
 function activate(ctx) {
-  ctx.actions.handle("createWorktree", ({ cwd, worktreePath, branchName, fromRef, startAfterCreate } = {}) => {
+  ctx.actions.handle("createWorktree", ({ cwd, worktreePath, branchName, fromRef, startAfterCreate }: any = {}) => {
     return runPierWorktreeCommand(
       buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCreate }),
       { cwd, execFileAsync: ctx.execFileAsync }
     );
   });
 
-  ctx.actions.handle("removeWorktree", ({ cwd, worktreePath, force, purge, skipDown } = {}) => {
+  ctx.actions.handle("removeWorktree", ({ cwd, worktreePath, force, purge, skipDown }: any = {}) => {
     return runPierWorktreeCommand(
       buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }),
       { cwd, execFileAsync: ctx.execFileAsync }
@@ -158,4 +157,4 @@ function activate(ctx) {
   });
 }
 
-module.exports = { activate };
+export { activate };
