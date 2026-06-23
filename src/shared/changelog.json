@@ -1,6 +1,22 @@
 {
-  "generatedForVersion": "0.7.3",
+  "generatedForVersion": "0.7.4",
   "releases": [
+    {
+      "version": "0.7.4",
+      "date": "2026-06-23",
+      "features": [
+        {
+          "category": "Fixed",
+          "title": "Twicc burn gauges",
+          "body": "Burn-rate gauges now scale correctly above normal usage and show over-limit usage more clearly."
+        },
+        {
+          "category": "Fixed",
+          "title": "Changelog version menus",
+          "body": "Version dropdown options now use readable colors in the changelog and plugin settings dialogs."
+        }
+      ]
+    },
     {
       "version": "0.7.3",
       "date": "2026-06-23",
