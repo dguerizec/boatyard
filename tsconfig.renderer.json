@@ -45,6 +45,7 @@
     "src/renderer/terminalXtermRuntime.ts",
     "src/renderer/toolIcons.ts",
     "src/renderer/updateViews.ts",
+    "src/renderer/webAppLoadTracker.ts",
     "src/renderer/webAppMenus.ts",
     "src/renderer/webAppSurfaces.ts",
     "src/renderer/widgetGridGeometry.ts",

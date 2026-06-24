@@ -40,6 +40,7 @@ import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createToolIcon } from "./toolIcons.js";
 import { createUpdateViews } from "./updateViews.js";
 import { createWebAppMenus } from "./webAppMenus.js";
+import { createWebAppLoadTracker } from "./webAppLoadTracker.js";
 import { createWebAppSurfaces } from "./webAppSurfaces.js";
 import { registerWidgetRegistry } from "./widgetRegistry.js";
 import { createWidgetSurfaces } from "./widgetSurfaces.js";
@@ -86,13 +87,11 @@ let state: RendererState = { projects: [] };
 let currentView = "global";
 let currentProjectId = null;
 let returnView = { view: "global", projectId: null };
-const loadedWebAppKeys = new Set<string>();
 const currentWebAppUrlsByKey = new Map<string, string>();
-const loadedWebAppUrlsByKey = new Map<string, string>();
-const webAppLoadWaiters = new Set<(payload: unknown) => void>();
 const webAppAutofillEnabledByKey = new Map<string, boolean>();
 let visibleWebAppHosts = new Map();
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
+const webAppLoadTracker = createWebAppLoadTracker();
 
 const {
   getCollapsedProjectGroups,
@@ -274,57 +273,8 @@ function nextAnimationFrame() {
   });
 }
 
-function normalizeComparableUrl(url) {
-  try {
-    return new URL(url).toString();
-  } catch {
-    return String(url || "");
-  }
-}
-
-function matchesWebAppLoad(payload, key, expectedUrl = "") {
-  if (!payload || payload.key !== key) {
-    return false;
-  }
-
-  if (!expectedUrl) {
-    return true;
-  }
-
-  return normalizeComparableUrl(payload.url) === normalizeComparableUrl(expectedUrl);
-}
-
-function hasLoadedWebApp(key, expectedUrl = "") {
-  const loadedUrl = loadedWebAppUrlsByKey.get(key);
-  if (!loadedUrl) {
-    return false;
-  }
-
-  return matchesWebAppLoad({ key, url: loadedUrl }, key, expectedUrl);
-}
-
 function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {
-  if (!key || hasLoadedWebApp(key, expectedUrl)) {
-    return Promise.resolve(true);
-  }
-
-  return new Promise((resolve) => {
-    let timeout = null;
-    let waiter = null;
-    const cleanup = (loaded) => {
-      clearTimeout(timeout);
-      webAppLoadWaiters.delete(waiter);
-      resolve(loaded);
-    };
-    waiter = (payload) => {
-      if (matchesWebAppLoad(payload, key, expectedUrl)) {
-        cleanup(true);
-      }
-    };
-
-    webAppLoadWaiters.add(waiter);
-    timeout = setTimeout(() => cleanup(false), timeoutMs);
-  });
+  return webAppLoadTracker.waitForLoad(key, expectedUrl, timeoutMs);
 }
 
 const paneLayoutState = createPaneLayoutState({
@@ -923,7 +873,7 @@ const webAppMenus = createWebAppMenus({
   closeTerminalTabMenu,
   clamp,
   isGlobalWorkspace,
-  isWebAppLoaded: (key) => loadedWebAppKeys.has(key)
+  isWebAppLoaded: (key) => webAppLoadTracker.hasLoadedKey(key)
 });
 
 function applyWebAppOpenChoice(payload, choice) {
@@ -1212,7 +1162,7 @@ const webAppSurfaces = createWebAppSurfaces({
   invokeWebApp,
   isWebAppAutofillEnabled,
   markWebAppLoaded: (key) => {
-    loadedWebAppKeys.add(key);
+    webAppLoadTracker.markLoadedKey(key);
   }
 });
 
@@ -1359,15 +1309,7 @@ registerRendererEventBindings({
     webAppAutofillEnabledByKey.set(key, enabled);
   },
   markWebAppLoaded: (payload) => {
-    const { key, url } = payload;
-    if (!key || !url) {
-      return;
-    }
-    loadedWebAppKeys.add(key);
-    loadedWebAppUrlsByKey.set(key, url);
-    for (const waiter of [...webAppLoadWaiters]) {
-      waiter(payload);
-    }
+    webAppLoadTracker.markLoaded(payload);
   },
   openOnboardingTour,
   openWebAppOpenUrlDialog,
