@@ -6,6 +6,7 @@ import { createPaneLayoutView } from "./paneLayoutView.js";
 import { createPluginLoader } from "./pluginLoader.js";
 import { registerPluginRegistry } from "./pluginRegistry.js";
 import { registerPluginSettingsFields } from "./pluginSettingsFields.js";
+import { createProjectPageViews } from "./projectPageViews.js";
 import { createProjectSidebar } from "./projectSidebar.js";
 import { createProjectSettingsViews } from "./projectSettingsViews.js";
 import {
@@ -1587,116 +1588,42 @@ function createProjectWidgetPanesForm(options) {
   return projectSettingsViews.createProjectWidgetPanesForm(options);
 }
 
-function renderCreateProjectPage() {
-  visibleWebAppHosts = new Map();
-  invokeWebApp("hideWebApp");
-  workspace.classList.remove("project-mode");
-  workspaceKicker.textContent = "Project";
-  workspaceTitle.textContent = "Add project";
-  workspaceSummary.textContent = "";
-  dashboardGrid.innerHTML = "";
-  dashboardGrid.className = "project-form-layout";
-  dashboardGrid.style.gridTemplateColumns = "";
+const projectPageViews = createProjectPageViews({
+  addProject: (values) => boatyardWindow.boatyard.addProject(values),
+  createProjectDangerZone,
+  createProjectFormView,
+  createProjectTerminalSettingsForm,
+  createProjectUrlsForm,
+  createProjectWebAppHomeTabsForm,
+  createProjectWidgetPanesForm,
+  dashboardGrid,
+  hideWebApps: () => invokeWebApp("hideWebApp"),
+  persistProjectPluginConfig,
+  reloadProjectSettings,
+  removeProject: (projectId) => boatyardWindow.boatyard.removeProject(projectId),
+  resetVisibleWebAppHosts: () => {
+    visibleWebAppHosts = new Map();
+  },
+  restoreReturnView,
+  selectGlobal,
+  selectProject,
+  setState: (nextState) => {
+    state = nextState;
+  },
+  updateProject: (projectId, values) => boatyardWindow.boatyard.updateProject(projectId, values),
+  updateWebAppHomeTabs: (projectId, tabs) => boatyardWindow.boatyard.updateWebAppHomeTabs(projectId, tabs),
+  workspace,
+  workspaceKicker,
+  workspaceSummary,
+  workspaceTitle
+});
 
-  dashboardGrid.append(createProjectFormView({
-    title: "Project details",
-    submitLabel: "Add project",
-    initialValues: {},
-    onCancel: () => restoreReturnView(),
-    onSubmit: async (values) => {
-      state = await boatyardWindow.boatyard.addProject({
-        name: values.name,
-        slug: values.slug,
-        group: values.group,
-        sourcePath: values.sourcePath,
-        gitUrl: values.gitUrl,
-        repoUrl: values.repoUrl,
-        devBranch: values.devBranch,
-        isOpen: false
-      });
-      const project = state.projects[state.projects.length - 1];
-      state = await persistProjectPluginConfig(
-        project.id,
-        values.pluginConfig
-      );
-      selectProject(project.id);
-    }
-  }));
+function renderCreateProjectPage() {
+  projectPageViews.renderCreateProjectPage();
 }
 
 function renderEditProjectPage(project) {
-  visibleWebAppHosts = new Map();
-  invokeWebApp("hideWebApp");
-  workspace.classList.remove("project-mode");
-  workspaceKicker.textContent = "Project";
-  workspaceTitle.textContent = `${project.name} settings`;
-  workspaceSummary.textContent = project.slug;
-  dashboardGrid.innerHTML = "";
-  dashboardGrid.className = "project-form-layout project-settings-layout";
-  dashboardGrid.style.gridTemplateColumns = "";
-
-  const primaryColumn = document.createElement("div");
-  primaryColumn.className = "project-settings-primary";
-
-  const secondaryColumn = document.createElement("div");
-  secondaryColumn.className = "project-settings-secondary";
-
-  primaryColumn.append(createProjectFormView({
-    title: "Project settings",
-    submitLabel: "Save changes",
-    initialValues: project,
-    onCancel: () => selectProject(project.id),
-    onSubmit: async (values) => {
-      state = await boatyardWindow.boatyard.updateProject(project.id, {
-        name: values.name,
-        slug: values.slug,
-        group: values.group,
-        sourcePath: values.sourcePath,
-        gitUrl: values.gitUrl,
-        repoUrl: values.repoUrl,
-        devBranch: values.devBranch
-      });
-      state = await persistProjectPluginConfig(
-        project.id,
-        values.pluginConfig
-      );
-      reloadProjectSettings(project.id);
-    }
-  }));
-
-  secondaryColumn.append(createProjectTerminalSettingsForm({
-    project,
-    onSubmit: async (values) => {
-      state = await boatyardWindow.boatyard.updateProject(project.id, values);
-      reloadProjectSettings(project.id);
-    }
-  }), createProjectUrlsForm({
-    project,
-    onSubmit: async (urls) => {
-      state = await boatyardWindow.boatyard.updateProject(project.id, { urls });
-      reloadProjectSettings(project.id);
-    }
-  }), createProjectWebAppHomeTabsForm({
-    project,
-    onSubmit: async (homeTabs) => {
-      state = await boatyardWindow.boatyard.updateWebAppHomeTabs(project.id, homeTabs);
-      reloadProjectSettings(project.id);
-    }
-  }), createProjectWidgetPanesForm({
-    project,
-    onSubmit: async (widgetPanes) => {
-      state = await boatyardWindow.boatyard.updateProject(project.id, { widgetPanes });
-      reloadProjectSettings(project.id);
-    }
-  }), createProjectDangerZone({
-    project,
-    onUnregister: async () => {
-      state = await boatyardWindow.boatyard.removeProject(project.id);
-      selectGlobal();
-    }
-  }));
-
-  dashboardGrid.append(primaryColumn, secondaryColumn);
+  projectPageViews.renderEditProjectPage(project);
 }
 
 const webAppSurfaces = createWebAppSurfaces({

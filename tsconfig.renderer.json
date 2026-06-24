@@ -18,6 +18,7 @@
     "src/renderer/pluginLoader.ts",
     "src/renderer/pluginRegistry.ts",
     "src/renderer/pluginSettingsFields.ts",
+    "src/renderer/projectPageViews.ts",
     "src/renderer/projectSidebar.ts",
     "src/renderer/projectSettingsViews.ts",
     "src/renderer/projectUtils.ts",
