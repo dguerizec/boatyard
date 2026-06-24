@@ -1,3 +1,4 @@
+import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
@@ -162,7 +163,6 @@ type BoatyardRendererWindow = Window & {
     createWidget(project: RendererProject, options?: HawserWidgetOptions): HTMLElement;
   };
   BoatyardManual?: RendererManual;
-  BoatyardOnboardingTour: RendererCreateModule;
   BoatyardOverlayDialog?: {
     show(dialog: HTMLDialogElement, options?: UnknownRecord): unknown;
   };
@@ -1803,7 +1803,7 @@ function resetActiveUpdateCardUpdater() {
   updateViews.resetActiveUpdateCardUpdater();
 }
 
-const onboardingTour = boatyardWindow.BoatyardOnboardingTour.create({
+const onboardingTour = createOnboardingTour({
   elements: {
     addProjectButton,
     projectList

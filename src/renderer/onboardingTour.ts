@@ -14,7 +14,7 @@ type OnboardingTourLayoutNode = OnboardingTourPaneNode & {
 };
 
 type OnboardingTourWebApp = {
-  id: string;
+  id?: string;
   key?: string;
   url?: string;
   [key: string]: unknown;
@@ -27,7 +27,10 @@ type OnboardingTourManualStep = {
 };
 
 type OnboardingTourManual = {
+  description?: string;
   onboarding?: OnboardingTourManualStep[];
+  sections?: unknown[];
+  title?: string;
 };
 
 type OnboardingTourOptions = {
@@ -66,7 +69,7 @@ type OnboardingTourOptions = {
   getSelectedWebAppForProject: (projectId: string) => string | undefined;
   deleteSelectedWebAppForPane: (paneId: string) => unknown;
   deleteSelectedWebAppForProject: (projectId: string) => unknown;
-  getVisibleWebAppEntries: () => Array<{ webApp: OnboardingTourWebApp }>;
+  getVisibleWebAppEntries: () => Iterable<{ webApp: OnboardingTourWebApp }>;
   renderWorkspaceDashboard: (project: OnboardingTourProject) => void;
   closeWebAppTabMenu: () => void;
   openWebAppTabMenuFromButton: (
@@ -75,11 +78,11 @@ type OnboardingTourOptions = {
     paneNode: OnboardingTourPaneNode,
     selectedWebApp: OnboardingTourWebApp,
     webApps: OnboardingTourWebApp[]
-  ) => Promise<unknown>;
+  ) => unknown;
   waitForWebAppLoad: (key?: string, url?: string) => Promise<unknown>;
-  syncWebAppView: () => Promise<unknown>;
-  freezeWebAppsForOverlay: () => Promise<unknown>;
-  restoreWebAppsAfterOverlay: () => Promise<unknown>;
+  syncWebAppView: () => unknown;
+  freezeWebAppsForOverlay: () => unknown;
+  restoreWebAppsAfterOverlay: () => unknown;
   nextAnimationFrame: () => Promise<unknown>;
   updateOnboarding: (state: { completedVersion: number; completedAt: string }) => Promise<unknown>;
   updatePaneLayout: (projectId: string, layout: OnboardingTourLayoutNode) => Promise<unknown>;
@@ -90,8 +93,7 @@ type OpenOnboardingTourOptions = {
   force?: boolean;
 };
 
-(function () {
-  function createOnboardingTour({
+export function createOnboardingTour({
     elements,
     onboardingVersion,
     getManual,
@@ -541,10 +543,4 @@ type OpenOnboardingTourOptions = {
       isTourActive: () => onboardingTourActive,
       openOnboardingTour
     };
-  }
-
-  const globalScope: OnboardingTourGlobal = window;
-  globalScope.BoatyardOnboardingTour = {
-    create: createOnboardingTour
-  };
-})();
+}
