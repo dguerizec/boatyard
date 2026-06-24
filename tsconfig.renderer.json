@@ -24,6 +24,7 @@
     "src/renderer/renderer.ts",
     "src/renderer/rendererGlobals.d.ts",
     "src/renderer/rendererRecords.ts",
+    "src/renderer/rendererTypes.ts",
     "src/renderer/terminalSurfaces.ts",
     "src/renderer/toolIcons.ts",
     "src/renderer/updateViews.ts",

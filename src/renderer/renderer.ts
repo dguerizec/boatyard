@@ -17,6 +17,25 @@ import {
   slugify
 } from "./projectUtils.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
+import type {
+  GlobalSettingsViewsInstance,
+  HawserWidgetData,
+  HawserWidgetMessage,
+  HawserWidgetOptions,
+  PaneLayoutStateInstance,
+  PaneLayoutViewInstance,
+  ProjectNavBadgeRenderOptions,
+  ProjectSettingsViewsInstance,
+  RendererCreateModule,
+  RendererModuleInstance,
+  RendererPaneLayoutNode,
+  RendererProject,
+  RendererState,
+  UpdateViewsInstance,
+  WebAppDefinition,
+  WebAppMenusInstance,
+  WidgetSurfacesInstance
+} from "./rendererTypes.js";
 import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createToolIcon } from "./toolIcons.js";
 import { createUpdateViews } from "./updateViews.js";
@@ -24,223 +43,6 @@ import { createWebAppMenus } from "./webAppMenus.js";
 import { createWebAppSurfaces } from "./webAppSurfaces.js";
 import { registerWidgetRegistry } from "./widgetRegistry.js";
 import { createWidgetSurfaces } from "./widgetSurfaces.js";
-
-type RendererProject = UnknownRecord & {
-  devBranch?: string;
-  group?: string;
-  id?: string;
-  name?: string;
-  previewUrl?: string;
-  repoUrl?: string;
-  slug?: string;
-  sourcePath?: string;
-  urls?: UnknownRecord[];
-  webAppHomeTabs?: WebAppDefinition[];
-  widgetPanes?: UnknownRecord[];
-};
-
-type RendererState = UnknownRecord & {
-  globalUrls?: UnknownRecord[];
-  navigation?: {
-    collapsedProjectGroups?: string[];
-    projectId?: string | null;
-    view?: string;
-  };
-  onboarding?: {
-    completedVersion?: number;
-  };
-  paneLayouts?: UnknownRecord;
-  pluginConfig?: {
-    global?: Record<string, UnknownRecord>;
-    projects?: Record<string, Record<string, UnknownRecord>>;
-  };
-  plugins?: {
-    enabled?: Record<string, boolean>;
-  };
-  projects: RendererProject[];
-  settings?: UnknownRecord;
-  webApps?: Record<string, { url?: string }>;
-};
-
-type WebAppDefinition = UnknownRecord & {
-  id?: string;
-  key?: string;
-  label?: unknown;
-  parentLabel?: string;
-  parentWebAppId?: string;
-  restoreUrl?: boolean;
-  transient?: boolean;
-  url?: string;
-};
-
-type RendererPaneLayoutNode = UnknownRecord & {
-  id?: string;
-  selectedWebAppId?: string | null;
-  transientWebApp?: WebAppDefinition;
-};
-
-type RendererManualSection = {
-  body?: string;
-  id: string;
-  title: string;
-};
-
-type RendererManual = {
-  description?: string;
-  sections?: RendererManualSection[];
-  title?: string;
-  version?: number;
-};
-
-type RendererModuleInstance = Record<string, (...args: unknown[]) => unknown>;
-
-type RendererCreateModule<TInstance extends RendererModuleInstance = RendererModuleInstance> = {
-  create(options: UnknownRecord): TInstance;
-};
-
-type PaneLayoutStateInstance = RendererModuleInstance & {
-  collectPaneNodes(node: unknown, panes?: RendererPaneLayoutNode[]): RendererPaneLayoutNode[];
-  countPaneNodes(node: unknown): number;
-  createSplitNode(project: RendererProject, direction: string, first: unknown, selectedWebAppId?: string | null): RendererPaneLayoutNode;
-  deleteSelectedWebAppForPane(paneId: string): unknown;
-  deleteSelectedWebAppForProject(projectId?: string): unknown;
-  findFirstPaneNode(node: unknown): RendererPaneLayoutNode | null;
-  findPaneNode(node: unknown, paneId?: string): RendererPaneLayoutNode | null;
-  findPaneNodeBySelectedWebApp(node: unknown, webAppId?: string): RendererPaneLayoutNode | null;
-  getPaneLayout(project: RendererProject): RendererPaneLayoutNode;
-  getSelectedWebAppForPane(paneId: string): string;
-  getSelectedWebAppForProject(projectId?: string): string;
-  hydratePaneLayouts(layouts: unknown): void;
-  replacePaneNode(node: unknown, paneId: string, replacement: unknown): RendererPaneLayoutNode;
-  setPaneLayout(projectId: string | undefined, layout: unknown): unknown;
-  setSelectedWebAppForPane(paneId: string, webAppId?: string): unknown;
-  setSelectedWebAppForProject(projectId: string | undefined, webAppId?: string): unknown;
-};
-
-type PaneLayoutViewInstance = RendererModuleInstance & {
-  createPaneLayout(project: RendererProject, node: RendererPaneLayoutNode): HTMLElement;
-};
-
-type WidgetSurfacesInstance = RendererModuleInstance & {
-  getProjectWidgetPanes(project: RendererProject): UnknownRecord[];
-};
-
-type WebAppMenusInstance = RendererModuleInstance & {
-  applyWebAppOpenChoice(payload: UnknownRecord, choice: UnknownRecord): Promise<unknown>;
-};
-
-type UpdateViewsInstance = RendererModuleInstance & {
-  createGlobalUpdateCard(): HTMLElement;
-};
-
-type GlobalSettingsViewsInstance = RendererModuleInstance & {
-  createGlobalPasswordManagerSettingsForm(options: UnknownRecord): HTMLElement;
-  createGlobalPresentationSettingsForm(options: UnknownRecord): HTMLElement;
-  createGlobalProjectsSettingsForm(options: UnknownRecord): HTMLElement;
-  createGlobalTerminalSettingsForm(options: UnknownRecord): HTMLElement;
-  createGlobalWebAppOpenRulesSettingsForm(options: UnknownRecord): HTMLElement;
-  createGlobalPluginsSettingsView(): HTMLElement;
-  createGlobalWidgetsSettingsView(): HTMLElement;
-};
-
-type ProjectSettingsViewsInstance = RendererModuleInstance & {
-  createProjectDangerZone(options: UnknownRecord): HTMLElement;
-  createGlobalUrlsSettingsForm(options: UnknownRecord): HTMLElement;
-  createProjectFormView(options: UnknownRecord): HTMLElement;
-  createProjectTerminalSettingsForm(options: UnknownRecord): HTMLElement;
-  createProjectUrlsForm(options: UnknownRecord): HTMLElement;
-  createProjectWebAppHomeTabsForm(options: UnknownRecord): HTMLElement;
-  createProjectWidgetPanesForm(options: UnknownRecord): HTMLElement;
-};
-
-type BoatyardBridge = {
-  addProject(values: UnknownRecord): Promise<RendererState>;
-  dismissChangelog?: () => Promise<unknown>;
-  freezeWebApps(options?: unknown): Promise<unknown>;
-  getChangelogHistory?: () => Promise<unknown>;
-  getPendingChangelog?: () => Promise<unknown>;
-  getState(): Promise<RendererState>;
-  getUpdateInfo?: () => Promise<unknown>;
-  onTerminalData(callback: (payload: { terminalId: unknown; data: unknown }) => void): void;
-  onTerminalExit(callback: (payload: { terminalId: unknown; projectId: unknown; windowId: unknown }) => void): void;
-  onWebAppAutofillChanged?: (callback: (payload: { enabled?: boolean; key?: string }) => void) => void;
-  onWebAppLoaded?: (callback: (payload: { key?: string; url?: string }) => void) => void;
-  onWebAppOpenUrlRequested?: (callback: (payload: UnknownRecord & { target?: string }) => void) => void;
-  onWebAppUrlChanged(callback: (payload: { key?: string; url?: string }) => void): void;
-  openExternal(url: string): unknown;
-  prepareUpdate?: () => Promise<unknown>;
-  removeProject(projectId: string): Promise<RendererState>;
-  reorderProjects(projectIds: string[]): Promise<RendererState>;
-  restoreWebApps(): Promise<unknown>;
-  restartToUpdate(update: UnknownRecord): Promise<unknown>;
-  updateGlobalPluginConfig(pluginId: string, values: UnknownRecord): Promise<RendererState>;
-  updateGlobalUrls(urls: UnknownRecord[]): Promise<RendererState>;
-  updateNavigation(values: UnknownRecord): Promise<UnknownRecord>;
-  updateOnboarding(values: UnknownRecord): Promise<RendererState["onboarding"]>;
-  updatePaneLayout(projectId: string | null | undefined, layout: unknown): Promise<RendererState>;
-  updatePluginEnabled(pluginId: string, enabled: boolean): Promise<RendererState>;
-  updateProject(projectId: string, values: UnknownRecord): Promise<RendererState>;
-  updateProjectPluginConfig(projectId: string, pluginId: string, config: UnknownRecord): Promise<RendererState>;
-  updateSettings(values: UnknownRecord): Promise<RendererState>;
-  updateWebAppHomeTab(projectId: string, tab: UnknownRecord): Promise<RendererState>;
-  updateWebAppHomeTabs(projectId: string, tabs: UnknownRecord[]): Promise<RendererState>;
-};
-
-type BoatyardRendererGlobals = {
-  boatyard: BoatyardBridge;
-  BoatyardHawserUI?: {
-    createWidget(project: RendererProject, options?: HawserWidgetOptions): HTMLElement;
-  };
-  BoatyardManual?: RendererManual;
-  BoatyardOverlayDialog?: {
-    show(dialog: HTMLDialogElement, options?: UnknownRecord): Promise<boolean>;
-  };
-  BoatyardPaneNavigation?: {
-    openProjectWebApp(projectId: string | undefined, webAppId: string, url: string): boolean;
-  };
-  BoatyardPluginRegistry: PluginRegistryApi;
-  BoatyardPluginSettingsFields: PluginSettingsFieldsApi;
-  BoatyardWidgetRegistry: WidgetRegistryApi;
-};
-
-declare global {
-  interface Window extends BoatyardRendererGlobals {}
-}
-
-type ProjectNavBadgeRenderOptions = {
-  isActiveProject?: boolean;
-};
-
-type HawserWidgetMessage = UnknownRecord & {
-  direction?: string;
-  fromProject?: string;
-  fromSession?: string;
-  kind?: string;
-  preview?: string;
-  status?: string;
-  subject?: string;
-  toProject?: string;
-  toSession?: string;
-  twiccSessionUrl?: string;
-  worktree?: {
-    kind?: string;
-    state?: string;
-  };
-};
-
-type HawserWidgetData = {
-  counts?: Record<string, number>;
-  error?: string;
-  live?: boolean;
-  messages: HawserWidgetMessage[];
-};
-
-type HawserWidgetOptions = {
-  loadData?: (project: RendererProject) => Promise<HawserWidgetData>;
-  onOpenMessage?: (message: HawserWidgetMessage) => void;
-  subtitle?: string;
-  title?: string;
-};
 
 const boatyardWindow = window;
 registerWidgetRegistry(window);
