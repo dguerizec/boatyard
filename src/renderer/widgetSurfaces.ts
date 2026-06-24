@@ -1,6 +1,81 @@
 "use strict";
 
 (function () {
+  type WidgetGridSize = {
+    columns: number;
+    rows: number;
+  };
+
+  type WidgetGridPosition = {
+    x: number;
+    y: number;
+  };
+
+  type WidgetDefinition = {
+    id: string;
+    name: string;
+    title?: string;
+    category?: string;
+    defaultVisible?: boolean;
+    pluginId?: string;
+    layout?: {
+      default?: Partial<WidgetGridSize>;
+      min?: Partial<WidgetGridSize>;
+      max?: Partial<WidgetGridSize>;
+    };
+    create?: (project: unknown, props: unknown) => unknown;
+    createElement?: (project: unknown, props: unknown) => HTMLElement;
+  };
+
+  type WidgetLayout = {
+    order: string[];
+    hidden: string[];
+    sizes: Record<string, WidgetGridSize>;
+    positions: Record<string, WidgetGridPosition>;
+    locked: boolean;
+  };
+
+  type PersistedWidgetLayout = Partial<WidgetLayout> & {
+    panes?: Record<string, PersistedWidgetLayout>;
+  };
+
+  type WidgetPane = {
+    id: string;
+    label?: string;
+  };
+
+  type WidgetProject = {
+    id: string;
+    widgetPanes?: WidgetPane[];
+  };
+
+  type WidgetRegistryApi = {
+    list(filter?: unknown): WidgetDefinition[];
+    resolveId(id: unknown): string;
+    listAliases?(): { alias: string; targetId: string }[];
+  };
+
+  type WidgetSurfacesGlobal = Window & {
+    BoatyardWidgetRegistry?: WidgetRegistryApi;
+    BoatyardWidgetSurfaces: {
+      create: typeof createWidgetSurfaces;
+    };
+  };
+
+  type WidgetMenuElement = HTMLDivElement & {
+    cleanup?: () => void;
+  };
+
+  type WidgetRailAction = {
+    label: string;
+    icon: string;
+    menu?: boolean;
+    disabled?: boolean;
+    onClick?: (event: MouseEvent) => void;
+  };
+
+  const globalScope = window as unknown as WidgetSurfacesGlobal;
+
   function createWidgetSurfaces({
     boatyard,
     getState,
@@ -22,13 +97,13 @@
     widgetGridScrollGuard,
     legacyWidgetIds
   }) {
-    const widgetLayoutsByProject = new Map();
-    let openWidgetAddMenu = null;
+    const widgetLayoutsByProject = new Map<string, PersistedWidgetLayout>();
+    let openWidgetAddMenu: WidgetMenuElement | null = null;
     let draggedWidgetId = null;
     let draggedWidgetPointerOffset = { x: 0, y: 0 };
 
     function getInstalledWidgets(filter = {}) {
-      return window.BoatyardWidgetRegistry.list(filter);
+      return globalScope.BoatyardWidgetRegistry.list(filter);
     }
     
     function getProjectWidgetDefinitions(project = null) {
@@ -38,13 +113,13 @@
     function normalizeWidgetId(widgetId) {
       const id = String(widgetId || "").trim();
       const mappedId = legacyWidgetIds.get(id) || id;
-      return window.BoatyardWidgetRegistry?.resolveId(mappedId) || mappedId;
+      return globalScope.BoatyardWidgetRegistry?.resolveId(mappedId) || mappedId;
     }
     
     function getLegacyWidgetAliases() {
       return [
         ...[...legacyWidgetIds.entries()].map(([alias, targetId]) => ({ alias, targetId })),
-        ...(window.BoatyardWidgetRegistry?.listAliases?.() || [])
+        ...(globalScope.BoatyardWidgetRegistry?.listAliases?.() || [])
       ];
     }
     
@@ -212,7 +287,7 @@
       };
     }
     
-    function clampWidgetGridSize(definition, size) {
+    function clampWidgetGridSize(definition, size = undefined) {
       const spec = getWidgetLayoutSpec(definition);
       const source = size && typeof size === "object" ? size : spec.default;
       const columns = Number(source.columns);
@@ -359,7 +434,7 @@
       return {
         x: 0,
         y: Object.entries(positions).reduce((maxY, [id, position]) => (
-          Math.max(maxY, position.y + sizes[id].rows)
+          Math.max(maxY, (position as WidgetGridPosition).y + sizes[id].rows)
         ), 0)
       };
     }
@@ -666,7 +741,7 @@
           resizeHandle.addEventListener("pointerdown", (event) => {
             event.preventDefault();
             event.stopPropagation();
-            const rail = event.currentTarget.closest(".project-widget-rail");
+            const rail = (event.currentTarget as HTMLElement).closest(".project-widget-rail");
             const currentColumnCount = getWidgetRailColumnCount(rail) || columnCount;
             const currentLayout = getProjectWidgetLayout(project, currentColumnCount, widgetPaneId);
             const currentSize = currentLayout.sizes[definition.id] || size;
@@ -810,6 +885,64 @@
       openWidgetAddMenu.remove();
       openWidgetAddMenu = null;
     }
+
+    function openWidgetAddMenuFromButton(button, project, layout, columnCount, widgetPaneId = defaultWidgetPaneId) {
+      closeWidgetAddMenu();
+
+      const rect = button.getBoundingClientRect();
+      const menu = document.createElement("div") as WidgetMenuElement;
+      menu.className = "widget-add-menu";
+      menu.setAttribute("role", "menu");
+      menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 292))}px`;
+      menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+
+      const hiddenDefinitions = getProjectWidgetDefinitions(project)
+        .filter((definition) => layout.hidden.includes(definition.id));
+
+      for (const definition of hiddenDefinitions) {
+        const item = document.createElement("button");
+        item.className = "widget-add-menu-item";
+        item.type = "button";
+        item.setAttribute("role", "menuitem");
+        item.innerHTML = `<strong>${definition.name}</strong><small>${definition.category || "Widget"}</small>`;
+        item.addEventListener("click", () => {
+          closeWidgetAddMenu();
+          addProjectWidget(project, definition.id, columnCount, widgetPaneId).catch((error) => {
+            console.error("Could not add widget:", error);
+          });
+        });
+        menu.append(item);
+      }
+
+      document.body.append(menu);
+      openWidgetAddMenu = menu;
+      button.setAttribute("aria-expanded", "true");
+
+      function onPointerDown(event: PointerEvent) {
+        if (!menu.contains(event.target as Node) && event.target !== button) {
+          closeWidgetAddMenu();
+        }
+      }
+
+      function onKeyDown(event: KeyboardEvent) {
+        if (event.key === "Escape") {
+          closeWidgetAddMenu();
+        }
+      }
+
+      menu.cleanup = () => {
+        document.removeEventListener("pointerdown", onPointerDown);
+        document.removeEventListener("keydown", onKeyDown);
+        button.setAttribute("aria-expanded", "false");
+      };
+
+      setTimeout(() => {
+        document.addEventListener("pointerdown", onPointerDown);
+        document.addEventListener("keydown", onKeyDown);
+      }, 0);
+
+      menu.querySelector("button")?.focus();
+    }
     
     function getWidgetRailFromControl(control) {
       return control.closest(".project-widget-rail") || control.closest(".webapp-pane")?.querySelector(".project-widget-rail") || null;
@@ -836,7 +969,7 @@
       });
     
       dropzone.addEventListener("dragleave", (event) => {
-        if (!dropzone.contains(event.relatedTarget)) {
+        if (!dropzone.contains(event.relatedTarget as Node | null)) {
           dropzone.classList.remove("drag-over");
         }
       });
@@ -882,7 +1015,7 @@
         return button;
       };
     
-      const actionConfigs = [
+      const actionConfigs: WidgetRailAction[] = [
         {
           label: layout.locked ? "Unlock widget layout" : "Lock widget layout",
           icon: layout.locked ? "pencil" : "lock",
@@ -899,10 +1032,10 @@
           menu: true,
           disabled: !layout.hidden.length,
           onClick: (event) => {
-            const rail = getWidgetRailFromControl(event.currentTarget);
+            const rail = getWidgetRailFromControl(event.currentTarget as HTMLElement);
             const currentColumnCount = getWidgetRailColumnCount(rail) || columnCount;
             const currentLayout = getProjectWidgetLayout(project, currentColumnCount, widgetPane.id);
-            openWidgetAddMenuFromButton(event.currentTarget, project, currentLayout, currentColumnCount, widgetPane.id);
+            openWidgetAddMenuFromButton(event.currentTarget as HTMLElement, project, currentLayout, currentColumnCount, widgetPane.id);
           }
         });
       }
@@ -982,7 +1115,7 @@
     };
   }
 
-  window.BoatyardWidgetSurfaces = {
+  globalScope.BoatyardWidgetSurfaces = {
     create: createWidgetSurfaces
   };
 })();
