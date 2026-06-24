@@ -49,19 +49,6 @@
     widgetPanes?: WidgetPane[];
   };
 
-  type WidgetRegistryApi = {
-    list(filter?: unknown): WidgetDefinition[];
-    resolveId(id: unknown): string;
-    listAliases?(): { alias: string; targetId: string }[];
-  };
-
-  type WidgetSurfacesGlobal = Window & {
-    BoatyardWidgetRegistry?: WidgetRegistryApi;
-    BoatyardWidgetSurfaces: {
-      create: typeof createWidgetSurfaces;
-    };
-  };
-
   type WidgetMenuElement = HTMLDivElement & {
     cleanup?: () => void;
   };

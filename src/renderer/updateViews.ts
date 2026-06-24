@@ -68,12 +68,6 @@
 
   type UpdateViewsCardUpdater = (result: UpdateViewsPreparedUpdate | null, checkedAt?: Date) => void;
 
-  type UpdateViewsGlobal = Window & {
-    BoatyardUpdateViews: {
-      create: typeof createUpdateViews;
-    };
-  };
-
   function getErrorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
   }

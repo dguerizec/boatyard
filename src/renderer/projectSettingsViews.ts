@@ -38,16 +38,6 @@
     setError?: (message: string) => void;
   };
 
-  type ProjectSettingsViewsGlobal = Window & {
-    BoatyardPluginRegistry?: PluginRegistryApi;
-    BoatyardPluginSettingsFields: {
-      resolveFieldDefault(field: unknown, context?: unknown): unknown;
-    };
-    BoatyardProjectSettingsViews: {
-      create: typeof createProjectSettingsViews;
-    };
-  };
-
   const globalScope = window as unknown as ProjectSettingsViewsGlobal;
 
   function createProjectSettingsViews({

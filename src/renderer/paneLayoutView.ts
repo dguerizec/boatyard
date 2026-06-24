@@ -1,12 +1,6 @@
 "use strict";
 
 (function () {
-  type PaneLayoutViewGlobal = Window & {
-    BoatyardPaneLayoutView: {
-      create: typeof createPaneLayoutView;
-    };
-  };
-
   type PaneLayoutHost = HTMLDivElement & {
     boatyardCleanup?: () => void;
   };

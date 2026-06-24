@@ -49,12 +49,6 @@
     removeOnClose?: boolean;
   };
 
-  type WebAppSurfacesGlobal = Window & {
-    BoatyardWebAppSurfaces: {
-      create: typeof createWebAppSurfaces;
-    };
-  };
-
   function createWebAppSurfaces({
     boatyard,
     getSettings,

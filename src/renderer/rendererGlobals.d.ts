@@ -56,3 +56,36 @@ type PluginSettingsFieldsApi = {
 type PluginSettingsFieldsGlobal = typeof globalThis & {
   BoatyardPluginSettingsFields?: PluginSettingsFieldsApi;
 };
+
+type RendererModuleFactory<TOptions = unknown, TInstance = unknown> = {
+  create(options: TOptions): TInstance;
+};
+
+type GlobalSettingsViewsGlobal = Window & {
+  BoatyardPluginRegistry?: PluginRegistryApi;
+  BoatyardPluginSettingsFields: Pick<PluginSettingsFieldsApi, "resolveFieldDefault">;
+  BoatyardGlobalSettingsViews: RendererModuleFactory;
+};
+
+type ProjectSettingsViewsGlobal = Window & {
+  BoatyardPluginRegistry?: PluginRegistryApi;
+  BoatyardPluginSettingsFields: Pick<PluginSettingsFieldsApi, "resolveFieldDefault">;
+  BoatyardProjectSettingsViews: RendererModuleFactory;
+};
+
+type PaneLayoutViewGlobal = Window & {
+  BoatyardPaneLayoutView: RendererModuleFactory;
+};
+
+type UpdateViewsGlobal = Window & {
+  BoatyardUpdateViews: RendererModuleFactory;
+};
+
+type WebAppSurfacesGlobal = Window & {
+  BoatyardWebAppSurfaces: RendererModuleFactory;
+};
+
+type WidgetSurfacesGlobal = Window & {
+  BoatyardWidgetRegistry?: WidgetRegistryApi;
+  BoatyardWidgetSurfaces: RendererModuleFactory;
+};

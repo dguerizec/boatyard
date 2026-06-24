@@ -22,16 +22,6 @@
     onSaved?: () => void;
   };
 
-  type GlobalSettingsViewsGlobal = Window & {
-    BoatyardPluginRegistry?: PluginRegistryApi;
-    BoatyardPluginSettingsFields: {
-      resolveFieldDefault(field: unknown): unknown;
-    };
-    BoatyardGlobalSettingsViews: {
-      create: typeof createGlobalSettingsViews;
-    };
-  };
-
   const globalScope = window as unknown as GlobalSettingsViewsGlobal;
 
   function createGlobalSettingsViews({
