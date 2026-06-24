@@ -426,7 +426,7 @@ function runCodexExec(codexCommand, prompt, { verbose = false } = {}) {
     }
     throw error;
   } finally {
-    if (!verbose) {
+    if (typeof logFd === "number") {
       fs.closeSync(logFd);
     }
     fs.rmSync(tmpDir, { force: true, recursive: true });

@@ -3,11 +3,11 @@
   "compilerOptions": {
     "declaration": false,
     "noEmit": false,
-    "outDir": "build-test",
+    "outDir": "build-scripts",
     "rootDir": "."
   },
   "include": [
-    "test/**/*.ts"
+    "scripts/**/*.ts"
   ],
   "exclude": [
     "node_modules",

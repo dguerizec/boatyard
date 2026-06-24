@@ -27,7 +27,8 @@ check: deps typecheck app-build
 	npm test
 
 changelog:
-	@node scripts/update-changelog.mjs --agent --codex "$(CODEX)" --verbose "$(VERBOSE)"
+	@npm run build:scripts --silent
+	@node build-scripts/scripts/update-changelog.js --agent --codex "$(CODEX)" --verbose "$(VERBOSE)"
 
 build: check
 	npm run package
@@ -45,7 +46,8 @@ release:
 	dirty="$$(git status --porcelain | awk '{print $$2}' | grep -Ev '^(CHANGELOG.md|src/shared/changelog.json)$$' || true)"; \
 	test -z "$$dirty" || (echo "Release has unrelated dirty files:" >&2; echo "$$dirty" >&2; exit 1); \
 	version="$$(node -e "const p=require('./package.json'); const parts=p.version.split('.').map(Number); const t='$(TYPE)'; if(t==='major') console.log((parts[0]+1)+'.0.0'); else if(t==='minor') console.log(parts[0]+'.'+(parts[1]+1)+'.0'); else console.log(parts[0]+'.'+parts[1]+'.'+(parts[2]+1));")"; \
-	node scripts/update-changelog.mjs --release --version "$$version"; \
+	npm run build:scripts --silent; \
+	node build-scripts/scripts/update-changelog.js --release --version "$$version"; \
 	npm version "$$version" --no-git-tag-version; \
 	git add package.json package-lock.json CHANGELOG.md src/shared/changelog.json; \
 	git commit -m "Release v$$version"; \

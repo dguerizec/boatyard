@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 
 const DEFAULT_OUTPUT = "docs/screenshots/boatyard-global.png";
 const DEFAULT_SCENARIO = "global";
@@ -23,7 +22,7 @@ function hasFlag(name) {
 }
 
 function printHelp() {
-  console.log(`Usage: node scripts/capture-doc-screenshot.mjs [options]
+  console.log(`Usage: npm run capture:doc -- [options]
 
 Options:
   --config <path>     JSON capture config with state, actions, crop, and output
@@ -38,9 +37,9 @@ Options:
   --keep-temp         Keep the generated temporary state directory
 
 Examples:
-  node scripts/capture-doc-screenshot.mjs --scenario global --output docs/screenshots/global.png
-  node scripts/capture-doc-screenshot.mjs --scenario onboarding-step:5 --output docs/screenshots/manual-dropdown.png
-  node scripts/capture-doc-screenshot.mjs --config docs/captures/sidebar.json
+  npm run capture:doc -- --scenario global --output docs/screenshots/global.png
+  npm run capture:doc -- --scenario onboarding-step:5 --output docs/screenshots/manual-dropdown.png
+  npm run capture:doc -- --config docs/captures/sidebar.json
 `);
 }
 
@@ -119,7 +118,7 @@ const scenario = readOption("scenario", config.scenario || DEFAULT_SCENARIO);
 const output = resolveFrom(configDir, readOption("output", config.output || DEFAULT_OUTPUT));
 const width = parsePositiveInteger(readOption("width", config.width), config.width || DEFAULT_WIDTH);
 const height = parsePositiveInteger(readOption("height", config.height), config.height || DEFAULT_HEIGHT);
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = process.cwd();
 const tempDir = mkdtempSync(join(tmpdir(), "boatyard-capture-"));
 const userDataPath = join(tempDir, "user-data");
 const statePath = join(tempDir, "state.json");

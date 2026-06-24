@@ -15,12 +15,14 @@
   "include": [
     "src/**/*.js",
     "src/**/*.ts",
-    "scripts/**/*.mjs",
+    "scripts/**/*.ts",
     "test/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "build",
+    "build-scripts",
+    "build-test",
     "dist"
   ]
 }
