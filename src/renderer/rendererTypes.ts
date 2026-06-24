@@ -168,42 +168,8 @@ export type ProjectNavBadgeRenderOptions = {
   isActiveProject?: boolean;
 };
 
-export type HawserWidgetMessage = UnknownRecord & {
-  direction?: string;
-  fromProject?: string;
-  fromSession?: string;
-  kind?: string;
-  preview?: string;
-  status?: string;
-  subject?: string;
-  toProject?: string;
-  toSession?: string;
-  twiccSessionUrl?: string;
-  worktree?: {
-    kind?: string;
-    state?: string;
-  };
-};
-
-export type HawserWidgetData = {
-  counts?: Record<string, number>;
-  error?: string;
-  live?: boolean;
-  messages: HawserWidgetMessage[];
-};
-
-export type HawserWidgetOptions = {
-  loadData?: (project: RendererProject) => Promise<HawserWidgetData>;
-  onOpenMessage?: (message: HawserWidgetMessage) => void;
-  subtitle?: string;
-  title?: string;
-};
-
 type BoatyardRendererGlobals = {
   boatyard: BoatyardBridge;
-  BoatyardHawserUI?: {
-    createWidget(project: RendererProject, options?: HawserWidgetOptions): HTMLElement;
-  };
   BoatyardManual?: RendererManual;
   BoatyardOverlayDialog?: {
     show(dialog: HTMLDialogElement, options?: UnknownRecord): Promise<boolean>;

@@ -159,9 +159,6 @@ type BoatyardPluginRendererBridge = {
 };
 
 type BoatyardPluginRendererGlobal = Window & {
-  BoatyardHawserUI?: {
-    createWidget(project: Record<string, unknown>, options?: Record<string, unknown>): HTMLElement;
-  };
   CustomEvent?: typeof CustomEvent;
   MutationObserver?: typeof MutationObserver;
   BoatyardOverlayDialog?: {

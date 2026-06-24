@@ -1,5 +1,4 @@
 import { createGlobalSettingsPageView } from "./globalSettingsPageView.js";
-import { createHawserWidget } from "./hawserWidget.js";
 import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
@@ -183,10 +182,6 @@ function createTerminalSurface(project: RendererProject, options: UnknownRecord 
 function createTerminalWidget(project: RendererProject, props: UnknownRecord = {}) {
   return terminalSurfaces.createTerminalWidget(project, props);
 }
-
-boatyardWindow.BoatyardHawserUI = Object.freeze({
-  createWidget: createHawserWidget
-});
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));

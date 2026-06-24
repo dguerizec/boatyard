@@ -57,15 +57,21 @@ type PluginSummary = {
 type BuiltinRendererContext = {
   URL: typeof URL;
   console: Console;
+  clearInterval(): void;
   document: {
+    body: {
+      contains(element: unknown): boolean;
+    };
     createElement: () => {
       addEventListener(): void;
       append(): void;
-      classList: { add(): void; remove(): void };
+      classList: { add(): void; remove(): void; toggle(): void };
       setAttribute(): void;
     };
   };
   fetch: MockFetch;
+  queueMicrotask(callback: () => void): void;
+  setInterval(callback: () => void): number;
   window: Record<string, unknown> & {
     BoatyardPluginRegistry?: LooseVmValue;
     BoatyardWidgetRegistry?: LooseVmValue;
@@ -74,9 +80,6 @@ type BuiltinRendererContext = {
       onPluginEvent(): () => void;
       openExternal(): void;
       writeClipboardText(): void;
-    };
-    BoatyardHawserUI: {
-      createWidget(): Record<string, never>;
     };
     clearInterval(): void;
     setInterval(callback: () => void): number;
@@ -121,7 +124,13 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
 }, mockFetch: MockFetch = async () => ({ ok: true, json: async (): Promise<unknown[]> => [] })) {
   const intervalCallbacks: Array<() => void | Promise<void>> = [];
   const context: BuiltinRendererContext = {
+    clearInterval: () => {},
     console,
+    queueMicrotask: (callback) => callback(),
+    setInterval: (callback) => {
+      intervalCallbacks.push(callback);
+      return intervalCallbacks.length;
+    },
     URL,
     window: {
       boatyard: {
@@ -171,9 +180,6 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
         },
         onPluginEvent: () => (() => {})
       },
-      BoatyardHawserUI: {
-        createWidget: () => ({})
-      },
       setInterval: (callback) => {
         intervalCallbacks.push(callback);
         return intervalCallbacks.length;
@@ -181,11 +187,14 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
       clearInterval: () => {}
     },
     document: {
+      body: {
+        contains: () => true
+      },
       createElement: () => ({
         append() {},
         addEventListener() {},
         setAttribute() {},
-        classList: { add() {}, remove() {} }
+        classList: { add() {}, remove() {}, toggle() {} }
       })
     },
     fetch: mockFetch
