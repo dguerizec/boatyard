@@ -26,6 +26,7 @@ import {
 import type { UnknownRecord } from "./rendererRecords.js";
 import { registerRendererEventBindings } from "./rendererEventBindings.js";
 import { createRendererPluginHelpers } from "./rendererPluginHelpers.js";
+import { createRendererNavigationController } from "./rendererNavigationController.js";
 import { createRendererSettingsViewBridge } from "./rendererSettingsViewBridge.js";
 import { createRendererStateSelectors } from "./rendererStateSelectors.js";
 import type {
@@ -91,13 +92,11 @@ const LEGACY_WIDGET_IDS = new Map([
 ]);
 
 let state: RendererState = { projects: [] };
-let currentView = "global";
-let currentProjectId = null;
-let returnView = { view: "global", projectId: null };
 const currentWebAppUrlsByKey = new Map<string, string>();
 const webAppAutofillEnabledByKey = new Map<string, boolean>();
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
 const webAppLoadTracker = createWebAppLoadTracker();
+let navigationController: ReturnType<typeof createRendererNavigationController>;
 const visibleWebApps = createVisibleWebAppTracker({
   findPaneNode,
   getCurrentWebAppUrl,
@@ -124,11 +123,32 @@ const {
   isGlobalWorkspace
 } = createRendererStateSelectors({
   defaultWidgetPaneId: DEFAULT_WIDGET_PANE_ID,
-  getCurrentProjectId: () => currentProjectId,
+  getCurrentProjectId: () => navigationController.getCurrentProjectId(),
   getManualSource: () => boatyardWindow.BoatyardManual,
   getState: () => state,
   globalWorkspaceId: GLOBAL_WORKSPACE_ID
 });
+
+navigationController = createRendererNavigationController({
+  closeProjectGroupMenu,
+  closeTerminalTabMenu,
+  getCollapsedProjectGroups,
+  hasProject: (projectId) => getProjects().some((project) => project.id === projectId),
+  render,
+  updateNavigation: (values) => boatyardWindow.boatyard.updateNavigation(values)
+});
+
+const {
+  reloadProjectSettings,
+  restoreNavigation,
+  restoreReturnView,
+  selectCreateProject,
+  selectEditProject,
+  selectGlobal,
+  selectGlobalSettings,
+  selectProject,
+  setCurrentView
+} = navigationController;
 
 const {
   getPluginGlobalSettingsSections,
@@ -139,58 +159,13 @@ const {
   renderProjectNavBadges
 } = createRendererPluginHelpers({
   boatyard: boatyardWindow.boatyard,
-  getCurrentView: () => currentView,
+  getCurrentView: () => navigationController.getCurrentView(),
   getGlobalPluginConfig,
   getProjectPluginConfig,
   getState: () => state,
   normalizeUrl: normalizeAddressInput,
   windowObject: boatyardWindow
 });
-
-function isRestorableView(view) {
-  return ["global", "global-settings", "project", "project-edit"].includes(view);
-}
-
-function persistNavigation() {
-  if (!isRestorableView(currentView)) {
-    return;
-  }
-
-  boatyardWindow.boatyard.updateNavigation({
-    view: currentView,
-    projectId: currentProjectId,
-    collapsedProjectGroups: [...getCollapsedProjectGroups()]
-  }).catch((error) => {
-    console.error("Could not persist navigation:", error);
-  });
-}
-
-function setCurrentView(view, projectId = null, { persist = true } = {}) {
-  if (view !== currentView || projectId !== currentProjectId) {
-    closeProjectGroupMenu();
-    closeTerminalTabMenu();
-  }
-
-  currentView = view;
-  currentProjectId = projectId;
-
-  if (persist) {
-    persistNavigation();
-  }
-}
-
-function restoreNavigation() {
-  const navigation = state.navigation || {};
-  const projectExists = getProjects().some((project) => project.id === navigation.projectId);
-
-  if (navigation.view === "global-settings") {
-    setCurrentView("global-settings", null, { persist: false });
-  } else if ((navigation.view === "project" || navigation.view === "project-edit") && projectExists) {
-    setCurrentView(navigation.view, navigation.projectId, { persist: false });
-  } else {
-    setCurrentView("global", null, { persist: false });
-  }
-}
 
 function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {
   return webAppLoadTracker.waitForLoad(key, expectedUrl, timeoutMs);
@@ -361,6 +336,8 @@ function getVisibleWebAppEntryByUrl(url) {
 }
 
 function getVisibleWebAppProject() {
+  const currentView = navigationController.getCurrentView();
+
   if (currentView === "global") {
     return getGlobalWorkspace();
   }
@@ -515,7 +492,10 @@ const workspaceDashboardViews = createWorkspaceDashboardViews({
   getGlobalWorkspace,
   getPaneLayout: getProjectPaneLayout,
   getProjectSummaryTarget,
-  getViewState: () => ({ currentProjectId, currentView }),
+  getViewState: () => ({
+    currentProjectId: navigationController.getCurrentProjectId(),
+    currentView: navigationController.getCurrentView()
+  }),
   resetVisibleWebAppHosts: () => {
     visibleWebApps.reset();
   },
@@ -764,7 +744,7 @@ const onboardingTour = createOnboardingTour({
   },
   onboardingVersion: ONBOARDING_VERSION,
   getManual,
-  getViewState: () => ({ currentView }),
+  getViewState: () => ({ currentView: navigationController.getCurrentView() }),
   selectGlobalForTour: () => {
     setCurrentView("global", null, { persist: false });
     render();
@@ -829,7 +809,10 @@ const projectSidebar = createProjectSidebar({
     projectList,
     projectSearchInput
   },
-  getViewState: () => ({ currentView, currentProjectId }),
+  getViewState: () => ({
+    currentProjectId: navigationController.getCurrentProjectId(),
+    currentView: navigationController.getCurrentView()
+  }),
   getProjects,
   getProjectGroups,
   getProjectGroupsByName,
@@ -1015,55 +998,11 @@ function maybeOpenInitialOnboarding() {
   requestAnimationFrame(() => openOnboardingTour());
 }
 
-function selectGlobal() {
-  setCurrentView("global");
-  render();
-}
-
-function selectGlobalSettings() {
-  setCurrentView("global-settings");
-  render();
-}
-
-function selectCreateProject() {
-  if (currentView !== "project-create") {
-    returnView = {
-      view: currentView,
-      projectId: currentProjectId
-    };
-  }
-  setCurrentView("project-create", null, { persist: false });
-  render();
-}
-
-function selectProject(id) {
-  setCurrentView("project", id);
-  render();
-}
-
-function selectEditProject(id) {
-  setCurrentView("project-edit", id);
-  render();
-}
-
-function reloadProjectSettings(id) {
-  setCurrentView("project-edit", id);
-  render();
-}
-
-function restoreReturnView() {
-  if (returnView.view === "project" && getProjects().some((project) => project.id === returnView.projectId)) {
-    selectProject(returnView.projectId);
-    return;
-  }
-
-  selectGlobal();
-}
-
 function render() {
   resetActiveUpdateCardUpdater();
   renderProjectList();
 
+  const currentView = navigationController.getCurrentView();
   const project = getCurrentProject();
   detachInactiveProjectTerminals(currentView === "project" && project ? project.id : null);
 
@@ -1092,7 +1031,7 @@ async function loadState() {
   hydratePaneLayouts();
   hydrateWidgetLayouts();
   hydrateTerminalTabOrders();
-  restoreNavigation();
+  restoreNavigation(state.navigation || {});
   render();
   void loadPreparedUpdateNotice();
   startUpdatePolling();
@@ -1109,7 +1048,7 @@ registerRendererEventBindings({
   globalSettingsButton,
   globalViewButton,
   getCurrentProject,
-  getCurrentView: () => currentView,
+  getCurrentView: () => navigationController.getCurrentView(),
   handleTerminalData: (payload) => terminalSurfaces.handleTerminalData(payload),
   handleTerminalExit: (payload) => terminalSurfaces.handleTerminalExit(payload),
   loadState,
