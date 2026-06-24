@@ -1,5 +1,12 @@
 import { createTerminalTabDom } from "./terminalTabDom.js";
 import { createTerminalTabMenuController } from "./terminalTabMenu.js";
+import { createTerminalSelectionBridge } from "./terminalSelectionBridge.js";
+import {
+  fitTerminal,
+  getFitAddonConstructor,
+  getTerminalFitSize,
+  getXtermConstructor
+} from "./terminalXtermRuntime.js";
 import type { TerminalCard, TerminalTab } from "./terminalTypes.js";
 
 const globalScope: TerminalSurfacesGlobal = window;
@@ -76,45 +83,6 @@ export function createTerminalSurfaces({
       return Array.isArray(tabs)
         ? tabs.map(normalizeTerminalTab).filter((tab): tab is TerminalTab => Boolean(tab))
         : [];
-    }
-
-    function getXtermConstructor(): XtermConstructor | null {
-      const terminalGlobal = globalScope.Terminal;
-      if (!terminalGlobal) {
-        return null;
-      }
-
-      return ("Terminal" in terminalGlobal ? terminalGlobal.Terminal || null : terminalGlobal) as XtermConstructor | null;
-    }
-
-    function getFitAddonConstructor(): FitAddonConstructor | null {
-      const fitAddonGlobal = globalScope.FitAddon;
-      if (!fitAddonGlobal) {
-        return null;
-      }
-
-      return ("FitAddon" in fitAddonGlobal ? fitAddonGlobal.FitAddon || null : fitAddonGlobal) as FitAddonConstructor | null;
-    }
-    function getTerminalFitSize(term, fitAddon) {
-      const dimensions = fitAddon.proposeDimensions();
-
-      if (!dimensions) {
-        return {
-          cols: Math.max(20, term.cols || 80),
-          rows: Math.max(5, term.rows || 24)
-        };
-      }
-
-      return {
-        cols: dimensions.cols,
-        rows: dimensions.rows
-      };
-    }
-
-    function fitTerminal(term, fitAddon) {
-      const size = getTerminalFitSize(term, fitAddon);
-      fitAddon.fit();
-      return size;
     }
 
     function getTerminalSurfaceId(card) {
@@ -763,8 +731,8 @@ export function createTerminalSurfaces({
         return;
       }
 
-      const TerminalConstructor = getXtermConstructor();
-      const FitAddonConstructor = getFitAddonConstructor();
+      const TerminalConstructor = getXtermConstructor(globalScope);
+      const FitAddonConstructor = getFitAddonConstructor(globalScope);
 
       if (!TerminalConstructor || !FitAddonConstructor) {
         setTerminalStatus(card, "Terminal renderer unavailable.");
@@ -803,112 +771,13 @@ export function createTerminalSurfaces({
         boatyard.writeTerminal(attachResult.terminalId, data);
         scheduleTerminalTabSync(attachResult.terminalId, /[\x04\r\n]/.test(data) ? 3 : 0);
       });
-      let selectionTimer = null;
-      let lastMiddlePaste = {
-        text: "",
-        time: 0
-      };
-      let suppressNativePasteUntil = 0;
-      const publishTerminalSelection = (delay = 0) => {
-        clearTimeout(selectionTimer);
-        selectionTimer = setTimeout(() => {
-          const selection = term.getSelection();
-          if (selection) {
-            boatyard.writeTerminalSelection(selection).catch((error) => {
-              console.error("Could not write terminal selection:", error);
-            });
-          }
-        }, delay);
-      };
-      const selectionDisposable = term.onSelectionChange(() => {
-        publishTerminalSelection(60);
+      const selectionBridge = createTerminalSelectionBridge({
+        boatyard,
+        term,
+        viewport,
+        getSession: () => terminalWidgetsBySurface.get(surfaceId),
+        scheduleTerminalTabSync
       });
-      const onLeftMouseUpSelection = (event) => {
-        if (event.button !== 0) {
-          return;
-        }
-
-        publishTerminalSelection(0);
-      };
-      const onLeftMouseDownSelection = (event) => {
-        if (event.button !== 0 || event.shiftKey || term.modes.mouseTrackingMode === "none") {
-          return;
-        }
-
-        try {
-          Object.defineProperty(event, "shiftKey", {
-            configurable: true,
-            value: true
-          });
-        } catch (error) {
-          console.error("Could not force terminal selection mode:", error);
-        }
-      };
-      const onMiddleMouseDownPaste = (event) => {
-        if (event.button !== 1) {
-          return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-        if (typeof event.stopImmediatePropagation === "function") {
-          event.stopImmediatePropagation();
-        }
-        suppressNativePasteUntil = Date.now() + 300;
-        term.focus();
-        boatyard.readTerminalSelection()
-          .then((selection) => {
-            if (selection) {
-              const session = terminalWidgetsBySurface.get(surfaceId);
-              if (!session?.terminalId) {
-                return;
-              }
-
-              const now = Date.now();
-              if (selection === lastMiddlePaste.text && now - lastMiddlePaste.time < 150) {
-                return;
-              }
-
-              lastMiddlePaste = {
-                text: selection,
-                time: now
-              };
-              session.term?.focus();
-              boatyard.writeTerminal(session.terminalId, selection);
-              scheduleTerminalTabSync(session.terminalId, /[\x04\r\n]/.test(selection) ? 3 : 0);
-            }
-          })
-          .catch((error) => {
-            console.error("Could not read terminal selection:", error);
-          });
-      };
-      const onMiddleAuxClick = (event) => {
-        if (event.button !== 1) {
-          return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-        if (typeof event.stopImmediatePropagation === "function") {
-          event.stopImmediatePropagation();
-        }
-      };
-      const onNativePaste = (event) => {
-        if (Date.now() > suppressNativePasteUntil) {
-          return;
-        }
-
-        event.preventDefault();
-        event.stopPropagation();
-        if (typeof event.stopImmediatePropagation === "function") {
-          event.stopImmediatePropagation();
-        }
-      };
-      document.addEventListener("mouseup", onLeftMouseUpSelection, true);
-      viewport.addEventListener("mousedown", onLeftMouseDownSelection, true);
-      viewport.addEventListener("mousedown", onMiddleMouseDownPaste, true);
-      viewport.addEventListener("auxclick", onMiddleAuxClick, true);
-      viewport.addEventListener("paste", onNativePaste, true);
       let resizeAnimationFrame = null;
       const resizeObserver = new ResizeObserver(() => {
         if (resizeAnimationFrame) {
@@ -937,10 +806,7 @@ export function createTerminalSurfaces({
         fitAddon,
         disposables: [
           disposable,
-          selectionDisposable,
-          {
-            dispose: () => clearTimeout(selectionTimer)
-          },
+          ...selectionBridge.disposables,
           {
             dispose: () => {
               if (resizeAnimationFrame) {
@@ -949,13 +815,7 @@ export function createTerminalSurfaces({
             }
           }
         ],
-        removeMiddleClickPaste: () => {
-          document.removeEventListener("mouseup", onLeftMouseUpSelection, true);
-          viewport.removeEventListener("mousedown", onLeftMouseDownSelection, true);
-          viewport.removeEventListener("mousedown", onMiddleMouseDownPaste, true);
-          viewport.removeEventListener("auxclick", onMiddleAuxClick, true);
-          viewport.removeEventListener("paste", onNativePaste, true);
-        },
+        removeMiddleClickPaste: selectionBridge.removeEventListeners,
         resizeObserver,
         tabsResizeObserver: card.terminalTabsResizeObserver
       });
