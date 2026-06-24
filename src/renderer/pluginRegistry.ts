@@ -38,6 +38,10 @@ type PluginRegistryWindow = Window & {
     }
   }
 
+  function isPluginPaneKind(value: string): value is PluginPaneDefinition["kind"] {
+    return value === "wcv" || value === "dom";
+  }
+
   function normalizeManifest(manifest: PluginRegistryRecord): PluginManifest {
     if (!isRecord(manifest)) {
       throw new Error("Plugin manifest must be an object.");
@@ -85,25 +89,25 @@ type PluginRegistryWindow = Window & {
     const id = requireId(definition.id, "Pane");
     requireNamespacedContributionId(pluginId, id, "Pane");
     const title = normalizeText(definition.title || definition.name);
-    const kind = normalizeText(definition.kind || "wcv") as PluginPaneDefinition["kind"];
+    const requestedKind = normalizeText(definition.kind || "wcv");
 
     if (!title) {
       throw new Error(`Pane ${id} title is required.`);
     }
 
-    if (!["wcv", "dom"].includes(kind)) {
+    if (!isPluginPaneKind(requestedKind)) {
       throw new Error(`Pane ${id} kind must be wcv or dom.`);
     }
 
     if (
-      kind === "wcv" &&
+      requestedKind === "wcv" &&
       typeof definition.resolveUrl !== "function" &&
       typeof definition.resolveWebApps !== "function"
     ) {
       throw new Error(`WCV pane ${id} must provide resolveUrl or resolveWebApps.`);
     }
 
-    if (kind === "dom" && typeof definition.render !== "function") {
+    if (requestedKind === "dom" && typeof definition.render !== "function") {
       throw new Error(`DOM pane ${id} must provide render.`);
     }
 
@@ -112,7 +116,7 @@ type PluginRegistryWindow = Window & {
       id,
       pluginId,
       title,
-      kind,
+      kind: requestedKind,
       scope: normalizeText(definition.scope || "project"),
       webAppId: normalizeText(definition.webAppId || id),
       key: normalizeText(definition.key || definition.webAppId || id)

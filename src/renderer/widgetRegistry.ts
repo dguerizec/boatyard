@@ -11,6 +11,10 @@ type WidgetRegistryWindow = Window & {
     return String(value || "").trim();
   }
 
+  function isWidgetStatus(value: string): value is WidgetStatus {
+    return allowedStatuses.has(value as WidgetStatus);
+  }
+
   function normalizeScopes(definition: WidgetDefinitionInput): string[] {
     const source = Array.isArray(definition.scopes)
       ? definition.scopes
@@ -59,8 +63,8 @@ type WidgetRegistryWindow = Window & {
     const name = normalizeText(definition.name || definition.title);
     const scopes = normalizeScopes(definition);
     const rawStatus = normalizeText(definition.status);
-    const status = allowedStatuses.has(rawStatus as WidgetStatus)
-      ? rawStatus as WidgetStatus
+    const status = isWidgetStatus(rawStatus)
+      ? rawStatus
       : "experimental";
 
     if (!id) {
