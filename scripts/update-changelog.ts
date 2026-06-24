@@ -7,8 +7,8 @@ const root = process.cwd();
 const changelogPath = path.join(root, "CHANGELOG.md");
 const generatedPath = path.join(root, "src", "shared", "changelog.json");
 const packagePath = path.join(root, "package.json");
-const releaseCategories = ["Added", "Changed", "Fixed", "Removed", "Deprecated", "Security", "Documentation", "Internal"];
-const appChangelogCategories = new Set(["Added", "Changed", "Fixed", "Removed", "Deprecated", "Security"]);
+const releaseCategories = ["Added", "Changed", "Fixed", "Removed", "Deprecated", "Security", "Documentation", "Internal"] as const;
+const appChangelogCategories = new Set<string>(["Added", "Changed", "Fixed", "Removed", "Deprecated", "Security"]);
 const now = new Date();
 const today = [
   now.getFullYear(),
@@ -16,20 +16,106 @@ const today = [
   String(now.getDate()).padStart(2, "0")
 ].join("-");
 
-function readJson(filePath) {
+type ReleaseCategory = typeof releaseCategories[number];
+type ReleaseType = "major" | "minor" | "patch";
+type ScriptMode = "prepare" | "agent" | "release" | "check-release";
+type VersionParts = [number, number, number];
+type JsonRecord = Record<string, unknown>;
+
+type PackageJson = {
+  version: string;
+};
+
+type ParsedArgs = {
+  codex: string;
+  mode: ScriptMode;
+  type: ReleaseType | "";
+  verbose: boolean;
+  version: string;
+};
+
+type GitCommit = {
+  body: string;
+  hash: string;
+  subject: string;
+};
+
+type GitContext = {
+  commits: GitCommit[];
+  log: string;
+  names: string;
+  range: string;
+  stat: string;
+  tag: string;
+};
+
+type ChangelogSummary = {
+  body: string;
+  sections: Partial<Record<ReleaseCategory, string[]>>;
+  title: string;
+};
+
+type ChangelogFeature = {
+  body: string;
+  category: string;
+  title: string;
+};
+
+type ChangelogRelease = {
+  date: string;
+  features: ChangelogFeature[];
+  version: string;
+};
+
+type ChangelogHeader = {
+  contentStart: number;
+  date: string;
+  start: number;
+  version: string;
+};
+
+type ChangelogCategoryHeader = {
+  contentStart: number;
+  name: string;
+  start: number;
+};
+
+type ChangelogSection = {
+  body: string;
+  end: number;
+  header: string;
+  headerEnd: number;
+  start: number;
+};
+
+type CodexExecOptions = {
+  verbose?: boolean;
+};
+
+type ExecFileError = Error & {
+  status?: number;
+};
+
+function readJson<T = JsonRecord>(filePath: string): T {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
-function normalizeVersion(version) {
+function normalizeVersion(version: unknown) {
   return String(version || "").trim().replace(/^v/i, "");
 }
 
-function parseVersion(version) {
+function parseVersion(version: unknown): VersionParts | null {
   const match = normalizeVersion(version).match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
-  return match ? match.slice(1).map((part) => Number.parseInt(part, 10)) : null;
+  return match
+    ? [
+        Number.parseInt(match[1], 10),
+        Number.parseInt(match[2], 10),
+        Number.parseInt(match[3], 10)
+      ]
+    : null;
 }
 
-function bumpVersion(version, type) {
+function bumpVersion(version: string, type: ReleaseType) {
   const parts = parseVersion(version);
   if (!parts) {
     throw new Error(`Invalid package version: ${version}`);
@@ -50,8 +136,12 @@ function bumpVersion(version, type) {
   throw new Error(`Invalid release type: ${type}. Use major, minor, or patch.`);
 }
 
-function parseArgs(argv) {
-  const args = {
+function isReleaseType(value: string): value is ReleaseType {
+  return value === "major" || value === "minor" || value === "patch";
+}
+
+function parseArgs(argv: string[]): ParsedArgs {
+  const args: ParsedArgs = {
     mode: "prepare",
     codex: "codex",
     type: "",
@@ -78,7 +168,11 @@ function parseArgs(argv) {
       args.verbose = ["1", "true", "yes", "on"].includes(value.toLowerCase());
       index += 1;
     } else if (arg === "--type") {
-      args.type = argv[index + 1] || "";
+      const value = argv[index + 1] || "";
+      if (!isReleaseType(value)) {
+        throw new Error(`Invalid release type: ${value}. Use major, minor, or patch.`);
+      }
+      args.type = value;
       index += 1;
     } else if (arg === "--version") {
       args.version = argv[index + 1] || "";
@@ -91,7 +185,7 @@ function parseArgs(argv) {
   return args;
 }
 
-function runGit(args, fallback = "") {
+function runGit(args: string[], fallback = "") {
   try {
     return execFileSync("git", args, {
       cwd: root,
@@ -103,7 +197,7 @@ function runGit(args, fallback = "") {
   }
 }
 
-function runGitRequired(args) {
+function runGitRequired(args: string[]) {
   return execFileSync("git", args, {
     cwd: root,
     encoding: "utf8",
@@ -116,7 +210,7 @@ function getLatestTag() {
   return runGit(["tag", "--list", "v*", "--sort=-v:refname"]).split("\n").filter(Boolean)[0] || "";
 }
 
-function getCommitsSince(tag) {
+function getCommitsSince(tag: string): GitCommit[] {
   const range = tag ? `${tag}..HEAD` : "HEAD";
   const output = runGit(["log", "--reverse", "--no-merges", "--format=%H%x1f%s%x1f%b%x1e", range]);
 
@@ -135,7 +229,7 @@ function getCommitsSince(tag) {
     .filter((commit) => commit.subject && !/^release\b/i.test(commit.subject) && !/changelog/i.test(commit.subject));
 }
 
-function buildGitContext() {
+function buildGitContext(): GitContext {
   const tag = getLatestTag();
   const range = tag ? `${tag}..HEAD` : "HEAD";
   const commits = getCommitsSince(tag);
@@ -165,19 +259,19 @@ function buildGitContext() {
   };
 }
 
-function humanizeSubject(subject) {
+function humanizeSubject(subject: string) {
   return subject
     .replace(/^[a-z]+(?:\([^)]+\))?!?:\s*/i, "")
     .replace(/\.$/, "")
     .trim();
 }
 
-function toTitle(text) {
+function toTitle(text: string) {
   const cleaned = humanizeSubject(text);
   return cleaned ? `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)}` : "Boatyard update";
 }
 
-function classifyCommit(subject) {
+function classifyCommit(subject: string): ReleaseCategory {
   const normalized = subject.toLowerCase();
 
   if (/^(fix|bugfix|hotfix)(\b|\(|:)/.test(normalized) || normalized.includes("fix")) {
@@ -191,7 +285,7 @@ function classifyCommit(subject) {
   return "Changed";
 }
 
-function summarizeCommits(commits) {
+function summarizeCommits(commits: GitCommit[]): ChangelogSummary {
   if (!commits.length) {
     return {
       title: "Unreleased: Maintenance update",
@@ -202,7 +296,7 @@ function summarizeCommits(commits) {
     };
   }
 
-  const sections = {};
+  const sections: Partial<Record<ReleaseCategory, string[]>> = {};
   for (const commit of commits) {
     const category = classifyCommit(commit.subject);
     const title = toTitle(commit.subject);
@@ -229,7 +323,7 @@ function changelogPreamble() {
   ].join("\n");
 }
 
-function latestReleaseExample(markdown) {
+function latestReleaseExample(markdown: string) {
   const release = parseChangelog(markdown).find((entry) => entry.version !== "Unreleased");
   if (!release) {
     return "";
@@ -305,7 +399,7 @@ function buildAgentPrompt() {
   ].filter((part) => part !== "").join("\n");
 }
 
-function buildDraftSection(commits) {
+function buildDraftSection(commits: GitCommit[]) {
   const summary = summarizeCommits(commits);
   const lines = [
     "## [Unreleased]",
@@ -338,14 +432,14 @@ function readChangelog() {
     : changelogPreamble().trimEnd();
 }
 
-function extractUnreleasedSection(output) {
+function extractUnreleasedSection(output: string) {
   let cleaned = output.trim();
   const fenced = cleaned.match(/^```(?:markdown|md)?\s*\n([\s\S]*?)\n```$/i);
   if (fenced) {
     cleaned = fenced[1].trim();
   }
 
-  const sections = [];
+  const sections: string[] = [];
   const headingPattern = /^## \[Unreleased\](?:\s*-.*)?$/gm;
   let match = null;
   while ((match = headingPattern.exec(cleaned)) !== null) {
@@ -363,7 +457,7 @@ function extractUnreleasedSection(output) {
   return section;
 }
 
-function replaceUnreleasedSection(section) {
+function replaceUnreleasedSection(section: string) {
   const current = readChangelog();
   const existing = findSection(current, "Unreleased");
 
@@ -383,7 +477,7 @@ function replaceUnreleasedSection(section) {
   fs.writeFileSync(changelogPath, `${content.trimEnd()}\n`);
 }
 
-function tailFile(filePath, lineCount = 80) {
+function tailFile(filePath: string, lineCount = 80) {
   try {
     return fs.readFileSync(filePath, "utf8").trimEnd().split("\n").slice(-lineCount).join("\n");
   } catch {
@@ -391,7 +485,7 @@ function tailFile(filePath, lineCount = 80) {
   }
 }
 
-function runCodexExec(codexCommand, prompt, { verbose = false } = {}) {
+function runCodexExec(codexCommand: string, prompt: string, { verbose = false }: CodexExecOptions = {}) {
   if (!codexCommand.trim()) {
     throw new Error("--codex cannot be empty.");
   }
@@ -416,7 +510,8 @@ function runCodexExec(codexCommand, prompt, { verbose = false } = {}) {
 
     return fs.readFileSync(outputPath, "utf8");
   } catch (error) {
-    if (error.status === 127) {
+    const execError = error as ExecFileError;
+    if (execError.status === 127) {
       throw new Error(`Cannot run ${codexCommand}. Set CODEX to the Codex CLI command, for example: make changelog CODEX=/path/to/codex`);
     }
     const logTail = verbose ? "" : tailFile(logPath);
@@ -433,14 +528,14 @@ function runCodexExec(codexCommand, prompt, { verbose = false } = {}) {
   }
 }
 
-function generateUnreleasedWithAgent(codexCommand, options = {}) {
+function generateUnreleasedWithAgent(codexCommand: string, options: CodexExecOptions = {}) {
   const prompt = buildAgentPrompt();
   const output = runCodexExec(codexCommand, prompt, options);
   const section = extractUnreleasedSection(output);
   replaceUnreleasedSection(section);
 }
 
-function findSection(markdown, name) {
+function findSection(markdown: string, name: string): ChangelogSection | null {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = new RegExp(`^## \\[${escaped}\\](?:\\s*-\\s*.*)?$`, "m").exec(markdown);
   if (!match) {
@@ -480,7 +575,7 @@ function ensureUnreleasedSection() {
   return true;
 }
 
-function promoteUnreleased(version) {
+function promoteUnreleased(version: string) {
   const current = readChangelog();
   const existingRelease = findSection(current, version);
   if (existingRelease) {
@@ -501,7 +596,7 @@ function promoteUnreleased(version) {
   return true;
 }
 
-function parseFeature(line, category) {
+function parseFeature(line: string, category: string): ChangelogFeature {
   const boldMatch = line.match(/^\*\*(.+?)\*\*\s*[—-]\s*(.+)$/);
   if (boldMatch) {
     return {
@@ -519,9 +614,9 @@ function parseFeature(line, category) {
   };
 }
 
-function parseChangelog(markdown) {
+function parseChangelog(markdown: string): ChangelogRelease[] {
   const releaseHeaderPattern = /^## \[([^\]]+)\](?:\s*-\s*(.+))?$/gm;
-  const headers = [];
+  const headers: ChangelogHeader[] = [];
   let match = null;
 
   while ((match = releaseHeaderPattern.exec(markdown)) !== null) {
@@ -537,7 +632,7 @@ function parseChangelog(markdown) {
     const end = headers[index + 1]?.start ?? markdown.length;
     const content = markdown.slice(header.contentStart, end);
     const categoryPattern = /^### (.+)$/gm;
-    const categories = [];
+    const categories: ChangelogCategoryHeader[] = [];
     let categoryMatch = null;
 
     while ((categoryMatch = categoryPattern.exec(content)) !== null) {
@@ -548,7 +643,7 @@ function parseChangelog(markdown) {
       });
     }
 
-    const features = [];
+    const features: ChangelogFeature[] = [];
     for (let categoryIndex = 0; categoryIndex < categories.length; categoryIndex += 1) {
       const category = categories[categoryIndex];
       if (category.name.toLowerCase() === "summary" || !appChangelogCategories.has(category.name)) {
@@ -593,7 +688,7 @@ function buildGeneratedJson(version = "") {
   }
 
   return `${JSON.stringify({
-    generatedForVersion: version || readJson(packagePath).version,
+    generatedForVersion: version || readJson<PackageJson>(packagePath).version,
     releases
   }, null, 2)}\n`;
 }
@@ -603,7 +698,7 @@ function generateJson(version = "") {
   fs.writeFileSync(generatedPath, buildGeneratedJson(version));
 }
 
-function validateGeneratedJson(version) {
+function validateGeneratedJson(version: string) {
   const expected = buildGeneratedJson(version);
   const actual = fs.existsSync(generatedPath) ? fs.readFileSync(generatedPath, "utf8") : "";
 
@@ -613,7 +708,7 @@ function validateGeneratedJson(version) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const currentVersion = readJson(packagePath).version;
+const currentVersion = readJson<PackageJson>(packagePath).version;
 const targetVersion = args.version
   ? normalizeVersion(args.version)
   : args.type
