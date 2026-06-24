@@ -1,46 +1,60 @@
-// @ts-check
 "use strict";
 
-/**
- * @typedef {{ x: number, y: number, width: number, height: number }} WebAppBounds
- * @typedef {{ key: string, url: string, restoreUrl?: string }} SurfaceWebApp
- * @typedef {{ webApp: SurfaceWebApp, host: Element | null }} VisibleWebAppEntry
- * @typedef {{ bounds?: WebAppBounds, dataUrl?: string }} FrozenWebAppCapture
- * @typedef {{ blurWebAppOverlays?: boolean }} WebAppSurfaceSettings
- * @typedef {{
- *   freezeWebApps(options?: unknown): Promise<FrozenWebAppCapture[]>,
- *   restoreWebApps(): Promise<unknown>
- * }} WebAppSurfaceBridge
- * @typedef {{
- *   boatyard: WebAppSurfaceBridge,
- *   getSettings(): WebAppSurfaceSettings,
- *   getVisibleWebAppEntries(): Iterable<VisibleWebAppEntry>,
- *   invokeWebApp(action: string, payload?: unknown): Promise<unknown>,
- *   isWebAppAutofillEnabled(webApp: SurfaceWebApp): boolean,
- *   markWebAppLoaded(key: string): void
- * }} WebAppSurfacesOptions
- * @typedef {{
- *   freeze?: "all" | "overlap" | "none",
- *   freezeMargin?: number,
- *   onClose?: (() => void) | null,
- *   removeOnClose?: boolean
- * }} OverlayDialogOptions
- * @typedef {{
- *   freezeWebAppsForOverlay(options?: unknown): Promise<void>,
- *   getWebAppHostBounds(host: Element | null | undefined): WebAppBounds | null,
- *   normalizePayloadBounds(bounds: unknown): WebAppBounds | null,
- *   queueWebAppSync(): void,
- *   restoreWebAppsAfterOverlay(): Promise<void>,
- *   showOverlayDialog(dialog: HTMLDialogElement, options?: OverlayDialogOptions): Promise<boolean>,
- *   syncWebAppView(): Promise<void>
- * }} WebAppSurfacesApi
- */
-
 (function () {
-  /**
-   * @param {WebAppSurfacesOptions} options
-   * @returns {WebAppSurfacesApi}
-   */
+  type WebAppBounds = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+
+  type SurfaceWebApp = {
+    key: string;
+    url: string;
+    restoreUrl?: string;
+  };
+
+  type VisibleWebAppEntry = {
+    webApp: SurfaceWebApp;
+    host: Element | null;
+  };
+
+  type FrozenWebAppCapture = {
+    bounds?: WebAppBounds;
+    dataUrl?: string;
+  };
+
+  type WebAppSurfaceSettings = {
+    blurWebAppOverlays?: boolean;
+  };
+
+  type WebAppSurfaceBridge = {
+    freezeWebApps(options?: unknown): Promise<FrozenWebAppCapture[]>;
+    restoreWebApps(): Promise<unknown>;
+  };
+
+  type WebAppSurfacesOptions = {
+    boatyard: WebAppSurfaceBridge;
+    getSettings(): WebAppSurfaceSettings;
+    getVisibleWebAppEntries(): Iterable<VisibleWebAppEntry>;
+    invokeWebApp(action: string, payload?: unknown): Promise<unknown>;
+    isWebAppAutofillEnabled(webApp: SurfaceWebApp): boolean;
+    markWebAppLoaded(key: string): void;
+  };
+
+  type OverlayDialogOptions = {
+    freeze?: "all" | "overlap" | "none";
+    freezeMargin?: number;
+    onClose?: (() => void) | null;
+    removeOnClose?: boolean;
+  };
+
+  type WebAppSurfacesGlobal = Window & {
+    BoatyardWebAppSurfaces: {
+      create: typeof createWebAppSurfaces;
+    };
+  };
+
   function createWebAppSurfaces({
     boatyard,
     getSettings,
@@ -48,17 +62,11 @@
     invokeWebApp,
     isWebAppAutofillEnabled,
     markWebAppLoaded
-  }) {
-    /** @type {number | null} */
+  }: WebAppSurfacesOptions) {
     let webAppBoundsFrame = null;
-    /** @type {HTMLElement | null} */
-    let frozenWebAppLayer = null;
+    let frozenWebAppLayer: HTMLElement | null = null;
 
-    /**
-     * @param {Element | null | undefined} host
-     * @returns {WebAppBounds | null}
-     */
-    function getWebAppHostBounds(host) {
+    function getWebAppHostBounds(host: Element | null | undefined): WebAppBounds | null {
       if (!host) {
         return null;
       }
@@ -82,16 +90,12 @@
       };
     }
 
-    /**
-     * @param {unknown} bounds
-     * @returns {WebAppBounds | null}
-     */
-    function normalizePayloadBounds(bounds) {
+    function normalizePayloadBounds(bounds: unknown): WebAppBounds | null {
       if (!bounds || typeof bounds !== "object") {
         return null;
       }
 
-      const source = /** @type {Partial<WebAppBounds>} */ (bounds);
+      const source = bounds as Partial<WebAppBounds>;
       const x = Number(source.x);
       const y = Number(source.y);
       const width = Number(source.width);
@@ -109,12 +113,7 @@
       };
     }
 
-    /**
-     * @param {WebAppBounds | DOMRectReadOnly} rect
-     * @param {number} margin
-     * @returns {WebAppBounds}
-     */
-    function inflateRect(rect, margin = 0) {
+    function inflateRect(rect: WebAppBounds | DOMRectReadOnly, margin = 0): WebAppBounds {
       const value = Math.max(0, Number(margin) || 0);
       return {
         x: rect.x - value,
@@ -124,26 +123,19 @@
       };
     }
 
-    /**
-     * @param {WebAppBounds | DOMRectReadOnly} left
-     * @param {WebAppBounds | DOMRectReadOnly} right
-     * @returns {boolean}
-     */
-    function rectsIntersect(left, right) {
+    function rectsIntersect(left: WebAppBounds | DOMRectReadOnly, right: WebAppBounds | DOMRectReadOnly) {
       return left.x < right.x + right.width &&
         left.x + left.width > right.x &&
         left.y < right.y + right.height &&
         left.y + left.height > right.y;
     }
 
-    /**
-     * @param {WebAppBounds | DOMRectReadOnly} rect
-     * @param {{ margin?: number }} options
-     * @returns {string[]}
-     */
-    function getVisibleWebAppKeysIntersectingRect(rect, { margin = 0 } = {}) {
+    function getVisibleWebAppKeysIntersectingRect(
+      rect: WebAppBounds | DOMRectReadOnly,
+      { margin = 0 }: { margin?: number } = {}
+    ) {
       const targetRect = inflateRect(rect, margin);
-      const keys = [];
+      const keys: string[] = [];
 
       for (const { webApp, host } of getVisibleWebAppEntries()) {
         const hostBounds = getWebAppHostBounds(host);
@@ -155,9 +147,6 @@
       return keys;
     }
 
-    /**
-     * @returns {Promise<void>}
-     */
     async function syncWebAppView() {
       webAppBoundsFrame = null;
       const entries = [...getVisibleWebAppEntries()];
@@ -167,8 +156,8 @@
         return;
       }
 
-      const visibleKeys = [];
-      const showCalls = [];
+      const visibleKeys: string[] = [];
+      const showCalls: Promise<unknown>[] = [];
 
       for (const { webApp, host } of entries) {
         const bounds = getWebAppHostBounds(host);
@@ -193,9 +182,6 @@
       await invokeWebApp("setVisibleWebApps", visibleKeys);
     }
 
-    /**
-     * @returns {void}
-     */
     function queueWebAppSync() {
       if (webAppBoundsFrame !== null) {
         return;
@@ -204,9 +190,6 @@
       webAppBoundsFrame = requestAnimationFrame(syncWebAppView);
     }
 
-    /**
-     * @returns {Promise<void>}
-     */
     async function flushWebAppSync() {
       if (webAppBoundsFrame !== null) {
         cancelAnimationFrame(webAppBoundsFrame);
@@ -216,19 +199,12 @@
       await syncWebAppView();
     }
 
-    /**
-     * @returns {void}
-     */
     function clearFrozenWebAppLayer() {
       frozenWebAppLayer?.remove();
       frozenWebAppLayer = null;
     }
 
-    /**
-     * @param {unknown} captures
-     * @returns {void}
-     */
-    function renderFrozenWebApps(captures) {
+    function renderFrozenWebApps(captures: unknown) {
       clearFrozenWebAppLayer();
 
       if (!Array.isArray(captures) || captures.length === 0) {
@@ -260,11 +236,7 @@
       frozenWebAppLayer = layer;
     }
 
-    /**
-     * @param {unknown} options
-     * @returns {Promise<void>}
-     */
-    async function freezeWebAppsForOverlay(options = undefined) {
+    async function freezeWebAppsForOverlay(options: unknown = undefined) {
       try {
         const captures = await boatyard.freezeWebApps(options);
         renderFrozenWebApps(captures);
@@ -273,30 +245,20 @@
       }
     }
 
-    /**
-     * @param {unknown[]} keys
-     * @returns {Promise<void>}
-     */
-    async function freezeWebAppsForKeys(keys) {
+    async function freezeWebAppsForKeys(keys: unknown[]) {
       const uniqueKeys = [...new Set(keys.map(String).filter(Boolean))];
       await freezeWebAppsForOverlay({ keys: uniqueKeys });
     }
 
-    /**
-     * @param {WebAppBounds | DOMRectReadOnly} rect
-     * @param {{ margin?: number }} options
-     * @returns {Promise<void>}
-     */
-    async function freezeWebAppsForRect(rect, { margin = 0 } = {}) {
+    async function freezeWebAppsForRect(
+      rect: WebAppBounds | DOMRectReadOnly,
+      { margin = 0 }: { margin?: number } = {}
+    ) {
       const keys = getVisibleWebAppKeysIntersectingRect(rect, { margin });
       await freezeWebAppsForKeys(keys);
     }
 
-    /**
-     * @param {HTMLDialogElement} dialog
-     * @returns {DOMRect}
-     */
-    function getOverlayDialogFreezeRect(dialog) {
+    function getOverlayDialogFreezeRect(dialog: HTMLDialogElement) {
       const contentRect = dialog.firstElementChild?.getBoundingClientRect();
       if (contentRect?.width > 0 && contentRect.height > 0) {
         return contentRect;
@@ -305,9 +267,6 @@
       return dialog.getBoundingClientRect();
     }
 
-    /**
-     * @returns {Promise<void>}
-     */
     async function restoreWebAppsAfterOverlay() {
       clearFrozenWebAppLayer();
 
@@ -320,17 +279,12 @@
       queueWebAppSync();
     }
 
-    /**
-     * @param {HTMLDialogElement} dialog
-     * @param {OverlayDialogOptions} options
-     * @returns {Promise<boolean>}
-     */
     async function showOverlayDialog(dialog, {
       freeze = "overlap",
       freezeMargin = 16,
       onClose = null,
       removeOnClose = false
-    } = {}) {
+    }: OverlayDialogOptions = {}) {
       let closed = false;
       let didFreeze = false;
 
@@ -389,8 +343,7 @@
     };
   }
 
-  /** @type {Window & { BoatyardWebAppSurfaces?: { create: typeof createWebAppSurfaces } }} */
-  const globalScope = window;
+  const globalScope = window as unknown as WebAppSurfacesGlobal;
   globalScope.BoatyardWebAppSurfaces = Object.freeze({
     create: createWebAppSurfaces
   });
