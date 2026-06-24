@@ -10,12 +10,76 @@ import {
 } from "./widgetGridGeometry.js";
 import type {
   PersistedWidgetLayout,
+  WidgetDefinition,
   WidgetGridPosition,
+  WidgetGridSize,
+  WidgetLayout,
   WidgetMenuElement,
+  WidgetPane,
   WidgetRailAction
 } from "./widgetSurfaceTypes";
+import type { BoatyardBridge, RendererProject, RendererState } from "./rendererTypes.js";
+import type { UnknownRecord } from "./rendererRecords.js";
 
 const globalScope: WidgetSurfacesGlobal = window;
+
+type WidgetSurfacesBridge = BoatyardBridge & {
+  updateWidgetLayout(projectId: string | undefined, layout: PersistedWidgetLayout): Promise<unknown>;
+};
+
+type WidgetSurfacesState = RendererState & {
+  pluginConfig?: {
+    projects?: Record<string, Record<string, UnknownRecord>>;
+  };
+  widgetLayouts?: Record<string, PersistedWidgetLayout>;
+};
+
+type WidgetSurfacesOptions = {
+  boatyard: WidgetSurfacesBridge;
+  getState: () => WidgetSurfacesState;
+  getProjectPluginConfig: (projectId: string | undefined, pluginId: string) => UnknownRecord;
+  getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
+  isGlobalWorkspace: (project: RendererProject | null | undefined) => boolean;
+  openProjectWebApp: (projectId: string | undefined, webAppId: string, url: string) => unknown;
+  createCard: (content: unknown) => HTMLElement;
+  createToolIcon: (name: string) => Node;
+  renderWorkspaceDashboard: (project: RendererProject) => void;
+  dashboardGrid: HTMLElement;
+  clamp: (value: number, min: number, max: number) => number;
+  minWidgetRailWidth: number;
+  defaultWidgetPaneId: string;
+  widgetGridMinColumnWidth: number;
+  widgetGridMaxColumnWidth: number;
+  widgetGridRowHeight: number;
+  widgetGridGap: number;
+  widgetGridScrollGuard: number;
+  legacyWidgetIds: Map<string, string>;
+};
+
+type WidgetPluginProps = UnknownRecord & {
+  allProjectPluginConfig: UnknownRecord;
+  globalPluginConfig: UnknownRecord;
+  openProjectWebApp(webAppId: string, url?: string): unknown;
+  pluginConfig: UnknownRecord;
+  project: RendererProject;
+  projectId?: string;
+  widgetPaneId: string;
+};
+
+type WidgetElementDefinition = WidgetDefinition & {
+  create?: (project: RendererProject, props: WidgetPluginProps) => unknown;
+  createElement?: (project: RendererProject, props: WidgetPluginProps) => HTMLElement;
+};
+
+type WidgetPointerOffset = {
+  x: number;
+  y: number;
+};
+
+type WidgetGeometry = {
+  position: WidgetGridPosition;
+  size: WidgetGridSize;
+};
 
 export function createWidgetSurfaces({
     boatyard,
@@ -37,21 +101,21 @@ export function createWidgetSurfaces({
     widgetGridGap,
     widgetGridScrollGuard,
     legacyWidgetIds
-  }) {
+  }: WidgetSurfacesOptions) {
     const widgetLayoutsByProject = new Map<string, PersistedWidgetLayout>();
     let openWidgetAddMenu: WidgetMenuElement | null = null;
-    let draggedWidgetId = null;
+    let draggedWidgetId: string | null = null;
     let draggedWidgetPointerOffset = { x: 0, y: 0 };
 
-    function getInstalledWidgets(filter = {}) {
-      return globalScope.BoatyardWidgetRegistry.list(filter);
+    function getInstalledWidgets(filter: WidgetListFilter = {}) {
+      return globalScope.BoatyardWidgetRegistry.list(filter) as WidgetElementDefinition[];
     }
     
-    function getProjectWidgetDefinitions(project = null) {
+    function getProjectWidgetDefinitions(project: RendererProject | null = null) {
       return getInstalledWidgets({ scope: isGlobalWorkspace(project) ? "global" : "project" });
     }
     
-    function normalizeWidgetId(widgetId) {
+    function normalizeWidgetId(widgetId: unknown) {
       const id = String(widgetId || "").trim();
       const mappedId = legacyWidgetIds.get(id) || id;
       return globalScope.BoatyardWidgetRegistry?.resolveId(mappedId) || mappedId;
@@ -64,7 +128,7 @@ export function createWidgetSurfaces({
       ];
     }
     
-    function getMigratedWidgetEntry(entries = {}, widgetId) {
+    function getMigratedWidgetEntry(entries: UnknownRecord = {}, widgetId: string) {
       if (!entries || typeof entries !== "object") {
         return null;
       }
@@ -82,18 +146,18 @@ export function createWidgetSurfaces({
       return null;
     }
     
-    function getProjectWidgetPanes(project) {
+    function getProjectWidgetPanes(project: RendererProject): WidgetPane[] {
       const panes = Array.isArray(project.widgetPanes) ? project.widgetPanes : [];
       return panes.length
-        ? panes
+        ? panes as WidgetPane[]
         : [{
             id: defaultWidgetPaneId,
             label: "Widgets"
           }];
     }
     
-    function getPersistedWidgetPaneLayout(project, widgetPaneId = defaultWidgetPaneId) {
-      const persistedProjectLayout = widgetLayoutsByProject.get(project.id) || {};
+    function getPersistedWidgetPaneLayout(project: RendererProject, widgetPaneId = defaultWidgetPaneId) {
+      const persistedProjectLayout = widgetLayoutsByProject.get(project.id || "") || {};
       if (persistedProjectLayout.panes && typeof persistedProjectLayout.panes === "object") {
         return persistedProjectLayout.panes[widgetPaneId] || {};
       }
@@ -101,8 +165,8 @@ export function createWidgetSurfaces({
       return widgetPaneId === defaultWidgetPaneId ? persistedProjectLayout : {};
     }
     
-    function hasPersistedWidgetPaneLayout(project, widgetPaneId = defaultWidgetPaneId) {
-      const persistedProjectLayout = widgetLayoutsByProject.get(project.id) || {};
+    function hasPersistedWidgetPaneLayout(project: RendererProject, widgetPaneId = defaultWidgetPaneId) {
+      const persistedProjectLayout = widgetLayoutsByProject.get(project.id || "") || {};
       if (persistedProjectLayout.panes && typeof persistedProjectLayout.panes === "object") {
         return Boolean(persistedProjectLayout.panes[widgetPaneId]);
       }
@@ -110,15 +174,15 @@ export function createWidgetSurfaces({
       return widgetPaneId === defaultWidgetPaneId && Object.keys(persistedProjectLayout).length > 0;
     }
     
-    function setWidgetPaneLayout(project, widgetPaneId, layout) {
-      const persistedProjectLayout = widgetLayoutsByProject.get(project.id) || {};
+    function setWidgetPaneLayout(project: RendererProject, widgetPaneId: string, layout: WidgetLayout) {
+      const persistedProjectLayout = widgetLayoutsByProject.get(project.id || "") || {};
       const panes = persistedProjectLayout.panes && typeof persistedProjectLayout.panes === "object"
         ? persistedProjectLayout.panes
         : {
             [defaultWidgetPaneId]: persistedProjectLayout
           };
     
-      widgetLayoutsByProject.set(project.id, {
+      widgetLayoutsByProject.set(project.id || "", {
         panes: {
           ...panes,
           [widgetPaneId]: layout
@@ -126,20 +190,24 @@ export function createWidgetSurfaces({
       });
     }
     
-    function normalizeWidgetLayoutForProject(project, columnCount = null, widgetPaneId = defaultWidgetPaneId) {
+    function normalizeWidgetLayoutForProject(
+      project: RendererProject,
+      columnCount: number | null = null,
+      widgetPaneId = defaultWidgetPaneId
+    ): WidgetLayout {
       const persisted = getPersistedWidgetPaneLayout(project, widgetPaneId);
       const widgetDefinitions = getProjectWidgetDefinitions(project);
-      const knownIds = widgetDefinitions.map((definition) => definition.id);
+      const knownIds = widgetDefinitions.map((definition: WidgetElementDefinition) => definition.id);
       const knownIdSet = new Set(knownIds);
       const definitionsById = new Map(widgetDefinitions.map((definition) => [definition.id, definition]));
       const startsEmpty = widgetPaneId !== defaultWidgetPaneId && !hasPersistedWidgetPaneLayout(project, widgetPaneId);
       const persistedOrderIdSet = new Set(Array.isArray(persisted.order)
-        ? persisted.order.map(normalizeWidgetId).filter((id) => knownIdSet.has(id))
+        ? persisted.order.map(normalizeWidgetId).filter((id: string) => knownIdSet.has(id))
         : []);
       const hidden = Array.isArray(persisted.hidden)
         ? persisted.hidden
             .map(normalizeWidgetId)
-            .filter((id, index, ids) => knownIdSet.has(id) && ids.indexOf(id) === index)
+            .filter((id: string, index: number, ids: string[]) => knownIdSet.has(id) && ids.indexOf(id) === index)
         : startsEmpty ? [...knownIds] : [];
     
       for (const definition of widgetDefinitions) {
@@ -153,11 +221,11 @@ export function createWidgetSurfaces({
       }
     
       const hiddenIdSet = new Set(hidden);
-      const seenIds = new Set();
+      const seenIds = new Set<string>();
       const order = Array.isArray(persisted.order)
         ? persisted.order
             .map(normalizeWidgetId)
-            .filter((id) => {
+            .filter((id: string) => {
               if (!knownIdSet.has(id) || hiddenIdSet.has(id) || seenIds.has(id)) {
                 return false;
               }
@@ -172,8 +240,8 @@ export function createWidgetSurfaces({
           order.push(id);
         }
       }
-      const sizes = {};
-      const positions = {};
+      const sizes: Record<string, WidgetGridSize> = {};
+      const positions: Record<string, WidgetGridPosition> = {};
     
       for (const id of order) {
         const definition = definitionsById.get(id);
@@ -212,11 +280,11 @@ export function createWidgetSurfaces({
       };
     }
     
-    function getWidgetGridColumnCount(widgetRailWidth) {
+    function getWidgetGridColumnCount(widgetRailWidth: unknown) {
       return calculateWidgetGridColumnCount(widgetRailWidth, widgetGridMinColumnWidth);
     }
     
-    function getWidgetRailColumnCount(widgetRail) {
+    function getWidgetRailColumnCount(widgetRail: HTMLElement | null | undefined) {
       const stored = Number(widgetRail?.dataset.widgetGridColumns);
       if (Number.isFinite(stored) && stored > 0) {
         return Math.round(stored);
@@ -225,7 +293,12 @@ export function createWidgetSurfaces({
       return getWidgetGridColumnCount(widgetRail?.getBoundingClientRect().width || widgetGridMaxColumnWidth);
     }
     
-    function applyWidgetGridLayout(widgetRail, project, columnCount, widgetPaneId = defaultWidgetPaneId) {
+    function applyWidgetGridLayout(
+      widgetRail: HTMLElement,
+      project: RendererProject,
+      columnCount: number,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
       const layout = getProjectWidgetLayout(project, columnCount, widgetPaneId);
       const trackSpec = getWidgetGridTrackSpec(widgetRail, {
         gap: widgetGridGap,
@@ -238,10 +311,10 @@ export function createWidgetSurfaces({
       widgetRail.style.setProperty("--widget-grid-columns", String(columnCount));
       widgetRail.style.setProperty("--widget-grid-row-height", `${trackSpec.rowHeight}px`);
     
-      for (const card of widgetRail.querySelectorAll(".widget-card")) {
+      for (const card of widgetRail.querySelectorAll<HTMLElement>(".widget-card")) {
         const widgetId = card.dataset.widgetId;
-        const size = layout.sizes[widgetId];
-        const position = layout.positions[widgetId];
+        const size = widgetId ? layout.sizes[widgetId] : undefined;
+        const position = widgetId ? layout.positions[widgetId] : undefined;
     
         if (!size || !position) {
           continue;
@@ -252,36 +325,40 @@ export function createWidgetSurfaces({
       }
     }
     
-    function getProjectWidgetLayout(project, columnCount = null, widgetPaneId = defaultWidgetPaneId) {
+    function getProjectWidgetLayout(
+      project: RendererProject,
+      columnCount: number | null = null,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
       const layout = normalizeWidgetLayoutForProject(project, columnCount, widgetPaneId);
       setWidgetPaneLayout(project, widgetPaneId, layout);
       return layout;
     }
     
-    function getOrderedWidgetDefinitions(project, layout) {
+    function getOrderedWidgetDefinitions(project: RendererProject, layout: WidgetLayout) {
       const definitionsById = new Map(getProjectWidgetDefinitions(project).map((definition) => [definition.id, definition]));
       return layout.order
-        .map((id) => definitionsById.get(id))
-        .filter(Boolean);
+        .map((id: string) => definitionsById.get(id))
+        .filter((definition): definition is WidgetElementDefinition => Boolean(definition));
     }
     
-    function getWidgetDefinition(project, widgetId) {
+    function getWidgetDefinition(project: RendererProject, widgetId: string) {
       return getProjectWidgetDefinitions(project).find((definition) => definition.id === widgetId) || null;
     }
     
-    function persistWidgetLayout(project) {
-      const layout = widgetLayoutsByProject.get(project.id);
+    function persistWidgetLayout(project: RendererProject): Promise<unknown> {
+      const layout = widgetLayoutsByProject.get(project.id || "");
       if (!layout) {
         return Promise.resolve(null);
       }
     
-      return boatyard.updateWidgetLayout(project.id, layout).catch((error) => {
+      return boatyard.updateWidgetLayout(project.id, layout).catch((error: unknown): null => {
         console.error("Could not persist widget layout:", error);
         return null;
       });
     }
     
-    async function toggleWidgetLayoutLock(project, widgetPaneId = defaultWidgetPaneId) {
+    async function toggleWidgetLayoutLock(project: RendererProject, widgetPaneId = defaultWidgetPaneId) {
       const layout = getProjectWidgetLayout(project, null, widgetPaneId);
       setWidgetPaneLayout(project, widgetPaneId, {
         ...layout,
@@ -291,7 +368,12 @@ export function createWidgetSurfaces({
       renderWorkspaceDashboard(project);
     }
     
-    async function removeProjectWidget(project, widgetId, columnCount, widgetPaneId = defaultWidgetPaneId) {
+    async function removeProjectWidget(
+      project: RendererProject,
+      widgetId: string,
+      columnCount: number,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
       const definition = getWidgetDefinition(project, widgetId);
     
       if (!definition) {
@@ -307,7 +389,7 @@ export function createWidgetSurfaces({
     
       setWidgetPaneLayout(project, widgetPaneId, {
         ...layout,
-        order: layout.order.filter((id) => id !== widgetId),
+        order: layout.order.filter((id: string) => id !== widgetId),
         hidden,
         sizes,
         positions
@@ -317,7 +399,12 @@ export function createWidgetSurfaces({
       return true;
     }
     
-    async function addProjectWidget(project, widgetId, columnCount, widgetPaneId = defaultWidgetPaneId) {
+    async function addProjectWidget(
+      project: RendererProject,
+      widgetId: string,
+      columnCount: number,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
       const definition = getWidgetDefinition(project, widgetId);
     
       if (!definition) {
@@ -326,7 +413,7 @@ export function createWidgetSurfaces({
     
       const layout = getProjectWidgetLayout(project, columnCount, widgetPaneId);
       const size = fitWidgetSizeToGrid(clampWidgetGridSize(definition, undefined, clamp), columnCount);
-      const hidden = layout.hidden.filter((id) => id !== widgetId);
+      const hidden = layout.hidden.filter((id: string) => id !== widgetId);
       const positions = { ...layout.positions };
       const sizes = {
         ...layout.sizes,
@@ -342,7 +429,7 @@ export function createWidgetSurfaces({
     
       setWidgetPaneLayout(project, widgetPaneId, {
         ...layout,
-        order: [...layout.order.filter((id) => id !== widgetId), widgetId],
+        order: [...layout.order.filter((id: string) => id !== widgetId), widgetId],
         hidden,
         sizes,
         positions
@@ -352,7 +439,13 @@ export function createWidgetSurfaces({
       return true;
     }
     
-    function getWidgetGridPositionFromPointer(event, rail, columnCount, size, pointerOffset = { x: 0, y: 0 }) {
+    function getWidgetGridPositionFromPointer(
+      event: MouseEvent | DragEvent | PointerEvent,
+      rail: HTMLElement,
+      columnCount: number,
+      size: WidgetGridSize,
+      pointerOffset: WidgetPointerOffset = { x: 0, y: 0 }
+    ): WidgetGridPosition {
       const rect = rail.getBoundingClientRect();
       const styles = window.getComputedStyle(rail);
       const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
@@ -377,8 +470,8 @@ export function createWidgetSurfaces({
       };
     }
     
-    function ensureWidgetDropPreview(widgetRail) {
-      let preview = widgetRail.querySelector(".widget-drop-preview");
+    function ensureWidgetDropPreview(widgetRail: HTMLElement) {
+      let preview = widgetRail.querySelector<HTMLElement>(".widget-drop-preview");
     
       if (!preview) {
         preview = document.createElement("div");
@@ -390,14 +483,19 @@ export function createWidgetSurfaces({
       return preview;
     }
     
-    function updateWidgetDropPreview(widgetRail, position, size, available) {
+    function updateWidgetDropPreview(
+      widgetRail: HTMLElement,
+      position: WidgetGridPosition,
+      size: WidgetGridSize,
+      available: boolean
+    ) {
       const preview = ensureWidgetDropPreview(widgetRail);
       preview.classList.toggle("blocked", !available);
       preview.style.gridColumn = `${position.x + 1} / span ${size.columns}`;
       preview.style.gridRow = `${position.y + 1} / span ${size.rows}`;
     }
     
-    function clearWidgetDropPreview(widgetRail) {
+    function clearWidgetDropPreview(widgetRail: HTMLElement | null | undefined) {
       if (!widgetRail) {
         return;
       }
@@ -406,7 +504,13 @@ export function createWidgetSurfaces({
       delete widgetRail.dataset.dropState;
     }
     
-    async function moveWidgetToGridPosition(project, widgetId, position, columnCount, widgetPaneId = defaultWidgetPaneId) {
+    async function moveWidgetToGridPosition(
+      project: RendererProject,
+      widgetId: string,
+      position: WidgetGridPosition,
+      columnCount: number,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
       const definition = getWidgetDefinition(project, widgetId);
     
       if (!definition) {
@@ -439,8 +543,13 @@ export function createWidgetSurfaces({
       return true;
     }
     
-    function attachWidgetGridDropHandlers(widgetRail, project, columnCount, widgetPaneId = defaultWidgetPaneId) {
-      widgetRail.addEventListener("dragover", (event) => {
+    function attachWidgetGridDropHandlers(
+      widgetRail: HTMLElement,
+      project: RendererProject,
+      columnCount: number,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
+      widgetRail.addEventListener("dragover", (event: DragEvent) => {
         if (!draggedWidgetId) {
           return;
         }
@@ -463,19 +572,21 @@ export function createWidgetSurfaces({
           columnCount: currentColumnCount
         });
     
-        event.dataTransfer.dropEffect = available ? "move" : "none";
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = available ? "move" : "none";
+        }
         widgetRail.dataset.dropState = available ? "available" : "blocked";
         updateWidgetDropPreview(widgetRail, position, size, available);
       });
     
-      widgetRail.addEventListener("dragleave", (event) => {
-        if (!widgetRail.contains(event.relatedTarget)) {
+      widgetRail.addEventListener("dragleave", (event: DragEvent) => {
+        if (!widgetRail.contains(event.relatedTarget as Node | null)) {
           clearWidgetDropPreview(widgetRail);
         }
       });
     
-      widgetRail.addEventListener("drop", async (event) => {
-        const widgetId = event.dataTransfer.getData("text/plain") || draggedWidgetId;
+      widgetRail.addEventListener("drop", async (event: DragEvent) => {
+        const widgetId = event.dataTransfer?.getData("text/plain") || draggedWidgetId;
         const currentColumnCount = getWidgetRailColumnCount(widgetRail) || columnCount;
         const layout = getProjectWidgetLayout(project, currentColumnCount, widgetPaneId);
         const size = layout.sizes[widgetId];
@@ -491,7 +602,13 @@ export function createWidgetSurfaces({
       });
     }
     
-    function createProjectWidget(project, definition, layout, columnCount, widgetPaneId = defaultWidgetPaneId) {
+    function createProjectWidget(
+      project: RendererProject,
+      definition: WidgetElementDefinition,
+      layout: WidgetLayout,
+      columnCount: number,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
       const globalScope = isGlobalWorkspace(project);
       const props = {
         projectId: project.id,
@@ -500,11 +617,13 @@ export function createWidgetSurfaces({
         pluginConfig: definition.pluginId && !globalScope ? getProjectPluginConfig(project.id, definition.pluginId) : {},
         globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {},
         allProjectPluginConfig: globalScope ? {} : getState().pluginConfig?.projects?.[project.id] || {},
-        openProjectWebApp(webAppId, url = "") {
+        openProjectWebApp(webAppId: string, url = "") {
           return openProjectWebApp(project.id, webAppId, url);
         }
       };
-      const card = definition.createElement ? definition.createElement(project, props) : createCard(definition.create(project, props));
+      const card = definition.createElement
+        ? definition.createElement(project, props)
+        : createCard(definition.create?.(project, props));
       const size = fitWidgetSizeToGrid(layout.sizes[definition.id], columnCount);
       const position = layout.positions[definition.id] || { x: 0, y: 0 };
       card.dataset.widgetId = definition.id;
@@ -513,7 +632,7 @@ export function createWidgetSurfaces({
     
       if (!layout.locked) {
         card.draggable = true;
-        card.addEventListener("dragstart", (event) => {
+        card.addEventListener("dragstart", (event: DragEvent) => {
           draggedWidgetId = definition.id;
           const rect = card.getBoundingClientRect();
           draggedWidgetPointerOffset = {
@@ -523,8 +642,10 @@ export function createWidgetSurfaces({
           card.classList.add("dragging");
           card.closest(".project-widget-rail")?.classList.add("dragging-widget");
           card.closest(".webapp-pane")?.classList.add("dragging-widget");
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("text/plain", definition.id);
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", definition.id);
+          }
         });
         card.addEventListener("dragend", () => {
           draggedWidgetId = null;
@@ -538,7 +659,7 @@ export function createWidgetSurfaces({
           for (const dropzone of document.querySelectorAll(".widget-trash-dropzone")) {
             dropzone.classList.remove("drag-over");
           }
-          for (const rail of dashboardGrid.querySelectorAll(".project-widget-rail")) {
+          for (const rail of dashboardGrid.querySelectorAll<HTMLElement>(".project-widget-rail")) {
             clearWidgetDropPreview(rail);
           }
         });
@@ -551,10 +672,10 @@ export function createWidgetSurfaces({
           resizeHandle.draggable = false;
           resizeHandle.title = "Resize widget";
           resizeHandle.setAttribute("aria-label", `Resize ${definition.name} ${direction}`);
-          resizeHandle.addEventListener("pointerdown", (event) => {
+          resizeHandle.addEventListener("pointerdown", (event: PointerEvent) => {
             event.preventDefault();
             event.stopPropagation();
-            const rail = (event.currentTarget as HTMLElement).closest(".project-widget-rail");
+            const rail = (event.currentTarget as HTMLElement).closest<HTMLElement>(".project-widget-rail");
             const currentColumnCount = getWidgetRailColumnCount(rail) || columnCount;
             const currentLayout = getProjectWidgetLayout(project, currentColumnCount, widgetPaneId);
             const currentSize = currentLayout.sizes[definition.id] || size;
@@ -567,14 +688,23 @@ export function createWidgetSurfaces({
       return card;
     }
     
-    function startWidgetResize(event, project, definition, layout, startSize, columnCount, direction, widgetPaneId = defaultWidgetPaneId) {
+    function startWidgetResize(
+      event: PointerEvent,
+      project: RendererProject,
+      definition: WidgetElementDefinition,
+      layout: WidgetLayout,
+      startSize: WidgetGridSize,
+      columnCount: number,
+      direction: string,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
       const spec = getWidgetLayoutSpec(definition);
       const startX = event.clientX;
       const startY = event.clientY;
       const startPosition = layout.positions[definition.id] || { x: 0, y: 0 };
-      const handle = event.currentTarget;
-      const card = event.currentTarget.closest(".widget-card");
-      const rail = event.currentTarget.closest(".project-widget-rail");
+      const handle = event.currentTarget as HTMLElement;
+      const card = handle.closest<HTMLElement>(".widget-card");
+      const rail = handle.closest<HTMLElement>(".project-widget-rail");
       const railWidth = rail?.getBoundingClientRect().width || widgetGridMinColumnWidth;
       const columnWidth = (railWidth - widgetGridGap * (columnCount - 1)) / columnCount;
       const columnStep = Math.max(1, columnWidth + widgetGridGap);
@@ -593,7 +723,7 @@ export function createWidgetSurfaces({
       handle.classList.add("resizing");
       card?.classList.add("resizing-widget");
     
-      function getNextGeometry(deltaColumns, deltaRows) {
+      function getNextGeometry(deltaColumns: number, deltaRows: number): WidgetGeometry {
         let nextX = startPosition.x;
         let nextY = startPosition.y;
         let nextColumns = startSize.columns;
@@ -633,7 +763,7 @@ export function createWidgetSurfaces({
         };
       }
     
-      function onPointerMove(moveEvent) {
+      function onPointerMove(moveEvent: PointerEvent) {
         const deltaColumns = Math.round((moveEvent.clientX - startX) / columnStep);
         const deltaRows = Math.round((moveEvent.clientY - startY) / rowStep);
         const nextGeometry = getNextGeometry(deltaColumns, deltaRows);
@@ -703,7 +833,13 @@ export function createWidgetSurfaces({
       openWidgetAddMenu = null;
     }
 
-    function openWidgetAddMenuFromButton(button, project, layout, columnCount, widgetPaneId = defaultWidgetPaneId) {
+    function openWidgetAddMenuFromButton(
+      button: HTMLElement,
+      project: RendererProject,
+      layout: WidgetLayout,
+      columnCount: number,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
       closeWidgetAddMenu();
 
       const rect = button.getBoundingClientRect();
@@ -724,7 +860,7 @@ export function createWidgetSurfaces({
         item.innerHTML = `<strong>${definition.name}</strong><small>${definition.category || "Widget"}</small>`;
         item.addEventListener("click", () => {
           closeWidgetAddMenu();
-          addProjectWidget(project, definition.id, columnCount, widgetPaneId).catch((error) => {
+          addProjectWidget(project, definition.id, columnCount, widgetPaneId).catch((error: unknown) => {
             console.error("Could not add widget:", error);
           });
         });
@@ -761,11 +897,17 @@ export function createWidgetSurfaces({
       menu.querySelector("button")?.focus();
     }
     
-    function getWidgetRailFromControl(control) {
-      return control.closest(".project-widget-rail") || control.closest(".webapp-pane")?.querySelector(".project-widget-rail") || null;
+    function getWidgetRailFromControl(control: HTMLElement | null | undefined) {
+      return control?.closest<HTMLElement>(".project-widget-rail") ||
+        control?.closest(".webapp-pane")?.querySelector<HTMLElement>(".project-widget-rail") ||
+        null;
     }
     
-    function createWidgetTrashDropzone(project, columnCount, widgetPaneId = defaultWidgetPaneId) {
+    function createWidgetTrashDropzone(
+      project: RendererProject,
+      columnCount: number,
+      widgetPaneId = defaultWidgetPaneId
+    ) {
       const dropzone = document.createElement("div");
       dropzone.className = "widget-trash-dropzone";
       dropzone.setAttribute("role", "button");
@@ -773,26 +915,28 @@ export function createWidgetSurfaces({
       dropzone.title = "Drop a widget here to remove it";
       dropzone.append(createToolIcon("trash"));
     
-      dropzone.addEventListener("dragover", (event) => {
+      dropzone.addEventListener("dragover", (event: DragEvent) => {
         if (!draggedWidgetId) {
           return;
         }
     
         event.preventDefault();
         event.stopPropagation();
-        event.dataTransfer.dropEffect = "move";
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
         clearWidgetDropPreview(getWidgetRailFromControl(dropzone));
         dropzone.classList.add("drag-over");
       });
     
-      dropzone.addEventListener("dragleave", (event) => {
+      dropzone.addEventListener("dragleave", (event: DragEvent) => {
         if (!dropzone.contains(event.relatedTarget as Node | null)) {
           dropzone.classList.remove("drag-over");
         }
       });
     
-      dropzone.addEventListener("drop", async (event) => {
-        const widgetId = event.dataTransfer.getData("text/plain") || draggedWidgetId;
+      dropzone.addEventListener("drop", async (event: DragEvent) => {
+        const widgetId = event.dataTransfer?.getData("text/plain") || draggedWidgetId;
     
         if (!widgetId) {
           return;
@@ -810,11 +954,16 @@ export function createWidgetSurfaces({
       return dropzone;
     }
     
-    function createWidgetPaneActions(project, widgetPane, layout, columnCount) {
+    function createWidgetPaneActions(
+      project: RendererProject,
+      widgetPane: WidgetPane,
+      layout: WidgetLayout,
+      columnCount: number
+    ) {
       const actions = document.createElement("div");
       actions.className = "widget-rail-actions";
     
-      const createActionButton = (action) => {
+      const createActionButton = (action: WidgetRailAction) => {
         const button = document.createElement("button");
         button.className = "widget-rail-action";
         button.type = "button";
@@ -868,7 +1017,7 @@ export function createWidgetSurfaces({
       return actions;
     }
 
-    function createWidgetPaneSurface(project, widgetPane) {
+    function createWidgetPaneSurface(project: RendererProject, widgetPane: WidgetPane) {
       const rail = document.createElement("div");
       rail.className = "project-widget-rail";
       const fallbackWidth = Math.max(minWidgetRailWidth, Math.round((dashboardGrid.getBoundingClientRect().width || window.innerWidth) / 2));
@@ -881,7 +1030,7 @@ export function createWidgetSurfaces({
       rail.style.setProperty("--widget-grid-row-height", `${widgetGridRowHeight}px`);
     
       rail.append(
-        ...getOrderedWidgetDefinitions(project, widgetLayout).map((definition) => (
+        ...getOrderedWidgetDefinitions(project, widgetLayout).map((definition: WidgetElementDefinition) => (
           createProjectWidget(project, definition, widgetLayout, widgetGridColumns, widgetPane.id)
         ))
       );
@@ -911,7 +1060,7 @@ export function createWidgetSurfaces({
       const persistedLayouts = getState().widgetLayouts || {};
 
       for (const [projectId, layout] of Object.entries(persistedLayouts)) {
-        widgetLayoutsByProject.set(projectId, layout);
+        widgetLayoutsByProject.set(projectId, layout as PersistedWidgetLayout);
       }
     }
 

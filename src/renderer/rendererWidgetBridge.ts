@@ -61,7 +61,7 @@ export function createRendererWidgetBridge(options: RendererWidgetBridgeOptions)
   registerBuiltinWidgets(options.windowObject, options.createTerminalWidget);
 
   return createWidgetSurfaces({
-    boatyard: options.boatyard,
+    boatyard: options.boatyard as Parameters<typeof createWidgetSurfaces>[0]["boatyard"],
     getState: options.getState,
     getProjectPluginConfig: options.getProjectPluginConfig,
     getGlobalPluginConfig: options.getGlobalPluginConfig,
