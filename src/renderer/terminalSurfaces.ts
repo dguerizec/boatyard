@@ -8,98 +8,11 @@ import {
   getXtermConstructor
 } from "./terminalXtermRuntime.js";
 import type { TerminalCard, TerminalTab } from "./terminalTypes.js";
-import type { BoatyardBridge, RendererProject, RendererState } from "./rendererTypes.js";
-import type { UnknownRecord } from "./rendererRecords.js";
+import type { RendererProject } from "./rendererTypes.js";
+import type { TerminalCloseFocus, TerminalDataPayload, TerminalExitPayload, TerminalOutputSession, TerminalSurfaceOptions, TerminalSurfaceSession, TerminalSurfacesOptions, TerminalTabSyncTimer } from "./terminalSurfaceTypes.js";
+import { createTerminalSelectionStore } from "./terminalSelectionStore.js";
 
 const globalScope: TerminalSurfacesGlobal = window;
-
-type TerminalSurfacesBridge = BoatyardBridge & {
-  attachTerminal(projectId: string, windowId: string, size: unknown): Promise<{
-    tab: TerminalTab;
-    terminalId: string;
-  }>;
-  closeTerminalTab(projectId: string, windowId: string): Promise<TerminalTab[]>;
-  createTerminalTab(projectId: string, name: string): Promise<TerminalTab>;
-  detachTerminal(terminalId: string): Promise<unknown>;
-  listTerminalTabs(projectId: string): Promise<unknown>;
-  readTerminalSelection: () => Promise<string>;
-  renameTerminalTab(projectId: string, windowId: string, name: string): Promise<unknown>;
-  resizeTerminal(terminalId: string, size: unknown): Promise<unknown> | unknown;
-  updateTerminalSelection?: (
-    projectId: string,
-    surfaceKey: string,
-    windowId: string
-  ) => Promise<UnknownRecord>;
-  updateTerminalTabOrder?: (projectId: string, windowIds: string[]) => Promise<unknown>;
-  writeTerminal(terminalId: string, data: string): Promise<unknown> | unknown;
-  writeTerminalSelection: (selection: string) => Promise<unknown>;
-};
-
-type TerminalState = RendererState & {
-  terminalSelections?: Record<string, Record<string, string>>;
-  terminalTabOrders?: Record<string, string[]>;
-};
-
-type TerminalSurfacesOptions = {
-  boatyard: TerminalSurfacesBridge;
-  getProjectById: (projectId?: string) => RendererProject | null;
-  getState: () => TerminalState;
-  createToolIcon: (name: string) => Node;
-  clamp: (value: number, min: number, max: number) => number;
-  defaultWidgetPaneId: string;
-};
-
-type TerminalSurfaceSession = {
-  activeWindowId: string;
-  card: TerminalCard;
-  disposables?: Array<{ dispose?: () => void }>;
-  fitAddon?: FitAddonInstance;
-  lastOutputTabSyncAt?: number;
-  projectId: string;
-  removeMiddleClickPaste?: () => void;
-  resizeObserver?: ResizeObserver;
-  surfaceId: string;
-  tabsResizeObserver?: ResizeObserver;
-  term?: XtermTerminal;
-  terminalId?: string;
-};
-
-type TerminalOutputSession = {
-  lastOutputTabSyncAt: number;
-  projectId: string;
-  surfaceId: string;
-  term: XtermTerminal;
-};
-
-type TerminalTabSyncTimer = {
-  followupsRemaining: number;
-  timer: ReturnType<typeof setTimeout>;
-};
-
-type TerminalCloseFocus = {
-  surfaceId: string;
-  timestamp: number;
-  windowId: string;
-};
-
-type TerminalSurfaceOptions = {
-  actionsContainer?: HTMLElement | null;
-  className?: string;
-  storageKey?: string;
-  tabsContainer?: HTMLElement | null;
-  tagName?: keyof HTMLElementTagNameMap;
-};
-
-type TerminalExitPayload = {
-  projectId?: unknown;
-  terminalId?: unknown;
-  windowId?: unknown;
-};
-
-type TerminalDataPayload = {
-  data?: unknown;
-  terminalId?: unknown;
-};
 
 function asErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -123,6 +36,13 @@ export function createTerminalSurfaces({
     const TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS = 250;
     const TERMINAL_OUTPUT_TAB_SYNC_THROTTLE_MS = 2000;
     const TERMINAL_CLOSE_FOCUS_TTL_MS = 3000;
+    const {
+      getPersistedTerminalWindowId,
+      persistTerminalSelection
+    } = createTerminalSelectionStore({
+      boatyard,
+      getState
+    });
     const {
       clearTerminalTabDragState,
       clearTerminalTabDropMarkers,
@@ -517,74 +437,6 @@ export function createTerminalSurfaces({
       return terminalWidgetsBySurface.get(getTerminalSurfaceId(card)) || null;
     }
 
-    function getPersistedTerminalWindowId(projectId: string | undefined, surfaceKey: string | undefined) {
-      if (!projectId || !surfaceKey) {
-        return null;
-      }
-
-      return getState().terminalSelections?.[projectId]?.[surfaceKey] || null;
-    }
-
-    function rememberTerminalSelection(projectId: unknown, surfaceKey: unknown, windowId: unknown) {
-      const normalizedProjectId = String(projectId || "").trim();
-      const normalizedSurfaceKey = String(surfaceKey || "").trim();
-      const normalizedWindowId = String(windowId || "").trim();
-      if (!normalizedProjectId || !normalizedSurfaceKey) {
-        return;
-      }
-
-      const terminalSelections = {
-        ...(getState().terminalSelections || {})
-      };
-      getState().terminalSelections = terminalSelections;
-
-      if (!normalizedWindowId) {
-        const projectSelections = terminalSelections[normalizedProjectId];
-        if (projectSelections) {
-          delete projectSelections[normalizedSurfaceKey];
-          if (!Object.keys(projectSelections).length) {
-            delete terminalSelections[normalizedProjectId];
-          }
-        }
-        return;
-      }
-
-      terminalSelections[normalizedProjectId] = {
-        ...(terminalSelections[normalizedProjectId] || {}),
-        [normalizedSurfaceKey]: normalizedWindowId
-      };
-    }
-
-    function persistTerminalSelection(projectId: unknown, surfaceKey: unknown, windowId: unknown) {
-      if (!surfaceKey || !boatyard.updateTerminalSelection) {
-        return;
-      }
-
-      rememberTerminalSelection(projectId, surfaceKey, windowId);
-
-      const normalizedProjectId = String(projectId || "").trim();
-      const normalizedSurfaceKey = String(surfaceKey || "").trim();
-      const normalizedWindowId = String(windowId || "").trim();
-      boatyard.updateTerminalSelection(normalizedProjectId, normalizedSurfaceKey, normalizedWindowId)
-        .then((selections: UnknownRecord) => {
-          if (!selections || typeof selections !== "object" || Array.isArray(selections)) {
-            return;
-          }
-
-          const terminalSelections = {
-            ...(getState().terminalSelections || {})
-          };
-          getState().terminalSelections = terminalSelections;
-          if (Object.keys(selections).length) {
-            terminalSelections[normalizedProjectId] = selections as Record<string, string>;
-          } else {
-            delete terminalSelections[normalizedProjectId];
-          }
-        })
-        .catch((error: unknown) => {
-          console.error("Could not persist terminal selection:", error);
-        });
-    }
 
     async function selectTerminalTab(project: RendererProject, card: TerminalCard, tab: TerminalTab) {
       const session = getTerminalSurfaceSession(card);
