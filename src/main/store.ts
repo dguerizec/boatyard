@@ -386,8 +386,8 @@ function normalizeSettings(settings: unknown = {}): SettingsState {
 
 function normalizeWebAppOpenRules(rules: unknown = []): WebAppOpenRule[] {
   const source = Array.isArray(rules) ? rules : [];
-  const allowedTargets = new Set(["same-pane", "split-pane", "external"]);
-  const allowedScopes = new Set(["exact", "host", "path-prefix"]);
+  const allowedTargets = new Set<string>(["same-pane", "split-pane", "external"]);
+  const allowedScopes = new Set<string>(["exact", "host", "path-prefix"]);
   const normalized: WebAppOpenRule[] = [];
 
   for (const rule of source) {
@@ -439,14 +439,14 @@ function normalizePasswordVault(vault: unknown = {}): Record<string, PasswordCre
 
 function normalizeNavigationState(navigation: unknown = {}): NavigationState {
   const source = toRecord(navigation);
-  const allowedViews = new Set(["global", "global-settings", "project", "project-edit"]);
+  const allowedViews = new Set<string>(["global", "global-settings", "project", "project-edit"]);
   const requestedView = normalizeText(source.view);
   const view = allowedViews.has(requestedView) ? requestedView : "global";
   const projectId = typeof source.projectId === "string" && source.projectId.trim()
     ? source.projectId.trim()
     : null;
   const isProjectView = view.startsWith("project");
-  const collapsedProjectGroups = Array.isArray(source.collapsedProjectGroups)
+  const collapsedProjectGroups: string[] = Array.isArray(source.collapsedProjectGroups)
     ? [...new Set(source.collapsedProjectGroups.map(normalizeText).filter(Boolean))]
     : [];
 
@@ -544,7 +544,7 @@ function normalizeWebAppHomeTabList(tabs: unknown = []): WebAppHomeTab[] {
     return [];
   }
 
-  const seenIds = new Set();
+  const seenIds = new Set<string>();
   const normalized: WebAppHomeTab[] = [];
   for (const tab of tabs) {
     const source = toRecord(tab);
@@ -578,7 +578,7 @@ function normalizeWebAppHomeTabs(homeTabs: unknown = {}, projects: StoredProject
     return {};
   }
 
-  const projectIds = new Set([GLOBAL_WORKSPACE_ID, ...projects.map((project) => project.id)]);
+  const projectIds = new Set<string>([GLOBAL_WORKSPACE_ID, ...projects.map((project) => project.id)]);
   const normalized: Record<string, WebAppHomeTab[]> = {};
 
   for (const [projectId, tabs] of Object.entries(homeTabs)) {
@@ -695,7 +695,7 @@ function normalizeTerminalSelections(terminalSelections: unknown = {}, projects:
     return {};
   }
 
-  const projectIds = new Set(projects.map((project) => project.id));
+  const projectIds = new Set<string>(projects.map((project) => project.id));
   projectIds.add(GLOBAL_WORKSPACE_ID);
   const normalized: Record<string, Record<string, string>> = {};
 
@@ -727,7 +727,7 @@ function normalizeTerminalTabOrders(terminalTabOrders: unknown = {}, projects: S
     return {};
   }
 
-  const projectIds = new Set(projects.map((project) => project.id));
+  const projectIds = new Set<string>(projects.map((project) => project.id));
   projectIds.add(GLOBAL_WORKSPACE_ID);
   const normalized: Record<string, string[]> = {};
 
@@ -737,8 +737,8 @@ function normalizeTerminalTabOrders(terminalTabOrders: unknown = {}, projects: S
       continue;
     }
 
-    const seenWindowIds = new Set();
-    const normalizedWindowIds = [];
+    const seenWindowIds = new Set<string>();
+    const normalizedWindowIds: string[] = [];
     for (const windowId of windowIds) {
       const normalizedWindowId = normalizeText(windowId);
       if (normalizedWindowId && !seenWindowIds.has(normalizedWindowId)) {
@@ -924,7 +924,7 @@ function normalizePluginConfig(pluginConfig: unknown = {}, projects: StoredProje
   const projectConfig = source.projects && typeof source.projects === "object" && !Array.isArray(source.projects)
     ? source.projects
     : {};
-  const projectIds = new Set(projects.map((project) => project.id));
+  const projectIds = new Set<string>(projects.map((project) => project.id));
 
   for (const [projectId, pluginConfigs] of Object.entries(projectConfig)) {
     const normalizedProjectId = normalizeText(projectId);
@@ -971,7 +971,7 @@ function normalizeProjectUrls(urls: unknown = []): ProjectUrl[] {
     return [];
   }
 
-  const seenIds = new Set();
+  const seenIds = new Set<string>();
   const normalized: ProjectUrl[] = [];
   urls.forEach((entry, index) => {
       const source = toRecord(entry);
@@ -1011,7 +1011,7 @@ function normalizeProjectUrls(urls: unknown = []): ProjectUrl[] {
 
 function normalizeProjectWidgetPanes(widgetPanes: unknown = []): ProjectWidgetPane[] {
   const source = Array.isArray(widgetPanes) ? widgetPanes : [];
-  const seenIds = new Set();
+  const seenIds = new Set<string>();
   const normalized: ProjectWidgetPane[] = [];
   source.forEach((entry, index) => {
       const pane = toRecord(entry);
