@@ -8,6 +8,14 @@ import { registerPluginRegistry } from "./pluginRegistry.js";
 import { registerPluginSettingsFields } from "./pluginSettingsFields.js";
 import { createProjectSidebar } from "./projectSidebar.js";
 import { createProjectSettingsViews } from "./projectSettingsViews.js";
+import {
+  deriveProjectNameFromPath,
+  deriveRepoUrl,
+  formatProjectNameFromPath,
+  normalizeProjectSearchText,
+  projectMatchesSearch,
+  slugify
+} from "./projectUtils.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createToolIcon } from "./toolIcons.js";
@@ -271,61 +279,6 @@ const LEGACY_WIDGET_IDS = new Map([
   ["global-shell", "terminal-shell"]
 ]);
 
-function slugify(value) {
-  return String(value || "")
-    .trim()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function deriveRepoUrl(gitUrl) {
-  const trimmed = String(gitUrl || "").trim();
-
-  if (!trimmed) {
-    return "";
-  }
-
-  const stripGitSuffix = (pathname) => pathname.replace(/\/+$/g, "").replace(/\.git$/i, "");
-  const scpLikeMatch = trimmed.match(/^git@([^:]+):(.+)$/);
-  if (scpLikeMatch) {
-    return `https://${scpLikeMatch[1]}/${stripGitSuffix(scpLikeMatch[2])}`;
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-
-    if (parsed.protocol === "ssh:" && parsed.username === "git") {
-      return `https://${parsed.host}${stripGitSuffix(parsed.pathname)}`;
-    }
-
-    if (["http:", "https:"].includes(parsed.protocol)) {
-      return `https://${parsed.host}${stripGitSuffix(parsed.pathname)}`;
-    }
-  } catch {
-    return "";
-  }
-
-  return "";
-}
-
-function deriveProjectNameFromPath(sourcePath) {
-  const segments = String(sourcePath || "")
-    .trim()
-    .replace(/[/\\]+$/g, "")
-    .split(/[/\\]+/)
-    .filter(Boolean);
-
-  return segments.at(-1) || "";
-}
-
-function formatProjectNameFromPath(sourcePath) {
-  const projectName = deriveProjectNameFromPath(sourcePath).replace(/[-_]+/g, " ").trim();
-  return projectName ? `${projectName.charAt(0).toUpperCase()}${projectName.slice(1)}` : "";
-}
-
 let state: RendererState = { projects: [] };
 let currentView = "global";
 let currentProjectId = null;
@@ -348,25 +301,6 @@ function getProjectGroups() {
     .map((project) => String(project.group || "").trim())
     .filter((group): group is string => Boolean(group)))];
   return groups.sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
-}
-
-function normalizeProjectSearchText(value) {
-  return String(value || "").trim().toLowerCase();
-}
-
-function projectMatchesSearch(project, query) {
-  const normalizedQuery = normalizeProjectSearchText(query);
-  if (!normalizedQuery) {
-    return true;
-  }
-
-  const groupName = String(project.group || "").trim();
-  return [
-    project.name,
-    project.slug,
-    project.sourcePath,
-    groupName
-  ].some((value) => String(value || "").toLowerCase().includes(normalizedQuery));
 }
 
 function getCollapsedProjectGroups() {

@@ -20,6 +20,7 @@
     "src/renderer/pluginSettingsFields.ts",
     "src/renderer/projectSidebar.ts",
     "src/renderer/projectSettingsViews.ts",
+    "src/renderer/projectUtils.ts",
     "src/renderer/renderer.ts",
     "src/renderer/rendererGlobals.d.ts",
     "src/renderer/rendererRecords.ts",
