@@ -18,6 +18,42 @@ type LooseVmValue = ((...args: unknown[]) => LooseVmValue) & {
   [key: string]: LooseVmValue;
 };
 
+type PluginPane = {
+  id: string;
+  key?: string;
+  resolveUrl(context: unknown): string;
+  resolveWebApps(context: unknown): unknown[];
+};
+
+type PluginBadge = {
+  id: string;
+  render(context: unknown): { className: string; textContent: string } | null;
+};
+
+type PluginSection = {
+  fields: PluginField[];
+  id: string;
+};
+
+type PluginField = {
+  action?: {
+    label: string;
+  };
+  defaultValue?: unknown;
+  key: string;
+  persist?: boolean;
+  readOnly?: boolean;
+  type?: string;
+  valueType?: string;
+};
+
+type PluginSummary = {
+  contributes: {
+    widgets: string[];
+  };
+  id: string;
+};
+
 type BuiltinRendererContext = {
   URL: typeof URL;
   console: Console;
@@ -48,13 +84,13 @@ type BuiltinRendererContext = {
   };
 };
 
-function readBuiltinPluginRendererPath(pluginDir) {
+function readBuiltinPluginRendererPath(pluginDir: string) {
   const manifestPath = path.join(process.cwd(), "src/plugins", pluginDir, "plugin.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   return path.join(process.cwd(), "build/plugins", pluginDir, manifest.renderer);
 }
 
-function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
+function loadRendererPluginEnvironment(twiccProjectProcessStatuses: unknown = {
   "twicc-project": {
     state: "working",
     count: 1,
@@ -66,11 +102,11 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
       }
     ]
   }
-}, mockFetch: MockFetch = async () => ({ ok: true, json: async () => [] })) {
+}, mockFetch: MockFetch = async () => ({ ok: true, json: async (): Promise<unknown[]> => [] })) {
   return loadRendererPluginContext(twiccProjectProcessStatuses, mockFetch).registry;
 }
 
-function loadRendererPluginContext(twiccProjectProcessStatuses = {
+function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
   "twicc-project": {
     state: "working",
     count: 1,
@@ -82,8 +118,8 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
       }
     ]
   }
-}, mockFetch: MockFetch = async () => ({ ok: true, json: async () => [] })) {
-  const intervalCallbacks = [];
+}, mockFetch: MockFetch = async () => ({ ok: true, json: async (): Promise<unknown[]> => [] })) {
+  const intervalCallbacks: Array<() => void | Promise<void>> = [];
   const context: BuiltinRendererContext = {
     console,
     URL,
@@ -175,7 +211,7 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
   };
 }
 
-function plain(value) {
+function plain(value: unknown) {
   return JSON.parse(JSON.stringify(value));
 }
 
@@ -193,31 +229,31 @@ test("Built-in plugins register project integrations and widgets", () => {
   assert.equal(registry.getService("boatyard.hawser.api").version, "0.1.0");
   assert.equal(registry.getService("boatyard.telegram").version, "0.1.0");
   assert.deepEqual(
-    plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.id).sort()),
+    plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane: PluginPane) => pane.id).sort()),
     ["boatyard.hawser.pane", "boatyard.pier.preview", "boatyard.twicc.pane"]
   );
   assert.deepEqual(
-    plain(registry.listPanes({ scope: "project", kind: "dom" }).map((pane) => pane.id).sort()),
+    plain(registry.listPanes({ scope: "project", kind: "dom" }).map((pane: PluginPane) => pane.id).sort()),
     ["boatyard.telegram.pane"]
   );
   assert.deepEqual(
-    plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane) => pane.key).sort()),
+    plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane: PluginPane) => pane.key).sort()),
     ["hawser", "pier", "twicc-plugin"]
   );
   assert.deepEqual(
-    plain(registry.listProjectNavBadges().map((badge) => badge.id).sort()),
+    plain(registry.listProjectNavBadges().map((badge: PluginBadge) => badge.id).sort()),
     ["boatyard.twicc.projectStatus"]
   );
   assert.deepEqual(
-    plain(registry.listGlobalSettingsSections().map((section) => section.id).sort()),
+    plain(registry.listGlobalSettingsSections().map((section: PluginSection) => section.id).sort()),
     ["boatyard.hawser.global", "boatyard.pier.global", "boatyard.telegram.global", "boatyard.twicc.global"]
   );
-  const twiccPlugin = registry.list().find((plugin) => plugin.id === "boatyard.twicc");
+  const twiccPlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.twicc");
   assert.deepEqual(
     plain(twiccPlugin.contributes.widgets),
     ["boatyard.twicc.usage"]
   );
-  const colorPalettePlugin = registry.list().find((plugin) => plugin.id === "boatyard.colorPalette");
+  const colorPalettePlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.colorPalette");
   assert.deepEqual(plain(colorPalettePlugin.contributes.widgets), ["boatyard.colorPalette.widget"]);
 });
 
@@ -268,8 +304,8 @@ test("Twicc global settings expose base URL and API token fields", () => {
   registry.applyEnabledState({});
   const twiccSection = registry
     .listGlobalSettingsSections()
-    .find((section) => section.id === "boatyard.twicc.global");
-  const fields = fieldMap(twiccSection.fields.map((field) => [field.key, field]));
+    .find((section: PluginSection) => section.id === "boatyard.twicc.global");
+  const fields = fieldMap(twiccSection.fields.map((field: PluginField) => [field.key, field]));
 
   assert.equal(fields.twiccBaseUrl.valueType, "url");
   assert.equal(fields.twiccApiToken.type, "password");
@@ -284,7 +320,7 @@ test("Twicc project nav badge matches the configured Twicc project URL", async (
 
   const badge = registry
     .listProjectNavBadges()
-    .find((candidate) => candidate.id === "boatyard.twicc.projectStatus");
+    .find((candidate: PluginBadge) => candidate.id === "boatyard.twicc.projectStatus");
   const element = badge.render({
     project: {
       id: "boatyard-internal-id",
@@ -319,7 +355,7 @@ test("Twicc done project nav badge stays visible for the active project", async 
 
   const badge = registry
     .listProjectNavBadges()
-    .find((candidate) => candidate.id === "boatyard.twicc.projectStatus");
+    .find((candidate: PluginBadge) => candidate.id === "boatyard.twicc.projectStatus");
   const input = {
     project: {
       id: "boatyard-internal-id",
@@ -359,7 +395,7 @@ test("Twicc done project nav badge is retained until the project is opened", asy
 
   const badge = registry
     .listProjectNavBadges()
-    .find((candidate) => candidate.id === "boatyard.twicc.projectStatus");
+    .find((candidate: PluginBadge) => candidate.id === "boatyard.twicc.projectStatus");
   const input = {
     project: {
       id: "boatyard-internal-id",
@@ -388,8 +424,8 @@ test("Hawser global settings expose a copyable install command", () => {
   registry.applyEnabledState({});
   const hawserSection = registry
     .listGlobalSettingsSections()
-    .find((section) => section.id === "boatyard.hawser.global");
-  const fields = fieldMap(hawserSection.fields.map((field) => [field.key, field]));
+    .find((section: PluginSection) => section.id === "boatyard.hawser.global");
+  const fields = fieldMap(hawserSection.fields.map((field: PluginField) => [field.key, field]));
 
   assert.equal(fields.hawserDefaultRuntime.defaultValue, "codex");
   assert.equal(fields.hawserInstallCommand.persist, false);
@@ -404,8 +440,8 @@ test("Pier project settings derive defaults from project identity", () => {
   registry.applyEnabledState({});
   const pierSection = registry
     .listProjectSettingsSections()
-    .find((section) => section.id === "boatyard.pier.project");
-  const fields = fieldMap(pierSection.fields.map((field) => [field.key, field]));
+    .find((section: PluginSection) => section.id === "boatyard.pier.project");
+  const fields = fieldMap(pierSection.fields.map((field: PluginField) => [field.key, field]));
 
   assert.equal(
     resolveFieldDefault(fields.pierProjectName, {
@@ -420,16 +456,16 @@ test("Pier project settings derive defaults from project identity", () => {
     "http://pier.test/#/projects/jobo"
   );
 
-  const updatedDefaults = {};
+  const updatedDefaults: Record<string, unknown> = {};
   registry.emit("boatyard.projectForm.coreFieldChanged", {
     field: "devBranch",
     coreFields: {
       slug: "Boatyard",
       devBranch: "release/MVP"
     },
-    forPlugin: (pluginId) => ({
+    forPlugin: (pluginId: string) => ({
       fields: {
-        setDefaultValue(key, value) {
+        setDefaultValue(key: string, value: unknown) {
           if (pluginId === "boatyard.pier") {
             updatedDefaults[key] = value;
           }
@@ -450,7 +486,7 @@ test("Pier pane resolves the project dashboard URL", () => {
   registry.applyEnabledState({});
   const pane = registry
     .listPanes({ scope: "project", kind: "wcv" })
-    .find((candidate) => candidate.id === "boatyard.pier.preview");
+    .find((candidate: PluginPane) => candidate.id === "boatyard.pier.preview");
 
   assert.equal(
     pane.resolveUrl({
@@ -560,7 +596,7 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
 
   const pane = registry
     .listPanes({ scope: "project", kind: "wcv" })
-    .find((candidate) => candidate.id === "boatyard.pier.preview");
+    .find((candidate: PluginPane) => candidate.id === "boatyard.pier.preview");
   assert.deepEqual(
     plain(pane.resolveWebApps({
       project: {

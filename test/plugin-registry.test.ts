@@ -18,6 +18,31 @@ type PluginRegistryTestContext = {
   window: PluginRegistryTestWindow;
 };
 
+type PluginActivationContext = LooseVmValue;
+type ListedPlugin = {
+  id: string;
+};
+type ListedBadge = {
+  id: string;
+};
+type ProjectContext = {
+  project: {
+    previewUrl?: string;
+    slug: string;
+  };
+};
+type RenderContainer = {
+  rendered?: boolean;
+};
+type ProjectFormInspectedEvent = {
+  coreFields: {
+    slug: string;
+  };
+  fields: {
+    getValue(key: string): string;
+  };
+};
+
 function createEnvironment() {
   const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widgetRegistry`);
   const { registerPluginRegistry } = require(`${process.cwd()}/build/renderer/pluginRegistry`);
@@ -40,7 +65,7 @@ function createRegistry() {
   return createEnvironment().pluginRegistry;
 }
 
-function plain(value) {
+function plain(value: unknown) {
   return JSON.parse(JSON.stringify(value));
 }
 
@@ -56,7 +81,7 @@ test("Plugin registry activates plugins and records contributions", () => {
       apiVersion: "0.1",
     },
     {
-      activate(ctx) {
+      activate(ctx: PluginActivationContext) {
         activateCount += 1;
         ctx.status.set({ state: "ready", summary: "Preview ready" });
         ctx.settings.registerGlobalSection({
@@ -85,7 +110,7 @@ test("Plugin registry activates plugins and records contributions", () => {
           webAppId: "preview",
           title: "Preview",
           kind: "wcv",
-          resolveUrl: ({ project }) => project.previewUrl,
+          resolveUrl: ({ project }: ProjectContext) => project.previewUrl,
         });
         ctx.projectNavBadges.register({
           id: "vendor.preview.badge",
@@ -110,7 +135,7 @@ test("Plugin registry activates plugins and records contributions", () => {
 
   registry.setEnabled("vendor.preview", true);
 
-  assert.deepEqual(plain(registry.list().map((plugin) => plugin.id)), ["vendor.preview"]);
+  assert.deepEqual(plain(registry.list().map((plugin: ListedPlugin) => plugin.id)), ["vendor.preview"]);
   assert.equal(registry.getStatus("vendor.preview").summary, "Preview ready");
   assert.equal(registry.listGlobalSettingsSections()[0].fields[0].key, "apiUrl");
   assert.equal(registry.listProjectSettingsSections()[0].fields[0].key, "previewUrl");
@@ -143,7 +168,7 @@ test("Plugin registry requires project nav badges to provide render", () => {
   registry.register(
     { id: "vendor.badge", name: "Badge" },
     {
-      activate(ctx) {
+      activate(ctx: PluginActivationContext) {
         ctx.projectNavBadges.register({
           id: "vendor.badge.status",
         });
@@ -168,7 +193,7 @@ test("Plugin registry keeps activating remaining plugins after one failure", () 
   registry.register(
     { id: "vendor.good", name: "Good" },
     {
-      activate(ctx) {
+      activate(ctx: PluginActivationContext) {
         ctx.projectNavBadges.register({
           id: "vendor.good.status",
           render: () => ({ nodeType: 1 }),
@@ -180,7 +205,7 @@ test("Plugin registry keeps activating remaining plugins after one failure", () 
   registry.applyEnabledState({});
 
   assert.equal(registry.getStatus("vendor.bad").state, "error");
-  assert.deepEqual(plain(registry.listProjectNavBadges().map((badge) => badge.id)), ["vendor.good.status"]);
+  assert.deepEqual(plain(registry.listProjectNavBadges().map((badge: ListedBadge) => badge.id)), ["vendor.good.status"]);
 });
 
 test("Plugin registry still throws direct enable failures", () => {
@@ -209,7 +234,7 @@ test("Plugin registry rejects invalid and duplicate contributions", () => {
   registry.register(
     { id: "vendor.bad", name: "Bad" },
     {
-      activate(ctx) {
+      activate(ctx: PluginActivationContext) {
         ctx.panes.register({
           id: "vendor.bad.pane",
           title: "Bad",
@@ -227,12 +252,12 @@ test("Plugin registry accepts dynamic WCV pane webapps", () => {
   registry.register(
     { id: "vendor.dynamic", name: "Dynamic" },
     {
-      activate(ctx) {
+      activate(ctx: PluginActivationContext) {
         ctx.panes.register({
           id: "vendor.dynamic.pane",
           title: "Dynamic",
           kind: "wcv",
-          resolveWebApps: ({ project }) => [
+          resolveWebApps: ({ project }: ProjectContext) => [
             {
               id: `dynamic:${project.slug}`,
               label: `Dynamic ${project.slug}`,
@@ -270,12 +295,12 @@ test("Plugin registry accepts DOM pane renderers", () => {
   registry.register(
     { id: "vendor.dom", name: "DOM" },
     {
-      activate(ctx) {
+      activate(ctx: PluginActivationContext) {
         ctx.panes.register({
           id: "vendor.dom.pane",
           title: "DOM",
           kind: "dom",
-          render(container) {
+          render(container: RenderContainer) {
             container.rendered = true;
           }
         });
@@ -299,7 +324,7 @@ test("Plugin registry requires namespaced contribution ids", () => {
   registry.register(
     { id: "vendor.plugin", name: "Plugin" },
     {
-      activate(ctx) {
+      activate(ctx: PluginActivationContext) {
         ctx.widgets.register({
           id: "unscoped-widget",
           name: "Unscoped",
@@ -322,7 +347,7 @@ test("Plugin registry requires namespaced service ids", () => {
   registry.register(
     { id: "vendor.service", name: "Service" },
     {
-      activate(ctx) {
+      activate(ctx: PluginActivationContext) {
         ctx.services.provide("unscoped-service", {});
       },
     },
@@ -336,13 +361,13 @@ test("Plugin registry requires namespaced service ids", () => {
 
 test("Plugin registry emits scoped plugin events and cleans handlers", () => {
   const registry = createRegistry();
-  const received = [];
+  const received: string[] = [];
 
   registry.register(
     { id: "vendor.events", name: "Events" },
     {
-      activate(ctx) {
-        ctx.events.on("projectForm.sourcePathInspected", (event) => {
+      activate(ctx: PluginActivationContext) {
+        ctx.events.on("projectForm.sourcePathInspected", (event: ProjectFormInspectedEvent) => {
           received.push(`${event.fields.getValue("url")}:${event.coreFields.slug}`);
         });
       },
@@ -351,9 +376,9 @@ test("Plugin registry emits scoped plugin events and cleans handlers", () => {
 
   registry.setEnabled("vendor.events", true);
   registry.emit("projectForm.sourcePathInspected", {
-    forPlugin: (pluginId) => ({
+    forPlugin: (pluginId: string) => ({
       fields: {
-        getValue: (key) => `${pluginId}:${key}`,
+        getValue: (key: string) => `${pluginId}:${key}`,
       },
       coreFields: {
         slug: "project-slug",
