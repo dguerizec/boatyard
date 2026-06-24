@@ -33,6 +33,23 @@ type StoreProject = {
   name?: string;
 };
 
+function createTempStoreFile() {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
+  return {
+    directory,
+    filePath: path.join(directory, "state.json")
+  };
+}
+
+function createTempStore() {
+  const { directory, filePath } = createTempStoreFile();
+  return {
+    directory,
+    filePath,
+    store: new ProjectStore(filePath)
+  };
+}
+
 test("normalizeUrl adds https and rejects unsupported schemes", () => {
   assert.equal(normalizeUrl("example.com"), "https://example.com/");
   assert.equal(normalizeUrl("localhost:5173"), "http://localhost:5173/");
@@ -581,9 +598,7 @@ test("normalizeWidgetLayouts drops invalid containers", () => {
 });
 
 test("ProjectStore persists configured projects", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const state = store.addProject({
@@ -605,9 +620,7 @@ test("ProjectStore persists configured projects", () => {
 });
 
 test("ProjectStore persists the store schema version", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   assert.equal(store.load().schemaVersion, 1);
   store.updateSettings({ projectsBasePath: "/workspace/example" });
@@ -618,9 +631,7 @@ test("ProjectStore persists the store schema version", () => {
 });
 
 test("ProjectStore persists window state", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const state = store.updateWindowState({
@@ -648,9 +659,7 @@ test("ProjectStore persists window state", () => {
 });
 
 test("ProjectStore persists global settings", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const state = store.updateSettings({
@@ -690,9 +699,7 @@ test("ProjectStore persists global settings", () => {
 });
 
 test("ProjectStore persists disabled plugins", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   let state = store.updatePluginEnabled("boatyard.pier", false);
@@ -710,9 +717,7 @@ test("ProjectStore persists disabled plugins", () => {
 });
 
 test("ProjectStore persists navigation and clears removed active projects", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const state = store.addProject({
@@ -744,9 +749,7 @@ test("ProjectStore persists navigation and clears removed active projects", () =
 });
 
 test("ProjectStore persists onboarding state", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   assert.deepEqual(store.getState().onboarding, {
@@ -770,9 +773,7 @@ test("ProjectStore persists onboarding state", () => {
 });
 
 test("ProjectStore tracks app version upgrades for changelog display", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { store } = createTempStore();
 
   store.load();
   assert.deepEqual(store.reconcileAppVersion("0.4.5"), {
@@ -801,9 +802,7 @@ test("ProjectStore tracks app version upgrades for changelog display", () => {
 });
 
 test("ProjectStore persists webapp urls", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   store.updateWebAppState("project:twicc", {
@@ -824,9 +823,7 @@ test("ProjectStore persists webapp urls", () => {
 });
 
 test("ProjectStore persists global urls", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const state = store.updateGlobalUrls([{
@@ -853,9 +850,7 @@ test("ProjectStore persists global urls", () => {
 });
 
 test("ProjectStore persists project webapp home tabs", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const projectId = store.addProject({
@@ -907,8 +902,7 @@ test("ProjectStore persists project webapp home tabs", () => {
 });
 
 test("ProjectStore migrates top-level webapp home tabs into projects", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
+  const { filePath } = createTempStoreFile();
   fs.writeFileSync(filePath, `${JSON.stringify({
     projects: [{
       id: "project-id",
@@ -938,9 +932,7 @@ test("ProjectStore migrates top-level webapp home tabs into projects", () => {
 });
 
 test("ProjectStore persists pane layouts", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const layout = store.updatePaneLayout("project-id", {
@@ -968,9 +960,7 @@ test("ProjectStore persists pane layouts", () => {
 });
 
 test("ProjectStore persists widget layouts", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const layout = store.updateWidgetLayout("project-id", {
@@ -1020,9 +1010,7 @@ test("ProjectStore persists widget layouts", () => {
 });
 
 test("ProjectStore persists terminal selections", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const projectId = store.addProject({
@@ -1047,9 +1035,7 @@ test("ProjectStore persists terminal selections", () => {
 });
 
 test("ProjectStore persists terminal tab order", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const projectId = store.addProject({
@@ -1070,9 +1056,7 @@ test("ProjectStore persists terminal tab order", () => {
 });
 
 test("ProjectStore persists global terminal state", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   store.updateTerminalSelection("__global__", "pane:__global__:pane:1", "@2");
@@ -1088,8 +1072,7 @@ test("ProjectStore persists global terminal state", () => {
 });
 
 test("ProjectStore keeps preview URLs as core project data", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
+  const { filePath } = createTempStoreFile();
   fs.writeFileSync(filePath, JSON.stringify({
     projects: [
       {
@@ -1109,9 +1092,7 @@ test("ProjectStore keeps preview URLs as core project data", () => {
 });
 
 test("ProjectStore persists and removes project plugin config", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   let state = store.addProject({
@@ -1139,9 +1120,7 @@ test("ProjectStore persists and removes project plugin config", () => {
 });
 
 test("ProjectStore persists global plugin config", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const state = store.updateGlobalPluginConfig("boatyard.pier", {
@@ -1160,9 +1139,7 @@ test("ProjectStore persists global plugin config", () => {
 });
 
 test("ProjectStore does not rehydrate Pier config from legacy preview after load", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { store } = createTempStore();
 
   store.load();
   let state = store.addProject({
@@ -1187,9 +1164,7 @@ test("ProjectStore does not rehydrate Pier config from legacy preview after load
 });
 
 test("ProjectStore reorders projects", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   store.addProject({
@@ -1215,9 +1190,7 @@ test("ProjectStore reorders projects", () => {
 });
 
 test("ProjectStore persists project updates and removals", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
-  const store = new ProjectStore(filePath);
+  const { filePath, store } = createTempStore();
 
   store.load();
   const state = store.addProject({
@@ -1273,8 +1246,7 @@ test("ProjectStore persists project updates and removals", () => {
 });
 
 test("ProjectStore migrates legacy apps state to projects", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
-  const filePath = path.join(directory, "state.json");
+  const { filePath } = createTempStoreFile();
   fs.writeFileSync(filePath, JSON.stringify({
     apps: [{
       id: "legacy-id",
