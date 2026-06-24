@@ -245,6 +245,9 @@ export function createWidgetSurfaces({
     
       for (const id of order) {
         const definition = definitionsById.get(id);
+        if (!definition) {
+          continue;
+        }
         const size = clampWidgetGridSize(definition, getMigratedWidgetEntry(persisted.sizes, id), clamp);
         sizes[id] = columnCount ? fitWidgetSizeToGrid(size, columnCount) : size;
       }
@@ -588,11 +591,15 @@ export function createWidgetSurfaces({
       widgetRail.addEventListener("drop", async (event: DragEvent) => {
         const widgetId = event.dataTransfer?.getData("text/plain") || draggedWidgetId;
         const currentColumnCount = getWidgetRailColumnCount(widgetRail) || columnCount;
+        if (!widgetId) {
+          clearWidgetDropPreview(widgetRail);
+          return;
+        }
         const layout = getProjectWidgetLayout(project, currentColumnCount, widgetPaneId);
         const size = layout.sizes[widgetId];
         clearWidgetDropPreview(widgetRail);
     
-        if (!widgetId || !size) {
+        if (!size) {
           return;
         }
     
@@ -616,7 +623,7 @@ export function createWidgetSurfaces({
         widgetPaneId,
         pluginConfig: definition.pluginId && !globalScope ? getProjectPluginConfig(project.id, definition.pluginId) : {},
         globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {},
-        allProjectPluginConfig: globalScope ? {} : getState().pluginConfig?.projects?.[project.id] || {},
+        allProjectPluginConfig: globalScope || !project.id ? {} : getState().pluginConfig?.projects?.[project.id] || {},
         openProjectWebApp(webAppId: string, url = "") {
           return openProjectWebApp(project.id, webAppId, url);
         }
@@ -714,7 +721,10 @@ export function createWidgetSurfaces({
         scrollGuard: widgetGridScrollGuard
       });
       const rowStep = trackSpec.rowHeight + widgetGridGap;
-      const maxColumns = Math.min(columnCount, spec.max.columns);
+      const minColumns = spec.min.columns ?? 1;
+      const minRows = spec.min.rows ?? 1;
+      const maxColumns = Math.min(columnCount, spec.max.columns ?? columnCount);
+      const maxSpecRows = spec.max.rows ?? trackSpec.rowCount;
       const canResizeNorth = direction.includes("n");
       const canResizeEast = direction.includes("e");
       const canResizeSouth = direction.includes("s");
@@ -731,24 +741,24 @@ export function createWidgetSurfaces({
     
         if (canResizeWest) {
           const right = startPosition.x + startSize.columns;
-          nextX = clamp(startPosition.x + deltaColumns, Math.max(0, right - maxColumns), right - spec.min.columns);
+          nextX = clamp(startPosition.x + deltaColumns, Math.max(0, right - maxColumns), right - minColumns);
           nextColumns = right - nextX;
         } else if (canResizeEast) {
           nextColumns = clamp(
             startSize.columns + deltaColumns,
-            spec.min.columns,
+            minColumns,
             Math.min(maxColumns, columnCount - startPosition.x)
           );
         }
     
         if (canResizeNorth) {
           const bottom = startPosition.y + startSize.rows;
-          const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, trackSpec.rowCount));
-          nextY = clamp(startPosition.y + deltaRows, Math.max(0, bottom - maxRows), bottom - spec.min.rows);
+          const maxRows = Math.max(minRows, Math.min(maxSpecRows, trackSpec.rowCount));
+          nextY = clamp(startPosition.y + deltaRows, Math.max(0, bottom - maxRows), bottom - minRows);
           nextRows = bottom - nextY;
         } else if (canResizeSouth) {
-          const maxRows = Math.max(spec.min.rows, Math.min(spec.max.rows, trackSpec.rowCount - startPosition.y));
-          nextRows = clamp(startSize.rows + deltaRows, spec.min.rows, maxRows);
+          const maxRows = Math.max(minRows, Math.min(maxSpecRows, trackSpec.rowCount - startPosition.y));
+          nextRows = clamp(startSize.rows + deltaRows, minRows, maxRows);
         }
     
         return {

@@ -58,7 +58,7 @@ type PaneLayoutStateApi = {
   getPaneExpansionState(project: PaneLayoutProject, paneId: string): { canExpand: boolean; canShrink: boolean };
   getPaneExpansionTarget(project: PaneLayoutProject, paneId: string): PaneAncestorPathItem | null;
   getPaneAncestorPath(node: PaneLayoutNode | null | undefined, paneId: string, path?: PaneAncestorPathItem[]): PaneAncestorPathItem[] | null;
-  getPaneLayout(projectId: string): PaneLayoutNode | undefined;
+  getPaneLayout(projectId?: string): PaneLayoutNode | undefined;
   getProjectPaneLayout(project: PaneLayoutProject): PaneLayoutNode;
   getSelectedWebApp(project: PaneLayoutProject, paneId: string, webApps: PaneLayoutWebApp[]): PaneLayoutWebApp;
   getSelectedWebAppForPane(paneId: string): string | undefined;
@@ -67,7 +67,7 @@ type PaneLayoutStateApi = {
   persistPaneLayout(project: PaneLayoutProject): void;
   removePaneNode(node: PaneLayoutNode | null | undefined, paneId: string): RemovePaneResult;
   replacePaneNode(node: PaneLayoutNode, paneId: string, replacement: PaneLayoutNode): PaneLayoutNode;
-  setPaneLayout(projectId: string, layout: PaneLayoutNode): void;
+  setPaneLayout(projectId: string | undefined, layout: PaneLayoutNode): void;
   setSelectedWebAppForPane(paneId: string, webAppId: string): Map<string, string>;
   setSelectedWebAppForProject(projectId: string, webAppId: string): Map<string, string>;
   deleteSelectedWebAppForPane(paneId: string): boolean;
@@ -80,13 +80,17 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
     const selectedWebAppByPane = new Map<string, string>();
     let nextPaneId = 1;
 
+    function getProjectPaneLayoutKey(project: PaneLayoutProject): string {
+      return project.id || "";
+    }
+
     /**
      * @param {PaneLayoutProject} project
      * @param {string | null} selectedWebAppId
      * @returns {PaneNode}
      */
     function createPaneNode(project: PaneLayoutProject, selectedWebAppId: string | null = null): PaneNode {
-      const id = `${project.id}:pane:${nextPaneId}`;
+      const id = `${getProjectPaneLayoutKey(project)}:pane:${nextPaneId}`;
       nextPaneId += 1;
 
       if (selectedWebAppId) {
@@ -105,27 +109,28 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
      * @returns {PaneLayoutNode}
      */
     function getProjectPaneLayout(project: PaneLayoutProject) {
-      if (!paneLayoutsByProject.has(project.id)) {
-        paneLayoutsByProject.set(project.id, createPaneNode(project));
+      const projectId = getProjectPaneLayoutKey(project);
+      if (!paneLayoutsByProject.has(projectId)) {
+        paneLayoutsByProject.set(projectId, createPaneNode(project));
       }
 
-      return paneLayoutsByProject.get(project.id) as PaneLayoutNode;
+      return paneLayoutsByProject.get(projectId) as PaneLayoutNode;
     }
 
     /**
      * @param {string} projectId
      * @param {PaneLayoutNode} layout
      */
-    function setPaneLayout(projectId: string, layout: PaneLayoutNode) {
-      paneLayoutsByProject.set(projectId, layout);
+    function setPaneLayout(projectId: string | undefined, layout: PaneLayoutNode) {
+      paneLayoutsByProject.set(projectId || "", layout);
     }
 
     /**
      * @param {string} projectId
      * @returns {PaneLayoutNode | undefined}
      */
-    function getPaneLayout(projectId: string) {
-      return paneLayoutsByProject.get(projectId);
+    function getPaneLayout(projectId: string | undefined) {
+      return paneLayoutsByProject.get(projectId || "");
     }
 
     /**
@@ -139,7 +144,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       const selectedId =
         selectedWebAppByPane.get(paneId) ||
         paneNode?.selectedWebAppId ||
-        selectedWebAppByProject.get(project.id) ||
+        selectedWebAppByProject.get(getProjectPaneLayoutKey(project)) ||
         webApps[0].id;
       return webApps.find((webApp) => webApp.id === selectedId) || webApps[0];
     }
@@ -216,7 +221,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
     ): SplitNode {
       return {
         type: "split",
-        id: `${project.id}:split:${nextPaneId++}`,
+        id: `${getProjectPaneLayoutKey(project)}:split:${nextPaneId++}`,
         direction,
         ratio: 0.5,
         first,
@@ -361,6 +366,13 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
 
       const firstResult = removePaneNode(node.first, paneId);
       if (firstResult.removed) {
+        if (!firstResult.node) {
+          return {
+            node: node.second,
+            removed: true
+          };
+        }
+
         return {
           node: {
             ...node,
@@ -372,6 +384,13 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
 
       const secondResult = removePaneNode(node.second, paneId);
       if (secondResult.removed) {
+        if (!secondResult.node) {
+          return {
+            node: node.first,
+            removed: true
+          };
+        }
+
         return {
           node: {
             ...node,
@@ -391,12 +410,13 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
      * @param {PaneLayoutProject} project
      */
     function persistPaneLayout(project: PaneLayoutProject) {
-      const layout = paneLayoutsByProject.get(project.id);
+      const projectId = getProjectPaneLayoutKey(project);
+      const layout = paneLayoutsByProject.get(projectId);
       if (!layout) {
         return;
       }
 
-      updatePaneLayout(project.id, layout).catch((error) => {
+      updatePaneLayout(projectId, layout).catch((error) => {
         console.error("Could not persist pane layout:", error);
       });
     }

@@ -516,7 +516,11 @@ export function createWebAppMenus({
       renderWorkspaceDashboard(project);
     }
 
-    async function renameWidgetPane(project: RendererProject, widgetPane: MenuWebApp["widgetPane"], nextLabel: unknown) {
+    async function renameWidgetPane(
+      project: RendererProject,
+      widgetPane: NonNullable<MenuWebApp["widgetPane"]>,
+      nextLabel: unknown
+    ) {
       const currentLabel = widgetPane.label || "Widgets";
       const normalizedLabel = String(nextLabel || "").trim();
       if (!normalizedLabel || normalizedLabel === currentLabel) {
@@ -534,7 +538,7 @@ export function createWebAppMenus({
 
     function editWidgetPaneLabel(
       project: RendererProject,
-      widgetPane: MenuWebApp["widgetPane"],
+      widgetPane: NonNullable<MenuWebApp["widgetPane"]>,
       button: HTMLButtonElement
     ) {
       const editor = document.createElement("input");
@@ -613,7 +617,9 @@ export function createWebAppMenus({
           button.addEventListener("dblclick", (event) => {
             event.preventDefault();
             event.stopPropagation();
-            editWidgetPaneLabel(project, webApp.widgetPane, button);
+            if (webApp.widgetPane) {
+              editWidgetPaneLabel(project, webApp.widgetPane, button);
+            }
           });
         }
         list.append(button);
@@ -658,9 +664,13 @@ export function createWebAppMenus({
       const rootWebApps = webApps.filter((webApp: MenuWebApp) => !webApp.parentWebAppId);
       const childWebAppsByParentId = new Map<string, MenuWebApp[]>();
       for (const webApp of webApps.filter((candidate: MenuWebApp) => candidate.parentWebAppId)) {
-        const children = childWebAppsByParentId.get(webApp.parentWebAppId) || [];
+        const parentWebAppId = webApp.parentWebAppId;
+        if (!parentWebAppId) {
+          continue;
+        }
+        const children = childWebAppsByParentId.get(parentWebAppId) || [];
         children.push(webApp);
-        childWebAppsByParentId.set(webApp.parentWebAppId, children);
+        childWebAppsByParentId.set(parentWebAppId, children);
       }
       const orderedWebApps: OrderedWebAppMenuItem[] = [];
       for (const webApp of rootWebApps) {
@@ -668,7 +678,8 @@ export function createWebAppMenus({
           webApp,
           depth: 0
         });
-        for (const childWebApp of childWebAppsByParentId.get(webApp.id) || []) {
+        const webAppId = webApp.id;
+        for (const childWebApp of webAppId ? childWebAppsByParentId.get(webAppId) || [] : []) {
           orderedWebApps.push({
             webApp: childWebApp,
             depth: 1

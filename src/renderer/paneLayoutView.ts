@@ -273,7 +273,11 @@ export function createPaneLayoutView({
       resizer.addEventListener("pointerdown", (event) => {
         event.preventDefault();
         const splitElement = resizer.parentElement;
-        const rect = splitElement.getBoundingClientRect();
+        if (!splitElement) {
+          return;
+        }
+        const parentSplitElement = splitElement;
+        const rect = parentSplitElement.getBoundingClientRect();
         const isVertical = splitNode.direction === "vertical";
 
         function onPointerMove(moveEvent: PointerEvent) {
@@ -281,7 +285,7 @@ export function createPaneLayoutView({
             ? (moveEvent.clientX - rect.left) / rect.width
             : (moveEvent.clientY - rect.top) / rect.height;
           splitNode.ratio = Math.min(0.85, Math.max(0.15, rawRatio));
-          applySplitRatio(splitElement, splitNode);
+          applySplitRatio(parentSplitElement, splitNode);
           queueWebAppSync();
         }
 
@@ -322,18 +326,21 @@ export function createPaneLayoutView({
       const isTerminalPane = selectedWebApp.kind === "terminal";
       const isWidgetPane = selectedWebApp.kind === "widgets";
       const isDomPane = selectedWebApp.kind === "dom";
+      const widgetPane = isWidgetPane ? selectedWebApp.widgetPane : undefined;
       const widgetFallbackWidth = isWidgetPane
         ? Math.max(minWidgetRailWidth, Math.round((dashboardGrid.getBoundingClientRect().width || window.innerWidth) / 2))
         : null;
-      const widgetGridColumns = isWidgetPane ? getWidgetGridColumnCount(widgetFallbackWidth) : null;
-      const widgetLayout = isWidgetPane ? getProjectWidgetLayout(project, widgetGridColumns, selectedWebApp.widgetPane.id) : null;
+      const widgetGridColumns = widgetPane ? getWidgetGridColumnCount(widgetFallbackWidth) : null;
+      const widgetLayout = widgetPane ? getProjectWidgetLayout(project, widgetGridColumns, widgetPane.id) : null;
       const isWidgetEditing = Boolean(isWidgetPane && widgetLayout && !widgetLayout.locked);
       const pane = document.createElement("section");
       pane.className = "webapp-pane";
       pane.classList.toggle("widget-pane", isWidgetPane);
       pane.classList.toggle("editing", isWidgetEditing);
       pane.dataset.paneId = paneNode.id;
+      if (selectedWebApp.id) {
         pane.dataset.webAppId = selectedWebApp.id;
+      }
       if (selectedWebApp.kind) {
         pane.dataset.webAppKind = selectedWebApp.kind;
       }
@@ -353,7 +360,7 @@ export function createPaneLayoutView({
       tabPickerButton.setAttribute("aria-selected", "true");
       tabPickerButton.setAttribute("aria-haspopup", "menu");
       tabPickerButton.setAttribute("aria-expanded", "false");
-      tabPickerButton.textContent = isWidgetPane ? "Widgets" : selectedWebApp.label;
+      tabPickerButton.textContent = isWidgetPane ? "Widgets" : selectedWebApp.label || "";
       tabPickerButton.addEventListener("click", () => {
         const isOpen = isWebAppTabMenuOpen();
         tabPickerButton.setAttribute("aria-expanded", String(!isOpen));
@@ -433,8 +440,8 @@ export function createPaneLayoutView({
         activeUrl.type = "text";
         activeUrl.autocomplete = "off";
         activeUrl.spellcheck = false;
-        activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
-        activeUrl.dataset.webappKey = selectedWebApp.key;
+        activeUrl.value = getCurrentWebAppUrl(selectedWebApp) || "";
+        activeUrl.dataset.webappKey = selectedWebApp.key || "";
         activeUrl.setAttribute("aria-label", "Current webapp URL");
         activeUrl.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
@@ -446,10 +453,10 @@ export function createPaneLayoutView({
               activeUrl.value = nextUrl;
               invokeWebApp("navigateWebApp", selectedWebApp.key, "open", nextUrl);
             } catch {
-              activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
+              activeUrl.value = getCurrentWebAppUrl(selectedWebApp) || "";
             }
           } else if (event.key === "Escape") {
-            activeUrl.value = getCurrentWebAppUrl(selectedWebApp);
+            activeUrl.value = getCurrentWebAppUrl(selectedWebApp) || "";
             activeUrl.blur();
           }
         });
@@ -467,8 +474,8 @@ export function createPaneLayoutView({
       const actions = document.createElement("div");
       actions.className = "webapp-actions";
 
-      if (isWidgetPane) {
-        actions.append(createWidgetPaneActions(project, selectedWebApp.widgetPane, widgetLayout, widgetGridColumns));
+      if (widgetPane && widgetLayout) {
+        actions.append(createWidgetPaneActions(project, widgetPane, widgetLayout, widgetGridColumns));
       }
 
       const terminalPaneTabs = isTerminalPane ? document.createElement("div") : null;
@@ -543,10 +550,15 @@ export function createPaneLayoutView({
           storageKey: `pane:${paneNode.id}`,
           tabsContainer: terminalPaneTabs
         }));
-      } else if (isWidgetPane) {
-        host.append(createWidgetPaneSurface(project, selectedWebApp.widgetPane));
+      } else if (widgetPane) {
+        host.append(createWidgetPaneSurface(project, widgetPane));
       } else if (isDomPane) {
         const pluginPane = selectedWebApp.pluginPane;
+        if (!pluginPane) {
+          host.textContent = "Plugin pane is unavailable.";
+          queueWebAppSync();
+          return pane;
+        }
         const cleanup = pluginPane.render(host, {
           project,
           projectId: project.id,
