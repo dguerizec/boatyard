@@ -1,11 +1,8 @@
-"use strict";
+type PaneLayoutHost = HTMLDivElement & {
+  boatyardCleanup?: () => void;
+};
 
-(function () {
-  type PaneLayoutHost = HTMLDivElement & {
-    boatyardCleanup?: () => void;
-  };
-
-  function createPaneLayoutView({
+export function createPaneLayoutView({
     minWidgetRailWidth,
     webAppSplitResizerSize,
     dashboardGrid,
@@ -457,10 +454,4 @@
     return {
       createPaneLayout
     };
-  }
-
-  const globalScope: PaneLayoutViewGlobal = window;
-  globalScope.BoatyardPaneLayoutView = Object.freeze({
-    create: createPaneLayoutView
-  });
-})();
+}

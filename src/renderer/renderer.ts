@@ -1,4 +1,5 @@
 import { createPaneLayoutState } from "./paneLayoutState.js";
+import { createPaneLayoutView } from "./paneLayoutView.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 
 type RendererProject = UnknownRecord & {
@@ -165,7 +166,6 @@ type BoatyardRendererWindow = Window & {
   BoatyardOverlayDialog?: {
     show(dialog: HTMLDialogElement, options?: UnknownRecord): unknown;
   };
-  BoatyardPaneLayoutView: RendererCreateModule<PaneLayoutViewInstance>;
   BoatyardPaneNavigation?: {
     openProjectWebApp(projectId: string | undefined, webAppId: string, url: string): boolean;
   };
@@ -1370,7 +1370,7 @@ boatyardWindow.BoatyardPaneNavigation = Object.freeze({
   openProjectWebApp
 });
 
-const paneLayoutView = boatyardWindow.BoatyardPaneLayoutView.create({
+const paneLayoutView = createPaneLayoutView({
   minWidgetRailWidth: MIN_WIDGET_RAIL_WIDTH,
   webAppSplitResizerSize: WEBAPP_SPLIT_RESIZER_SIZE,
   dashboardGrid,
