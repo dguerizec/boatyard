@@ -28,6 +28,7 @@
     "src/renderer/projectSettingsSimpleForms.ts",
     "src/renderer/projectSettingsViews.ts",
     "src/renderer/projectUtils.ts",
+    "src/renderer/projectWebApps.ts",
     "src/renderer/renderer.ts",
     "src/renderer/rendererGlobals.d.ts",
     "src/renderer/rendererRecords.ts",

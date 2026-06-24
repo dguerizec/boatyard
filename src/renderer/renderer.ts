@@ -10,6 +10,7 @@ import { registerPluginSettingsFields } from "./pluginSettingsFields.js";
 import { createProjectPageViews } from "./projectPageViews.js";
 import { createProjectSidebar } from "./projectSidebar.js";
 import { createProjectSettingsViews } from "./projectSettingsViews.js";
+import { createProjectWebApps } from "./projectWebApps.js";
 import {
   deriveProjectNameFromPath,
   deriveRepoUrl,
@@ -31,7 +32,6 @@ import type {
   RendererProject,
   RendererState,
   UpdateViewsInstance,
-  WebAppDefinition,
   WebAppMenusInstance,
   WidgetSurfacesInstance
 } from "./rendererTypes.js";
@@ -557,125 +557,18 @@ function renderWorkspacePaneArea(project) {
   }
 }
 
+const projectWebApps = createProjectWebApps({
+  findPaneNode,
+  getGlobalPluginConfig,
+  getPaneLayout: getProjectPaneLayout,
+  getPluginPaneDefinitions,
+  getProjectPluginConfig,
+  getProjectWidgetPanes,
+  isGlobalWorkspace
+});
+
 function getProjectWebApps(project, paneId) {
-  const paneNode = findPaneNode(getProjectPaneLayout(project), paneId);
-  const webApps: WebAppDefinition[] = getProjectWidgetPanes(project).map((widgetPane, index) => ({
-    id: `widgets:${widgetPane.id}`,
-    label: widgetPane.label || `Widgets ${index + 1}`,
-    key: `${paneId}:widgets:${widgetPane.id}`,
-    kind: "widgets",
-    widgetPane
-  }));
-
-  if (paneNode?.transientWebApp?.url && paneNode.selectedWebAppId === paneNode.transientWebApp.id) {
-    webApps.push({
-      id: paneNode.transientWebApp.id,
-      label: paneNode.transientWebApp.label || "Link",
-      parentLabel: paneNode.transientWebApp.parentLabel || "",
-      parentWebAppId: paneNode.transientWebApp.parentWebAppId || "",
-      key: `${paneId}:transient:${paneNode.transientWebApp.id}`,
-      url: paneNode.transientWebApp.url,
-      restoreUrl: false,
-      transient: true
-    });
-  }
-
-  for (const homeTab of project.webAppHomeTabs || []) {
-    webApps.push({
-      id: homeTab.id,
-      label: homeTab.label || "Link",
-      parentLabel: homeTab.parentLabel || "",
-      parentWebAppId: homeTab.parentWebAppId || "",
-      key: `${paneId}:home:${homeTab.id}`,
-      url: homeTab.url,
-      homeTab: true,
-      homeTabId: homeTab.id
-    });
-  }
-
-  if (isGlobalWorkspace(project) || project.sourcePath) {
-    webApps.push({
-      id: "terminal",
-      label: "Terminal",
-      key: `${paneId}:terminal`,
-      kind: "terminal"
-    });
-  }
-
-  webApps.push({
-    id: "manual",
-    label: "Manual",
-    key: `${paneId}:manual`,
-    url: "https://boatyard.dev/doc/",
-    restoreUrl: false
-  });
-
-  for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "dom" })) {
-    webApps.push({
-      id: pluginPane.webAppId,
-      label: pluginPane.title,
-      key: `${paneId}:${pluginPane.key}`,
-      kind: "dom",
-      pluginPane
-    });
-  }
-
-  for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "wcv" })) {
-    const projectPluginConfig = isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId);
-    const context = {
-      project,
-      projectConfig: projectPluginConfig,
-      globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId)
-    };
-
-    if (typeof pluginPane.resolveWebApps === "function") {
-      for (const webApp of pluginPane.resolveWebApps(context) || []) {
-        if (!webApp?.url) {
-          continue;
-        }
-        webApps.push({
-          id: webApp.id || `${pluginPane.webAppId}:${webApp.key || webApp.url}`,
-          label: webApp.label || pluginPane.title,
-          key: `${paneId}:${pluginPane.key}:${webApp.key || webApp.id || webApp.url}`,
-          url: webApp.url,
-          restoreUrl: webApp.restoreUrl
-        });
-      }
-      continue;
-    }
-
-    const url = pluginPane.resolveUrl(context);
-    if (!url) {
-      continue;
-    }
-
-    webApps.push({
-      id: pluginPane.webAppId,
-      label: pluginPane.title,
-      key: `${paneId}:${pluginPane.key}`,
-      url
-    });
-  }
-
-  if (!isGlobalWorkspace(project) && project.repoUrl) {
-    webApps.push({
-      id: "repo",
-      label: "Repo",
-      key: `${paneId}:repo`,
-      url: project.repoUrl
-    });
-  }
-
-  for (const projectUrl of project.urls || []) {
-    webApps.push({
-      id: `url:${projectUrl.id}`,
-      label: isGlobalWorkspace(project) ? projectUrl.label : `URL: ${projectUrl.label}`,
-      key: `${paneId}:url:${projectUrl.id}`,
-      url: projectUrl.url
-    });
-  }
-
-  return webApps;
+  return projectWebApps.getProjectWebApps(project, paneId);
 }
 
 function getProjectPaneLayout(project) {
