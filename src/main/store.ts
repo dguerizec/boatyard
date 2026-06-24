@@ -30,27 +30,162 @@ function toRecord(value: unknown): UnknownRecord {
   return isRecord(value) ? value : {};
 }
 
+type Bounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type WindowState = {
+  bounds: Bounds;
+  isMaximized: boolean;
+};
+
+type WebAppOpenRule = {
+  pattern: string;
+  target: string;
+  scope: string;
+  label: string;
+};
+
+type SettingsState = {
+  projectsBasePath: string;
+  blurWebAppOverlays: boolean;
+  passwordManagerEnabled: boolean;
+  passwordManagerDisclaimerAccepted: boolean;
+  widgetRailWidth: number;
+  terminalEnv: string;
+  webAppOpenRules: WebAppOpenRule[];
+};
+
+type NavigationState = {
+  view: string;
+  projectId: string | null;
+  collapsedProjectGroups: string[];
+};
+
+type AppState = {
+  lastSeenVersion: string;
+  pendingChangelogFromVersion: string;
+  dismissedChangelogVersion: string;
+};
+
+type OnboardingState = {
+  completedVersion: number;
+  completedAt: string;
+};
+
+type PasswordCredentialState = {
+  username: string;
+  encryptedPassword: string;
+  updatedAt: string;
+};
+
+type WebAppState = {
+  url: string;
+};
+
+type WebAppHomeTab = {
+  id: string;
+  parentWebAppId: string;
+  parentLabel: string;
+  label: string;
+  url: string;
+};
+
+type PaneWebApp = WebAppHomeTab;
+
+type PaneLayoutNode = {
+  type: "pane";
+  id: string;
+  selectedWebAppId?: string;
+  transientWebApp?: PaneWebApp;
+} | {
+  type: "split";
+  id: string;
+  direction: "horizontal" | "vertical";
+  ratio: number;
+  first: PaneLayoutNode;
+  second: PaneLayoutNode;
+  expandedChild?: "first" | "second";
+};
+
+type WidgetSize = {
+  columns: number;
+  rows: number;
+};
+
+type WidgetPosition = {
+  x: number;
+  y: number;
+};
+
+type WidgetLayout = {
+  order: string[];
+  hidden: string[];
+  sizes: Record<string, WidgetSize>;
+  positions: Record<string, WidgetPosition>;
+  locked: boolean;
+};
+
+type ProjectWidgetLayout = {
+  panes: Record<string, WidgetLayout>;
+};
+
+type PluginConfigValue = string | number | boolean;
+type PluginConfigObject = Record<string, PluginConfigValue>;
+
+type ProjectUrl = {
+  id: string;
+  label: string;
+  url: string;
+};
+
+type ProjectWidgetPane = {
+  id: string;
+  label: string;
+};
+
+type StoredProject = {
+  id: string;
+  slug: string;
+  name: string;
+  group: string;
+  sourcePath: string;
+  gitUrl: string;
+  repoUrl: string;
+  devBranch: string;
+  terminalEnv: string;
+  previewUrl: string;
+  urls: ProjectUrl[];
+  webAppHomeTabs: WebAppHomeTab[];
+  widgetPanes: ProjectWidgetPane[];
+  bounds: Bounds;
+  isOpen: boolean;
+};
+
 type ProjectStoreState = {
-  app: UnknownRecord;
-  globalUrls: UnknownRecord[];
-  navigation: UnknownRecord;
-  onboarding: UnknownRecord;
-  paneLayouts: Record<string, unknown>;
-  passwordVault: Record<string, UnknownRecord>;
+  app: AppState;
+  globalUrls: ProjectUrl[];
+  navigation: NavigationState;
+  onboarding: OnboardingState;
+  paneLayouts: Record<string, PaneLayoutNode>;
+  passwordVault: Record<string, PasswordCredentialState>;
   pluginConfig: {
-    global: Record<string, UnknownRecord>;
-    projects: Record<string, Record<string, UnknownRecord>>;
+    global: Record<string, PluginConfigObject>;
+    projects: Record<string, Record<string, PluginConfigObject>>;
   };
   plugins: {
     enabled: Record<string, boolean>;
   };
-  projects: UnknownRecord[];
-  settings: UnknownRecord;
+  projects: StoredProject[];
+  settings: SettingsState;
   terminalSelections: Record<string, Record<string, string>>;
   terminalTabOrders: Record<string, string[]>;
-  webApps: Record<string, UnknownRecord>;
-  widgetLayouts: Record<string, unknown>;
-  window: UnknownRecord;
+  webApps: Record<string, WebAppState>;
+  widgetLayouts: Record<string, ProjectWidgetLayout>;
+  window: WindowState;
 };
 
 function createDefaultState(): ProjectStoreState {
@@ -189,8 +324,8 @@ function normalizeSlug(slug: unknown, name: unknown) {
 
 function normalizeBounds(
   bounds: unknown,
-  fallback: { x: number; y: number; width: number; height: number } = DEFAULT_BOUNDS
-) {
+  fallback: Bounds = DEFAULT_BOUNDS
+): Bounds {
   const source = toRecord(bounds);
   const x = Number(source.x);
   const y = Number(source.y);
@@ -211,7 +346,7 @@ function normalizeBounds(
   };
 }
 
-function normalizeWindowBounds(bounds: unknown, fallback = DEFAULT_WINDOW_BOUNDS) {
+function normalizeWindowBounds(bounds: unknown, fallback: Bounds = DEFAULT_WINDOW_BOUNDS): Bounds {
   const normalized = normalizeBounds(bounds, fallback);
 
   return {
@@ -221,14 +356,16 @@ function normalizeWindowBounds(bounds: unknown, fallback = DEFAULT_WINDOW_BOUNDS
   };
 }
 
-function normalizeWindowState(windowState: UnknownRecord = {}) {
+function normalizeWindowState(windowState: unknown = {}): WindowState {
+  const source = toRecord(windowState);
+
   return {
-    bounds: normalizeWindowBounds(windowState.bounds),
-    isMaximized: windowState.isMaximized === true
+    bounds: normalizeWindowBounds(source.bounds),
+    isMaximized: source.isMaximized === true
   };
 }
 
-function normalizeSettings(settings: UnknownRecord = {}) {
+function normalizeSettings(settings: unknown = {}): SettingsState {
   const source = toRecord(settings);
   const widgetRailWidth = Number(source.widgetRailWidth);
 
@@ -243,11 +380,11 @@ function normalizeSettings(settings: UnknownRecord = {}) {
   };
 }
 
-function normalizeWebAppOpenRules(rules: unknown = []) {
+function normalizeWebAppOpenRules(rules: unknown = []): WebAppOpenRule[] {
   const source = Array.isArray(rules) ? rules : [];
   const allowedTargets = new Set(["same-pane", "split-pane", "external"]);
   const allowedScopes = new Set(["exact", "host", "path-prefix"]);
-  const normalized = [];
+  const normalized: WebAppOpenRule[] = [];
 
   for (const rule of source) {
     const entry = toRecord(rule);
@@ -270,12 +407,12 @@ function normalizeWebAppOpenRules(rules: unknown = []) {
   return normalized;
 }
 
-function normalizePasswordVault(vault: unknown = {}): Record<string, UnknownRecord> {
+function normalizePasswordVault(vault: unknown = {}): Record<string, PasswordCredentialState> {
   if (!vault || typeof vault !== "object" || Array.isArray(vault)) {
     return {};
   }
 
-  const normalized: Record<string, UnknownRecord> = {};
+  const normalized: Record<string, PasswordCredentialState> = {};
   for (const [origin, entry] of Object.entries(vault)) {
     const source = toRecord(entry);
     const normalizedOrigin = normalizeText(origin);
@@ -296,7 +433,7 @@ function normalizePasswordVault(vault: unknown = {}): Record<string, UnknownReco
   return normalized;
 }
 
-function normalizeNavigationState(navigation: UnknownRecord = {}) {
+function normalizeNavigationState(navigation: unknown = {}): NavigationState {
   const source = toRecord(navigation);
   const allowedViews = new Set(["global", "global-settings", "project", "project-edit"]);
   const requestedView = normalizeText(source.view);
@@ -316,7 +453,7 @@ function normalizeNavigationState(navigation: UnknownRecord = {}) {
   };
 }
 
-function normalizeAppState(appState: UnknownRecord = {}) {
+function normalizeAppState(appState: unknown = {}): AppState {
   const source = toRecord(appState);
 
   return {
@@ -352,7 +489,7 @@ function compareVersions(left: unknown, right: unknown) {
   return 0;
 }
 
-function normalizeOnboardingState(onboarding: UnknownRecord = {}) {
+function normalizeOnboardingState(onboarding: unknown = {}): OnboardingState {
   const source = toRecord(onboarding);
   const completedVersion = Number(source.completedVersion);
 
@@ -362,14 +499,14 @@ function normalizeOnboardingState(onboarding: UnknownRecord = {}) {
   };
 }
 
-function normalizeWebAppState(webApps: unknown = {}): Record<string, UnknownRecord> {
+function normalizeWebAppState(webApps: unknown = {}): Record<string, WebAppState> {
   if (!webApps || typeof webApps !== "object" || Array.isArray(webApps)) {
     return {};
   }
 
-  const normalized: Record<string, UnknownRecord> = {};
+  const normalized: Record<string, WebAppState> = {};
   for (const [key, webApp] of Object.entries(webApps)) {
-    if (!webApp || typeof webApp !== "object") {
+    if (!isRecord(webApp)) {
       continue;
     }
 
@@ -385,15 +522,15 @@ function normalizeWebAppState(webApps: unknown = {}): Record<string, UnknownReco
   return normalized;
 }
 
-function normalizeWebAppHomeTabList(tabs: unknown = []): UnknownRecord[] {
+function normalizeWebAppHomeTabList(tabs: unknown = []): WebAppHomeTab[] {
   if (!Array.isArray(tabs)) {
     return [];
   }
 
   const seenIds = new Set();
-  const normalized = [];
+  const normalized: WebAppHomeTab[] = [];
   for (const tab of tabs) {
-    const source: UnknownRecord = tab && typeof tab === "object" ? tab : {};
+    const source = toRecord(tab);
     const id = normalizeText(source.id);
     const parentWebAppId = normalizeText(source.parentWebAppId);
     const label = normalizeText(source.label);
@@ -419,13 +556,13 @@ function normalizeWebAppHomeTabList(tabs: unknown = []): UnknownRecord[] {
   return normalized;
 }
 
-function normalizeWebAppHomeTabs(homeTabs: unknown = {}, projects: UnknownRecord[] = []): Record<string, UnknownRecord[]> {
+function normalizeWebAppHomeTabs(homeTabs: unknown = {}, projects: StoredProject[] = []): Record<string, WebAppHomeTab[]> {
   if (!homeTabs || typeof homeTabs !== "object" || Array.isArray(homeTabs)) {
     return {};
   }
 
   const projectIds = new Set([GLOBAL_WORKSPACE_ID, ...projects.map((project) => project.id)]);
-  const normalized: Record<string, UnknownRecord[]> = {};
+  const normalized: Record<string, WebAppHomeTab[]> = {};
 
   for (const [projectId, tabs] of Object.entries(homeTabs)) {
     const normalizedProjectId = normalizeText(projectId);
@@ -442,12 +579,12 @@ function normalizeWebAppHomeTabs(homeTabs: unknown = {}, projects: UnknownRecord
   return normalized;
 }
 
-function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()) {
-  if (!node || typeof node !== "object") {
+function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()): PaneLayoutNode | null {
+  if (!isRecord(node)) {
     return null;
   }
 
-  const source = node as UnknownRecord;
+  const source = node;
 
   if (source.type === "pane") {
     const id = String(source.id || "").trim();
@@ -457,7 +594,7 @@ function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()) {
     }
 
     seenIds.add(id);
-    const normalized: UnknownRecord = {
+    const normalized: Extract<PaneLayoutNode, { type: "pane" }> = {
       type: "pane",
       id
     };
@@ -466,9 +603,7 @@ function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()) {
       normalized.selectedWebAppId = source.selectedWebAppId.trim();
     }
 
-    const transientWebApp = source.transientWebApp && typeof source.transientWebApp === "object"
-      ? source.transientWebApp as UnknownRecord
-      : null;
+    const transientWebApp = isRecord(source.transientWebApp) ? source.transientWebApp : null;
     if (transientWebApp) {
       const transientId = normalizeText(transientWebApp.id);
 
@@ -502,11 +637,12 @@ function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()) {
     }
 
     seenIds.add(id);
-    const normalized: UnknownRecord = {
+    const ratio = Number(source.ratio);
+    const normalized: Extract<PaneLayoutNode, { type: "split" }> = {
       type: "split",
       id,
       direction,
-      ratio: Math.min(0.85, Math.max(0.15, Number.isFinite(source.ratio) ? Number(source.ratio) : 0.5)),
+      ratio: Math.min(0.85, Math.max(0.15, Number.isFinite(ratio) ? ratio : 0.5)),
       first,
       second
     };
@@ -521,12 +657,12 @@ function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()) {
   return null;
 }
 
-function normalizePaneLayouts(paneLayouts: unknown = {}): Record<string, unknown> {
+function normalizePaneLayouts(paneLayouts: unknown = {}): Record<string, PaneLayoutNode> {
   if (!paneLayouts || typeof paneLayouts !== "object" || Array.isArray(paneLayouts)) {
     return {};
   }
 
-  const normalized: Record<string, unknown> = {};
+  const normalized: Record<string, PaneLayoutNode> = {};
   for (const [projectId, layout] of Object.entries(paneLayouts)) {
     const normalizedLayout = normalizePaneLayoutNode(layout);
     if (normalizedLayout) {
@@ -537,7 +673,7 @@ function normalizePaneLayouts(paneLayouts: unknown = {}): Record<string, unknown
   return normalized;
 }
 
-function normalizeTerminalSelections(terminalSelections: unknown = {}, projects: UnknownRecord[] = []): Record<string, Record<string, string>> {
+function normalizeTerminalSelections(terminalSelections: unknown = {}, projects: StoredProject[] = []): Record<string, Record<string, string>> {
   if (!terminalSelections || typeof terminalSelections !== "object" || Array.isArray(terminalSelections)) {
     return {};
   }
@@ -569,7 +705,7 @@ function normalizeTerminalSelections(terminalSelections: unknown = {}, projects:
   return normalized;
 }
 
-function normalizeTerminalTabOrders(terminalTabOrders: unknown = {}, projects: UnknownRecord[] = []): Record<string, string[]> {
+function normalizeTerminalTabOrders(terminalTabOrders: unknown = {}, projects: StoredProject[] = []): Record<string, string[]> {
   if (!terminalTabOrders || typeof terminalTabOrders !== "object" || Array.isArray(terminalTabOrders)) {
     return {};
   }
@@ -602,7 +738,7 @@ function normalizeTerminalTabOrders(terminalTabOrders: unknown = {}, projects: U
   return normalized;
 }
 
-function normalizeWidgetLayout(layout: unknown = {}) {
+function normalizeWidgetLayout(layout: unknown = {}): WidgetLayout {
   const source = toRecord(layout);
   const normalizeWidgetId = (id: unknown) => String(id || "").trim();
   const seenIds = new Set<string>();
@@ -637,17 +773,16 @@ function normalizeWidgetLayout(layout: unknown = {}) {
   const rawPositions = source.positions && typeof source.positions === "object" && !Array.isArray(source.positions)
     ? source.positions
     : {};
-  const sizes: UnknownRecord = {};
-  const positions: UnknownRecord = {};
+  const sizes: Record<string, WidgetSize> = {};
+  const positions: Record<string, WidgetPosition> = {};
 
   for (const [widgetId, size] of Object.entries(rawSizes)) {
-    if (!size || typeof size !== "object") {
+    if (!isRecord(size)) {
       continue;
     }
 
-    const widgetSize = size as UnknownRecord;
-    const columns = Number(widgetSize.columns);
-    const rows = Number(widgetSize.rows);
+    const columns = Number(size.columns);
+    const rows = Number(size.rows);
 
     if (Number.isFinite(columns) && Number.isFinite(rows)) {
       sizes[normalizeWidgetId(widgetId)] = {
@@ -658,13 +793,12 @@ function normalizeWidgetLayout(layout: unknown = {}) {
   }
 
   for (const [widgetId, position] of Object.entries(rawPositions)) {
-    if (!position || typeof position !== "object") {
+    if (!isRecord(position)) {
       continue;
     }
 
-    const widgetPosition = position as UnknownRecord;
-    const x = Number(widgetPosition.x);
-    const y = Number(widgetPosition.y);
+    const x = Number(position.x);
+    const y = Number(position.y);
 
     if (Number.isFinite(x) && Number.isFinite(y)) {
       positions[normalizeWidgetId(widgetId)] = {
@@ -683,12 +817,12 @@ function normalizeWidgetLayout(layout: unknown = {}) {
   };
 }
 
-function normalizeWidgetLayouts(widgetLayouts: unknown = {}): Record<string, unknown> {
+function normalizeWidgetLayouts(widgetLayouts: unknown = {}): Record<string, ProjectWidgetLayout> {
   if (!widgetLayouts || typeof widgetLayouts !== "object" || Array.isArray(widgetLayouts)) {
     return {};
   }
 
-  const normalized: UnknownRecord = {};
+  const normalized: Record<string, ProjectWidgetLayout> = {};
   for (const [projectId, layout] of Object.entries(widgetLayouts)) {
     normalized[String(projectId)] = normalizeProjectWidgetLayout(layout);
   }
@@ -696,7 +830,7 @@ function normalizeWidgetLayouts(widgetLayouts: unknown = {}): Record<string, unk
   return normalized;
 }
 
-function normalizeProjectWidgetLayout(layout: unknown = {}) {
+function normalizeProjectWidgetLayout(layout: unknown = {}): ProjectWidgetLayout {
   const source = toRecord(layout);
   const paneLayouts = source.panes && typeof source.panes === "object" && !Array.isArray(source.panes)
     ? source.panes
@@ -710,7 +844,7 @@ function normalizeProjectWidgetLayout(layout: unknown = {}) {
     };
   }
 
-  const normalizedPanes: UnknownRecord = {};
+  const normalizedPanes: Record<string, WidgetLayout> = {};
   for (const [paneId, paneLayout] of Object.entries(paneLayouts)) {
     const normalizedPaneId = normalizeText(paneId);
     if (normalizedPaneId) {
@@ -727,12 +861,12 @@ function normalizeProjectWidgetLayout(layout: unknown = {}) {
   };
 }
 
-function normalizePluginConfigObject(config: unknown = {}) {
+function normalizePluginConfigObject(config: unknown = {}): PluginConfigObject {
   if (!config || typeof config !== "object" || Array.isArray(config)) {
     return {};
   }
 
-  const normalized: UnknownRecord = {};
+  const normalized: PluginConfigObject = {};
   for (const [key, value] of Object.entries(config)) {
     const normalizedKey = normalizeText(key);
     if (!normalizedKey) {
@@ -752,7 +886,7 @@ function normalizePluginConfigObject(config: unknown = {}) {
   return normalized;
 }
 
-function normalizePluginConfig(pluginConfig: unknown = {}, projects: UnknownRecord[] = []): ProjectStoreState["pluginConfig"] {
+function normalizePluginConfig(pluginConfig: unknown = {}, projects: StoredProject[] = []): ProjectStoreState["pluginConfig"] {
   const source = toRecord(pluginConfig);
   const normalized: ProjectStoreState["pluginConfig"] = {
     global: {},
@@ -815,20 +949,20 @@ function normalizePluginsState(plugins: unknown = {}): ProjectStoreState["plugin
   return { enabled };
 }
 
-function normalizeProjectUrls(urls: unknown = []): UnknownRecord[] {
+function normalizeProjectUrls(urls: unknown = []): ProjectUrl[] {
   if (!Array.isArray(urls)) {
     return [];
   }
 
   const seenIds = new Set();
-  return urls
-    .map((entry, index) => {
-      const source: UnknownRecord = entry && typeof entry === "object" ? entry : {};
+  const normalized: ProjectUrl[] = [];
+  urls.forEach((entry, index) => {
+      const source = toRecord(entry);
       const label = normalizeText(source.label);
       const rawUrl = normalizeText(source.url);
 
       if (!label && !rawUrl) {
-        return null;
+        return;
       }
 
       if (!label) {
@@ -849,25 +983,25 @@ function normalizeProjectUrls(urls: unknown = []): UnknownRecord[] {
       }
 
       seenIds.add(id);
-      return {
+      normalized.push({
         id,
         label,
         url: normalizeUrl(rawUrl)
-      };
-    })
-    .filter(Boolean);
+      });
+    });
+  return normalized;
 }
 
-function normalizeProjectWidgetPanes(widgetPanes: unknown = []): UnknownRecord[] {
+function normalizeProjectWidgetPanes(widgetPanes: unknown = []): ProjectWidgetPane[] {
   const source = Array.isArray(widgetPanes) ? widgetPanes : [];
   const seenIds = new Set();
-  const normalized = source
-    .map((entry, index) => {
-      const pane: UnknownRecord = entry && typeof entry === "object" ? entry : {};
+  const normalized: ProjectWidgetPane[] = [];
+  source.forEach((entry, index) => {
+      const pane = toRecord(entry);
       const label = normalizeText(pane.label || pane.name);
 
       if (!label) {
-        return null;
+        return;
       }
 
       const baseId = normalizeText(pane.id) || slugify(label) || `widgets-${index}`;
@@ -880,9 +1014,8 @@ function normalizeProjectWidgetPanes(widgetPanes: unknown = []): UnknownRecord[]
       }
 
       seenIds.add(id);
-      return { id, label };
-    })
-    .filter(Boolean);
+      normalized.push({ id, label });
+    });
 
   return normalized.length
     ? normalized
@@ -892,40 +1025,41 @@ function normalizeProjectWidgetPanes(widgetPanes: unknown = []): UnknownRecord[]
       }];
 }
 
-function normalizeProject(project: UnknownRecord, index = 0): UnknownRecord {
-  const id = String(project.id || crypto.randomUUID());
-  const name = String(project.name || "").trim();
+function normalizeProject(project: unknown, index = 0): StoredProject {
+  const source = toRecord(project);
+  const id = String(source.id || crypto.randomUUID());
+  const name = String(source.name || "").trim();
 
   if (!name) {
     throw new Error("Name is required.");
   }
 
-  const slug = normalizeSlug(project.slug, name);
-  const previewUrl = normalizeOptionalUrl(project.previewUrl || project.url);
-  const gitUrl = normalizeText(project.gitUrl);
-  const repoUrl = normalizeOptionalUrl(project.repoUrl) || deriveRepoUrl(gitUrl);
+  const slug = normalizeSlug(source.slug, name);
+  const previewUrl = normalizeOptionalUrl(source.previewUrl || source.url);
+  const gitUrl = normalizeText(source.gitUrl);
+  const repoUrl = normalizeOptionalUrl(source.repoUrl) || deriveRepoUrl(gitUrl);
 
   return {
     id,
     slug,
     name,
-    group: normalizeText(project.group),
-    sourcePath: normalizeText(project.sourcePath),
+    group: normalizeText(source.group),
+    sourcePath: normalizeText(source.sourcePath),
     gitUrl,
     repoUrl,
-    devBranch: normalizeText(project.devBranch),
-    terminalEnv: normalizeMultilineText(project.terminalEnv),
+    devBranch: normalizeText(source.devBranch),
+    terminalEnv: normalizeMultilineText(source.terminalEnv),
     previewUrl,
-    urls: normalizeProjectUrls(project.urls),
-    webAppHomeTabs: normalizeWebAppHomeTabList(project.webAppHomeTabs),
-    widgetPanes: normalizeProjectWidgetPanes(project.widgetPanes),
-    bounds: normalizeBounds(project.bounds, {
+    urls: normalizeProjectUrls(source.urls),
+    webAppHomeTabs: normalizeWebAppHomeTabList(source.webAppHomeTabs),
+    widgetPanes: normalizeProjectWidgetPanes(source.widgetPanes),
+    bounds: normalizeBounds(source.bounds, {
       x: 48 + index * 32,
       y: 92 + index * 28,
       width: DEFAULT_BOUNDS.width,
       height: DEFAULT_BOUNDS.height
     }),
-    isOpen: project.isOpen !== false
+    isOpen: source.isOpen !== false
   };
 }
 
@@ -938,10 +1072,10 @@ class ProjectStore {
     this.state = createDefaultState();
   }
 
-  load() {
+  load(): ProjectStoreState {
     try {
       const raw = fs.readFileSync(this.filePath, "utf8");
-      const parsed = JSON.parse(raw);
+      const parsed = toRecord(JSON.parse(raw));
       const projects = Array.isArray(parsed.projects)
         ? parsed.projects
         : Array.isArray(parsed.apps)
@@ -972,9 +1106,10 @@ class ProjectStore {
         onboarding: normalizeOnboardingState(parsed.onboarding),
         app: normalizeAppState(parsed.app)
       };
-    } catch (error) {
-      if (error.code !== "ENOENT") {
-        console.warn(`Could not load Boatyard state: ${error.message}`);
+    } catch (error: unknown) {
+      const loadError = error as NodeJS.ErrnoException;
+      if (loadError.code !== "ENOENT") {
+        console.warn(`Could not load Boatyard state: ${loadError.message}`);
       }
       this.state = createDefaultState();
     }
@@ -982,24 +1117,24 @@ class ProjectStore {
     return this.getState();
   }
 
-  save() {
+  save(): void {
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
     fs.writeFileSync(this.filePath, `${JSON.stringify(this.state, null, 2)}\n`);
   }
 
-  getState() {
+  getState(): ProjectStoreState {
     return structuredClone(this.state);
   }
 
-  getWindowState() {
+  getWindowState(): WindowState {
     return structuredClone(this.state.window);
   }
 
-  getAppState() {
+  getAppState(): AppState {
     return structuredClone(this.state.app);
   }
 
-  reconcileAppVersion(currentVersion) {
+  reconcileAppVersion(currentVersion: unknown): AppState {
     const current = normalizeText(currentVersion);
     const previous = normalizeText(this.state.app.lastSeenVersion);
 
@@ -1020,7 +1155,7 @@ class ProjectStore {
     return this.getAppState();
   }
 
-  dismissChangelog(version) {
+  dismissChangelog(version: unknown): AppState {
     const dismissedVersion = normalizeText(version);
     this.state.app = normalizeAppState({
       ...this.state.app,
@@ -1031,45 +1166,46 @@ class ProjectStore {
     return this.getAppState();
   }
 
-  updateSettings(patch) {
+  updateSettings(patch: unknown): ProjectStoreState {
     this.state.settings = normalizeSettings({
       ...this.state.settings,
-      ...patch
+      ...toRecord(patch)
     });
     this.save();
     return this.getState();
   }
 
-  updateWindowState(windowState) {
+  updateWindowState(windowState: unknown): WindowState {
+    const source = toRecord(windowState);
     this.state.window = normalizeWindowState({
       ...this.state.window,
-      ...windowState,
-      bounds: windowState.bounds || this.state.window.bounds
+      ...source,
+      bounds: source.bounds || this.state.window.bounds
     });
     this.save();
     return this.getWindowState();
   }
 
-  updateNavigation(navigation) {
+  updateNavigation(navigation: unknown): NavigationState {
     this.state.navigation = normalizeNavigationState(navigation);
     this.save();
     return structuredClone(this.state.navigation);
   }
 
-  updateOnboarding(onboarding) {
+  updateOnboarding(onboarding: unknown): OnboardingState {
     this.state.onboarding = normalizeOnboardingState({
       ...this.state.onboarding,
-      ...onboarding
+      ...toRecord(onboarding)
     });
     this.save();
     return structuredClone(this.state.onboarding);
   }
 
-  getWebAppUrl(key) {
+  getWebAppUrl(key: unknown): string | null {
     return this.state.webApps[String(key)]?.url || null;
   }
 
-  updateWebAppState(key, webAppState) {
+  updateWebAppState(key: unknown, webAppState: unknown): WebAppState | null {
     const normalized = normalizeWebAppState({
       [String(key)]: webAppState
     });
@@ -1084,13 +1220,13 @@ class ProjectStore {
     return structuredClone(this.state.webApps[String(key)] || null);
   }
 
-  updateGlobalUrls(urls) {
+  updateGlobalUrls(urls: unknown): ProjectStoreState {
     this.state.globalUrls = normalizeProjectUrls(urls);
     this.save();
     return this.getState();
   }
 
-  updateWebAppHomeTab(projectId, tab) {
+  updateWebAppHomeTab(projectId: unknown, tab: unknown): ProjectStoreState {
     const normalizedProjectId = normalizeText(projectId);
     const projectIndex = this.state.projects.findIndex((project) => project.id === normalizedProjectId);
     if (projectIndex === -1) {
@@ -1117,7 +1253,7 @@ class ProjectStore {
     return this.getState();
   }
 
-  updateWebAppHomeTabs(projectId, tabs) {
+  updateWebAppHomeTabs(projectId: unknown, tabs: unknown): ProjectStoreState {
     const normalizedProjectId = normalizeText(projectId);
     const projectIndex = this.state.projects.findIndex((project) => project.id === normalizedProjectId);
     if (projectIndex === -1) {
@@ -1133,13 +1269,13 @@ class ProjectStore {
     return this.getState();
   }
 
-  getPasswordCredential(origin) {
+  getPasswordCredential(origin: unknown): PasswordCredentialState | null {
     return structuredClone(this.state.passwordVault[normalizeText(origin)] || null);
   }
 
-  updatePasswordCredential(origin, credential) {
+  updatePasswordCredential(origin: unknown, credential: unknown): PasswordCredentialState | null {
     const normalizedOrigin = normalizeText(origin);
-    const source = credential && typeof credential === "object" ? credential : {};
+    const source = toRecord(credential);
     const username = normalizeText(source.username);
     const encryptedPassword = normalizeText(source.encryptedPassword);
 
@@ -1161,11 +1297,11 @@ class ProjectStore {
     return this.getPasswordCredential(normalizedOrigin);
   }
 
-  getPaneLayout(projectId) {
+  getPaneLayout(projectId: unknown): PaneLayoutNode | null {
     return structuredClone(this.state.paneLayouts[String(projectId)] || null);
   }
 
-  updatePaneLayout(projectId, layout) {
+  updatePaneLayout(projectId: unknown, layout: unknown): PaneLayoutNode | null {
     const normalized = normalizePaneLayoutNode(layout);
 
     if (!normalized) {
@@ -1178,17 +1314,17 @@ class ProjectStore {
     return this.getPaneLayout(projectId);
   }
 
-  getWidgetLayout(projectId) {
+  getWidgetLayout(projectId: unknown): ProjectWidgetLayout | null {
     return structuredClone(this.state.widgetLayouts[String(projectId)] || null);
   }
 
-  updateWidgetLayout(projectId, layout) {
+  updateWidgetLayout(projectId: unknown, layout: unknown): ProjectWidgetLayout | null {
     this.state.widgetLayouts[String(projectId)] = normalizeProjectWidgetLayout(layout);
     this.save();
     return this.getWidgetLayout(projectId);
   }
 
-  updateTerminalSelection(projectId, surfaceKey, windowId) {
+  updateTerminalSelection(projectId: unknown, surfaceKey: unknown, windowId: unknown): Record<string, string> {
     const normalizedProjectId = normalizeText(projectId);
     const normalizedSurfaceKey = normalizeText(surfaceKey);
     const normalizedWindowId = normalizeText(windowId);
@@ -1219,7 +1355,7 @@ class ProjectStore {
     return structuredClone(this.state.terminalSelections[normalizedProjectId] || {});
   }
 
-  updateTerminalTabOrder(projectId, windowIds) {
+  updateTerminalTabOrder(projectId: unknown, windowIds: unknown): string[] {
     const normalizedProjectId = normalizeText(projectId);
 
     if (normalizedProjectId !== GLOBAL_WORKSPACE_ID && !this.state.projects.some((project) => project.id === normalizedProjectId)) {
@@ -1241,7 +1377,7 @@ class ProjectStore {
     return structuredClone(this.state.terminalTabOrders[normalizedProjectId] || []);
   }
 
-  updatePluginEnabled(pluginId, enabled) {
+  updatePluginEnabled(pluginId: unknown, enabled: unknown): ProjectStoreState {
     const normalizedPluginId = normalizeText(pluginId);
 
     if (!normalizedPluginId) {
@@ -1258,11 +1394,11 @@ class ProjectStore {
     return this.getState();
   }
 
-  getGlobalPluginConfig(pluginId) {
+  getGlobalPluginConfig(pluginId: unknown): PluginConfigObject {
     return structuredClone(this.state.pluginConfig.global[String(pluginId)] || {});
   }
 
-  updateGlobalPluginConfig(pluginId, patch) {
+  updateGlobalPluginConfig(pluginId: unknown, patch: unknown): ProjectStoreState {
     const normalizedPluginId = normalizeText(pluginId);
 
     if (!normalizedPluginId) {
@@ -1272,7 +1408,7 @@ class ProjectStore {
     const current = this.state.pluginConfig.global[normalizedPluginId] || {};
     const normalized = normalizePluginConfigObject({
       ...current,
-      ...patch
+      ...toRecord(patch)
     });
 
     if (!Object.keys(normalized).length) {
@@ -1285,11 +1421,11 @@ class ProjectStore {
     return this.getState();
   }
 
-  getProjectPluginConfig(projectId, pluginId) {
+  getProjectPluginConfig(projectId: unknown, pluginId: unknown): PluginConfigObject {
     return structuredClone(this.state.pluginConfig.projects[String(projectId)]?.[String(pluginId)] || {});
   }
 
-  updateProjectPluginConfig(projectId, pluginId, patch) {
+  updateProjectPluginConfig(projectId: unknown, pluginId: unknown, patch: unknown): ProjectStoreState {
     const normalizedProjectId = normalizeText(projectId);
     const normalizedPluginId = normalizeText(pluginId);
 
@@ -1304,7 +1440,7 @@ class ProjectStore {
     const current = this.state.pluginConfig.projects[normalizedProjectId]?.[normalizedPluginId] || {};
     const normalized = normalizePluginConfigObject({
       ...current,
-      ...patch
+      ...toRecord(patch)
     });
 
     if (!Object.keys(normalized).length) {
@@ -1326,10 +1462,10 @@ class ProjectStore {
     return this.getState();
   }
 
-  addProject(project) {
+  addProject(project: unknown): ProjectStoreState {
     const normalized = normalizeProject(
       {
-        ...project,
+        ...toRecord(project),
         id: crypto.randomUUID(),
         isOpen: true
       },
@@ -1341,26 +1477,28 @@ class ProjectStore {
     return this.getState();
   }
 
-  updateProject(id, patch) {
-    const index = this.state.projects.findIndex((project) => project.id === id);
+  updateProject(id: unknown, patch: unknown): ProjectStoreState {
+    const projectId = normalizeText(id);
+    const patchRecord = toRecord(patch);
+    const index = this.state.projects.findIndex((project) => project.id === projectId);
 
     if (index === -1) {
-      throw new Error(`Unknown project: ${id}`);
+      throw new Error(`Unknown project: ${projectId}`);
     }
 
     const current = this.state.projects[index];
     this.state.projects[index] = normalizeProject({
       ...current,
-      ...patch,
+      ...patchRecord,
       id: current.id,
-      bounds: patch.bounds ? normalizeBounds(patch.bounds, normalizeBounds(current.bounds)) : current.bounds
+      bounds: patchRecord.bounds ? normalizeBounds(patchRecord.bounds, normalizeBounds(current.bounds)) : current.bounds
     }, index);
     this.state.pluginConfig = normalizePluginConfig(this.state.pluginConfig, this.state.projects);
     this.save();
     return this.getState();
   }
 
-  reorderProjects(projectIds) {
+  reorderProjects(projectIds: unknown): ProjectStoreState {
     const order = Array.isArray(projectIds) ? projectIds.map(String) : [];
     const positionById = new Map(order.map((id, index) => [id, index]));
     this.state.projects = this.state.projects
@@ -1377,7 +1515,7 @@ class ProjectStore {
     return this.getState();
   }
 
-  removeProject(id) {
+  removeProject(id: unknown): ProjectStoreState {
     const projectId = String(id);
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
     delete this.state.paneLayouts[projectId];
