@@ -1,14 +1,84 @@
 "use strict";
 
 (function registerTelegramPlugin(globalScope) {
-  const registry = globalScope.BoatyardPluginRegistry;
+  type TelegramProject = {
+    id?: string;
+    name?: string;
+    slug?: string;
+  };
+
+  type TelegramConfig = {
+    telegramBotUsername?: string;
+    telegramChatId?: string;
+    telegramChatTitle?: string;
+    telegramDefaultChatId?: string;
+    telegramDefaultChatTitle?: string;
+    telegramThreadId?: string;
+    telegramTopicTitle?: string;
+    telegramTopicTopMessageId?: string;
+  };
+
+  type TelegramTarget = {
+    botUsername: string;
+    chatId: string;
+    chatTitle: string;
+    threadId: string;
+    topicTitle: string;
+    topicTopMessageId: string;
+  };
+
+  type TelegramStatus = {
+    state?: string;
+    summary?: string;
+  };
+
+  type TelegramMessage = {
+    outgoing?: boolean;
+    senderName?: string;
+    sentAt?: string;
+    text?: string;
+  };
+
+  type TelegramUpdate = {
+    chatId?: string;
+    topicIds?: unknown[];
+  };
+
+  type TelegramConversationProps = {
+    globalPluginConfig?: TelegramConfig;
+    pluginConfig?: TelegramConfig;
+    project?: TelegramProject;
+    projectConfig?: TelegramConfig;
+    projectId?: string;
+  };
+
+  type TelegramConversationOptions = {
+    compact?: boolean;
+  };
+
+  type TelegramLoadOptions = {
+    scrollToBottom?: boolean;
+  };
+
+  type TelegramGlobal = Window & {
+    BoatyardPluginRegistry?: any;
+    boatyard?: {
+      invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<any>;
+      onPluginEvent?: (pluginId: string, eventName: string, callback: (payload: TelegramUpdate) => void) => () => void;
+      openExternal?: (url: string) => unknown;
+      updateProjectPluginConfig?: (projectId: string, pluginId: string, config: TelegramConfig) => Promise<unknown>;
+    };
+  };
+
+  const typedGlobalScope = globalScope as unknown as TelegramGlobal;
+  const registry = typedGlobalScope.BoatyardPluginRegistry;
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
   }
 
   function invokePlugin(actionName, payload = {}) {
-    return globalScope.boatyard.invokePlugin("boatyard.telegram", actionName, payload);
+    return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.telegram", actionName, payload);
   }
 
   function normalizeText(value) {
@@ -19,11 +89,11 @@
     return String(text || "").replace(/^<boatyard-topic\b[^>]*\/>\s*\n?/, "").trim();
   }
 
-  function getProjectTopicTitle(project = {}, config = {}) {
+  function getProjectTopicTitle(project: TelegramProject = {}, config: TelegramConfig = {}) {
     return normalizeText(config.telegramTopicTitle || project.slug || project.name);
   }
 
-  function getTarget(project = {}, projectConfig = {}, globalConfig = {}) {
+  function getTarget(project: TelegramProject = {}, projectConfig: TelegramConfig = {}, globalConfig: TelegramConfig = {}): TelegramTarget {
     return {
       chatId: normalizeText(projectConfig.telegramChatId || globalConfig.telegramDefaultChatId),
       threadId: normalizeText(projectConfig.telegramThreadId),
@@ -34,7 +104,7 @@
     };
   }
 
-  function getTargetLabel(target = {}) {
+  function getTargetLabel(target: Partial<TelegramTarget> = {}) {
     const topic = normalizeText(target.topicTitle);
     const chat = normalizeText(target.chatTitle || target.chatId);
     if (chat && topic) {
@@ -43,7 +113,7 @@
     return topic || chat || "No Telegram topic";
   }
 
-  function getTelegramWebLink(target = {}) {
+  function getTelegramWebLink(target: Partial<TelegramTarget> = {}) {
     const chatId = normalizeText(target.chatId);
     const threadId = normalizeText(target.threadId);
     if (!chatId) {
@@ -66,7 +136,7 @@
     return /^-?\d+$/.test(normalizeText(value));
   }
 
-  function doesTelegramUpdateMatchTarget(update = {}, target = {}) {
+  function doesTelegramUpdateMatchTarget(update: TelegramUpdate = {}, target: Partial<TelegramTarget> = {}) {
     const updateChatId = normalizeText(update.chatId);
     const targetChatId = normalizeText(target.chatId);
     if (targetChatId && isNumericTelegramChatId(targetChatId) && updateChatId !== targetChatId) {
@@ -89,8 +159,8 @@
       version: "0.1.0",
       getTarget,
       getWebLink: getTelegramWebLink,
-      async getStatus(options = {}) {
-        if (!globalScope.boatyard?.invokePlugin) {
+      async getStatus(options: TelegramConversationProps = {}) {
+        if (!typedGlobalScope.boatyard?.invokePlugin) {
           return {
             state: "unavailable",
             summary: "Telegram IPC bridge is unavailable."
@@ -98,9 +168,9 @@
         }
         return invokePlugin("status", { globalConfig: options.globalPluginConfig || {} });
       },
-      async getMessages(project, options = {}) {
+      async getMessages(project: TelegramProject, options: TelegramConversationProps = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
-        if (!globalScope.boatyard?.invokePlugin) {
+        if (!typedGlobalScope.boatyard?.invokePlugin) {
           return {
             status: {
               state: "unavailable",
@@ -112,7 +182,7 @@
         }
         return invokePlugin("messages", { target, globalConfig: options.globalPluginConfig || {} });
       },
-      async sendMessage(project, text, options = {}) {
+      async sendMessage(project: TelegramProject, text, options: TelegramConversationProps = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
         return invokePlugin("sendMessage", { target, text, globalConfig: options.globalPluginConfig || {} });
       },
@@ -129,23 +199,23 @@
         return invokePlugin("logout");
       },
       onMessage(callback) {
-        return globalScope.boatyard?.onPluginEvent?.("boatyard.telegram", "message", callback) || (() => {});
+        return typedGlobalScope.boatyard?.onPluginEvent?.("boatyard.telegram", "message", callback) || (() => {});
       },
-      openTelegram(target = {}) {
+      openTelegram(target: Partial<TelegramTarget> = {}) {
         const link = getTelegramWebLink(target);
-        return link ? globalScope.boatyard.openExternal(link) : null;
+        return link ? typedGlobalScope.boatyard?.openExternal?.(link) : null;
       }
     });
   }
 
-  function setStatusText(element, status = {}) {
+  function setStatusText(element: HTMLElement, status: TelegramStatus = {}) {
     const summary = status.summary || status.state || "Telegram status unavailable.";
     element.className = `telegram-status-indicator ${status.state || "unknown"}`;
     element.title = summary;
     element.setAttribute("aria-label", summary);
   }
 
-  function renderMessages(list, messages = []) {
+  function renderMessages(list: HTMLElement, messages: TelegramMessage[] = []) {
     list.replaceChildren();
     if (!messages.length) {
       const empty = document.createElement("p");
@@ -170,7 +240,7 @@
     }
   }
 
-  async function persistResolvedTarget(props = {}, target = {}) {
+  async function persistResolvedTarget(props: TelegramConversationProps = {}, target: Partial<TelegramTarget> = {}) {
     const threadId = normalizeText(target.threadId);
     const topicTopMessageId = normalizeText(target.topicTopMessageId);
     const currentConfig = props.projectConfig || props.pluginConfig || {};
@@ -181,7 +251,7 @@
       !props.projectId ||
       !threadId ||
       hasUnchangedResolvedTarget ||
-      !globalScope.boatyard?.updateProjectPluginConfig
+      !typedGlobalScope.boatyard?.updateProjectPluginConfig
     ) {
       return;
     }
@@ -195,14 +265,14 @@
     props.projectConfig = nextConfig;
     props.pluginConfig = nextConfig;
 
-    await globalScope.boatyard.updateProjectPluginConfig(props.projectId, "boatyard.telegram", {
+    await typedGlobalScope.boatyard.updateProjectPluginConfig(props.projectId, "boatyard.telegram", {
       telegramThreadId: threadId,
       telegramTopicTopMessageId: topicTopMessageId,
       telegramTopicTitle: nextConfig.telegramTopicTitle
     });
   }
 
-  function cleanupWhenRemoved(element, cleanup) {
+  function cleanupWhenRemoved(element: HTMLElement, cleanup: unknown) {
     if (typeof cleanup !== "function" || typeof globalScope.MutationObserver !== "function" || !document.body) {
       return;
     }
@@ -218,7 +288,7 @@
     observer.observe(document.body, { childList: true, subtree: true });
   }
 
-  function getComposerLineHeight(input) {
+  function getComposerLineHeight(input: HTMLElement) {
     const styles = globalScope.getComputedStyle?.(input);
     const lineHeight = Number.parseFloat(styles?.lineHeight || "");
     if (Number.isFinite(lineHeight) && lineHeight > 0) {
@@ -229,7 +299,7 @@
     return Number.isFinite(fontSize) && fontSize > 0 ? fontSize * 1.45 : 22;
   }
 
-  function resizeComposerInput(input, maxLines = 8) {
+  function resizeComposerInput(input: HTMLTextAreaElement, maxLines = 8) {
     const styles = globalScope.getComputedStyle?.(input);
     const verticalPadding =
       Number.parseFloat(styles?.paddingTop || "0") +
@@ -245,7 +315,7 @@
     input.style.overflowY = input.scrollHeight + verticalBorder > maxHeight ? "auto" : "hidden";
   }
 
-  function createTelegramConversation(container, props = {}, service, options = {}) {
+  function createTelegramConversation(container: HTMLElement, props: TelegramConversationProps = {}, service, options: TelegramConversationOptions = {}) {
     const project = props.project || {};
     const target = service.getTarget(project, props.projectConfig || props.pluginConfig, props.globalPluginConfig);
     const compact = options.compact === true;
@@ -336,7 +406,7 @@
     form.append(input, sendButton);
     resizeComposerInput(input);
 
-    function updateAuthState(state) {
+    function updateAuthState(state: TelegramStatus) {
       const phase = state?.state || "";
       const shouldShowAuth = ["authenticating", "notAuthenticated", "codeRequired", "passwordRequired", "ready"].includes(phase);
       auth.hidden = phase === "ready" || !shouldShowAuth;
@@ -349,11 +419,11 @@
       form.hidden = phase !== "ready";
     }
 
-    function isScrolledToBottom(element) {
+    function isScrolledToBottom(element: HTMLElement) {
       return element.scrollHeight - element.scrollTop - element.clientHeight < 24;
     }
 
-    async function load(options = {}) {
+    async function load(options: TelegramLoadOptions = {}) {
       const shouldScrollToBottom = options.scrollToBottom === true || isScrolledToBottom(list);
       const previousScrollTop = list.scrollTop;
       refreshButton.disabled = true;
