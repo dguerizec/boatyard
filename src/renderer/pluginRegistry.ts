@@ -1,68 +1,5 @@
-type PluginRegistryRecord = Record<string, any>;
-
-type PluginManifest = PluginRegistryRecord & {
-  id: string;
-  name: string;
-  version: string;
-  apiVersion: string;
-};
-
-type PluginStatus = {
-  state: string;
-  summary: string;
-  details: PluginRegistryRecord;
-  actions: unknown[];
-};
-
-type PluginRuntime = {
-  activate?: (context: PluginRegistryContext) => void;
-  deactivate?: (context: PluginRegistryContext) => void;
-};
-
-type RegisteredPlugin = {
-  manifest: PluginManifest;
-  runtime: PluginRuntime;
-  active: boolean;
-  enabled: boolean;
-};
-
-type PluginPaneDefinition = PluginRegistryRecord & {
-  id: string;
-  pluginId: string;
-  title: string;
-  kind: string;
-  scope: string;
-  webAppId: string;
-  key: string;
-};
-
-type PluginProjectNavBadgeDefinition = PluginRegistryRecord & {
-  id: string;
-  pluginId: string;
-};
-
-type PluginSettingsSection = PluginRegistryRecord & {
-  id: string;
-  pluginId: string;
-  title: string;
-  fields: PluginRegistryRecord[];
-};
-
-type PluginService = {
-  id: string;
-  pluginId: string;
-  implementation: PluginRegistryRecord;
-};
-
-type PluginEventHandler = {
-  pluginId: string;
-  handler: (payload: any) => void;
-};
-
-type PluginRegistryContext = PluginRegistryRecord;
-
 type PluginRegistryWindow = Window & {
-  BoatyardPluginRegistry?: PluginRegistryRecord;
+  BoatyardPluginRegistry?: PluginRegistryApi;
   BoatyardWidgetRegistry?: WidgetRegistryApi;
   CustomEvent?: typeof CustomEvent;
 };
@@ -144,7 +81,7 @@ type PluginRegistryWindow = Window & {
     const id = requireId(definition.id, "Pane");
     requireNamespacedContributionId(pluginId, id, "Pane");
     const title = normalizeText(definition.title || definition.name);
-    const kind = normalizeText(definition.kind || "wcv");
+    const kind = normalizeText(definition.kind || "wcv") as PluginPaneDefinition["kind"];
 
     if (!title) {
       throw new Error(`Pane ${id} title is required.`);
@@ -193,7 +130,8 @@ type PluginRegistryWindow = Window & {
     return {
       ...definition,
       id,
-      pluginId
+      pluginId,
+      render: definition.render as PluginProjectNavBadgeDefinition["render"]
     };
   }
 
@@ -358,8 +296,8 @@ type PluginRegistryWindow = Window & {
           services.set(id, service);
           return implementation;
         },
-        get(serviceId: unknown) {
-          return services.get(String(serviceId || ""))?.implementation || null;
+        get<TService extends PluginRegistryRecord = PluginRegistryRecord>(serviceId: unknown) {
+          return (services.get(String(serviceId || ""))?.implementation || null) as TService | null;
         },
         list() {
           return [...services.values()].map((service) => ({
@@ -596,8 +534,8 @@ type PluginRegistryWindow = Window & {
     return [...projectSettingsSections.values()];
   }
 
-  function getService(serviceId: unknown) {
-    return services.get(String(serviceId || ""))?.implementation || null;
+  function getService<TService extends PluginRegistryRecord = PluginRegistryRecord>(serviceId: unknown) {
+    return (services.get(String(serviceId || ""))?.implementation || null) as TService | null;
   }
 
   function listServices() {

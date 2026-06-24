@@ -47,7 +47,7 @@
   };
 
   type TwiccGlobal = Window & {
-    BoatyardPluginRegistry?: any;
+    BoatyardPluginRegistry?: PluginRegistryApi;
     boatyard?: {
       invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<any>;
       openExternal?: (url: string) => unknown;

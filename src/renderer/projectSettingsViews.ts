@@ -39,9 +39,7 @@
   };
 
   type ProjectSettingsViewsGlobal = Window & {
-    BoatyardPluginRegistry?: {
-      emit(eventName: string, payload: unknown): void;
-    };
+    BoatyardPluginRegistry?: PluginRegistryApi;
     BoatyardPluginSettingsFields: {
       resolveFieldDefault(field: unknown, context?: unknown): unknown;
     };

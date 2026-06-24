@@ -11,7 +11,7 @@ type BoatyardRendererWindow = Window & {
   BoatyardPaneLayoutView: any;
   BoatyardPaneNavigation?: any;
   BoatyardPluginLoader: any;
-  BoatyardPluginRegistry: any;
+  BoatyardPluginRegistry: PluginRegistryApi;
   BoatyardPluginSettingsFields: any;
   BoatyardProjectSettingsViews: any;
   BoatyardProjectSidebar: any;

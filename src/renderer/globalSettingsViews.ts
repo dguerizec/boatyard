@@ -23,18 +23,7 @@
   };
 
   type GlobalSettingsViewsGlobal = Window & {
-    BoatyardPluginRegistry?: {
-      list(): {
-        id: string;
-        name?: string;
-        enabled?: boolean;
-        description?: string;
-        version?: string;
-        contributes?: Record<string, unknown[]>;
-      }[];
-      getStatus(pluginId: string): { state?: string; summary?: string; enabled?: boolean; error?: string } | null;
-      reload(pluginId: string): void;
-    };
+    BoatyardPluginRegistry?: PluginRegistryApi;
     BoatyardPluginSettingsFields: {
       resolveFieldDefault(field: unknown): unknown;
     };

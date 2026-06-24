@@ -14,7 +14,7 @@
   };
 
   type ColorPaletteGlobal = Window & {
-    BoatyardPluginRegistry?: any;
+    BoatyardPluginRegistry?: PluginRegistryApi;
     boatyard?: {
       writeClipboardText?: (value: string) => Promise<unknown>;
     };

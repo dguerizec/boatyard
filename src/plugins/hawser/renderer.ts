@@ -27,11 +27,19 @@
     BoatyardPaneNavigation?: {
       openProjectWebApp?: (projectId: string | undefined, webAppId: string, url: string) => void;
     };
-    BoatyardPluginRegistry?: any;
+    BoatyardPluginRegistry?: PluginRegistryApi;
     boatyard?: {
       invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<any>;
       writeClipboardText?: (value: string) => Promise<unknown>;
     };
+  };
+
+  type TwiccRendererService = PluginRegistryRecord & {
+    getSessionUrl?: (
+      project: HawserProject,
+      sessionId: unknown,
+      options?: { pluginConfig?: Record<string, unknown> }
+    ) => string;
   };
 
   const typedGlobalScope = globalScope as unknown as HawserGlobal;
@@ -89,7 +97,7 @@
   }
 
   function addTwiccSessionUrls(project: HawserProject, data, options: HawserPluginOptions = {}) {
-    const twicc = registry.getService("boatyard.twicc.api");
+    const twicc = registry.getService<TwiccRendererService>("boatyard.twicc.api");
     if (!twicc || !Array.isArray(data?.messages)) {
       return data;
     }
