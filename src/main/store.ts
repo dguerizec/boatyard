@@ -22,6 +22,7 @@ const GLOBAL_WORKSPACE_ID = "__global__";
 const STORE_SCHEMA_VERSION = 1;
 
 type UnknownRecord = Record<string, unknown>;
+type VersionParts = [number, number, number];
 
 function isRecord(value: unknown): value is UnknownRecord {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -238,7 +239,7 @@ function createDefaultState(): ProjectStoreState {
   };
 }
 
-function normalizeUrl(rawUrl: unknown) {
+function normalizeUrl(rawUrl: unknown): string {
   const trimmed = String(rawUrl || "").trim();
 
   if (!trimmed) {
@@ -259,24 +260,24 @@ function normalizeUrl(rawUrl: unknown) {
   return parsed.toString();
 }
 
-function normalizeOptionalUrl(rawUrl: unknown) {
+function normalizeOptionalUrl(rawUrl: unknown): string {
   const trimmed = String(rawUrl || "").trim();
   return trimmed ? normalizeUrl(trimmed) : "";
 }
 
-function normalizeText(value: unknown) {
+function normalizeText(value: unknown): string {
   return String(value || "").trim();
 }
 
-function normalizeMultilineText(value: unknown) {
+function normalizeMultilineText(value: unknown): string {
   return String(value || "").replace(/\r\n?/g, "\n").trim();
 }
 
-function stripGitSuffix(pathname: string) {
+function stripGitSuffix(pathname: string): string {
   return pathname.replace(/\/+$/g, "").replace(/\.git$/i, "");
 }
 
-function deriveRepoUrl(gitUrl: unknown) {
+function deriveRepoUrl(gitUrl: unknown): string {
   const trimmed = normalizeText(gitUrl);
 
   if (!trimmed) {
@@ -305,7 +306,7 @@ function deriveRepoUrl(gitUrl: unknown) {
   return "";
 }
 
-function slugify(value: unknown) {
+function slugify(value: unknown): string {
   return String(value || "")
     .trim()
     .normalize("NFKD")
@@ -315,7 +316,7 @@ function slugify(value: unknown) {
     .replace(/^-+|-+$/g, "");
 }
 
-function normalizeSlug(slug: unknown, name: unknown) {
+function normalizeSlug(slug: unknown, name: unknown): string {
   const normalized = slugify(slug || name);
 
   if (!normalized) {
@@ -473,12 +474,18 @@ function normalizeSchemaVersion(schemaVersion: unknown): number {
     : STORE_SCHEMA_VERSION;
 }
 
-function parseVersion(version: unknown) {
+function parseVersion(version: unknown): VersionParts | null {
   const match = normalizeText(version).match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i);
-  return match ? match.slice(1).map((part) => Number.parseInt(part, 10)) : null;
+  return match
+    ? [
+        Number.parseInt(match[1], 10),
+        Number.parseInt(match[2], 10),
+        Number.parseInt(match[3], 10)
+      ]
+    : null;
 }
 
-function compareVersions(left: unknown, right: unknown) {
+function compareVersions(left: unknown, right: unknown): number {
   const leftParts = parseVersion(left);
   const rightParts = parseVersion(right);
 
