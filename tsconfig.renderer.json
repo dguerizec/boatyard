@@ -20,6 +20,8 @@
     "src/renderer/pluginRegistry.ts",
     "src/renderer/pluginSettingsFields.ts",
     "src/renderer/projectPageViews.ts",
+    "src/renderer/projectSidebarGroupMenus.ts",
+    "src/renderer/projectSidebarGroupRows.ts",
     "src/renderer/projectSidebar.ts",
     "src/renderer/projectSettingsRows.ts",
     "src/renderer/projectSettingsSimpleForms.ts",
