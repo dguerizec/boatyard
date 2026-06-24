@@ -74,15 +74,15 @@ type WidgetRegistryWindow = Window & {
 };
 
 (function registerWidgetRegistry(globalScope: WidgetRegistryWindow) {
-  const widgets = new Map();
-  const aliases = new Map();
+  const widgets = new Map<string, WidgetDefinition>();
+  const aliases = new Map<string, string>();
   const allowedStatuses = new Set<WidgetStatus>(["stable", "experimental"]);
 
-  function normalizeText(value: unknown) {
+  function normalizeText(value: unknown): string {
     return String(value || "").trim();
   }
 
-  function normalizeScopes(definition: WidgetDefinitionInput) {
+  function normalizeScopes(definition: WidgetDefinitionInput): string[] {
     const source = Array.isArray(definition.scopes)
       ? definition.scopes
       : [definition.scope || "project"];
@@ -93,7 +93,7 @@ type WidgetRegistryWindow = Window & {
     return scopes.length ? scopes : ["project"];
   }
 
-  function normalizeGridSize(size: Partial<WidgetGridSize> | undefined, fallback: WidgetGridSize) {
+  function normalizeGridSize(size: Partial<WidgetGridSize> | undefined, fallback: WidgetGridSize): WidgetGridSize {
     const source = size && typeof size === "object" ? size : fallback;
     return {
       columns: Math.max(
@@ -104,7 +104,7 @@ type WidgetRegistryWindow = Window & {
     };
   }
 
-  function normalizeLayout(layout: WidgetLayoutInput = {}) {
+  function normalizeLayout(layout: WidgetLayoutInput = {}): WidgetLayout {
     const defaultSize = normalizeGridSize(layout.default, {
       columns: 1,
       rows: 2,
@@ -165,7 +165,7 @@ type WidgetRegistryWindow = Window & {
     };
   }
 
-  function register(definition: WidgetDefinitionInput) {
+  function register(definition: WidgetDefinitionInput): WidgetDefinition {
     const normalized = normalizeWidgetDefinition(definition);
 
     if (widgets.has(normalized.id)) {
@@ -176,17 +176,17 @@ type WidgetRegistryWindow = Window & {
     return normalized;
   }
 
-  function list(filter: WidgetListFilter = {}) {
+  function list(filter: WidgetListFilter = {}): WidgetDefinition[] {
     return [...widgets.values()]
       .filter((widget) => !filter.scope || widget.scopes.includes(filter.scope))
       .filter((widget) => !filter.status || widget.status === filter.status);
   }
 
-  function get(id: unknown) {
+  function get(id: unknown): WidgetDefinition | null {
     return widgets.get(resolveId(id)) || null;
   }
 
-  function unregister(id: unknown) {
+  function unregister(id: unknown): boolean {
     const normalizedId = String(id || "");
     for (const [alias, targetId] of aliases) {
       if (alias === normalizedId || targetId === normalizedId) {
@@ -196,7 +196,7 @@ type WidgetRegistryWindow = Window & {
     return widgets.delete(normalizedId);
   }
 
-  function registerAlias(alias: unknown, targetId: unknown) {
+  function registerAlias(alias: unknown, targetId: unknown): WidgetAlias {
     const normalizedAlias = normalizeText(alias);
     const normalizedTargetId = normalizeText(targetId);
 
@@ -212,16 +212,16 @@ type WidgetRegistryWindow = Window & {
     return { alias: normalizedAlias, targetId: normalizedTargetId };
   }
 
-  function unregisterAlias(alias: unknown) {
+  function unregisterAlias(alias: unknown): boolean {
     return aliases.delete(String(alias || ""));
   }
 
-  function resolveId(id: unknown) {
+  function resolveId(id: unknown): string {
     const normalizedId = String(id || "").trim();
     return aliases.get(normalizedId) || normalizedId;
   }
 
-  function listAliases() {
+  function listAliases(): WidgetAlias[] {
     return [...aliases.entries()].map(([alias, targetId]) => ({ alias, targetId }));
   }
 
