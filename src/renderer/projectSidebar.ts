@@ -1,61 +1,13 @@
 import { createProjectSidebarGroupMenus } from "./projectSidebarGroupMenus.js";
 import { createProjectSidebarGroupRows } from "./projectSidebarGroupRows.js";
-import type { UnknownRecord } from "./rendererRecords.js";
-import type { ProjectNavBadgeRenderOptions, RendererProject } from "./rendererTypes.js";
-
-  type ProjectNavRowOptions = {
-    grouped?: boolean;
-    groupName?: string;
-  };
-
-  type ProjectGroupDragOptions = {
-    dragImage?: "collapsed-group";
-  };
-
-  type ProjectSidebarElements = {
-    addProjectButton: HTMLButtonElement;
-    globalNav: HTMLElement;
-    globalNavRow: HTMLElement;
-    globalViewButton: HTMLButtonElement;
-    projectCount: HTMLElement;
-    projectList: HTMLElement;
-    projectSearchInput: HTMLInputElement;
-  };
-
-  type ProjectSidebarViewState = {
-    currentProjectId?: string | null;
-    currentView?: string;
-  };
-
-  type ProjectListInsertionTarget = {
-    beforeNode: Element | null;
-    beforeProjectId: string | null;
-    groupName?: string;
-  };
-
-  type ProjectSidebarOptions = {
-    applyFormControl: (control: HTMLElement) => void;
-    clamp: (value: number, min: number, max: number) => number;
-    elements: ProjectSidebarElements;
-    ensureOnboardingDemoProject: () => Promise<unknown> | unknown;
-    getCollapsedProjectGroups: () => Set<string>;
-    getProjectGroups: () => string[];
-    getProjectGroupsByName: (projects?: RendererProject[]) => Map<string, RendererProject[]>;
-    getProjects: () => RendererProject[];
-    getViewState: () => ProjectSidebarViewState;
-    isOnboardingDemoProjectVisible: () => boolean;
-    normalizeProjectSearchText: (value: unknown) => string;
-    projectMatchesSearch: (project: RendererProject, query: string) => boolean;
-    renderApp: () => void;
-    renderProjectNavBadges: (project: RendererProject, container: HTMLElement, options?: ProjectNavBadgeRenderOptions) => void;
-    renderSidebarUpdateNotice: () => void;
-    reorderProjectIds: (projectIds: string[]) => Promise<unknown>;
-    selectEditProject: (projectId: string) => void;
-    selectProject: (projectId: string) => void;
-    showOverlayDialog: (dialog: HTMLDialogElement, options: UnknownRecord) => Promise<boolean>;
-    updateNavigation: (values: UnknownRecord) => Promise<unknown>;
-    updateProject: (projectId: string, values: UnknownRecord) => Promise<unknown>;
-  };
+import { createProjectSidebarReorderActions } from "./projectSidebarReorderActions.js";
+import type { RendererProject } from "./rendererTypes.js";
+import type {
+  ProjectGroupDragOptions,
+  ProjectListInsertionTarget,
+  ProjectNavRowOptions,
+  ProjectSidebarOptions
+} from "./projectSidebarTypes.js";
 
 export function createProjectSidebar({
     elements,
@@ -104,6 +56,18 @@ export function createProjectSidebar({
     let pendingProjectGroupCollapseName = "";
     const autoExpandedProjectGroups = new Set<string>();
     const {
+      moveProjectBeforeProject,
+      moveProjectToGroup,
+      moveProjectToGroupInsertion,
+      moveProjectToUngroupedInsertion,
+      reorderProjectGroupBeforeProject
+    } = createProjectSidebarReorderActions({
+      getProjects,
+      renderApp,
+      reorderProjectIds,
+      updateProject
+    });
+    const {
       closeProjectGroupMenu,
       openProjectContextMenu,
       openProjectGroupContextMenu,
@@ -129,14 +93,6 @@ export function createProjectSidebar({
 
     function isProjectListElement(element: Element): element is HTMLElement {
       return element instanceof HTMLElement;
-    }
-
-    function isProjectId(value: unknown): value is string {
-      return typeof value === "string" && value.length > 0;
-    }
-
-    function getProjectIdList(projects: RendererProject[]) {
-      return projects.map((project) => project.id).filter(isProjectId);
     }
 
     function createProjectNavRow(project: RendererProject, options: ProjectNavRowOptions = {}) {
@@ -837,180 +793,6 @@ export function createProjectSidebar({
       if (isOnboardingDemoProjectVisible()) {
         ensureOnboardingDemoProject();
       }
-    }
-
-    async function reorderProjects(sourceId: string, targetId: string) {
-      const projects = getProjects();
-      const sourceIndex = projects.findIndex((project) => project.id === sourceId);
-      const targetIndex = projects.findIndex((project) => project.id === targetId);
-
-      if (sourceIndex === -1 || targetIndex === -1) {
-        return;
-      }
-
-      const reordered = [...projects];
-      const [moved] = reordered.splice(sourceIndex, 1);
-      if (!moved) {
-        return;
-      }
-      reordered.splice(targetIndex, 0, moved);
-      await reorderProjectIds(getProjectIdList(reordered));
-      renderApp();
-    }
-
-    async function moveProjectBeforeProject(sourceId: string, targetId: string) {
-      const projects = getProjects();
-      const source = projects.find((project) => project.id === sourceId);
-      const target = projects.find((project) => project.id === targetId);
-
-      if (!source?.id || !target?.id || source.id === target.id) {
-        return;
-      }
-
-      const targetGroup = String(target.group || "").trim();
-      if (String(source.group || "").trim() !== targetGroup) {
-        await updateProject(source.id, {
-          group: targetGroup
-        });
-      }
-
-      await reorderProjects(source.id, target.id);
-    }
-
-    async function moveProjectToGroup(sourceId: string, targetGroupName: string) {
-      const groupName = String(targetGroupName || "").trim();
-      const projects = getProjects();
-      const source = projects.find((project) => project.id === sourceId);
-      const groupProjects = projects.filter((project) => String(project.group || "").trim() === groupName);
-
-      if (!source?.id || !groupName || groupProjects.some((project) => project.id === source.id)) {
-        return;
-      }
-
-      await updateProject(source.id, {
-        group: groupName
-      });
-
-      const updatedProjects = getProjects();
-      const updatedGroupProjects = updatedProjects.filter((project) => String(project.group || "").trim() === groupName);
-      const lastGroupProject = updatedGroupProjects.at(-1);
-      if (!lastGroupProject || lastGroupProject.id === source.id) {
-        renderApp();
-        return;
-      }
-
-      const remaining = updatedProjects.filter((project) => project.id !== source.id);
-      const targetIndex = remaining.findIndex((project) => project.id === lastGroupProject.id);
-      if (targetIndex === -1) {
-        renderApp();
-        return;
-      }
-
-      const reordered = [...remaining];
-      reordered.splice(targetIndex + 1, 0, source);
-      await reorderProjectIds(getProjectIdList(reordered));
-      renderApp();
-    }
-
-    async function moveProjectToGroupInsertion(sourceId: string, targetGroupName: string, beforeProjectId: string | null = null) {
-      const groupName = String(targetGroupName || "").trim();
-      const projects = getProjects();
-      const source = projects.find((project) => project.id === sourceId);
-
-      if (!source?.id || !groupName) {
-        return;
-      }
-
-      if (String(source.group || "").trim() !== groupName) {
-        await updateProject(source.id, {
-          group: groupName
-        });
-      }
-
-      const updatedProjects = getProjects();
-      const remaining = updatedProjects.filter((project) => project.id !== source.id);
-      const groupProjects = remaining.filter((project) => String(project.group || "").trim() === groupName);
-      const fallbackProjectId = groupProjects.at(-1)?.id || null;
-      const insertionProjectId = beforeProjectId || fallbackProjectId;
-      const targetIndex = insertionProjectId
-        ? remaining.findIndex((project) => project.id === insertionProjectId)
-        : remaining.length;
-
-      if (targetIndex < 0) {
-        renderApp();
-        return;
-      }
-
-      const reordered = [...remaining];
-      reordered.splice(beforeProjectId ? targetIndex : targetIndex + 1, 0, source);
-      await reorderProjectIds(getProjectIdList(reordered));
-      renderApp();
-    }
-
-    async function moveProjectToUngroupedInsertion(sourceId: string, beforeProjectId: string | null = null) {
-      const projects = getProjects();
-      const source = projects.find((project) => project.id === sourceId);
-
-      if (!source?.id) {
-        return;
-      }
-
-      if (String(source.group || "").trim()) {
-        await updateProject(source.id, {
-          group: ""
-        });
-      }
-
-      const updatedProjects = getProjects();
-      const remaining = updatedProjects.filter((project) => project.id !== source.id);
-      const targetIndex = beforeProjectId
-        ? remaining.findIndex((project) => project.id === beforeProjectId)
-        : remaining.length;
-
-      if (targetIndex < 0) {
-        renderApp();
-        return;
-      }
-
-      const reordered = [...remaining];
-      reordered.splice(targetIndex, 0, source);
-      await reorderProjectIds(getProjectIdList(reordered));
-      renderApp();
-    }
-
-    async function reorderProjectGroup(sourceGroupName: string, targetIndexResolver: (projects: RendererProject[]) => number) {
-      const groupName = String(sourceGroupName || "").trim();
-      if (!groupName) {
-        return;
-      }
-
-      const projects = getProjects();
-      const moved = projects.filter((project) => String(project.group || "").trim() === groupName);
-      if (!moved.length) {
-        return;
-      }
-
-      const remaining = projects.filter((project) => String(project.group || "").trim() !== groupName);
-      const targetIndex = targetIndexResolver(remaining);
-      if (targetIndex < 0) {
-        return;
-      }
-
-      const reordered = [...remaining];
-      reordered.splice(targetIndex, 0, ...moved);
-      await reorderProjectIds(getProjectIdList(reordered));
-      renderApp();
-    }
-
-    async function reorderProjectGroupBeforeProject(sourceGroupName: string, targetProjectId: string | null) {
-      if (!targetProjectId) {
-        await reorderProjectGroup(sourceGroupName, (projects) => projects.length);
-        return;
-      }
-
-      await reorderProjectGroup(sourceGroupName, (projects) =>
-        projects.findIndex((project) => project.id === targetProjectId)
-      );
     }
 
     function bindProjectSidebarEvents() {
