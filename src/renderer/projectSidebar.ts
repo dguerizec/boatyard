@@ -14,12 +14,6 @@
     dragImage?: "collapsed-group";
   };
 
-  type ProjectSidebarGlobal = Window & {
-    BoatyardProjectSidebar: {
-      create: typeof createProjectSidebar;
-    };
-  };
-
   function createProjectSidebar({
     elements,
     getViewState,

@@ -50,15 +50,7 @@
     seven_day_utilization?: number;
   };
 
-  type TwiccGlobal = Window & {
-    BoatyardPluginRegistry?: PluginRegistryApi;
-    boatyard?: {
-      invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<unknown>;
-      openExternal?: (url: string) => unknown;
-    };
-  };
-
-  const typedGlobalScope = globalScope as unknown as TwiccGlobal;
+  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
   const registry = typedGlobalScope.BoatyardPluginRegistry;
   const DEFAULT_TWICC_URL = "http://localhost:3500";
   const TWICC_PROJECT_STATUS_REFRESH_MS = 5000;

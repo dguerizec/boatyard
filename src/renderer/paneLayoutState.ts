@@ -65,12 +65,6 @@ type PaneLayoutStateApi = {
   deleteSelectedWebAppForProject(projectId: string): boolean;
 };
 
-type PaneLayoutStateWindow = Window & {
-  BoatyardPaneLayoutState?: {
-    create: (options: PaneLayoutStateOptions) => PaneLayoutStateApi;
-  };
-};
-
 (function () {
   function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptions): PaneLayoutStateApi {
     const selectedWebAppByProject = new Map<string, string>();

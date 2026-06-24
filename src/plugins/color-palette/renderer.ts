@@ -13,14 +13,7 @@
     slug?: string;
   };
 
-  type ColorPaletteGlobal = Window & {
-    BoatyardPluginRegistry?: PluginRegistryApi;
-    boatyard?: {
-      writeClipboardText?: (value: string) => Promise<unknown>;
-    };
-  };
-
-  const typedGlobalScope = globalScope as unknown as ColorPaletteGlobal;
+  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
   const registry = typedGlobalScope.BoatyardPluginRegistry;
   const DEFAULT_COLOR = "#41b883";
 

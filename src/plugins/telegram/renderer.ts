@@ -60,21 +60,11 @@
     scrollToBottom?: boolean;
   };
 
-  type TelegramGlobal = Window & {
-    BoatyardPluginRegistry?: PluginRegistryApi;
-    boatyard?: {
-      invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<unknown>;
-      onPluginEvent?: (pluginId: string, eventName: string, callback: (payload: TelegramUpdate) => void) => () => void;
-      openExternal?: (url: string) => unknown;
-      updateProjectPluginConfig?: (projectId: string, pluginId: string, config: TelegramConfig) => Promise<unknown>;
-    };
-  };
-
   type TelegramRendererService = PluginRegistryRecord & {
     getStatus(options?: TelegramConversationProps): Promise<TelegramStatus>;
   };
 
-  const typedGlobalScope = globalScope as unknown as TelegramGlobal;
+  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
   const registry = typedGlobalScope.BoatyardPluginRegistry;
 
   if (!registry) {

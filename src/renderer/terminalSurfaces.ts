@@ -21,52 +21,6 @@
     terminalTabsResizeObserver?: ResizeObserver;
   };
 
-  type XtermTerminal = {
-    clear(): void;
-    clearSelection(): void;
-    cols?: number;
-    dispose(): void;
-    focus(): void;
-    getSelection(): string;
-    hasSelection(): boolean;
-    loadAddon(addon: unknown): void;
-    modes: {
-      mouseTrackingMode?: string;
-    };
-    onData(callback: (data: string) => void): { dispose(): void };
-    onSelectionChange(callback: () => void): { dispose(): void };
-    open(container: Element | null): void;
-    resize(cols: number, rows: number): void;
-    rows?: number;
-    write(data: string): void;
-  };
-
-  type XtermConstructor = new (options: Record<string, unknown>) => XtermTerminal;
-
-  type XtermGlobal = XtermConstructor | {
-    Terminal?: XtermConstructor;
-  };
-
-  type FitAddonInstance = {
-    dispose?: () => void;
-    fit(): void;
-    proposeDimensions(): { cols?: number; rows?: number } | undefined;
-  };
-
-  type FitAddonConstructor = new () => FitAddonInstance;
-
-  type FitAddonGlobal = FitAddonConstructor | {
-    FitAddon?: FitAddonConstructor;
-  };
-
-  type TerminalSurfacesGlobal = Window & {
-    Terminal?: XtermGlobal;
-    FitAddon?: FitAddonGlobal;
-    BoatyardTerminalSurfaces: {
-      create: typeof createTerminalSurfaces;
-    };
-  };
-
   const globalScope = window as unknown as TerminalSurfacesGlobal;
 
   function createTerminalSurfaces({

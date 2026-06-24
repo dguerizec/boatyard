@@ -20,12 +20,6 @@
     webAppOpenTarget: HTMLInputElement;
   };
 
-  type WebAppMenusGlobal = Window & {
-    BoatyardWebAppMenus: {
-      create: typeof createWebAppMenus;
-    };
-  };
-
   function createWebAppMenus({
     webAppOpenSplitRatio,
     getCurrentWebAppUrl,

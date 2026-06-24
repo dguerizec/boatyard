@@ -58,19 +58,7 @@
     pierRemoveButton: HTMLButtonElement;
   };
 
-  type PierGlobal = Window & {
-    BoatyardOverlayDialog?: {
-      show?: (dialog: HTMLDialogElement, options: unknown) => Promise<boolean>;
-    };
-    BoatyardPluginRegistry?: PluginRegistryApi;
-    boatyard?: {
-      invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<unknown>;
-      openExternal?: (url: string) => unknown;
-      writeClipboardText?: (value: string) => Promise<unknown>;
-    };
-  };
-
-  const typedGlobalScope = globalScope as unknown as PierGlobal;
+  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
   const registry = typedGlobalScope.BoatyardPluginRegistry;
   const DEFAULT_PIER_URL = "http://pier.test";
   const DEFAULT_PIER_WORKTREE_PATTERN = "<repo>/worktrees/<worktree>";

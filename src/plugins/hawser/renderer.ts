@@ -38,20 +38,6 @@
     url?: string;
   };
 
-  type HawserGlobal = Window & {
-    BoatyardHawserUI?: {
-      createWidget(project: HawserProject, options: HawserWidgetOptions): HTMLElement;
-    };
-    BoatyardPaneNavigation?: {
-      openProjectWebApp?: (projectId: string | undefined, webAppId: string, url: string) => void;
-    };
-    BoatyardPluginRegistry?: PluginRegistryApi;
-    boatyard?: {
-      invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<unknown>;
-      writeClipboardText?: (value: string) => Promise<unknown>;
-    };
-  };
-
   type TwiccRendererService = PluginRegistryRecord & {
     getSessionUrl?: (
       project: HawserProject,
@@ -60,7 +46,7 @@
     ) => string;
   };
 
-  const typedGlobalScope = globalScope as unknown as HawserGlobal;
+  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
   const registry = typedGlobalScope.BoatyardPluginRegistry;
   const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
   const DEFAULT_HAWSER_WEB_URL = "http://localhost:60082";

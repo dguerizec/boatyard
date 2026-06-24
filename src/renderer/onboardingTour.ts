@@ -90,17 +90,6 @@ type OpenOnboardingTourOptions = {
   force?: boolean;
 };
 
-type OnboardingTourGlobal = Window & {
-  BoatyardOnboardingTour?: {
-    create: (options: OnboardingTourOptions) => {
-      ensureOnboardingDemoProject: () => Element;
-      isDemoProjectVisible: () => boolean;
-      isTourActive: () => boolean;
-      openOnboardingTour: (options?: OpenOnboardingTourOptions) => Promise<void>;
-    };
-  };
-};
-
 (function () {
   function createOnboardingTour({
     elements,
