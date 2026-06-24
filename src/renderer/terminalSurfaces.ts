@@ -21,7 +21,7 @@
     terminalTabsResizeObserver?: ResizeObserver;
   };
 
-  const globalScope = window as unknown as TerminalSurfacesGlobal;
+  const globalScope: TerminalSurfacesGlobal = window;
 
   function createTerminalSurfaces({
     boatyard,

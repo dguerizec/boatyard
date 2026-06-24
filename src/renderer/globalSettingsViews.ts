@@ -22,7 +22,7 @@
     onSaved?: () => void;
   };
 
-  const globalScope = window as unknown as GlobalSettingsViewsGlobal;
+  const globalScope: GlobalSettingsViewsGlobal = window;
 
   function createGlobalSettingsViews({
     boatyard,

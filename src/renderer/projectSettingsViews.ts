@@ -38,7 +38,7 @@
     setError?: (message: string) => void;
   };
 
-  const globalScope = window as unknown as ProjectSettingsViewsGlobal;
+  const globalScope: ProjectSettingsViewsGlobal = window;
 
   function createProjectSettingsViews({
     boatyard,

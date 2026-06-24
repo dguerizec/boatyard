@@ -572,7 +572,8 @@
     };
   }
 
-  (window as unknown as UpdateViewsGlobal).BoatyardUpdateViews = {
+  const globalScope: UpdateViewsGlobal = window;
+  globalScope.BoatyardUpdateViews = {
     create: createUpdateViews
   };
 })();

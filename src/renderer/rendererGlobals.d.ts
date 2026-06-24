@@ -63,39 +63,39 @@ type RendererModuleFactory<TOptions = unknown, TInstance = unknown> = {
 
 type GlobalSettingsViewsGlobal = Window & {
   BoatyardPluginRegistry?: PluginRegistryApi;
-  BoatyardPluginSettingsFields: Pick<PluginSettingsFieldsApi, "resolveFieldDefault">;
-  BoatyardGlobalSettingsViews: RendererModuleFactory;
+  BoatyardPluginSettingsFields?: Pick<PluginSettingsFieldsApi, "resolveFieldDefault">;
+  BoatyardGlobalSettingsViews?: RendererModuleFactory;
 };
 
 type ProjectSettingsViewsGlobal = Window & {
   BoatyardPluginRegistry?: PluginRegistryApi;
-  BoatyardPluginSettingsFields: Pick<PluginSettingsFieldsApi, "resolveFieldDefault">;
-  BoatyardProjectSettingsViews: RendererModuleFactory;
+  BoatyardPluginSettingsFields?: Pick<PluginSettingsFieldsApi, "resolveFieldDefault">;
+  BoatyardProjectSettingsViews?: RendererModuleFactory;
 };
 
 type PaneLayoutViewGlobal = Window & {
-  BoatyardPaneLayoutView: RendererModuleFactory;
+  BoatyardPaneLayoutView?: RendererModuleFactory;
 };
 
 type UpdateViewsGlobal = Window & {
-  BoatyardUpdateViews: RendererModuleFactory;
+  BoatyardUpdateViews?: RendererModuleFactory;
 };
 
 type WebAppSurfacesGlobal = Window & {
-  BoatyardWebAppSurfaces: RendererModuleFactory;
+  BoatyardWebAppSurfaces?: RendererModuleFactory;
 };
 
 type WidgetSurfacesGlobal = Window & {
   BoatyardWidgetRegistry?: WidgetRegistryApi;
-  BoatyardWidgetSurfaces: RendererModuleFactory;
+  BoatyardWidgetSurfaces?: RendererModuleFactory;
 };
 
 type WebAppMenusGlobal = Window & {
-  BoatyardWebAppMenus: RendererModuleFactory;
+  BoatyardWebAppMenus?: RendererModuleFactory;
 };
 
 type ProjectSidebarGlobal = Window & {
-  BoatyardProjectSidebar: RendererModuleFactory;
+  BoatyardProjectSidebar?: RendererModuleFactory;
 };
 
 type PaneLayoutStateWindow = Window & {
@@ -147,7 +147,7 @@ type FitAddonGlobal = FitAddonConstructor | {
 type TerminalSurfacesGlobal = Window & {
   Terminal?: XtermGlobal;
   FitAddon?: FitAddonGlobal;
-  BoatyardTerminalSurfaces: RendererModuleFactory;
+  BoatyardTerminalSurfaces?: RendererModuleFactory;
 };
 
 type BoatyardPluginRendererBridge = {

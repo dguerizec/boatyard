@@ -1475,7 +1475,8 @@
     };
   }
 
-  (window as unknown as ProjectSidebarGlobal).BoatyardProjectSidebar = {
+  const globalScope: ProjectSidebarGlobal = window;
+  globalScope.BoatyardProjectSidebar = {
     create: createProjectSidebar
   };
 })();

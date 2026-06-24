@@ -459,7 +459,8 @@
     };
   }
 
-  (window as unknown as PaneLayoutViewGlobal).BoatyardPaneLayoutView = Object.freeze({
+  const globalScope: PaneLayoutViewGlobal = window;
+  globalScope.BoatyardPaneLayoutView = Object.freeze({
     create: createPaneLayoutView
   });
 })();

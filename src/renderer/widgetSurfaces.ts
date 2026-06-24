@@ -61,7 +61,7 @@
     onClick?: (event: MouseEvent) => void;
   };
 
-  const globalScope = window as unknown as WidgetSurfacesGlobal;
+  const globalScope: WidgetSurfacesGlobal = window;
 
   function createWidgetSurfaces({
     boatyard,

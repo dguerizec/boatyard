@@ -337,7 +337,7 @@
     };
   }
 
-  const globalScope = window as unknown as WebAppSurfacesGlobal;
+  const globalScope: WebAppSurfacesGlobal = window;
   globalScope.BoatyardWebAppSurfaces = Object.freeze({
     create: createWebAppSurfaces
   });

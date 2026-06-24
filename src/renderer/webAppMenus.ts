@@ -747,7 +747,8 @@
     };
   }
 
-  (window as unknown as WebAppMenusGlobal).BoatyardWebAppMenus = {
+  const globalScope: WebAppMenusGlobal = window;
+  globalScope.BoatyardWebAppMenus = {
     create: createWebAppMenus
   };
 })();
