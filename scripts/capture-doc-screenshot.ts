@@ -8,16 +8,41 @@ const DEFAULT_SCENARIO = "global";
 const DEFAULT_WIDTH = 1280;
 const DEFAULT_HEIGHT = 820;
 
-function readOption(name, fallback = "") {
-  const index = process.argv.indexOf(`--${name}`);
-  if (index === -1) {
-    return fallback;
-  }
+type JsonRecord = Record<string, unknown>;
+type CaptureConfig = JsonRecord & {
+  actions?: unknown[];
+  crop?: JsonRecord & {
+    padding?: unknown;
+    selector?: unknown;
+  };
+  debug?: boolean;
+  height?: unknown;
+  output?: unknown;
+  scenario?: unknown;
+  settleMs?: unknown;
+  state?: unknown;
+  statePath?: unknown;
+  width?: unknown;
+};
 
-  return process.argv[index + 1] || fallback;
+function asString(value: unknown, fallback = "") {
+  return typeof value === "string" ? value : fallback;
 }
 
-function hasFlag(name) {
+function asNumber(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function readOption(name: string, fallback = "") {
+  const index = process.argv.indexOf(`--${name}`);
+  if (index === -1) {
+    return String(fallback);
+  }
+
+  return process.argv[index + 1] || String(fallback);
+}
+
+function hasFlag(name: string) {
   return process.argv.includes(`--${name}`);
 }
 
@@ -43,12 +68,12 @@ Examples:
 `);
 }
 
-function parsePositiveInteger(value, fallback) {
-  const parsed = Number.parseInt(value, 10);
+function parsePositiveInteger(value: unknown, fallback: number) {
+  const parsed = Number.parseInt(String(value), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function createCaptureState({ width, height }) {
+function createCaptureState({ width, height }: { height: number; width: number }): JsonRecord {
   return {
     settings: {
       projectsBasePath: "/workspace/example",
@@ -57,9 +82,9 @@ function createCaptureState({ width, height }) {
       passwordManagerDisclaimerAccepted: false,
       widgetRailWidth: 340,
       terminalEnv: "",
-      webAppOpenRules: []
+      webAppOpenRules: [] as unknown[]
     },
-    projects: [],
+    projects: [] as unknown[],
     window: {
       bounds: {
         x: 80,
@@ -71,7 +96,7 @@ function createCaptureState({ width, height }) {
     },
     navigation: {
       view: "global",
-      projectId: null
+      projectId: null as string | null
     },
     webApps: {},
     passwordVault: {},
@@ -82,7 +107,7 @@ function createCaptureState({ width, height }) {
       global: {},
       projects: {}
     },
-    globalUrls: [],
+    globalUrls: [] as unknown[],
     paneLayouts: {},
     widgetLayouts: {},
     terminalSelections: {},
@@ -94,16 +119,17 @@ function createCaptureState({ width, height }) {
   };
 }
 
-function readJsonFile(filePath) {
+function readJsonFile(filePath: string): CaptureConfig {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
-function resolveFrom(baseDir, value) {
+function resolveFrom(baseDir: string, value: unknown) {
   if (!value) {
     return "";
   }
 
-  return isAbsolute(value) ? value : resolve(baseDir, value);
+  const pathValue = String(value);
+  return isAbsolute(pathValue) ? pathValue : resolve(baseDir, pathValue);
 }
 
 if (hasFlag("help") || hasFlag("h")) {
@@ -112,26 +138,26 @@ if (hasFlag("help") || hasFlag("h")) {
 }
 
 const configPath = readOption("config");
-const config = configPath ? readJsonFile(resolve(configPath)) : {};
+const config: CaptureConfig = configPath ? readJsonFile(resolve(configPath)) : {};
 const configDir = configPath ? dirname(resolve(configPath)) : process.cwd();
-const scenario = readOption("scenario", config.scenario || DEFAULT_SCENARIO);
-const output = resolveFrom(configDir, readOption("output", config.output || DEFAULT_OUTPUT));
-const width = parsePositiveInteger(readOption("width", config.width), config.width || DEFAULT_WIDTH);
-const height = parsePositiveInteger(readOption("height", config.height), config.height || DEFAULT_HEIGHT);
+const scenario = readOption("scenario", asString(config.scenario, DEFAULT_SCENARIO));
+const output = resolveFrom(configDir, readOption("output", asString(config.output, DEFAULT_OUTPUT)));
+const width = parsePositiveInteger(readOption("width", asString(config.width)), asNumber(config.width, DEFAULT_WIDTH));
+const height = parsePositiveInteger(readOption("height", asString(config.height)), asNumber(config.height, DEFAULT_HEIGHT));
 const repoRoot = process.cwd();
 const tempDir = mkdtempSync(join(tmpdir(), "boatyard-capture-"));
 const userDataPath = join(tempDir, "user-data");
 const statePath = join(tempDir, "state.json");
 const requestPath = join(tempDir, "capture.json");
-const configuredStatePath = readOption("state", config.statePath || "");
+const configuredStatePath = readOption("state", asString(config.statePath));
 const state = config.state ||
   (configuredStatePath ? readJsonFile(resolveFrom(configDir, configuredStatePath)) : createCaptureState({ width, height }));
-const cropSelector = readOption("crop", config.crop?.selector || "");
+const cropSelector = readOption("crop", asString(config.crop?.selector));
 const crop = cropSelector
   ? {
       ...(config.crop || {}),
       selector: cropSelector,
-      padding: parsePositiveInteger(readOption("padding", config.crop?.padding), config.crop?.padding || 0)
+      padding: parsePositiveInteger(readOption("padding", asString(config.crop?.padding)), asNumber(config.crop?.padding, 0))
     }
   : config.crop;
 

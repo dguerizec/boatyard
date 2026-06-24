@@ -3,9 +3,9 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const roots = ["src", "scripts", "test"];
-const jsFiles = [];
+const jsFiles: string[] = [];
 
-function collectJsFiles(directory) {
+function collectJsFiles(directory: string) {
   for (const entry of readdirSync(directory)) {
     const fullPath = join(directory, entry);
     const stat = statSync(fullPath);
@@ -22,7 +22,8 @@ for (const root of roots) {
   try {
     collectJsFiles(root);
   } catch (error) {
-    if (error.code !== "ENOENT") {
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code !== "ENOENT") {
       throw error;
     }
   }

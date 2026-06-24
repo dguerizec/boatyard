@@ -12,7 +12,7 @@ const copyExtensions = new Set([
   ".svg"
 ]);
 
-function run(command, args) {
+function run(command: string, args: string[]) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
     shell: process.platform === "win32",
@@ -24,7 +24,7 @@ function run(command, args) {
   }
 }
 
-function copyStaticAssets(directory) {
+function copyStaticAssets(directory: string) {
   for (const entry of readdirSync(directory)) {
     const sourcePath = join(directory, entry);
     const stats = statSync(sourcePath);
@@ -44,13 +44,13 @@ function copyStaticAssets(directory) {
   }
 }
 
-function copyFileFromSource(sourcePath) {
+function copyFileFromSource(sourcePath: string) {
   const targetPath = join(buildRoot, relative(sourceRoot, sourcePath));
   mkdirSync(dirname(targetPath), { recursive: true });
   cpSync(sourcePath, targetPath);
 }
 
-function copyBrowserScripts(directory) {
+function copyBrowserScripts(directory: string) {
   for (const entry of readdirSync(directory)) {
     const sourcePath = join(directory, entry);
     const stats = statSync(sourcePath);
@@ -80,7 +80,8 @@ function copyPluginRendererScripts() {
         copyFileFromSource(rendererPath);
       }
     } catch (error) {
-      if (error.code !== "ENOENT") {
+      const nodeError = error as NodeJS.ErrnoException;
+      if (nodeError.code !== "ENOENT") {
         throw error;
       }
     }
