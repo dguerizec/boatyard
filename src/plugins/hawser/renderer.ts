@@ -1,7 +1,41 @@
 "use strict";
 
 (function registerHawserPlugin(globalScope) {
-  const registry = globalScope.BoatyardPluginRegistry;
+  type HawserProject = {
+    id?: string;
+    slug?: string;
+    devBranch?: string;
+  };
+
+  type HawserConfig = {
+    hawserApiUrl?: string;
+    hawserDefaultRuntime?: string;
+    hawserMainSession?: string;
+    hawserProjectUrl?: string;
+    hawserToken?: string;
+  };
+
+  type HawserPluginOptions = {
+    pluginConfig?: HawserConfig;
+    globalPluginConfig?: HawserConfig;
+    twiccProjectConfig?: Record<string, unknown>;
+    allProjectPluginConfig?: Record<string, Record<string, unknown>>;
+  };
+
+  type HawserGlobal = Window & {
+    BoatyardHawserUI?: any;
+    BoatyardPaneNavigation?: {
+      openProjectWebApp?: (projectId: string | undefined, webAppId: string, url: string) => void;
+    };
+    BoatyardPluginRegistry?: any;
+    boatyard?: {
+      invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<any>;
+      writeClipboardText?: (value: string) => Promise<unknown>;
+    };
+  };
+
+  const typedGlobalScope = globalScope as unknown as HawserGlobal;
+  const registry = typedGlobalScope.BoatyardPluginRegistry;
   const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
   const DEFAULT_HAWSER_WEB_URL = "http://localhost:60082";
   const DEFAULT_HAWSER_RUNTIME = "codex";
@@ -13,20 +47,20 @@
   }
 
   function invokePlugin(actionName, payload = {}) {
-    return globalScope.boatyard.invokePlugin("boatyard.hawser", actionName, payload);
+    return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.hawser", actionName, payload);
   }
 
   function normalizeApiUrl(value) {
     return String(value || DEFAULT_HAWSER_API_URL).replace(/\/+$/g, "");
   }
 
-  function getDefaultMainSession(project = {}) {
+  function getDefaultMainSession(project: HawserProject = {}) {
     const slug = String(project.slug || "").trim();
     const branch = String(project.devBranch || "").trim() || "main";
     return slug ? `${slug}:${branch}` : "";
   }
 
-  function getDefaultProjectUrl(project = {}) {
+  function getDefaultProjectUrl(project: HawserProject = {}) {
     const slug = String(project.slug || "").trim();
     return slug ? `${DEFAULT_HAWSER_WEB_URL}/#/projects/${encodeURIComponent(slug)}` : "";
   }
@@ -42,19 +76,19 @@
     return name ? `${name}:${session}` : "";
   }
 
-  function getDefaultRuntime(globalConfig = {}) {
+  function getDefaultRuntime(globalConfig: HawserConfig = {}) {
     return String(globalConfig.hawserDefaultRuntime || DEFAULT_HAWSER_RUNTIME).trim() || DEFAULT_HAWSER_RUNTIME;
   }
 
-  function resolveMainSession(project, options = {}) {
+  function resolveMainSession(project: HawserProject, options: HawserPluginOptions = {}) {
     return options.pluginConfig?.hawserMainSession || getDefaultMainSession(project);
   }
 
-  function resolveProjectUrl(project, options = {}) {
+  function resolveProjectUrl(project: HawserProject, options: HawserPluginOptions = {}) {
     return options.pluginConfig?.hawserProjectUrl || getDefaultProjectUrl(project);
   }
 
-  function addTwiccSessionUrls(project, data, options = {}) {
+  function addTwiccSessionUrls(project: HawserProject, data, options: HawserPluginOptions = {}) {
     const twicc = registry.getService("boatyard.twicc.api");
     if (!twicc || !Array.isArray(data?.messages)) {
       return data;
@@ -74,12 +108,12 @@
   function createHawserService() {
     return Object.freeze({
       version: "0.1.0",
-      getApiUrl(options = {}) {
+      getApiUrl(options: HawserPluginOptions = {}) {
         return normalizeApiUrl(options.globalPluginConfig?.hawserApiUrl);
       },
       getMainSession: resolveMainSession,
       getProjectUrl: resolveProjectUrl,
-      async getWidgetData(project, options = {}) {
+      async getWidgetData(project: HawserProject, options: HawserPluginOptions = {}) {
         const data = await invokePlugin("widgetDataForConfig", {
           projectId: project.id,
           projectConfig: {
@@ -96,7 +130,7 @@
   }
 
   async function refreshHawserStatus(ctx, globalConfig = {}) {
-    if (typeof globalScope.boatyard.invokePlugin !== "function") {
+    if (typeof typedGlobalScope.boatyard?.invokePlugin !== "function") {
       ctx.status.set({
         state: "degraded",
         summary: "Hawser status probe is unavailable."
@@ -222,7 +256,7 @@
                 hidden: false,
                 async run({ fields }) {
                   const command = fields.getValue("hawserInstallCommand") || HAWSER_INSTALL_COMMAND;
-                  await globalScope.boatyard.writeClipboardText(command);
+                  await typedGlobalScope.boatyard?.writeClipboardText?.(command);
                   fields.setActionMessage("hawserInstallCommand", "Install command copied.");
                 }
               }
@@ -305,8 +339,8 @@
             default: { columns: 3, rows: 3 },
             min: { columns: 3, rows: 3 }
           },
-          createElement(project, props = {}) {
-            return globalScope.BoatyardHawserUI.createWidget(project, {
+          createElement(project: HawserProject, props: HawserPluginOptions = {}) {
+            return typedGlobalScope.BoatyardHawserUI.createWidget(project, {
               title: "Hawser",
               subtitle: hawserService.getMainSession(project, {
                 pluginConfig: props.pluginConfig
@@ -318,7 +352,7 @@
               }),
               onOpenMessage(message) {
                 if (message.twiccSessionUrl) {
-                  globalScope.BoatyardPaneNavigation.openProjectWebApp(project.id, "hawser", message.twiccSessionUrl);
+                  typedGlobalScope.BoatyardPaneNavigation?.openProjectWebApp?.(project.id, "hawser", message.twiccSessionUrl);
                 }
               }
             });
