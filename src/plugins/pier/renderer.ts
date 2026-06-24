@@ -1,7 +1,77 @@
 "use strict";
 
 (function registerPierPlugin(globalScope) {
-  const registry = globalScope.BoatyardPluginRegistry;
+  type PierProject = {
+    id?: string;
+    name?: string;
+    slug?: string;
+    sourcePath?: string;
+  };
+
+  type PierConfig = {
+    pierApiUrl?: string;
+    pierPreviewUrl?: string;
+    pierProjectName?: string;
+    pierUrl?: string;
+    pierWorktreeDirectory?: string;
+    pierWorktreePattern?: string;
+  };
+
+  type PierOptions = {
+    globalPluginConfig?: PierConfig;
+    openProjectWebApp?: (webAppId: string, url: string) => boolean;
+    pluginConfig?: PierConfig;
+  };
+
+  type PierWorkload = {
+    project?: string;
+    running?: boolean;
+    slug?: string;
+    status?: string;
+    url?: string;
+    urls?: Array<{ default?: boolean; url?: string }>;
+    worktreePath?: string;
+  };
+
+  type PierProjectEntry = {
+    name?: string;
+    repo_path?: string;
+  };
+
+  type PierWorktreePayload = {
+    branchName?: string;
+    force?: boolean;
+    fromRef?: string;
+    purge?: boolean;
+    skipDown?: boolean;
+    startAfterCreate?: boolean;
+    worktreePath?: string;
+  };
+
+  type PierUrlRow = HTMLDivElement & {
+    pierActionButton: HTMLButtonElement;
+    pierEntry: PierWorkload;
+    pierLink: HTMLAnchorElement;
+    pierPathButton: HTMLButtonElement;
+    pierPathText: HTMLSpanElement;
+    pierProject: PierProject;
+    pierRemoveButton: HTMLButtonElement;
+  };
+
+  type PierGlobal = Window & {
+    BoatyardOverlayDialog?: {
+      show?: (dialog: HTMLDialogElement, options: unknown) => Promise<boolean>;
+    };
+    BoatyardPluginRegistry?: any;
+    boatyard?: {
+      invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<any>;
+      openExternal?: (url: string) => unknown;
+      writeClipboardText?: (value: string) => Promise<unknown>;
+    };
+  };
+
+  const typedGlobalScope = globalScope as unknown as PierGlobal;
+  const registry = typedGlobalScope.BoatyardPluginRegistry;
   const DEFAULT_PIER_URL = "http://pier.test";
   const DEFAULT_PIER_WORKTREE_PATTERN = "<repo>/worktrees/<worktree>";
   const workloadCacheByProject = new Map();
@@ -11,7 +81,7 @@
   }
 
   function invokePlugin(actionName, payload = {}) {
-    return globalScope.boatyard.invokePlugin("boatyard.pier", actionName, payload);
+    return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.pier", actionName, payload);
   }
 
   function normalizePath(value) {
@@ -26,7 +96,7 @@
     return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
   }
 
-  function findPierProject(project, pierProjects, config = {}) {
+  function findPierProject(project: PierProject, pierProjects: PierProjectEntry[], config: PierConfig = {}) {
     const configuredName = String(config.pierProjectName || "").trim();
     if (configuredName) {
       return pierProjects.find((candidate) => candidate.name === configuredName) || { name: configuredName };
@@ -45,12 +115,12 @@
       .sort((left, right) => normalizePath(right.repo_path).length - normalizePath(left.repo_path).length)[0] || null;
   }
 
-  function getDefaultWorkloadUrl(workload) {
+  function getDefaultWorkloadUrl(workload: PierWorkload) {
     const urls = Array.isArray(workload.urls) ? workload.urls : [];
     return urls.find((entry) => entry.default)?.url || urls[0]?.url || workload.url || "";
   }
 
-  function isWorkloadRunning(workload) {
+  function isWorkloadRunning(workload: PierWorkload) {
     return ["running", "started"].includes(String(workload.status || "").toLowerCase());
   }
 
@@ -62,7 +132,7 @@
       .replace(/^-+|-+$/g, "");
   }
 
-  function getPierWorktreePattern(options = {}) {
+  function getPierWorktreePattern(options: PierOptions = {}) {
     const configuredPattern = String(options.globalPluginConfig?.pierWorktreePattern || "").trim();
     const legacyDirectory = String(options.globalPluginConfig?.pierWorktreeDirectory || "").trim();
     if (configuredPattern) {
@@ -74,7 +144,7 @@
     return DEFAULT_PIER_WORKTREE_PATTERN;
   }
 
-  function getDefaultWorktreePath(project = {}, branchName = "", options = {}) {
+  function getDefaultWorktreePath(project: PierProject = {}, branchName = "", options: PierOptions = {}) {
     const sourcePath = normalizePath(project.sourcePath);
     const branchSlug = normalizeHostnameLabel(branchName);
     if (!sourcePath || !branchSlug) {
@@ -93,24 +163,24 @@
     ));
   }
 
-  function isCurrentProjectWorktree(project, entry) {
+  function isCurrentProjectWorktree(project: PierProject, entry: PierWorkload) {
     return entry?.slug === "main" || normalizePath(project?.sourcePath) === normalizePath(entry?.worktreePath);
   }
 
-  function getDefaultPierProjectName(project = {}) {
+  function getDefaultPierProjectName(project: PierProject = {}) {
     return normalizeHostnameLabel(project.slug);
   }
 
-  function getPierUrl(options = {}) {
+  function getPierUrl(options: PierOptions = {}) {
     return normalizeApiUrl(options.globalPluginConfig?.pierUrl || options.globalPluginConfig?.pierApiUrl);
   }
 
-  function getDefaultPreviewUrl(project = {}) {
+  function getDefaultPreviewUrl(project: PierProject = {}) {
     const projectName = getDefaultPierProjectName(project);
     return projectName ? `${getPierUrl()}/#/projects/${encodeURIComponent(projectName)}` : "";
   }
 
-  function getPierPaneUrl(project = {}, options = {}) {
+  function getPierPaneUrl(project: PierProject = {}, options: PierOptions = {}) {
     const configuredUrl = String(options.pluginConfig?.pierPreviewUrl || "").trim();
     if (configuredUrl) {
       return configuredUrl;
@@ -120,15 +190,15 @@
     return projectName ? `${getPierUrl(options)}/#/projects/${encodeURIComponent(projectName)}` : "";
   }
 
-  function getPierApiUrl(options = {}) {
+  function getPierApiUrl(options: PierOptions = {}) {
     return normalizeApiUrl(options.globalPluginConfig?.pierUrl || options.globalPluginConfig?.pierApiUrl);
   }
 
-  function getWorkloadCacheKey(project, options = {}) {
+  function getWorkloadCacheKey(project: PierProject, options: PierOptions = {}) {
     return `${project?.id || project?.slug || ""}\u0000${String(options.pluginConfig?.pierProjectName || "")}`;
   }
 
-  function setCachedWorkloads(project, options, workloads) {
+  function setCachedWorkloads(project: PierProject, options: PierOptions, workloads: PierWorkload[]) {
     const key = getWorkloadCacheKey(project, options);
     const previous = JSON.stringify(workloadCacheByProject.get(key) || []);
     const next = Array.isArray(workloads) ? workloads : [];
@@ -148,7 +218,7 @@
     }
   }
 
-  async function fetchPierJson(path, options = {}, fetchOptions = {}) {
+  async function fetchPierJson(path: string, options: PierOptions = {}, fetchOptions: RequestInit = {}) {
     const response = await fetch(`${getPierApiUrl(options)}${path}`, fetchOptions);
 
     if (!response.ok) {
@@ -158,7 +228,7 @@
     return response.json();
   }
 
-  function normalizeWorktreeEntry(pierProjectName, worktree) {
+  function normalizeWorktreeEntry(pierProjectName: string, worktree) {
     const workload = worktree?.workload || {};
     return {
       project: workload.project || pierProjectName,
@@ -170,7 +240,7 @@
     };
   }
 
-  async function listProjectWorkloads(project, options = {}) {
+  async function listProjectWorkloads(project: PierProject, options: PierOptions = {}) {
     const apiUrl = getPierApiUrl(options);
     const projectsResponse = await fetch(`${apiUrl}/api/v1/projects`);
 
@@ -202,7 +272,7 @@
     return entries;
   }
 
-  function listCachedProjectWorkloadWebApps(project, options = {}) {
+  function listCachedProjectWorkloadWebApps(project: PierProject, options: PierOptions = {}) {
     return (workloadCacheByProject.get(getWorkloadCacheKey(project, options)) || [])
       .filter((entry) => entry.running && entry.url)
       .map((entry) => ({
@@ -217,14 +287,14 @@
   function createPierService() {
     return Object.freeze({
       listProjectWorkloads,
-      down(workload, options = {}) {
+      down(workload: PierWorkload, options: PierOptions = {}) {
         return fetchPierJson(
           `/api/v1/workloads/${encodeURIComponent(workload.project)}/${encodeURIComponent(workload.slug)}/down`,
           options,
           { method: "POST" }
         );
       },
-      up(workload, options = {}) {
+      up(workload: PierWorkload, options: PierOptions = {}) {
         return fetchPierJson(
           `/api/v1/workloads/${encodeURIComponent(workload.project)}/${encodeURIComponent(workload.slug)}/up`,
           options,
@@ -235,8 +305,8 @@
           }
         );
       },
-      createWorktree(project, payload = {}) {
-        if (typeof globalScope.boatyard?.invokePlugin !== "function") {
+      createWorktree(project: PierProject, payload: PierWorktreePayload = {}) {
+        if (typeof typedGlobalScope.boatyard?.invokePlugin !== "function") {
           throw new Error("Plugin actions are unavailable.");
         }
 
@@ -248,8 +318,8 @@
           startAfterCreate: payload.startAfterCreate
         });
       },
-      removeWorktree(project, payload = {}) {
-        if (typeof globalScope.boatyard?.invokePlugin !== "function") {
+      removeWorktree(project: PierProject, payload: PierWorktreePayload = {}) {
+        if (typeof typedGlobalScope.boatyard?.invokePlugin !== "function") {
           throw new Error("Plugin actions are unavailable.");
         }
 
@@ -261,7 +331,7 @@
           skipDown: payload.skipDown
         });
       },
-      openUrl(entry, options = {}) {
+      openUrl(entry: PierWorkload | string, options: PierOptions = {}) {
         const url = typeof entry === "string" ? entry : entry?.url;
         const slug = typeof entry === "string" ? "" : entry?.slug;
         const webAppId = slug ? `pier:${slug}` : "pier";
@@ -270,25 +340,25 @@
           return true;
         }
 
-        return globalScope.boatyard.openExternal(url);
+        return typedGlobalScope.boatyard?.openExternal?.(url);
       }
     });
   }
 
   async function copyText(value) {
-    if (globalScope.boatyard?.writeClipboardText) {
-      await globalScope.boatyard.writeClipboardText(value);
+    if (typedGlobalScope.boatyard?.writeClipboardText) {
+      await typedGlobalScope.boatyard.writeClipboardText(value);
       return;
     }
 
     await navigator.clipboard.writeText(value);
   }
 
-  function getPierUrlRowKey(entry) {
+  function getPierUrlRowKey(entry: PierWorkload) {
     return `${entry.project || ""}\u0000${entry.slug || ""}`;
   }
 
-  function updatePierUrlRow(row, entry) {
+  function updatePierUrlRow(row: PierUrlRow, entry: PierWorkload) {
     row.pierEntry = entry;
     row.classList.toggle("stopped", !entry.running);
     row.pierLink.href = entry.url || "#";
@@ -307,12 +377,12 @@
       : `Remove ${entry.slug}`;
   }
 
-  function createPierUrlRow(props, service, onRefresh, onError) {
+  function createPierUrlRow(props: PierOptions, service, onRefresh: () => Promise<unknown>, onError: (error: Error) => void): PierUrlRow {
     const link = document.createElement("a");
     link.className = "pier-url-link";
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      const entry = link.closest(".pier-url-row")?.pierEntry || {};
+      const entry = (link.closest(".pier-url-row") as PierUrlRow | null)?.pierEntry || {};
       if (entry.url) {
         service.openUrl(entry, props);
       }
@@ -326,7 +396,7 @@
     pathButton.append(pathText);
     pathButton.addEventListener("click", async () => {
       try {
-        await copyText(pathButton.closest(".pier-url-row")?.pierEntry?.worktreePath || "");
+        await copyText((pathButton.closest(".pier-url-row") as PierUrlRow | null)?.pierEntry?.worktreePath || "");
       } catch (error) {
         onError(error);
       }
@@ -336,7 +406,7 @@
     actionButton.className = "pier-action-button";
     actionButton.type = "button";
     actionButton.addEventListener("click", async () => {
-      const entry = actionButton.closest(".pier-url-row")?.pierEntry || {};
+      const entry = (actionButton.closest(".pier-url-row") as PierUrlRow | null)?.pierEntry || {};
       actionButton.disabled = true;
       actionButton.textContent = entry.running ? "Stopping" : "Starting";
       try {
@@ -358,7 +428,7 @@
     removeButton.type = "button";
     removeButton.textContent = "Remove";
     removeButton.addEventListener("click", () => {
-      const row = removeButton.closest(".pier-url-row");
+      const row = removeButton.closest(".pier-url-row") as PierUrlRow | null;
       const entry = row?.pierEntry || {};
       if (!entry.worktreePath || removeButton.disabled) {
         return;
@@ -367,7 +437,7 @@
       openPierRemoveWorktreeDialog(row.pierProject, entry, service, onRefresh, onError);
     });
 
-    const row = document.createElement("div");
+    const row = document.createElement("div") as PierUrlRow;
     row.className = "pier-url-row";
     row.pierLink = link;
     row.pierPathButton = pathButton;
@@ -378,9 +448,17 @@
     return row;
   }
 
-  function renderPierUrlRows(list, urls, project, props, service, onRefresh, onError) {
+  function renderPierUrlRows(
+    list: HTMLElement,
+    urls: PierWorkload[],
+    project: PierProject,
+    props: PierOptions,
+    service,
+    onRefresh: () => Promise<unknown>,
+    onError: (error: Error) => void
+  ) {
     const existingRows = new Map([...list.querySelectorAll(".pier-url-row")]
-      .map((row) => [row.dataset.key, row]));
+      .map((row) => [(row as PierUrlRow).dataset.key, row as PierUrlRow]));
     const nextKeys = new Set();
 
     for (const entry of urls) {
@@ -478,8 +556,8 @@
   }
 
   function showPierDialog(dialog, focusTarget) {
-    if (typeof globalScope.BoatyardOverlayDialog?.show === "function") {
-      void globalScope.BoatyardOverlayDialog.show(dialog, {
+    if (typeof typedGlobalScope.BoatyardOverlayDialog?.show === "function") {
+      void typedGlobalScope.BoatyardOverlayDialog.show(dialog, {
         freeze: "overlap",
         freezeMargin: 16
       }).then((shown) => {
