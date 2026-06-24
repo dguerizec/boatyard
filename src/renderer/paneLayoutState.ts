@@ -459,7 +459,7 @@ type PaneLayoutStateApi = {
     };
   }
 
-  const globalScope = window as PaneLayoutStateWindow;
+  const globalScope: PaneLayoutStateWindow = window;
   globalScope.BoatyardPaneLayoutState = Object.freeze({
     create: createPaneLayoutState
   });

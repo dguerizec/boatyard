@@ -543,7 +543,8 @@ type OpenOnboardingTourOptions = {
     };
   }
 
-  (window as OnboardingTourGlobal).BoatyardOnboardingTour = {
+  const globalScope: OnboardingTourGlobal = window;
+  globalScope.BoatyardOnboardingTour = {
     create: createOnboardingTour
   };
 })();
