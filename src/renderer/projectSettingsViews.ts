@@ -1,6 +1,57 @@
 "use strict";
 
 (function () {
+  type CoreFieldSetOptions = {
+    ifUnedited?: boolean;
+    markEdited?: boolean;
+    source?: string;
+  };
+
+  type ProjectUrlEntry = {
+    id?: string;
+    label?: string;
+    url?: string;
+  };
+
+  type ProjectWebAppHomeTabEntry = ProjectUrlEntry & {
+    parentWebAppId?: string;
+    parentLabel?: string;
+  };
+
+  type ProjectWidgetPaneEntry = {
+    id?: string;
+    label?: string;
+  };
+
+  type ProjectFormInitialValues = {
+    id?: string;
+    [key: string]: unknown;
+  };
+
+  type PluginFieldSetOptions = {
+    ifUnedited?: boolean;
+    markEdited?: boolean;
+  };
+
+  type ProjectPluginSectionOptions = {
+    readCoreProjectFields?: () => Record<string, string>;
+    setError?: (message: string) => void;
+  };
+
+  type ProjectSettingsViewsGlobal = Window & {
+    BoatyardPluginRegistry?: {
+      emit(eventName: string, payload: unknown): void;
+    };
+    BoatyardPluginSettingsFields: {
+      resolveFieldDefault(field: unknown, context?: unknown): unknown;
+    };
+    BoatyardProjectSettingsViews: {
+      create: typeof createProjectSettingsViews;
+    };
+  };
+
+  const globalScope = window as unknown as ProjectSettingsViewsGlobal;
+
   function createProjectSettingsViews({
     boatyard,
     getState,
@@ -167,7 +218,7 @@
         );
       }
     
-      function setCoreFieldValue(key, value, options = {}) {
+      function setCoreFieldValue(key, value, options: CoreFieldSetOptions = {}) {
         const input = coreInputs[key];
         if (!input) {
           return false;
@@ -314,7 +365,7 @@
       }
     
       function emitProjectFormEvent(eventName, payload) {
-        window.BoatyardPluginRegistry?.emit(eventName, {
+        globalScope.BoatyardPluginRegistry?.emit(eventName, {
           ...payload,
           projectId: initialValues.id || "",
           forPlugin: (pluginId) => ({
@@ -412,7 +463,7 @@
       return shell;
     }
     
-    function createProjectUrlRow(entry = {}) {
+    function createProjectUrlRow(entry: ProjectUrlEntry = {}) {
       const row = document.createElement("div");
       row.className = "project-url-row";
     
@@ -451,7 +502,7 @@
       return row;
     }
     
-    function createProjectWebAppHomeTabRow(entry = {}) {
+    function createProjectWebAppHomeTabRow(entry: ProjectWebAppHomeTabEntry = {}) {
       const row = document.createElement("div");
       row.className = "project-webapp-home-tab-row";
     
@@ -504,7 +555,7 @@
       return row;
     }
     
-    function createProjectWidgetPaneRow(entry = {}) {
+    function createProjectWidgetPaneRow(entry: ProjectWidgetPaneEntry = {}) {
       const row = document.createElement("div");
       row.className = "project-url-row";
     
@@ -537,7 +588,10 @@
       return row;
     }
     
-    function createProjectPluginSettingsControls(initialValues = {}, options = {}) {
+    function createProjectPluginSettingsControls(
+      initialValues: ProjectFormInitialValues = {},
+      options: ProjectPluginSectionOptions = {}
+    ) {
       const controls = [];
       const sections = [];
     
@@ -565,7 +619,7 @@
           input.name = field.key;
           input.type = field.type || "text";
           input.autocomplete = "off";
-          const defaultValue = window.BoatyardPluginSettingsFields.resolveFieldDefault(field, {
+          const defaultValue = globalScope.BoatyardPluginSettingsFields.resolveFieldDefault(field, {
             project: initialValues,
             coreFields: options.readCoreProjectFields?.() || {}
           });
@@ -660,7 +714,7 @@
         getValue(key) {
           return inputs.get(key)?.input.value || "";
         },
-        setValue(key, value, options = {}) {
+        setValue(key, value, options: PluginFieldSetOptions = {}) {
           const input = inputs.get(key)?.input;
           if (!input) {
             return false;
@@ -1153,7 +1207,7 @@
     };
   }
 
-  window.BoatyardProjectSettingsViews = {
+  globalScope.BoatyardProjectSettingsViews = {
     create: createProjectSettingsViews
   };
 })();
