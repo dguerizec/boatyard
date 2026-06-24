@@ -84,6 +84,9 @@ export function createProjectPageViews({
           isOpen: false
         });
         const project = nextState.projects[nextState.projects.length - 1];
+        if (!project?.id) {
+          throw new Error("Created project is missing an id.");
+        }
         nextState = await persistProjectPluginConfig(
           project.id,
           values.pluginConfig as UnknownRecord | undefined
@@ -95,6 +98,10 @@ export function createProjectPageViews({
   }
 
   function renderEditProjectPage(project: RendererProject) {
+    const projectId = project.id;
+    if (!projectId) {
+      return;
+    }
     prepareProjectFormPage("project-form-layout project-settings-layout");
     workspaceTitle.textContent = `${project.name} settings`;
     workspaceSummary.textContent = project.slug || "";
@@ -109,9 +116,9 @@ export function createProjectPageViews({
       title: "Project settings",
       submitLabel: "Save changes",
       initialValues: project,
-      onCancel: () => selectProject(project.id),
+      onCancel: () => selectProject(projectId),
       onSubmit: async (values: UnknownRecord) => {
-        let nextState = await updateProject(project.id, {
+        let nextState = await updateProject(projectId, {
           name: values.name,
           slug: values.slug,
           group: values.group,
@@ -122,42 +129,42 @@ export function createProjectPageViews({
         });
         setState(nextState);
         nextState = await persistProjectPluginConfig(
-          project.id,
+          projectId,
           values.pluginConfig as UnknownRecord | undefined
         );
         setState(nextState);
-        reloadProjectSettings(project.id);
+        reloadProjectSettings(projectId);
       }
     }));
 
     secondaryColumn.append(createProjectTerminalSettingsForm({
       project,
       onSubmit: async (values: UnknownRecord) => {
-        setState(await updateProject(project.id, values));
-        reloadProjectSettings(project.id);
+        setState(await updateProject(projectId, values));
+        reloadProjectSettings(projectId);
       }
     }), createProjectUrlsForm({
       project,
       onSubmit: async (urls: UnknownRecord[]) => {
-        setState(await updateProject(project.id, { urls }));
-        reloadProjectSettings(project.id);
+        setState(await updateProject(projectId, { urls }));
+        reloadProjectSettings(projectId);
       }
     }), createProjectWebAppHomeTabsForm({
       project,
       onSubmit: async (homeTabs: UnknownRecord[]) => {
-        setState(await updateWebAppHomeTabs(project.id, homeTabs));
-        reloadProjectSettings(project.id);
+        setState(await updateWebAppHomeTabs(projectId, homeTabs));
+        reloadProjectSettings(projectId);
       }
     }), createProjectWidgetPanesForm({
       project,
       onSubmit: async (widgetPanes: UnknownRecord[]) => {
-        setState(await updateProject(project.id, { widgetPanes }));
-        reloadProjectSettings(project.id);
+        setState(await updateProject(projectId, { widgetPanes }));
+        reloadProjectSettings(projectId);
       }
     }), createProjectDangerZone({
       project,
       onUnregister: async () => {
-        setState(await removeProject(project.id));
+        setState(await removeProject(projectId));
         selectGlobal();
       }
     }));

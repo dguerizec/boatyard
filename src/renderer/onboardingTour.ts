@@ -179,6 +179,10 @@ export function createOnboardingTour({
 
     function ensureOnboardingSplitPane() {
       const project = getGlobalWorkspace();
+      const projectId = project.id;
+      if (!projectId) {
+        return null;
+      }
       let layout = getProjectPaneLayout(project);
 
       if (countPaneNodes(layout) < 2) {
@@ -187,10 +191,10 @@ export function createOnboardingTour({
           return null;
         }
 
-        const currentWebAppId =
-          getSelectedWebAppForPane(sourcePane.id) ||
-          sourcePane.selectedWebAppId ||
-          getSelectedWebAppForProject(project.id) ||
+          const currentWebAppId =
+            getSelectedWebAppForPane(sourcePane.id) ||
+            sourcePane.selectedWebAppId ||
+          getSelectedWebAppForProject(projectId) ||
           "widgets:widgets-0";
         const replacement = createSplitNode(project, "vertical", { ...sourcePane });
         const firstPane = findFirstPaneNode(replacement.first);
@@ -202,7 +206,7 @@ export function createOnboardingTour({
         const splitWebAppId = getDefaultOnboardingPaneWebAppId(project, secondPane.id);
         firstPane.selectedWebAppId = currentWebAppId;
         secondPane.selectedWebAppId = splitWebAppId;
-        setPaneLayout(project.id, replacePaneNode(layout, sourcePane.id, replacement));
+        setPaneLayout(projectId, replacePaneNode(layout, sourcePane.id, replacement));
         setSelectedWebAppForPane(firstPane.id, currentWebAppId);
         setSelectedWebAppForPane(secondPane.id, splitWebAppId);
         layout = replacement;
@@ -226,6 +230,10 @@ export function createOnboardingTour({
 
     function ensureOnboardingManualPane() {
       const project = getGlobalWorkspace();
+      const projectId = project.id;
+      if (!projectId) {
+        return;
+      }
       const manualPane = ensureOnboardingSplitPane();
       if (!manualPane) {
         return;
@@ -233,7 +241,7 @@ export function createOnboardingTour({
 
       manualPane.selectedWebAppId = "manual";
       setSelectedWebAppForPane(manualPane.id, "manual");
-      setSelectedWebAppForProject(project.id, "manual");
+      setSelectedWebAppForProject(projectId, "manual");
       renderWorkspaceDashboard(project);
     }
 
@@ -272,12 +280,16 @@ export function createOnboardingTour({
       }
 
       const project = getGlobalWorkspace();
-      for (const pane of collectPaneNodes(getPaneLayout(project.id))) {
+      const projectId = project.id;
+      if (!projectId) {
+        return;
+      }
+      for (const pane of collectPaneNodes(getPaneLayout(projectId))) {
         deleteSelectedWebAppForPane(pane.id);
       }
 
-      setPaneLayout(project.id, structuredClone(layout));
-      deleteSelectedWebAppForProject(project.id);
+      setPaneLayout(projectId, structuredClone(layout));
+      deleteSelectedWebAppForProject(projectId);
       for (const pane of collectPaneNodes(layout)) {
         if (pane.selectedWebAppId) {
           setSelectedWebAppForPane(pane.id, pane.selectedWebAppId);
@@ -285,7 +297,7 @@ export function createOnboardingTour({
       }
 
       try {
-        await updatePaneLayout(project.id, layout);
+        await updatePaneLayout(projectId, layout);
       } catch (error) {
         console.error("Could not restore onboarding pane layout:", error);
       }
