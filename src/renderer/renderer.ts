@@ -44,55 +44,23 @@ import { createVisibleWebAppTracker } from "./visibleWebAppTracker.js";
 import { registerWidgetRegistry } from "./widgetRegistry.js";
 import { createWorkspaceDashboardViews } from "./workspaceDashboardViews.js";
 import { createRendererWidgetBridge } from "./rendererWidgetBridge.js";
+import { rendererDomElements } from "./rendererDomElements.js";
+import { DEFAULT_WIDGET_PANE_ID, GLOBAL_WORKSPACE_ID, LEGACY_WIDGET_IDS, MIN_WIDGET_RAIL_WIDTH, UPDATE_POLL_INTERVAL_MS, WEBAPP_OPEN_SPLIT_RATIO, WEBAPP_SPLIT_RESIZER_SIZE, WIDGET_GRID_GAP, WIDGET_GRID_MAX_COLUMN_WIDTH, WIDGET_GRID_MIN_COLUMN_WIDTH, WIDGET_GRID_ROW_HEIGHT, WIDGET_GRID_SCROLL_GUARD } from "./rendererConstants.js";
+import { createRendererGlobalSettingsAdapters } from "./rendererGlobalSettingsAdapters.js";
 
 const boatyardWindow = window;
 registerWidgetRegistry(window);
 registerPluginRegistry(window);
 registerPluginSettingsFields(window);
 
-function requireElement<T extends HTMLElement>(selector: string) {
-  const element = document.querySelector<T>(selector);
-  if (!element) {
-    throw new Error(`Missing required element: ${selector}`);
-  }
+const {
+  addProjectButton, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, globalViewButton, manualTourButton,
+  projectCount, projectList, projectSearchInput, sidebarUpdateNotice, workspace, workspaceKicker, workspaceSummary, workspaceTitle
+} = rendererDomElements;
 
-  return element;
-}
-
-const globalNav = requireElement<HTMLElement>("#global-nav");
-const globalNavRow = requireElement<HTMLElement>("#global-nav-row");
-const globalSettingsButton = requireElement<HTMLButtonElement>("#global-settings");
-const globalViewButton = requireElement<HTMLButtonElement>("#global-view");
-const manualTourButton = requireElement<HTMLButtonElement>("#manual-tour");
-const sidebarUpdateNotice = requireElement<HTMLElement>("#sidebar-update-notice");
-const addProjectButton = requireElement<HTMLButtonElement>("#add-project");
-const projectCount = requireElement<HTMLElement>("#project-count");
-const projectSearchInput = requireElement<HTMLInputElement>("#project-search");
-const projectList = requireElement<HTMLElement>("#project-list");
-const workspace = requireElement<HTMLElement>(".workspace");
-const dashboardGrid = requireElement<HTMLElement>("#dashboard-grid");
-const workspaceKicker = requireElement<HTMLElement>("#workspace-kicker");
-const workspaceTitle = requireElement<HTMLElement>("#workspace-title");
-const workspaceSummary = requireElement<HTMLElement>("#workspace-summary");
-
-const MIN_WIDGET_RAIL_WIDTH = 240;
-const DEFAULT_WIDGET_PANE_ID = "widgets-0";
-const GLOBAL_WORKSPACE_ID = "__global__";
-const WIDGET_GRID_MIN_COLUMN_WIDTH = 100;
-const WIDGET_GRID_MAX_COLUMN_WIDTH = 200;
-const WIDGET_GRID_ROW_HEIGHT = 84;
-const WIDGET_GRID_GAP = 12;
-const WIDGET_GRID_SCROLL_GUARD = 10;
-const WEBAPP_SPLIT_RESIZER_SIZE = 6;
-const WEBAPP_OPEN_SPLIT_RATIO = 2 / 3;
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
-const LEGACY_WIDGET_IDS = new Map([
-  ["project-shell", "terminal-shell"],
-  ["global-shell", "terminal-shell"]
-]);
 
 let state: RendererState = { projects: [] };
-const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
 const webAppLoadTracker = createWebAppLoadTracker();
 let navigationController: ReturnType<typeof createRendererNavigationController>;
 let webAppRuntime: ReturnType<typeof createRendererWebAppRuntime>;
@@ -446,49 +414,16 @@ function renderGlobalPaneArea() {
   workspaceDashboardViews.renderGlobalPaneArea();
 }
 
-function createGlobalProjectsSettingsForm(options: UnknownRecord) {
-  return settingsViewBridge.createGlobalProjectsSettingsForm(
-    options as Parameters<typeof settingsViewBridge.createGlobalProjectsSettingsForm>[0]
-  );
-}
-
-function createGlobalPresentationSettingsForm(options: UnknownRecord) {
-  return settingsViewBridge.createGlobalPresentationSettingsForm(
-    options as Parameters<typeof settingsViewBridge.createGlobalPresentationSettingsForm>[0]
-  );
-}
-
-function createGlobalTerminalSettingsForm(options: UnknownRecord) {
-  return settingsViewBridge.createGlobalTerminalSettingsForm(
-    options as Parameters<typeof settingsViewBridge.createGlobalTerminalSettingsForm>[0]
-  );
-}
-
-function createGlobalPasswordManagerSettingsForm(options: UnknownRecord) {
-  return settingsViewBridge.createGlobalPasswordManagerSettingsForm(
-    options as Parameters<typeof settingsViewBridge.createGlobalPasswordManagerSettingsForm>[0]
-  );
-}
-
-function createGlobalWebAppOpenRulesSettingsForm(options: UnknownRecord) {
-  return settingsViewBridge.createGlobalWebAppOpenRulesSettingsForm(
-    options as Parameters<typeof settingsViewBridge.createGlobalWebAppOpenRulesSettingsForm>[0]
-  );
-}
-
-function createGlobalPluginsSettingsView() {
-  return settingsViewBridge.createGlobalPluginsSettingsView();
-}
-
-function createGlobalWidgetsSettingsView() {
-  return settingsViewBridge.createGlobalWidgetsSettingsView();
-}
-
-function createGlobalUrlsSettingsForm(options: UnknownRecord) {
-  return settingsViewBridge.createGlobalUrlsSettingsForm(
-    options as Parameters<typeof settingsViewBridge.createGlobalUrlsSettingsForm>[0]
-  );
-}
+const {
+  createGlobalPasswordManagerSettingsForm,
+  createGlobalPluginsSettingsView,
+  createGlobalPresentationSettingsForm,
+  createGlobalProjectsSettingsForm,
+  createGlobalTerminalSettingsForm,
+  createGlobalUrlsSettingsForm,
+  createGlobalWebAppOpenRulesSettingsForm,
+  createGlobalWidgetsSettingsView
+} = createRendererGlobalSettingsAdapters(() => settingsViewBridge);
 
 const globalSettingsPageView = createGlobalSettingsPageView({
   closeTerminalTabMenu,
