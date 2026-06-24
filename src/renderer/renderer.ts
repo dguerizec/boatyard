@@ -2,6 +2,14 @@
 
 type UnknownRecord = Record<string, unknown>;
 
+function isRecord(value: unknown): value is UnknownRecord {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function toUnknownRecord(value: unknown): UnknownRecord {
+  return isRecord(value) ? value : {};
+}
+
 type RendererProject = UnknownRecord & {
   devBranch?: string;
   group?: string;
@@ -419,7 +427,7 @@ function getProjects() {
 function getProjectGroups() {
   const groups = [...new Set(getProjects()
     .map((project) => String(project.group || "").trim())
-    .filter(Boolean))] as string[];
+    .filter((group): group is string => Boolean(group)))];
   return groups.sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
 }
 
@@ -581,8 +589,8 @@ function renderProjectNavBadges(project, container, options: ProjectNavBadgeRend
 async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
   let nextState = state;
 
-  for (const [pluginId, config] of Object.entries(pluginConfig)) {
-    nextState = await boatyardWindow.boatyard.updateProjectPluginConfig(projectId, pluginId, config as UnknownRecord);
+  for (const [pluginId, config] of Object.entries(toUnknownRecord(pluginConfig))) {
+    nextState = await boatyardWindow.boatyard.updateProjectPluginConfig(projectId, pluginId, toUnknownRecord(config));
   }
 
   return nextState;
