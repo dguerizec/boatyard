@@ -176,26 +176,26 @@ type BoatyardBridge = {
   updateWebAppHomeTabs(projectId: string, tabs: UnknownRecord[]): Promise<RendererState>;
 };
 
-type BoatyardRendererWindow = Window & {
+type BoatyardRendererGlobals = {
   boatyard: BoatyardBridge;
   BoatyardHawserUI?: {
     createWidget(project: RendererProject, options?: HawserWidgetOptions): HTMLElement;
   };
   BoatyardManual?: RendererManual;
   BoatyardOverlayDialog?: {
-    show(dialog: HTMLDialogElement, options?: UnknownRecord): unknown;
+    show(dialog: HTMLDialogElement, options?: UnknownRecord): Promise<boolean>;
   };
   BoatyardPaneNavigation?: {
     openProjectWebApp(projectId: string | undefined, webAppId: string, url: string): boolean;
   };
   BoatyardPluginRegistry: PluginRegistryApi;
-  BoatyardPluginSettingsFields: {
-    readFieldValue(field: UnknownRecord, input: HTMLElement, options?: UnknownRecord): unknown;
-  };
-  BoatyardWidgetRegistry: {
-    register(definition: UnknownRecord): unknown;
-  };
+  BoatyardPluginSettingsFields: PluginSettingsFieldsApi;
+  BoatyardWidgetRegistry: WidgetRegistryApi;
 };
+
+declare global {
+  interface Window extends BoatyardRendererGlobals {}
+}
 
 type ProjectNavBadgeRenderOptions = {
   isActiveProject?: boolean;
@@ -232,7 +232,7 @@ type HawserWidgetOptions = {
   title?: string;
 };
 
-const boatyardWindow = window as unknown as BoatyardRendererWindow;
+const boatyardWindow = window;
 registerWidgetRegistry(window);
 registerPluginRegistry(window);
 registerPluginSettingsFields(window);
