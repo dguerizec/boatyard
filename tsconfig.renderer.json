@@ -31,7 +31,9 @@
     "src/renderer/updateViews.ts",
     "src/renderer/webAppMenus.ts",
     "src/renderer/webAppSurfaces.ts",
+    "src/renderer/widgetGridGeometry.ts",
     "src/renderer/widgetRegistry.ts",
+    "src/renderer/widgetSurfaceTypes.ts",
     "src/renderer/widgetSurfaces.ts"
   ]
 }

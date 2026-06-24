@@ -1,62 +1,19 @@
-type WidgetGridSize = {
-  columns: number;
-  rows: number;
-};
-
-  type WidgetGridPosition = {
-    x: number;
-    y: number;
-  };
-
-  type WidgetDefinition = {
-    id: string;
-    name: string;
-    title?: string;
-    category?: string;
-    defaultVisible?: boolean;
-    pluginId?: string;
-    layout?: {
-      default?: Partial<WidgetGridSize>;
-      min?: Partial<WidgetGridSize>;
-      max?: Partial<WidgetGridSize>;
-    };
-    create?: (project: unknown, props: unknown) => unknown;
-    createElement?: (project: unknown, props: unknown) => HTMLElement;
-  };
-
-  type WidgetLayout = {
-    order: string[];
-    hidden: string[];
-    sizes: Record<string, WidgetGridSize>;
-    positions: Record<string, WidgetGridPosition>;
-    locked: boolean;
-  };
-
-  type PersistedWidgetLayout = Partial<WidgetLayout> & {
-    panes?: Record<string, PersistedWidgetLayout>;
-  };
-
-  type WidgetPane = {
-    id: string;
-    label?: string;
-  };
-
-  type WidgetProject = {
-    id: string;
-    widgetPanes?: WidgetPane[];
-  };
-
-  type WidgetMenuElement = HTMLDivElement & {
-    cleanup?: () => void;
-  };
-
-  type WidgetRailAction = {
-    label: string;
-    icon: string;
-    menu?: boolean;
-    disabled?: boolean;
-    onClick?: (event: MouseEvent) => void;
-  };
+import {
+  clampWidgetGridSize,
+  findAvailableWidgetPosition,
+  fitWidgetSizeToGrid,
+  getWidgetGridColumnCount as calculateWidgetGridColumnCount,
+  getWidgetGridTrackSpec,
+  getWidgetLayoutSpec,
+  isWidgetAreaAvailable,
+  normalizeWidgetGridPosition
+} from "./widgetGridGeometry.js";
+import type {
+  PersistedWidgetLayout,
+  WidgetGridPosition,
+  WidgetMenuElement,
+  WidgetRailAction
+} from "./widgetSurfaceTypes";
 
 const globalScope: WidgetSurfacesGlobal = window;
 
@@ -220,7 +177,7 @@ export function createWidgetSurfaces({
     
       for (const id of order) {
         const definition = definitionsById.get(id);
-        const size = clampWidgetGridSize(definition, getMigratedWidgetEntry(persisted.sizes, id));
+        const size = clampWidgetGridSize(definition, getMigratedWidgetEntry(persisted.sizes, id), clamp);
         sizes[id] = columnCount ? fitWidgetSizeToGrid(size, columnCount) : size;
       }
     
@@ -255,46 +212,8 @@ export function createWidgetSurfaces({
       };
     }
     
-    function getWidgetLayoutSpec(definition) {
-      const layout = definition.layout || {};
-      const defaultSize = layout.default || { columns: 1, rows: 2 };
-      const minSize = layout.min || { columns: 1, rows: 1 };
-      const maxSize = layout.max || {};
-    
-      return {
-        default: defaultSize,
-        min: minSize,
-        max: {
-          columns: Number.isFinite(Number(maxSize.columns)) ? Number(maxSize.columns) : Number.POSITIVE_INFINITY,
-          rows: Number.isFinite(Number(maxSize.rows)) ? Number(maxSize.rows) : Number.POSITIVE_INFINITY
-        }
-      };
-    }
-    
-    function clampWidgetGridSize(definition, size = undefined) {
-      const spec = getWidgetLayoutSpec(definition);
-      const source = size && typeof size === "object" ? size : spec.default;
-      const columns = Number(source.columns);
-      const rows = Number(source.rows);
-    
-      return {
-        columns: clamp(
-          Number.isFinite(columns) ? Math.round(columns) : spec.default.columns,
-          spec.min.columns,
-          spec.max.columns
-        ),
-        rows: clamp(
-          Number.isFinite(rows) ? Math.round(rows) : spec.default.rows,
-          spec.min.rows,
-          spec.max.rows
-        )
-      };
-    }
-    
     function getWidgetGridColumnCount(widgetRailWidth) {
-      const width = Math.max(1, Math.round(widgetRailWidth || 0));
-    
-      return Math.max(1, Math.floor(width / widgetGridMinColumnWidth));
+      return calculateWidgetGridColumnCount(widgetRailWidth, widgetGridMinColumnWidth);
     }
     
     function getWidgetRailColumnCount(widgetRail) {
@@ -306,43 +225,13 @@ export function createWidgetSurfaces({
       return getWidgetGridColumnCount(widgetRail?.getBoundingClientRect().width || widgetGridMaxColumnWidth);
     }
     
-    function getWidgetGridTrackSpec(widgetRail) {
-      if (!widgetRail) {
-        return {
-          rowHeight: widgetGridRowHeight,
-          rowCount: 1
-        };
-      }
-    
-      const styles = window.getComputedStyle(widgetRail);
-      const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
-      const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
-      const availableHeight = Math.max(
-        widgetGridRowHeight,
-        widgetRail.clientHeight - paddingTop - paddingBottom - widgetGridScrollGuard
-      );
-      const rowCount = Math.max(
-        1,
-        Math.floor((availableHeight + widgetGridGap) / (widgetGridRowHeight + widgetGridGap))
-      );
-      const rowHeight = Math.max(
-        1,
-        (availableHeight - widgetGridGap * Math.max(0, rowCount - 1)) / rowCount
-      );
-    
-      return { rowHeight, rowCount };
-    }
-    
-    function fitWidgetSizeToGrid(size, columnCount) {
-      return {
-        columns: Math.min(columnCount, size.columns),
-        rows: size.rows
-      };
-    }
-    
     function applyWidgetGridLayout(widgetRail, project, columnCount, widgetPaneId = defaultWidgetPaneId) {
       const layout = getProjectWidgetLayout(project, columnCount, widgetPaneId);
-      const trackSpec = getWidgetGridTrackSpec(widgetRail);
+      const trackSpec = getWidgetGridTrackSpec(widgetRail, {
+        gap: widgetGridGap,
+        rowHeight: widgetGridRowHeight,
+        scrollGuard: widgetGridScrollGuard
+      });
       widgetRail.dataset.widgetGridColumns = String(columnCount);
       widgetRail.dataset.widgetGridRows = String(trackSpec.rowCount);
       widgetRail.dataset.widgetGridRowHeight = String(trackSpec.rowHeight);
@@ -361,66 +250,6 @@ export function createWidgetSurfaces({
         card.style.gridColumn = `${position.x + 1} / span ${size.columns}`;
         card.style.gridRow = `${position.y + 1} / span ${size.rows}`;
       }
-    }
-    
-    function normalizeWidgetGridPosition(position) {
-      if (!position || typeof position !== "object") {
-        return null;
-      }
-    
-      const x = Number(position.x);
-      const y = Number(position.y);
-    
-      if (!Number.isFinite(x) || !Number.isFinite(y)) {
-        return null;
-      }
-    
-      return {
-        x: Math.max(0, Math.round(x)),
-        y: Math.max(0, Math.round(y))
-      };
-    }
-    
-    function doWidgetAreasOverlap(leftPosition, leftSize, rightPosition, rightSize) {
-      return leftPosition.x < rightPosition.x + rightSize.columns &&
-        leftPosition.x + leftSize.columns > rightPosition.x &&
-        leftPosition.y < rightPosition.y + rightSize.rows &&
-        leftPosition.y + leftSize.rows > rightPosition.y;
-    }
-    
-    function isWidgetAreaAvailable({ widgetId, position, size, positions, sizes, columnCount }) {
-      if (columnCount && position.x + size.columns > columnCount) {
-        return false;
-      }
-    
-      return Object.entries(positions).every(([otherId, otherPosition]) => {
-        if (otherId === widgetId) {
-          return true;
-        }
-    
-        return !doWidgetAreasOverlap(position, size, otherPosition, sizes[otherId]);
-      });
-    }
-    
-    function findAvailableWidgetPosition({ widgetId, size, positions, sizes, columnCount }) {
-      const columns = Math.max(1, columnCount || size.columns);
-    
-      for (let y = 0; y < 200; y += 1) {
-        for (let x = 0; x <= columns - size.columns; x += 1) {
-          const position = { x, y };
-    
-          if (isWidgetAreaAvailable({ widgetId, position, size, positions, sizes, columnCount: columns })) {
-            return position;
-          }
-        }
-      }
-    
-      return {
-        x: 0,
-        y: Object.entries(positions).reduce((maxY, [id, position]) => (
-          Math.max(maxY, (position as WidgetGridPosition).y + sizes[id].rows)
-        ), 0)
-      };
     }
     
     function getProjectWidgetLayout(project, columnCount = null, widgetPaneId = defaultWidgetPaneId) {
@@ -496,7 +325,7 @@ export function createWidgetSurfaces({
       }
     
       const layout = getProjectWidgetLayout(project, columnCount, widgetPaneId);
-      const size = fitWidgetSizeToGrid(clampWidgetGridSize(definition), columnCount);
+      const size = fitWidgetSizeToGrid(clampWidgetGridSize(definition, undefined, clamp), columnCount);
       const hidden = layout.hidden.filter((id) => id !== widgetId);
       const positions = { ...layout.positions };
       const sizes = {
@@ -749,7 +578,11 @@ export function createWidgetSurfaces({
       const railWidth = rail?.getBoundingClientRect().width || widgetGridMinColumnWidth;
       const columnWidth = (railWidth - widgetGridGap * (columnCount - 1)) / columnCount;
       const columnStep = Math.max(1, columnWidth + widgetGridGap);
-      const trackSpec = getWidgetGridTrackSpec(rail);
+      const trackSpec = getWidgetGridTrackSpec(rail, {
+        gap: widgetGridGap,
+        rowHeight: widgetGridRowHeight,
+        scrollGuard: widgetGridScrollGuard
+      });
       const rowStep = trackSpec.rowHeight + widgetGridGap;
       const maxColumns = Math.min(columnCount, spec.max.columns);
       const canResizeNorth = direction.includes("n");
