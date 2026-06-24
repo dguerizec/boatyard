@@ -1,11 +1,11 @@
 "use strict";
 
 (function registerPierPlugin(globalScope: BoatyardPluginRendererGlobal) {
-  type PierProject = {
-    id?: string;
-    name?: string;
-    slug?: string;
-    sourcePath?: string;
+  type PierProject = PluginRegistryRecord & {
+    id?: unknown;
+    name?: unknown;
+    slug?: unknown;
+    sourcePath?: unknown;
   };
 
   type PierConfig = {
@@ -57,30 +57,103 @@
     pierProject: PierProject;
     pierRemoveButton: HTMLButtonElement;
   };
+  type PierService = {
+    createWorktree(project: PierProject, payload?: PierWorktreePayload): Promise<unknown> | undefined;
+    down(workload: PierWorkload, options?: PierOptions): Promise<unknown>;
+    listProjectWorkloads(project: PierProject, options?: PierOptions): Promise<PierWorkload[]>;
+    openUrl(entry: PierWorkload | string, options?: PierOptions): unknown;
+    removeWorktree(project: PierProject, payload?: PierWorktreePayload): Promise<unknown> | undefined;
+    up(workload: PierWorkload, options?: PierOptions): Promise<unknown>;
+  };
+  type PierFieldContext = {
+    project: PierProject;
+  };
+  type PierCoreFieldChangedEvent = {
+    coreFields: PierProject;
+    field: string;
+    fields?: {
+      setDefaultValue(key: string, value: string): void;
+    };
+  };
+  type PierPluginContext = PluginRegistryRecord & {
+    events: {
+      on(eventName: string, callback: (event: unknown) => void): void;
+    };
+    panes: {
+      register(definition: Record<string, unknown>): void;
+    };
+    services: {
+      provide(id: string, service: unknown): void;
+    };
+    settings: {
+      registerGlobalSection(section: Record<string, unknown>): void;
+      registerProjectSection(section: Record<string, unknown>): void;
+    };
+    status: {
+      set(status: unknown): void;
+    };
+    widgets: {
+      register(definition: Record<string, unknown>): void;
+      registerAlias(alias: string, targetId: string): void;
+    };
+  };
 
   const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_PIER_URL = "http://pier.test";
   const DEFAULT_PIER_WORKTREE_PATTERN = "<repo>/worktrees/<worktree>";
-  const workloadCacheByProject = new Map();
+  const workloadCacheByProject = new Map<string, PierWorkload[]>();
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
   }
 
-  function invokePlugin(actionName, payload = {}) {
+  function invokePlugin(actionName: string, payload: Record<string, unknown> = {}) {
     return globalScope.boatyard?.invokePlugin?.("boatyard.pier", actionName, payload);
   }
 
-  function normalizePath(value) {
+  function normalizePath(value: unknown) {
     return String(value || "").replace(/[/\\]+$/g, "");
   }
 
-  function normalizeApiUrl(value) {
+  function normalizeApiUrl(value: unknown) {
     return String(value || DEFAULT_PIER_URL).replace(/\/+$/g, "");
   }
 
-  function pathsOverlap(left, right) {
+  function pathsOverlap(left: string, right: string) {
     return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+  }
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function normalizePierProjectEntry(value: unknown): PierProjectEntry {
+    const source = isRecord(value) ? value : {};
+    return {
+      name: String(source.name || "").trim() || undefined,
+      repo_path: String(source.repo_path || "").trim() || undefined
+    };
+  }
+
+  function normalizePierWorkloadUrl(value: unknown): { default?: boolean; url?: string } {
+    const source = isRecord(value) ? value : {};
+    return {
+      default: source.default === true,
+      url: String(source.url || "").trim() || undefined
+    };
+  }
+
+  function normalizePierWorkload(value: unknown): PierWorkload {
+    const source = isRecord(value) ? value : {};
+    return {
+      project: String(source.project || "").trim() || undefined,
+      running: source.running === true,
+      slug: String(source.slug || "").trim() || undefined,
+      status: String(source.status || "").trim() || undefined,
+      url: String(source.url || "").trim() || undefined,
+      urls: Array.isArray(source.urls) ? source.urls.map(normalizePierWorkloadUrl) : undefined,
+      worktreePath: String(source.worktreePath || source.worktree_path || "").trim() || undefined
+    };
   }
 
   function findPierProject(project: PierProject, pierProjects: PierProjectEntry[], config: PierConfig = {}) {
@@ -111,7 +184,7 @@
     return ["running", "started"].includes(String(workload.status || "").toLowerCase());
   }
 
-  function normalizeHostnameLabel(value) {
+  function normalizeHostnameLabel(value: unknown) {
     return String(value || "")
       .trim()
       .toLowerCase()
@@ -131,7 +204,7 @@
     return DEFAULT_PIER_WORKTREE_PATTERN;
   }
 
-  function getDefaultWorktreePath(project: PierProject = {}, branchName = "", options: PierOptions = {}) {
+  function getDefaultWorktreePath(project: PierProject = {}, branchName: unknown = "", options: PierOptions = {}) {
     const sourcePath = normalizePath(project.sourcePath);
     const branchSlug = normalizeHostnameLabel(branchName);
     if (!sourcePath || !branchSlug) {
@@ -145,7 +218,7 @@
       worktree: branchSlug
     };
     const pattern = getPierWorktreePattern(options);
-    return pattern.replace(/\{(repo|project|worktree)\}|<(repo|project|worktree)>/g, (_match, bracedToken, angledToken) => (
+    return pattern.replace(/\{(repo|project|worktree)\}|<(repo|project|worktree)>/g, (_match, bracedToken: keyof typeof tokens | undefined, angledToken: keyof typeof tokens | undefined) => (
       tokens[bracedToken || angledToken]
     ));
   }
@@ -182,7 +255,7 @@
   }
 
   function getWorkloadCacheKey(project: PierProject, options: PierOptions = {}) {
-    return `${project?.id || project?.slug || ""}\u0000${String(options.pluginConfig?.pierProjectName || "")}`;
+    return `${String(project?.id || project?.slug || "")}\u0000${String(options.pluginConfig?.pierProjectName || "")}`;
   }
 
   function setCachedWorkloads(project: PierProject, options: PierOptions, workloads: PierWorkload[]) {
@@ -215,15 +288,16 @@
     return response.json();
   }
 
-  function normalizeWorktreeEntry(pierProjectName: string, worktree) {
-    const workload = worktree?.workload || {};
+  function normalizeWorktreeEntry(pierProjectName: string, worktree: unknown): PierWorkload {
+    const source = isRecord(worktree) ? worktree : {};
+    const workload = normalizePierWorkload(source.workload);
     return {
       project: workload.project || pierProjectName,
-      slug: workload.slug || worktree?.slug || worktree?.branch || "main",
+      slug: workload.slug || String(source.slug || source.branch || "main"),
       url: getDefaultWorkloadUrl(workload),
-      worktreePath: worktree?.path || workload.worktree_path || "",
-      status: workload.status || (worktree?.has_workload ? "" : "stopped"),
-      running: worktree?.has_workload === true && isWorkloadRunning(workload)
+      worktreePath: String(source.path || workload.worktreePath || ""),
+      status: workload.status || (source.has_workload ? "" : "stopped"),
+      running: source.has_workload === true && isWorkloadRunning(workload)
     };
   }
 
@@ -236,7 +310,8 @@
     }
 
     const pierProjects = await projectsResponse.json();
-    const pierProject = findPierProject(project, Array.isArray(pierProjects) ? pierProjects : [], options.pluginConfig);
+    const pierProjectEntries = Array.isArray(pierProjects) ? pierProjects.map(normalizePierProjectEntry) : [];
+    const pierProject = findPierProject(project, pierProjectEntries, options.pluginConfig);
     const pierProjectName = pierProject?.name || "";
 
     if (!pierProjectName) {
@@ -253,7 +328,7 @@
     const worktrees = await worktreesResponse.json();
     const entries = (Array.isArray(worktrees) ? worktrees : [])
       .map((worktree) => normalizeWorktreeEntry(pierProjectName, worktree))
-      .filter((entry) => entry.slug && entry.worktreePath);
+      .filter((entry): entry is PierWorkload => Boolean(entry.slug && entry.worktreePath));
 
     setCachedWorkloads(project, options, entries);
     return entries;
@@ -261,7 +336,7 @@
 
   function listCachedProjectWorkloadWebApps(project: PierProject, options: PierOptions = {}) {
     return (workloadCacheByProject.get(getWorkloadCacheKey(project, options)) || [])
-      .filter((entry) => entry.running && entry.url)
+      .filter((entry: PierWorkload) => entry.running && entry.url)
       .map((entry) => ({
         id: `pier:${entry.slug}`,
         key: entry.slug,
@@ -332,7 +407,7 @@
     });
   }
 
-  async function copyText(value) {
+  async function copyText(value: string) {
     if (globalScope.boatyard?.writeClipboardText) {
       await globalScope.boatyard.writeClipboardText(value);
       return;
@@ -377,7 +452,11 @@
       : `Remove ${entry.slug}`;
   }
 
-  function createPierUrlRow(props: PierOptions, service, onRefresh: () => Promise<unknown>, onError: (error: Error) => void): PierUrlRow {
+  function asError(value: unknown): Error {
+    return value instanceof Error ? value : new Error(String(value));
+  }
+
+  function createPierUrlRow(props: PierOptions, service: PierService, onRefresh: () => Promise<unknown>, onError: (error: Error) => void): PierUrlRow {
     const link = document.createElement("a");
     link.className = "pier-url-link";
     link.addEventListener("click", (event) => {
@@ -398,7 +477,7 @@
       try {
         await copyText(getClosestPierUrlRow(pathButton)?.pierEntry.worktreePath || "");
       } catch (error) {
-        onError(error);
+        onError(asError(error));
       }
     });
 
@@ -419,7 +498,7 @@
       } catch (error) {
         actionButton.disabled = false;
         actionButton.textContent = entry.running ? "Stop" : "Start";
-        onError(error);
+        onError(asError(error));
       }
     });
 
@@ -456,14 +535,14 @@
     urls: PierWorkload[],
     project: PierProject,
     props: PierOptions,
-    service,
+    service: PierService,
     onRefresh: () => Promise<unknown>,
     onError: (error: Error) => void
   ) {
     const existingRows = new Map([...list.querySelectorAll(".pier-url-row")]
       .filter(isPierUrlRow)
       .map((row) => [row.dataset.key, row]));
-    const nextKeys = new Set();
+    const nextKeys = new Set<string>();
 
     for (const entry of urls) {
       const key = getPierUrlRowKey(entry);
@@ -482,7 +561,7 @@
     }
   }
 
-  function createPierDialog(titleText) {
+  function createPierDialog(titleText: string) {
     const dialog = document.createElement("dialog");
     dialog.className = "plugin-settings-dialog pier-worktree-dialog";
 
@@ -510,7 +589,7 @@
     return { dialog, form };
   }
 
-  function createField(labelText, input) {
+  function createField(labelText: string, input: HTMLInputElement) {
     const label = document.createElement("label");
     label.className = "field";
     const labelCopy = document.createElement("span");
@@ -519,7 +598,7 @@
     return label;
   }
 
-  function createCheckbox(labelText, input) {
+  function createCheckbox(labelText: string, input: HTMLInputElement) {
     const label = document.createElement("label");
     label.className = "pier-checkbox-field";
     const copy = document.createElement("span");
@@ -528,7 +607,7 @@
     return label;
   }
 
-  function createSwitch(labelText, input) {
+  function createSwitch(labelText: string, input: HTMLInputElement) {
     const label = document.createElement("label");
     label.className = "switch-row pier-switch-row";
 
@@ -554,12 +633,12 @@
     return error;
   }
 
-  function setDialogError(error, message) {
+  function setDialogError(error: HTMLElement, message: string) {
     error.textContent = message || "";
     error.hidden = !message;
   }
 
-  function showPierDialog(dialog, focusTarget) {
+  function showPierDialog(dialog: HTMLDialogElement, focusTarget?: HTMLElement) {
     if (typeof globalScope.BoatyardOverlayDialog?.show === "function") {
       void globalScope.BoatyardOverlayDialog.show(dialog, {
         freeze: "overlap",
@@ -577,7 +656,13 @@
     requestAnimationFrame(() => focusTarget?.focus());
   }
 
-  function openPierCreateWorktreeDialog(project, props, service, onRefresh, onError) {
+  function openPierCreateWorktreeDialog(
+    project: PierProject,
+    props: PierOptions,
+    service: PierService,
+    onRefresh: () => Promise<unknown>,
+    onError: (error: Error) => void
+  ) {
     const { dialog, form } = createPierDialog("New Pier worktree");
 
     const branchInput = document.createElement("input");
@@ -640,7 +725,7 @@
       error,
       actions
     );
-    form.addEventListener("submit", async (event) => {
+    form.addEventListener("submit", async (event: SubmitEvent) => {
       event.preventDefault();
       setDialogError(error, "");
       submitButton.disabled = true;
@@ -655,8 +740,9 @@
         dialog.close();
         await onRefresh();
       } catch (createError) {
-        setDialogError(error, createError.message);
-        onError(createError);
+        const normalizedError = asError(createError);
+        setDialogError(error, normalizedError.message);
+        onError(normalizedError);
       } finally {
         submitButton.disabled = false;
         submitButton.textContent = "Create worktree";
@@ -666,7 +752,13 @@
     showPierDialog(dialog, branchInput);
   }
 
-  function openPierRemoveWorktreeDialog(project, entry, service, onRefresh, onError) {
+  function openPierRemoveWorktreeDialog(
+    project: PierProject,
+    entry: PierWorkload,
+    service: PierService,
+    onRefresh: () => Promise<unknown>,
+    onError: (error: Error) => void
+  ) {
     const { dialog, form } = createPierDialog("Remove Pier worktree");
 
     const confirmation = document.createElement("div");
@@ -709,7 +801,7 @@
       error,
       actions
     );
-    form.addEventListener("submit", async (event) => {
+    form.addEventListener("submit", async (event: SubmitEvent) => {
       event.preventDefault();
       setDialogError(error, "");
       submitButton.disabled = true;
@@ -723,8 +815,9 @@
         dialog.close();
         await onRefresh();
       } catch (removeError) {
-        setDialogError(error, removeError.message);
-        onError(removeError);
+        const normalizedError = asError(removeError);
+        setDialogError(error, normalizedError.message);
+        onError(normalizedError);
       } finally {
         submitButton.disabled = false;
         submitButton.textContent = "Remove worktree";
@@ -734,7 +827,7 @@
     showPierDialog(dialog, submitButton);
   }
 
-  function createPierWidget(project, props = {}, service) {
+  function createPierWidget(project: PierProject, props: PierOptions = {}, service: PierService) {
     const card = document.createElement("article");
     card.className = "widget-card pier-widget-card";
 
@@ -791,13 +884,13 @@
         const urls = await service.listProjectWorkloads(project, props);
         body.hidden = urls.length > 0;
         body.textContent = urls.length ? "" : "No Pier worktree.";
-        renderPierUrlRows(list, urls, project, props, service, load, (error) => {
+        renderPierUrlRows(list, urls, project, props, service, load, (error: Error) => {
           body.hidden = false;
           body.textContent = error.message;
         });
       } catch (error) {
         body.hidden = false;
-        body.textContent = error.message;
+        body.textContent = asError(error).message;
       } finally {
         refreshButton.disabled = false;
       }
@@ -807,7 +900,7 @@
       load();
     });
     newButton.addEventListener("click", () => {
-      openPierCreateWorktreeDialog(project, props, service, load, (error) => {
+      openPierCreateWorktreeDialog(project, props, service, load, (error: Error) => {
         body.hidden = false;
         body.textContent = error.message;
       });
@@ -827,7 +920,7 @@
     return card;
   }
 
-  function syncProjectDefaults(event) {
+  function syncProjectDefaults(event: PierCoreFieldChangedEvent) {
     if (!["slug", "devBranch"].includes(event.field)) {
       return;
     }
@@ -859,7 +952,7 @@
       ]
     },
     {
-      activate(ctx) {
+      activate(ctx: PierPluginContext) {
         ctx.status.set({
           state: "ready",
           summary: "Pier integration is available"
@@ -899,7 +992,7 @@
               type: "text",
               valueType: "url",
               placeholder: "http://pier.test/#/projects/project",
-              defaultValue({ project }) {
+              defaultValue({ project }: PierFieldContext) {
                 return getDefaultPreviewUrl(project);
               }
             },
@@ -908,7 +1001,7 @@
               label: "Pier project",
               type: "text",
               placeholder: "project",
-              defaultValue({ project }) {
+              defaultValue({ project }: PierFieldContext) {
                 return getDefaultPierProjectName(project);
               }
             }
@@ -922,25 +1015,25 @@
           title: "Pier",
           kind: "wcv",
           scope: "project",
-          resolveUrl({ project, projectConfig, globalPluginConfig }) {
-            return getPierPaneUrl(project, {
+          resolveUrl({ project, projectConfig, globalPluginConfig }: PluginPaneResolveContext) {
+            return getPierPaneUrl(project || {}, {
               pluginConfig: projectConfig,
               globalPluginConfig
             });
           },
-          resolveWebApps({ project, projectConfig, globalPluginConfig }) {
+          resolveWebApps({ project, projectConfig, globalPluginConfig }: PluginPaneResolveContext) {
             return [
               {
                 id: "pier",
                 key: "dashboard",
                 label: "Pier",
-                url: getPierPaneUrl(project, {
+                url: getPierPaneUrl(project || {}, {
                   pluginConfig: projectConfig,
                   globalPluginConfig
                 }),
                 restoreUrl: false
               },
-              ...listCachedProjectWorkloadWebApps(project, {
+              ...listCachedProjectWorkloadWebApps(project || {}, {
                 pluginConfig: projectConfig,
                 globalPluginConfig
               })
@@ -961,7 +1054,7 @@
             default: { columns: 3, rows: 2 },
             min: { columns: 3, rows: 2 }
           },
-          createElement: (project, props) => createPierWidget(project, props, pierService)
+          createElement: (project: PierProject, props: PierOptions) => createPierWidget(project, props, pierService)
         });
         ctx.widgets.registerAlias("project-preview", "boatyard.pier.urls");
         ctx.widgets.registerAlias("pier-urls", "boatyard.pier.urls");
