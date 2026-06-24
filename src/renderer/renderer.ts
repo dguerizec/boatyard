@@ -124,9 +124,9 @@ navigationController = createRendererNavigationController({
   closeProjectGroupMenu,
   closeTerminalTabMenu,
   getCollapsedProjectGroups,
-  hasProject: (projectId) => getProjects().some((project) => project.id === projectId),
+  hasProject: (projectId: string) => getProjects().some((project) => project.id === projectId),
   render,
-  updateNavigation: (values) => boatyardWindow.boatyard.updateNavigation(values)
+  updateNavigation: (values: UnknownRecord) => boatyardWindow.boatyard.updateNavigation(values)
 });
 
 const {
@@ -158,12 +158,14 @@ const {
   windowObject: boatyardWindow
 });
 
-function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {
+function waitForWebAppLoad(key: string, expectedUrl = "", timeoutMs = 6000) {
   return webAppLoadTracker.waitForLoad(key, expectedUrl, timeoutMs);
 }
 
 const paneLayoutState = createPaneLayoutState({
-  updatePaneLayout: (projectId, layout) => boatyardWindow.boatyard.updatePaneLayout(projectId, layout)
+  updatePaneLayout: (projectId: string | null | undefined, layout: unknown) => (
+    boatyardWindow.boatyard.updatePaneLayout(projectId, layout)
+  )
 });
 const {
   collectPaneNodes,
@@ -196,19 +198,19 @@ function closeTerminalTabMenu() {
   terminalSurfaces.closeTerminalTabMenu();
 }
 
-function detachProjectTerminal(projectId) {
+function detachProjectTerminal(projectId: string) {
   terminalSurfaces.detachProjectTerminal(projectId);
 }
 
-function detachInactiveProjectTerminals(activeProjectId = null) {
+function detachInactiveProjectTerminals(activeProjectId: string | null = null) {
   terminalSurfaces.detachInactiveProjectTerminals(activeProjectId);
 }
 
-function createTerminalSurface(project, options = {}) {
+function createTerminalSurface(project: RendererProject, options: UnknownRecord = {}) {
   return terminalSurfaces.createTerminalSurface(project, options);
 }
 
-function createTerminalWidget(project, props = {}) {
+function createTerminalWidget(project: RendererProject, props: UnknownRecord = {}) {
   return terminalSurfaces.createTerminalWidget(project, props);
 }
 
@@ -216,7 +218,7 @@ boatyardWindow.BoatyardHawserUI = Object.freeze({
   createWidget: createHawserWidget
 });
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
@@ -258,7 +260,7 @@ const {
   windowObject: boatyardWindow
 });
 
-function renderWorkspaceDashboard(project) {
+function renderWorkspaceDashboard(project: RendererProject) {
   if (isGlobalWorkspace(project)) {
     renderGlobalDashboard();
   } else {
@@ -266,7 +268,7 @@ function renderWorkspaceDashboard(project) {
   }
 }
 
-function renderWorkspacePaneArea(project) {
+function renderWorkspacePaneArea(project: RendererProject) {
   if (isGlobalWorkspace(project)) {
     renderGlobalPaneArea();
   } else {
@@ -295,23 +297,27 @@ webAppRuntime = createRendererWebAppRuntime({
   renderWorkspacePaneArea
 });
 
-function getProjectWebApps(project, paneId) {
+function getProjectWebApps(project: RendererProject, paneId?: string) {
   return webAppRuntime.getProjectWebApps(project, paneId);
 }
 
-function getProjectPaneLayout(project) {
-  return paneLayoutState.getProjectPaneLayout(project);
+function getProjectPaneLayout(project: RendererProject) {
+  return paneLayoutState.getProjectPaneLayout(project as Parameters<typeof paneLayoutState.getProjectPaneLayout>[0]);
 }
 
-function getSelectedWebApp(project, paneId, webApps) {
-  return paneLayoutState.getSelectedWebApp(project, paneId, webApps);
+function getSelectedWebApp(project: RendererProject, paneId: string, webApps: unknown[]) {
+  return paneLayoutState.getSelectedWebApp(
+    project as Parameters<typeof paneLayoutState.getSelectedWebApp>[0],
+    paneId,
+    webApps as Parameters<typeof paneLayoutState.getSelectedWebApp>[2]
+  );
 }
 
-function invokeWebApp(action, ...payload) {
+function invokeWebApp(action: string, ...payload: unknown[]) {
   return webAppRuntime.invokeWebApp(action, ...payload);
 }
 
-function isWebAppAutofillEnabled(webApp) {
+function isWebAppAutofillEnabled(webApp: UnknownRecord) {
   return webAppRuntime.isWebAppAutofillEnabled(webApp);
 }
 
@@ -319,23 +325,23 @@ function isPasswordManagerEnabled() {
   return webAppRuntime.isPasswordManagerEnabled();
 }
 
-function syncWebAppAutofillButton(button, enabled) {
+function syncWebAppAutofillButton(button: HTMLButtonElement, enabled: boolean) {
   webAppRuntime.syncWebAppAutofillButton(button, enabled);
 }
 
-async function toggleWebAppAutofill(webApp, button) {
+async function toggleWebAppAutofill(webApp: UnknownRecord, button: HTMLButtonElement) {
   await webAppRuntime.toggleWebAppAutofill(webApp, button);
 }
 
-function getCurrentWebAppUrl(webApp) {
+function getCurrentWebAppUrl(webApp: UnknownRecord) {
   return webAppRuntime.getCurrentWebAppUrl(webApp);
 }
 
-function persistVisibleWebAppPaneLayout(key, url = "") {
+function persistVisibleWebAppPaneLayout(key: string, url = "") {
   visibleWebApps.persistPaneLayoutForWebApp(key, url);
 }
 
-function openProjectWebApp(projectId, webAppId, url = "") {
+function openProjectWebApp(projectId: string | undefined, webAppId: string, url = "") {
   return webAppRuntime.openProjectWebApp(projectId, webAppId, url);
 }
 
@@ -369,29 +375,31 @@ const paneLayoutView = createPaneLayoutView({
   syncWebAppAutofillButton,
   toggleWebAppAutofill,
   getCurrentWebAppUrl,
-  setCurrentWebAppUrl: (key, url) => {
+  setCurrentWebAppUrl: (key: string, url: string) => {
     webAppRuntime.setCurrentWebAppUrl(key, url);
   },
   normalizeAddressInput,
   isGlobalWorkspace,
   getProjectPluginConfig,
   getGlobalPluginConfig,
-  getAllProjectPluginConfig: (project) => (isGlobalWorkspace(project) ? {} : state.pluginConfig?.projects?.[project.id] || {}),
+  getAllProjectPluginConfig: (project: RendererProject) => (
+    isGlobalWorkspace(project) ? {} : state.pluginConfig?.projects?.[project.id || ""] || {}
+  ),
   openProjectWebApp,
-  setVisibleWebAppHost: (paneId, entry) => {
-    visibleWebApps.set(paneId, entry);
+  setVisibleWebAppHost: (paneId: string, entry: unknown) => {
+    visibleWebApps.set(paneId, entry as Parameters<typeof visibleWebApps.set>[1]);
   },
   queueWebAppSync,
   renderWorkspaceDashboard,
   persistPaneLayout
 });
 
-function createPaneLayout(project, node) {
-  return paneLayoutView.createPaneLayout(project, node);
+function createPaneLayout(project: RendererProject, node: RendererPaneLayoutNode) {
+  return paneLayoutView.createPaneLayout(project, node as Parameters<typeof paneLayoutView.createPaneLayout>[1]);
 }
 
-function persistPaneLayout(project) {
-  paneLayoutState.persistPaneLayout(project);
+function persistPaneLayout(project: RendererProject) {
+  paneLayoutState.persistPaneLayout(project as Parameters<typeof paneLayoutState.persistPaneLayout>[0]);
 }
 
 function hydratePaneLayouts() {
@@ -453,24 +461,34 @@ function renderManualPage() {
   manualViews.renderManualPage();
 }
 
-function createGlobalProjectsSettingsForm(options) {
-  return settingsViewBridge.createGlobalProjectsSettingsForm(options);
+function createGlobalProjectsSettingsForm(options: UnknownRecord) {
+  return settingsViewBridge.createGlobalProjectsSettingsForm(
+    options as Parameters<typeof settingsViewBridge.createGlobalProjectsSettingsForm>[0]
+  );
 }
 
-function createGlobalPresentationSettingsForm(options) {
-  return settingsViewBridge.createGlobalPresentationSettingsForm(options);
+function createGlobalPresentationSettingsForm(options: UnknownRecord) {
+  return settingsViewBridge.createGlobalPresentationSettingsForm(
+    options as Parameters<typeof settingsViewBridge.createGlobalPresentationSettingsForm>[0]
+  );
 }
 
-function createGlobalTerminalSettingsForm(options) {
-  return settingsViewBridge.createGlobalTerminalSettingsForm(options);
+function createGlobalTerminalSettingsForm(options: UnknownRecord) {
+  return settingsViewBridge.createGlobalTerminalSettingsForm(
+    options as Parameters<typeof settingsViewBridge.createGlobalTerminalSettingsForm>[0]
+  );
 }
 
-function createGlobalPasswordManagerSettingsForm(options) {
-  return settingsViewBridge.createGlobalPasswordManagerSettingsForm(options);
+function createGlobalPasswordManagerSettingsForm(options: UnknownRecord) {
+  return settingsViewBridge.createGlobalPasswordManagerSettingsForm(
+    options as Parameters<typeof settingsViewBridge.createGlobalPasswordManagerSettingsForm>[0]
+  );
 }
 
-function createGlobalWebAppOpenRulesSettingsForm(options) {
-  return settingsViewBridge.createGlobalWebAppOpenRulesSettingsForm(options);
+function createGlobalWebAppOpenRulesSettingsForm(options: UnknownRecord) {
+  return settingsViewBridge.createGlobalWebAppOpenRulesSettingsForm(
+    options as Parameters<typeof settingsViewBridge.createGlobalWebAppOpenRulesSettingsForm>[0]
+  );
 }
 
 function createGlobalPluginsSettingsView() {
@@ -481,8 +499,10 @@ function createGlobalWidgetsSettingsView() {
   return settingsViewBridge.createGlobalWidgetsSettingsView();
 }
 
-function createGlobalUrlsSettingsForm(options) {
-  return settingsViewBridge.createGlobalUrlsSettingsForm(options);
+function createGlobalUrlsSettingsForm(options: UnknownRecord) {
+  return settingsViewBridge.createGlobalUrlsSettingsForm(
+    options as Parameters<typeof settingsViewBridge.createGlobalUrlsSettingsForm>[0]
+  );
 }
 
 const globalSettingsPageView = createGlobalSettingsPageView({
@@ -530,11 +550,11 @@ function renderGlobalSettingsPage() {
   globalSettingsPageView.renderGlobalSettingsPage();
 }
 
-function renderProjectDashboard(project) {
+function renderProjectDashboard(project: RendererProject) {
   workspaceDashboardViews.renderProjectDashboard(project);
 }
 
-function renderProjectPaneArea(project) {
+function renderProjectPaneArea(project: RendererProject) {
   workspaceDashboardViews.renderProjectPaneArea(project);
 }
 
@@ -544,8 +564,8 @@ const webAppMenus = createWebAppMenus({
   getSettings,
   getProjectById,
   getProjectWidgetPanes,
-  getVisibleWebAppEntryByKey: (key) => visibleWebApps.getEntryByKey(key),
-  getVisibleWebAppEntryByUrl: (url) => visibleWebApps.getEntryByUrl(url),
+  getVisibleWebAppEntryByKey: (key: string) => visibleWebApps.getEntryByKey(key),
+  getVisibleWebAppEntryByUrl: (url: string) => visibleWebApps.getEntryByUrl(url),
   getVisibleWebAppProject: () => webAppRuntime.getVisibleWebAppProject(),
   getProjectPaneLayout,
   getWebAppHostBounds,
@@ -557,25 +577,25 @@ const webAppMenus = createWebAppMenus({
   getSelectedWebAppForPane: paneLayoutState.getSelectedWebAppForPane,
   setSelectedWebAppForProject: paneLayoutState.setSelectedWebAppForProject,
   getSelectedWebAppForProject: paneLayoutState.getSelectedWebAppForProject,
-  setCurrentWebAppUrl: (key, url) => {
+  setCurrentWebAppUrl: (key: string, url: string) => {
     webAppRuntime.setCurrentWebAppUrl(key, url);
   },
   persistPaneLayout,
   renderWorkspaceDashboard,
-  updateWebAppHomeTab: async (projectId, tab) => {
+  updateWebAppHomeTab: async (projectId: string, tab: UnknownRecord) => {
     state = await boatyardWindow.boatyard.updateWebAppHomeTab(projectId, tab);
     return state;
   },
-  updateSettings: async (values) => {
+  updateSettings: async (values: UnknownRecord) => {
     state = await boatyardWindow.boatyard.updateSettings(values);
     return state;
   },
-  updateProject: async (projectId, values) => {
+  updateProject: async (projectId: string, values: UnknownRecord) => {
     state = await boatyardWindow.boatyard.updateProject(projectId, values);
     return state;
   },
   invokeWebApp,
-  openExternal: (url) => boatyardWindow.boatyard.openExternal(url),
+  openExternal: (url: string) => boatyardWindow.boatyard.openExternal(url),
   showOverlayDialog,
   normalizePayloadBounds,
   freezeWebAppsForOverlay,
@@ -583,10 +603,10 @@ const webAppMenus = createWebAppMenus({
   closeTerminalTabMenu,
   clamp,
   isGlobalWorkspace,
-  isWebAppLoaded: (key) => webAppLoadTracker.hasLoadedKey(key)
+  isWebAppLoaded: (key: string) => webAppLoadTracker.hasLoadedKey(key)
 });
 
-function applyWebAppOpenChoice(payload, choice) {
+function applyWebAppOpenChoice(payload: UnknownRecord, choice: UnknownRecord) {
   return webAppMenus.applyWebAppOpenChoice(payload, choice);
 }
 
@@ -594,15 +614,26 @@ function closeWebAppTabMenu() {
   webAppMenus.closeWebAppTabMenu();
 }
 
-function createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps, options = {}) {
+function createWidgetPaneTabs(
+  project: RendererProject,
+  paneNode: RendererPaneLayoutNode,
+  selectedWebApp: UnknownRecord,
+  webApps: UnknownRecord[],
+  options: UnknownRecord = {}
+) {
   return webAppMenus.createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps, options);
 }
 
-function normalizeAddressInput(rawUrl) {
+function normalizeAddressInput(rawUrl: string) {
   return webAppMenus.normalizeAddressInput(rawUrl);
 }
 
-function openWebAppHomeMenu(event, project, paneNode, selectedWebApp) {
+function openWebAppHomeMenu(
+  event: MouseEvent,
+  project: RendererProject,
+  paneNode: RendererPaneLayoutNode,
+  selectedWebApp: UnknownRecord
+) {
   return webAppMenus.openWebAppHomeMenu(event, project, paneNode, selectedWebApp);
 }
 
@@ -610,11 +641,17 @@ function openWebAppOpenUrlDialog(payload = {}) {
   return webAppMenus.openWebAppOpenUrlDialog(payload);
 }
 
-function openWebAppRefreshMenu(event, selectedWebApp) {
+function openWebAppRefreshMenu(event: MouseEvent, selectedWebApp: UnknownRecord) {
   return webAppMenus.openWebAppRefreshMenu(event, selectedWebApp);
 }
 
-function openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps) {
+function openWebAppTabMenuFromButton(
+  button: HTMLButtonElement,
+  project: RendererProject,
+  paneNode: RendererPaneLayoutNode,
+  selectedWebApp: UnknownRecord,
+  webApps: UnknownRecord[]
+) {
   return webAppMenus.openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps);
 }
 
@@ -638,7 +675,7 @@ function createGlobalUpdateCard() {
   return updateViews.createGlobalUpdateCard();
 }
 
-function openChangelogDialog(changelog, options = {}) {
+function openChangelogDialog(changelog: UnknownRecord, options: UnknownRecord = {}) {
   return updateViews.openChangelogDialog(changelog, options);
 }
 
@@ -697,11 +734,13 @@ const onboardingTour = createOnboardingTour({
   freezeWebAppsForOverlay,
   restoreWebAppsAfterOverlay,
   nextAnimationFrame,
-  updateOnboarding: async (values) => {
+  updateOnboarding: async (values: UnknownRecord) => {
     state.onboarding = await boatyardWindow.boatyard.updateOnboarding(values);
     return state.onboarding;
   },
-  updatePaneLayout: (projectId, layout) => boatyardWindow.boatyard.updatePaneLayout(projectId, layout)
+  updatePaneLayout: (projectId: string | null | undefined, layout: unknown) => (
+    boatyardWindow.boatyard.updatePaneLayout(projectId, layout)
+  )
 });
 
 function ensureOnboardingDemoProject() {
@@ -716,7 +755,7 @@ function isOnboardingTourActive() {
   return onboardingTour.isTourActive();
 }
 
-function openOnboardingTour(options = {}) {
+function openOnboardingTour(options: UnknownRecord = {}) {
   return onboardingTour.openOnboardingTour(options);
 }
 
@@ -750,7 +789,7 @@ const projectSidebar = createProjectSidebar({
   showOverlayDialog,
   isOnboardingDemoProjectVisible,
   ensureOnboardingDemoProject,
-  updateNavigation: async (values) => {
+  updateNavigation: async (values: UnknownRecord) => {
     const navigation = await boatyardWindow.boatyard.updateNavigation(values);
     state = {
       ...state,
@@ -758,11 +797,11 @@ const projectSidebar = createProjectSidebar({
     };
     return navigation;
   },
-  updateProject: async (projectId, values) => {
+  updateProject: async (projectId: string, values: UnknownRecord) => {
     state = await boatyardWindow.boatyard.updateProject(projectId, values);
     return state;
   },
-  reorderProjectIds: async (projectIds) => {
+  reorderProjectIds: async (projectIds: string[]) => {
     state = await boatyardWindow.boatyard.reorderProjects(projectIds);
     return state;
   },
@@ -797,41 +836,53 @@ const settingsViewBridge = createRendererSettingsViewBridge({
   getPluginGlobalSettingsSections,
   showOverlayDialog,
   renderGlobalSettingsPage,
-  updatePluginEnabled: async (pluginId, enabled) => {
+  updatePluginEnabled: async (pluginId: string, enabled: boolean) => {
     state = await boatyardWindow.boatyard.updatePluginEnabled(pluginId, enabled);
     boatyardWindow.BoatyardPluginRegistry.setEnabled(pluginId, enabled);
   },
-  updateGlobalPluginConfig: async (pluginId, values) => {
+  updateGlobalPluginConfig: async (pluginId: string, values: UnknownRecord) => {
     state = await boatyardWindow.boatyard.updateGlobalPluginConfig(pluginId, values);
   }
 });
 
-function createProjectDangerZone(options) {
-  return settingsViewBridge.createProjectDangerZone(options);
+function createProjectDangerZone(options: UnknownRecord) {
+  return settingsViewBridge.createProjectDangerZone(
+    options as Parameters<typeof settingsViewBridge.createProjectDangerZone>[0]
+  );
 }
 
-function createProjectFormView(options) {
-  return settingsViewBridge.createProjectFormView(options);
+function createProjectFormView(options: UnknownRecord) {
+  return settingsViewBridge.createProjectFormView(
+    options as Parameters<typeof settingsViewBridge.createProjectFormView>[0]
+  );
 }
 
-function createProjectTerminalSettingsForm(options) {
-  return settingsViewBridge.createProjectTerminalSettingsForm(options);
+function createProjectTerminalSettingsForm(options: UnknownRecord) {
+  return settingsViewBridge.createProjectTerminalSettingsForm(
+    options as Parameters<typeof settingsViewBridge.createProjectTerminalSettingsForm>[0]
+  );
 }
 
-function createProjectUrlsForm(options) {
-  return settingsViewBridge.createProjectUrlsForm(options);
+function createProjectUrlsForm(options: UnknownRecord) {
+  return settingsViewBridge.createProjectUrlsForm(
+    options as Parameters<typeof settingsViewBridge.createProjectUrlsForm>[0]
+  );
 }
 
-function createProjectWebAppHomeTabsForm(options) {
-  return settingsViewBridge.createProjectWebAppHomeTabsForm(options);
+function createProjectWebAppHomeTabsForm(options: UnknownRecord) {
+  return settingsViewBridge.createProjectWebAppHomeTabsForm(
+    options as Parameters<typeof settingsViewBridge.createProjectWebAppHomeTabsForm>[0]
+  );
 }
 
-function createProjectWidgetPanesForm(options) {
-  return settingsViewBridge.createProjectWidgetPanesForm(options);
+function createProjectWidgetPanesForm(options: UnknownRecord) {
+  return settingsViewBridge.createProjectWidgetPanesForm(
+    options as Parameters<typeof settingsViewBridge.createProjectWidgetPanesForm>[0]
+  );
 }
 
 const projectPageViews = createProjectPageViews({
-  addProject: (values) => boatyardWindow.boatyard.addProject(values),
+  addProject: (values: UnknownRecord) => boatyardWindow.boatyard.addProject(values),
   createProjectDangerZone,
   createProjectFormView,
   createProjectTerminalSettingsForm,
@@ -842,18 +893,20 @@ const projectPageViews = createProjectPageViews({
   hideWebApps: () => invokeWebApp("hideWebApp"),
   persistProjectPluginConfig,
   reloadProjectSettings,
-  removeProject: (projectId) => boatyardWindow.boatyard.removeProject(projectId),
+  removeProject: (projectId: string) => boatyardWindow.boatyard.removeProject(projectId),
   resetVisibleWebAppHosts: () => {
     visibleWebApps.reset();
   },
   restoreReturnView,
   selectGlobal,
   selectProject,
-  setState: (nextState) => {
+  setState: (nextState: RendererState) => {
     state = nextState;
   },
-  updateProject: (projectId, values) => boatyardWindow.boatyard.updateProject(projectId, values),
-  updateWebAppHomeTabs: (projectId, tabs) => boatyardWindow.boatyard.updateWebAppHomeTabs(projectId, tabs),
+  updateProject: (projectId: string, values: UnknownRecord) => boatyardWindow.boatyard.updateProject(projectId, values),
+  updateWebAppHomeTabs: (projectId: string, tabs: UnknownRecord[]) => (
+    boatyardWindow.boatyard.updateWebAppHomeTabs(projectId, tabs)
+  ),
   workspace,
   workspaceKicker,
   workspaceSummary,
@@ -864,7 +917,7 @@ function renderCreateProjectPage() {
   projectPageViews.renderCreateProjectPage();
 }
 
-function renderEditProjectPage(project) {
+function renderEditProjectPage(project: RendererProject) {
   projectPageViews.renderEditProjectPage(project);
 }
 
@@ -874,16 +927,16 @@ const webAppSurfaces = createWebAppSurfaces({
   getVisibleWebAppEntries: () => visibleWebApps.getEntries(),
   invokeWebApp,
   isWebAppAutofillEnabled,
-  markWebAppLoaded: (key) => {
+  markWebAppLoaded: (key: string) => {
     webAppLoadTracker.markLoadedKey(key);
   }
 });
 
-function getWebAppHostBounds(host) {
+function getWebAppHostBounds(host: Element | null | undefined) {
   return webAppSurfaces.getWebAppHostBounds(host);
 }
 
-function normalizePayloadBounds(bounds) {
+function normalizePayloadBounds(bounds: unknown) {
   return webAppSurfaces.normalizePayloadBounds(bounds);
 }
 
@@ -895,7 +948,7 @@ function queueWebAppSync() {
   webAppSurfaces.queueWebAppSync();
 }
 
-function freezeWebAppsForOverlay(options = undefined) {
+function freezeWebAppsForOverlay(options: unknown = undefined) {
   return webAppSurfaces.freezeWebAppsForOverlay(options);
 }
 
@@ -903,7 +956,7 @@ function restoreWebAppsAfterOverlay() {
   return webAppSurfaces.restoreWebAppsAfterOverlay();
 }
 
-function showOverlayDialog(dialog, options = {}) {
+function showOverlayDialog(dialog: HTMLDialogElement, options: UnknownRecord = {}) {
   return webAppSurfaces.showOverlayDialog(dialog, options);
 }
 
