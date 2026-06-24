@@ -158,6 +158,10 @@ export function createTerminalSurfaces({
       return Boolean(value) && typeof value === "object" && !Array.isArray(value);
     }
 
+    function getProjectId(project: RendererProject | null | undefined) {
+      return String(project?.id || "").trim();
+    }
+
     function normalizeTerminalTab(value: unknown): TerminalTab | null {
       const source = isRecord(value) ? value : {};
       const id = String(source.id || "").trim();
@@ -277,7 +281,7 @@ export function createTerminalSurfaces({
         const rightIndex = orderIndexes.get(right.id);
 
         if (leftIndex === undefined && rightIndex === undefined) {
-          return left.index - right.index;
+          return (left.index ?? 0) - (right.index ?? 0);
         }
         if (leftIndex === undefined) {
           return 1;
@@ -351,12 +355,13 @@ export function createTerminalSurfaces({
       }
 
       const project = getProjectById(session.projectId);
-      if (!project) {
+      const projectId = getProjectId(project);
+      if (!project || !projectId) {
         return;
       }
 
       try {
-        const tabs = getOrderedTerminalTabs(project.id, await listTerminalTabs(project.id));
+        const tabs = getOrderedTerminalTabs(projectId, await listTerminalTabs(projectId));
         if (shouldRefreshTerminalTabs(session, tabs)) {
           const closedWindowId = tabs.some((tab) => tab.id === session.activeWindowId)
             ? null
@@ -420,11 +425,15 @@ export function createTerminalSurfaces({
     }
 
     async function refreshProjectTerminalTabLabels(project: RendererProject) {
-      const tabs = getOrderedTerminalTabs(project.id, await listTerminalTabs(project.id));
+      const projectId = getProjectId(project);
+      if (!projectId) {
+        return;
+      }
+      const tabs = getOrderedTerminalTabs(projectId, await listTerminalTabs(projectId));
       const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
 
       for (const session of terminalWidgetsBySurface.values()) {
-        if (session.projectId !== project.id || !session.card?.isConnected) {
+        if (session.projectId !== projectId || !session.card?.isConnected) {
           continue;
         }
 
@@ -433,7 +442,8 @@ export function createTerminalSurfaces({
             continue;
           }
 
-          const tab = tabsById.get(tabButton.dataset.windowId);
+          const windowId = tabButton.dataset.windowId;
+          const tab = windowId ? tabsById.get(windowId) : undefined;
           if (tab) {
             tabButton.textContent = tab.name || `shell ${tab.index}`;
           }
@@ -508,6 +518,10 @@ export function createTerminalSurfaces({
     }
 
     function getPersistedTerminalWindowId(projectId: string | undefined, surfaceKey: string | undefined) {
+      if (!projectId || !surfaceKey) {
+        return null;
+      }
+
       return getState().terminalSelections?.[projectId]?.[surfaceKey] || null;
     }
 
@@ -519,22 +533,24 @@ export function createTerminalSurfaces({
         return;
       }
 
-      getState().terminalSelections = {
+      const terminalSelections = {
         ...(getState().terminalSelections || {})
       };
+      getState().terminalSelections = terminalSelections;
 
       if (!normalizedWindowId) {
-        if (getState().terminalSelections[normalizedProjectId]) {
-          delete getState().terminalSelections[normalizedProjectId][normalizedSurfaceKey];
-          if (!Object.keys(getState().terminalSelections[normalizedProjectId]).length) {
-            delete getState().terminalSelections[normalizedProjectId];
+        const projectSelections = terminalSelections[normalizedProjectId];
+        if (projectSelections) {
+          delete projectSelections[normalizedSurfaceKey];
+          if (!Object.keys(projectSelections).length) {
+            delete terminalSelections[normalizedProjectId];
           }
         }
         return;
       }
 
-      getState().terminalSelections[normalizedProjectId] = {
-        ...(getState().terminalSelections[normalizedProjectId] || {}),
+      terminalSelections[normalizedProjectId] = {
+        ...(terminalSelections[normalizedProjectId] || {}),
         [normalizedSurfaceKey]: normalizedWindowId
       };
     }
@@ -555,13 +571,14 @@ export function createTerminalSurfaces({
             return;
           }
 
-          getState().terminalSelections = {
+          const terminalSelections = {
             ...(getState().terminalSelections || {})
           };
+          getState().terminalSelections = terminalSelections;
           if (Object.keys(selections).length) {
-            getState().terminalSelections[normalizedProjectId] = selections as Record<string, string>;
+            terminalSelections[normalizedProjectId] = selections as Record<string, string>;
           } else {
-            delete getState().terminalSelections[normalizedProjectId];
+            delete terminalSelections[normalizedProjectId];
           }
         })
         .catch((error: unknown) => {
@@ -1095,15 +1112,17 @@ export function createTerminalSurfaces({
       }
 
       const project = getProjectById(exitedProjectId);
-      if (!project) {
+      const resolvedProjectId = getProjectId(project);
+      const resolvedWindowId = String(exitedWindowId || "");
+      if (!project || !resolvedProjectId || !resolvedWindowId) {
         terminalWidgetsBySurface.delete(session.surfaceId);
         return;
       }
 
       try {
-        const tabs = await listTerminalTabs(project.id);
-        await refreshTerminalSurfaceAfterClosedTab(project, surfaceSession.card, exitedWindowId, tabs, {
-          focus: shouldFocusAfterTerminalExit(session.surfaceId, exitedWindowId)
+        const tabs = await listTerminalTabs(resolvedProjectId);
+        await refreshTerminalSurfaceAfterClosedTab(project, surfaceSession.card, resolvedWindowId, tabs, {
+          focus: shouldFocusAfterTerminalExit(session.surfaceId, resolvedWindowId)
         });
       } catch (error) {
         setTerminalStatus(surfaceSession.card, `Could not refresh shells: ${asErrorMessage(error)}`);
