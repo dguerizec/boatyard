@@ -64,7 +64,7 @@ const execFileAsync = promisify(execFile);
  * @param {HawserSettings} settings
  * @returns {string}
  */
-function getHawserApiUrl(settings: any = {}) {
+function getHawserApiUrl(settings: { hawserApiUrl?: string } = {}) {
   return String(settings.hawserApiUrl || DEFAULT_HAWSER_API_URL).replace(/\/+$/, "");
 }
 
@@ -239,7 +239,10 @@ async function getHawserCliStatus(runCommand = execFileAsync) {
  * @param {HawserSettings} settings
  * @param {HawserStatusOptions} options
  */
-async function getHawserStatus(settings: any = {}, options: any = {}) {
+async function getHawserStatus(
+  settings: { hawserApiUrl?: string; hawserToken?: string } = {},
+  options: { execFileAsync?: import("../pluginTypes").ExecFileAsync; fetchImpl?: typeof fetch } = {}
+) {
   const apiUrl = getHawserApiUrl(settings);
   const token = String(settings.hawserToken || "").trim();
   const fetchImpl = options.fetchImpl || fetch;
@@ -322,7 +325,7 @@ async function getHawserStatus(settings: any = {}, options: any = {}) {
  * @param {BoatyardProject} project
  * @returns {string}
  */
-function parseHawserProjectName(project: any = {}) {
+function parseHawserProjectName(project: { hawserMainSession?: string; slug?: string } = {}) {
   const sessionTarget = String(project.hawserMainSession || "").trim();
   const sessionProject = sessionTarget.includes(":") ? sessionTarget.split(":")[0] : "";
   return sessionProject || project.slug || "";
@@ -332,7 +335,7 @@ function parseHawserProjectName(project: any = {}) {
  * @param {BoatyardProject} project
  * @returns {string}
  */
-function parseHawserSessionName(project: any = {}) {
+function parseHawserSessionName(project: { hawserMainSession?: string } = {}) {
   const sessionTarget = String(project.hawserMainSession || "").trim();
   return sessionTarget.includes(":") ? sessionTarget.split(":").slice(1).join(":") : "";
 }
@@ -404,7 +407,13 @@ function normalizeMessage(message, projectName) {
  * @param {Partial<HawserMessage>} message
  * @returns {HawserSessionTarget}
  */
-function getMessageSessionTarget(message: any = {}) {
+function getMessageSessionTarget(message: Partial<{
+  direction: "in" | "out";
+  fromProject: string;
+  fromSession: string;
+  toProject: string;
+  toSession: string;
+}> = {}) {
   const useOutboundTarget = message.direction === "out";
   return {
     project: useOutboundTarget ? message.toProject || "" : message.fromProject || "",
@@ -462,7 +471,7 @@ function shouldShowWidgetMessage(message) {
  * @param {HawserSettings} settings
  * @returns {Promise<unknown>}
  */
-async function fetchHawserJson(pathname, settings: any = {}) {
+async function fetchHawserJson(pathname, settings: { hawserApiUrl?: string; hawserToken?: string } = {}) {
   const token = String(settings.hawserToken || "").trim();
 
   if (!token) {

@@ -13,19 +13,64 @@ const LOGIN_WAIT_TIMEOUT_MS = 30000;
 const MESSAGE_LIMIT = 50;
 const TOPIC_HISTORY_SCAN_LIMIT = 500;
 
-type UnknownRecord = Record<string, any>;
+type UnknownRecord = Record<string, unknown>;
 
 type TelegramCredentials = {
   apiId: number;
   apiHash: string;
 };
 
+type TelegramEventHandler = (event: { message?: unknown }) => void;
+
+type TelegramRuntimeClient = {
+  addEventHandler(handler: TelegramEventHandler, builder: unknown): void;
+  checkAuthorization(): Promise<boolean>;
+  connect(): Promise<unknown>;
+  connected?: boolean;
+  getInputEntity(peer: unknown): Promise<unknown>;
+  getMe(): Promise<UnknownRecord>;
+  getMessages(peer: unknown, options: UnknownRecord): Promise<UnknownRecord[]>;
+  invoke(request: unknown): Promise<UnknownRecord>;
+  removeEventHandler(handler: TelegramEventHandler, builder: unknown): void;
+  sendMessage(peer: unknown, options: UnknownRecord): Promise<UnknownRecord>;
+  session: {
+    save(): string;
+  };
+  signInUser(
+    credentials: TelegramCredentials,
+    callbacks: {
+      onError(error: Error): boolean;
+      password(): Promise<string>;
+      phoneCode(isCodeViaApp: boolean): Promise<string>;
+      phoneNumber: string;
+    }
+  ): Promise<unknown>;
+};
+
+type TelegramPendingLogin = {
+  authPromise: Promise<unknown> | null;
+  codeResolve: ((code: string) => void) | null;
+  error: Error | null;
+  isCodeViaApp: boolean;
+  passwordResolve: ((password: string) => void) | null;
+  phase: string;
+  summary: string;
+};
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function getRecord(value: unknown): UnknownRecord {
+  return isRecord(value) ? value : {};
+}
+
 function normalizeText(value: unknown) {
   return String(value || "").trim();
 }
 
 function normalizeTarget(target: UnknownRecord = {}) {
-  const source: UnknownRecord = target && typeof target === "object" ? target : {};
+  const source = getRecord(target);
   return {
     chatId: normalizeText(source.chatId || source.telegramChatId),
     threadId: normalizeText(source.threadId || source.telegramThreadId),
@@ -53,7 +98,7 @@ function normalizeThreadId(value: unknown) {
 }
 
 function getMessageTopicIds(message: UnknownRecord = {}) {
-  const replyTo = message.replyTo || {};
+  const replyTo = getRecord(message.replyTo);
   return [
     message.id,
     replyTo.replyToTopId,
@@ -97,8 +142,9 @@ function addTopicMetadataPrefix(text: unknown, target: UnknownRecord = {}) {
   return prefix ? `${prefix}\n${message}` : message;
 }
 
-function serializeError(error: any) {
-  return normalizeText(error?.errorMessage || error?.message) || "Telegram request failed.";
+function serializeError(error: unknown) {
+  const source = getRecord(error);
+  return normalizeText(source.errorMessage || source.message) || "Telegram request failed.";
 }
 
 function formatMessageDate(value: unknown) {
@@ -111,7 +157,7 @@ function formatMessageDate(value: unknown) {
 }
 
 function getSenderName(message: UnknownRecord = {}) {
-  const sender = message.sender || {};
+  const sender = getRecord(message.sender);
   return normalizeText(
     sender.username ||
     [sender.firstName, sender.lastName].map(normalizeText).filter(Boolean).join(" ") ||
@@ -131,6 +177,14 @@ function mapMessage(message: UnknownRecord = {}) {
 }
 
 class TelegramService extends EventEmitter {
+  client: TelegramRuntimeClient | null;
+  clientKey: string;
+  messageEventBuilder: unknown | null;
+  messageEventClient: TelegramRuntimeClient | null;
+  messageEventHandler: TelegramEventHandler | null;
+  pendingLogin: TelegramPendingLogin | null;
+  sessionFilePath: string;
+
   constructor({ sessionFilePath }: { sessionFilePath: string }) {
     super();
     this.sessionFilePath = sessionFilePath;
@@ -205,16 +259,16 @@ class TelegramService extends EventEmitter {
     this.messageEventHandler = null;
   }
 
-  attachMessageEventHandler(client: any) {
+  attachMessageEventHandler(client: TelegramRuntimeClient) {
     if (this.messageEventClient === client) {
       return;
     }
 
     this.detachMessageEventHandler();
     const builder = new NewMessage({});
-    const handler = (event: any) => {
+    const handler: TelegramEventHandler = (event) => {
       const message = event?.message;
-      if (!message) {
+      if (!isRecord(message)) {
         return;
       }
 
@@ -245,7 +299,7 @@ class TelegramService extends EventEmitter {
     }
 
     const session = new StringSession(this.getStoredSession());
-    const client = new TelegramClient(session, credentials.apiId, credentials.apiHash, CLIENT_OPTIONS);
+    const client = new TelegramClient(session, credentials.apiId, credentials.apiHash, CLIENT_OPTIONS) as TelegramRuntimeClient;
     await client.connect();
     this.client = client;
     this.clientKey = key;
@@ -306,7 +360,7 @@ class TelegramService extends EventEmitter {
     }
   }
 
-  async waitForLoginPhase(login: any, acceptedPhases: string[]) {
+  async waitForLoginPhase(login: TelegramPendingLogin, acceptedPhases: string[]) {
     const startedAt = Date.now();
     while (this.pendingLogin === login) {
       if (acceptedPhases.includes(login.phase)) {
@@ -327,7 +381,7 @@ class TelegramService extends EventEmitter {
     };
   }
 
-  getLoginState(login: any = this.pendingLogin) {
+  getLoginState(login: TelegramPendingLogin | null = this.pendingLogin) {
     if (!login) {
       return {
         state: "ready",
@@ -443,7 +497,7 @@ class TelegramService extends EventEmitter {
     return this.waitForLoginCompletion(login);
   }
 
-  async waitForLoginCompletion(login: any) {
+  async waitForLoginCompletion(login: TelegramPendingLogin) {
     const startedAt = Date.now();
     while (this.pendingLogin === login) {
       if (login.phase === "passwordRequired" && login.passwordResolve) {
@@ -482,7 +536,7 @@ class TelegramService extends EventEmitter {
     return chatId;
   }
 
-  async getInputChannel(client: any, target: UnknownRecord = {}) {
+  async getInputChannel(client: TelegramRuntimeClient, target: UnknownRecord = {}) {
     return utils.getInputChannel(await client.getInputEntity(this.getPeerValue(target)));
   }
 
@@ -505,7 +559,7 @@ class TelegramService extends EventEmitter {
     return this.getTopicThreadId(topic);
   }
 
-  async listForumTopics(client: any, target: UnknownRecord = {}, query: unknown = "") {
+  async listForumTopics(client: TelegramRuntimeClient, target: UnknownRecord = {}, query: unknown = "") {
     const channel = await this.getInputChannel(client, target);
     const response = await client.invoke(new Api.channels.GetForumTopics({
       channel,
@@ -519,7 +573,7 @@ class TelegramService extends EventEmitter {
     return Array.isArray(response.topics) ? response.topics : [];
   }
 
-  async findForumTopic(client: any, target: UnknownRecord = {}) {
+  async findForumTopic(client: TelegramRuntimeClient, target: UnknownRecord = {}) {
     const title = normalizeTopicTitle(target.topicTitle);
     if (!title) {
       return null;
@@ -529,7 +583,7 @@ class TelegramService extends EventEmitter {
     return topics.find((topic) => normalizeTopicTitle(topic.title) === title) || null;
   }
 
-  async resolveProjectTopic(client: any, target: UnknownRecord = {}) {
+  async resolveProjectTopic(client: TelegramRuntimeClient, target: UnknownRecord = {}) {
     const normalizedTarget = normalizeTarget(target);
     if (!normalizedTarget.topicTitle) {
       return normalizedTarget;
@@ -565,7 +619,7 @@ class TelegramService extends EventEmitter {
     };
   }
 
-  async resolveProjectTopicWithoutStoredThread(client: any, target: UnknownRecord = {}) {
+  async resolveProjectTopicWithoutStoredThread(client: TelegramRuntimeClient, target: UnknownRecord = {}) {
     return this.resolveProjectTopic(client, {
       ...normalizeTarget(target),
       threadId: ""
@@ -577,7 +631,7 @@ class TelegramService extends EventEmitter {
     return threadId ? { replyTo: threadId, topMsgId: threadId } : {};
   }
 
-  async getTopicMessages(client: any, target: UnknownRecord = {}, threadId: number) {
+  async getTopicMessages(client: TelegramRuntimeClient, target: UnknownRecord = {}, threadId: number) {
     const topicIds = new Set([
       threadId,
       normalizeThreadId(target.topicTopMessageId)
