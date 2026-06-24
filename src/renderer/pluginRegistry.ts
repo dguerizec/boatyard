@@ -1,9 +1,3 @@
-type PluginRegistryWindow = Window & {
-  BoatyardPluginRegistry?: PluginRegistryApi;
-  BoatyardWidgetRegistry?: WidgetRegistryApi;
-  CustomEvent?: typeof CustomEvent;
-};
-
 (function registerPluginRegistry(globalScope: PluginRegistryWindow) {
   const plugins = new Map<string, RegisteredPlugin>();
   const statuses = new Map<string, PluginStatus>();

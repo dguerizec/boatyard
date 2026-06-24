@@ -1,19 +1,3 @@
-type RendererPluginDescriptor = {
-  rendererPath?: string;
-  stylePaths?: string[];
-};
-
-type PluginLoaderRendererApi = {
-  listPlugins?: () => Promise<RendererPluginDescriptor[]>;
-};
-
-type PluginLoaderWindow = Window & {
-  boatyard?: PluginLoaderRendererApi;
-  BoatyardPluginLoader?: {
-    ready: Promise<RendererPluginDescriptor[]>;
-  };
-};
-
 (function createPluginLoader(globalScope: PluginLoaderWindow) {
   function loadScript(src: string) {
     return new Promise<void>((resolve, reject) => {

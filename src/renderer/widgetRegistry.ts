@@ -1,7 +1,3 @@
-type WidgetRegistryWindow = Window & {
-  BoatyardWidgetRegistry?: WidgetRegistryApi;
-};
-
 (function registerWidgetRegistry(globalScope: WidgetRegistryWindow) {
   const widgets = new Map<string, WidgetDefinition>();
   const aliases = new Map<string, string>();

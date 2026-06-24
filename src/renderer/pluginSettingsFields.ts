@@ -1,34 +1,3 @@
-type PluginSettingsField = {
-  defaultValue?: unknown | ((context: Record<string, unknown>) => unknown);
-  required?: boolean;
-  label?: string;
-  valueType?: string;
-};
-
-type PluginSettingsInput = {
-  value?: unknown;
-  dataset?: {
-    defaultValue?: unknown;
-  };
-};
-
-type PluginSettingsReadOptions = {
-  normalizeUrl?: (value: string) => string;
-};
-
-type PluginSettingsFieldsApi = {
-  readFieldValue: (
-    field?: PluginSettingsField,
-    input?: PluginSettingsInput | null,
-    options?: PluginSettingsReadOptions
-  ) => string;
-  resolveFieldDefault: (field?: PluginSettingsField, context?: Record<string, unknown>) => string;
-};
-
-type PluginSettingsFieldsGlobal = typeof globalThis & {
-  BoatyardPluginSettingsFields?: PluginSettingsFieldsApi;
-};
-
 (function registerPluginSettingsFields(globalScope: PluginSettingsFieldsGlobal) {
   function resolveFieldDefault(field: PluginSettingsField = {}, context: Record<string, unknown> = {}) {
     const defaultValue = typeof field.defaultValue === "function"
