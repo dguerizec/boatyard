@@ -3,6 +3,7 @@ import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 import { createUpdateViews } from "./updateViews.js";
+import { createWebAppMenus } from "./webAppMenus.js";
 
 type RendererProject = UnknownRecord & {
   devBranch?: string;
@@ -186,7 +187,6 @@ type BoatyardRendererWindow = Window & {
   BoatyardProjectSettingsViews: RendererCreateModule<ProjectSettingsViewsInstance>;
   BoatyardProjectSidebar: RendererCreateModule;
   BoatyardTerminalSurfaces: RendererCreateModule;
-  BoatyardWebAppMenus: RendererCreateModule<WebAppMenusInstance>;
   BoatyardWebAppSurfaces: RendererCreateModule;
   BoatyardWidgetRegistry: {
     register(definition: UnknownRecord): unknown;
@@ -1689,7 +1689,7 @@ function renderProjectPaneArea(project) {
   currentPaneLayoutElement.replaceWith(paneLayoutElement);
 }
 
-const webAppMenus = boatyardWindow.BoatyardWebAppMenus.create({
+const webAppMenus = createWebAppMenus({
   webAppOpenSplitRatio: WEBAPP_OPEN_SPLIT_RATIO,
   getCurrentWebAppUrl,
   getSettings,

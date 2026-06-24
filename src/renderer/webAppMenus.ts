@@ -1,9 +1,6 @@
-"use strict";
-
-(function () {
-  type WebAppMenuElement = HTMLDivElement & {
-    cleanup?: () => void;
-  };
+type WebAppMenuElement = HTMLDivElement & {
+  cleanup?: () => void;
+};
 
   type WebAppOpenPayload = {
     url?: string;
@@ -20,7 +17,7 @@
     webAppOpenTarget: HTMLInputElement;
   };
 
-  function createWebAppMenus({
+export function createWebAppMenus({
     webAppOpenSplitRatio,
     getCurrentWebAppUrl,
     getSettings,
@@ -745,10 +742,4 @@
       openWebAppTabMenuFromButton,
       isWebAppTabMenuOpen: () => Boolean(openWebAppTabMenu)
     };
-  }
-
-  const globalScope: WebAppMenusGlobal = window;
-  globalScope.BoatyardWebAppMenus = {
-    create: createWebAppMenus
-  };
-})();
+}
