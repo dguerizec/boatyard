@@ -9,6 +9,7 @@ import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createUpdateViews } from "./updateViews.js";
 import { createWebAppMenus } from "./webAppMenus.js";
 import { createWebAppSurfaces } from "./webAppSurfaces.js";
+import { createWidgetSurfaces } from "./widgetSurfaces.js";
 
 type RendererProject = UnknownRecord & {
   devBranch?: string;
@@ -193,7 +194,6 @@ type BoatyardRendererWindow = Window & {
   BoatyardWidgetRegistry: {
     register(definition: UnknownRecord): unknown;
   };
-  BoatyardWidgetSurfaces: RendererCreateModule<WidgetSurfacesInstance>;
 };
 
 type ProjectNavBadgeRenderOptions = {
@@ -984,7 +984,7 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-const widgetSurfaces = boatyardWindow.BoatyardWidgetSurfaces.create({
+const widgetSurfaces = createWidgetSurfaces({
   boatyard: boatyardWindow.boatyard,
   getState: () => state,
   getProjectPluginConfig,

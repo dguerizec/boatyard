@@ -1,10 +1,7 @@
-"use strict";
-
-(function () {
-  type WidgetGridSize = {
-    columns: number;
-    rows: number;
-  };
+type WidgetGridSize = {
+  columns: number;
+  rows: number;
+};
 
   type WidgetGridPosition = {
     x: number;
@@ -61,9 +58,9 @@
     onClick?: (event: MouseEvent) => void;
   };
 
-  const globalScope: WidgetSurfacesGlobal = window;
+const globalScope: WidgetSurfacesGlobal = window;
 
-  function createWidgetSurfaces({
+export function createWidgetSurfaces({
     boatyard,
     getState,
     getProjectPluginConfig,
@@ -1100,9 +1097,4 @@
       getWidgetRailColumnCount,
       hydrateWidgetLayouts
     };
-  }
-
-  globalScope.BoatyardWidgetSurfaces = {
-    create: createWidgetSurfaces
-  };
-})();
+}
