@@ -1,70 +1,90 @@
 "use strict";
 
-const path = require("node:path");
+import type { ExecFileAsync } from "../pluginTypes";
 
-/**
- * @typedef {import("../pluginTypes").ExecFileAsync} ExecFileAsync
- * @typedef {{ id?: string, directory?: string, git_root?: string, worktree_of?: string, worktrees?: string[] }} TwiccProject
- * @typedef {{ project_id?: string, state?: string, session_id?: string, session_title?: string, last_state_change_at?: string }} TwiccProcess
- * @typedef {"input" | "working" | "done"} TwiccNormalizedProcessState
- * @typedef {{ id: string, title: string, state: TwiccNormalizedProcessState, rawState: string, lastStateChangeAt: string }} TwiccSessionStatus
- * @typedef {{ state: TwiccNormalizedProcessState, count: number, sessions: TwiccSessionStatus[] }} TwiccProjectProcessStatus
- * @typedef {Record<string, TwiccProjectProcessStatus>} TwiccProjectProcessStatuses
- * @typedef {{ execFileAsync?: ExecFileAsync }} TwiccCommandOptions
- * @typedef {{ project?: TwiccProject, matchType: "exact" | "parent" }} TwiccProjectMatch
- * @typedef {{ loadProjects?: (options?: TwiccCommandOptions) => Promise<TwiccProject[]>, ttlMs?: number, now?: () => number }} TwiccProjectCacheOptions
- * @typedef {{ force?: boolean, projectIds?: string[] }} TwiccProjectCacheGetOptions
- * @typedef {{ id: string, matchType: "exact" | "parent", url: string }} TwiccProjectInspection
- * @typedef {{ id?: string, sourcePath?: string }} BoatyardProject
- */
+const path = require("node:path");
 
 const DEFAULT_TWICC_BASE_URL = "http://localhost:3500";
 const TWICC_PROJECT_CACHE_TTL_MS = 600000;
 
-/**
- * @param {unknown} value
- * @returns {string}
- */
-function normalizePathForMatch(value) {
+type TwiccProject = {
+  directory?: string;
+  git_root?: string;
+  id?: string;
+  worktree_of?: string;
+  worktrees?: string[];
+};
+
+type TwiccProcess = {
+  last_state_change_at?: string;
+  project_id?: string;
+  session_id?: string;
+  session_title?: string;
+  state?: string;
+};
+
+type TwiccNormalizedProcessState = "input" | "working" | "done";
+type TwiccSessionStatus = {
+  id: string;
+  lastStateChangeAt: string;
+  rawState: string;
+  state: TwiccNormalizedProcessState;
+  title: string;
+};
+type TwiccProjectProcessStatus = {
+  count: number;
+  sessions: TwiccSessionStatus[];
+  state: TwiccNormalizedProcessState;
+};
+type TwiccProjectProcessStatuses = Record<string, TwiccProjectProcessStatus>;
+type TwiccCommandOptions = { execFileAsync?: ExecFileAsync };
+type TwiccProjectMatch = { project?: TwiccProject; matchType: "exact" | "parent" };
+type TwiccProjectCacheOptions = {
+  loadProjects?: (options?: TwiccCommandOptions) => Promise<TwiccProject[]>;
+  now?: () => number;
+  ttlMs?: number;
+};
+type TwiccProjectCacheGetOptions = { force?: boolean; projectIds?: string[] };
+type TwiccProjectInspection = { id: string; matchType: "exact" | "parent"; url: string };
+type BoatyardProject = { id?: string; sourcePath?: string };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isTwiccProject(value: unknown): value is TwiccProject {
+  return isRecord(value);
+}
+
+function isTwiccProcess(value: unknown): value is TwiccProcess {
+  return isRecord(value);
+}
+
+function normalizePathForMatch(value: unknown): string {
   const trimmed = typeof value === "string" ? value.trim() : "";
   return trimmed ? path.resolve(trimmed) : "";
 }
 
-/**
- * @param {unknown} project
- * @returns {string[]}
- */
-function getProjectPaths(project) {
-  if (!project || typeof project !== "object") {
+function getProjectPaths(project: unknown): string[] {
+  if (!isTwiccProject(project)) {
     return [];
   }
 
-  const source = /** @type {TwiccProject} */ (project);
-  return [source.directory, source.git_root]
+  return [project.directory, project.git_root]
     .map(normalizePathForMatch)
     .filter(Boolean);
 }
 
-/**
- * @param {unknown} projects
- * @param {unknown} sourcePath
- * @returns {TwiccProject | null}
- */
-function findTwiccProjectForPath(projects, sourcePath) {
+function findTwiccProjectForPath(projects: unknown, sourcePath: unknown): TwiccProject | null {
   return findTwiccProjectMatchForPath(projects, sourcePath)?.project || null;
 }
 
-/**
- * @param {unknown} projects
- * @param {unknown} sourcePath
- * @returns {TwiccProjectMatch | null}
- */
-function findTwiccProjectMatchForPath(projects, sourcePath) {
+function findTwiccProjectMatchForPath(projects: unknown, sourcePath: unknown): TwiccProjectMatch | null {
   if (!Array.isArray(projects)) {
     return null;
   }
 
-  const projectList = /** @type {TwiccProject[]} */ (projects);
+  const projectList = projects.filter(isTwiccProject);
   const normalizedSourcePath = normalizePathForMatch(sourcePath);
   if (!normalizedSourcePath) {
     return null;
@@ -74,7 +94,7 @@ function findTwiccProjectMatchForPath(projects, sourcePath) {
   if (exactMatch) {
     return {
       project: exactMatch,
-      matchType: /** @type {"exact"} */ ("exact")
+      matchType: "exact"
     };
   }
 
@@ -89,16 +109,11 @@ function findTwiccProjectMatchForPath(projects, sourcePath) {
     .sort((left, right) => right.matchedPath.length - left.matchedPath.length)
     .map((match) => ({
       project: match.project,
-      matchType: /** @type {"parent"} */ ("parent")
+      matchType: "parent" as const
     }))[0] || null;
 }
 
-/**
- * @param {unknown} projectId
- * @param {string} baseUrl
- * @returns {string}
- */
-function buildTwiccProjectUrl(projectId, baseUrl = DEFAULT_TWICC_BASE_URL) {
+function buildTwiccProjectUrl(projectId: unknown, baseUrl = DEFAULT_TWICC_BASE_URL): string {
   const id = typeof projectId === "string" ? projectId.trim() : "";
   if (!id) {
     return "";
@@ -115,11 +130,7 @@ function buildTwiccProjectUrl(projectId, baseUrl = DEFAULT_TWICC_BASE_URL) {
   }
 }
 
-/**
- * @param {TwiccCommandOptions} options
- * @returns {Promise<TwiccProject[]>}
- */
-async function loadTwiccProjects({ execFileAsync }: { execFileAsync?: import("../pluginTypes").ExecFileAsync } = {}) {
+async function loadTwiccProjects({ execFileAsync }: TwiccCommandOptions = {}): Promise<TwiccProject[]> {
   if (typeof execFileAsync !== "function") {
     return [];
   }
@@ -130,46 +141,33 @@ async function loadTwiccProjects({ execFileAsync }: { execFileAsync?: import("..
       windowsHide: true
     });
     const projects = JSON.parse(stdout);
-    return Array.isArray(projects) ? /** @type {TwiccProject[]} */ (projects) : [];
+    return Array.isArray(projects) ? projects.filter(isTwiccProject) : [];
   } catch {
     return [];
   }
 }
 
-/**
- * @param {TwiccProjectCacheOptions} options
- */
 function createTwiccProjectCache({
   loadProjects = loadTwiccProjects,
   ttlMs = TWICC_PROJECT_CACHE_TTL_MS,
   now = () => Date.now()
-} = {}) {
-  /** @type {TwiccProject[]} */
+}: TwiccProjectCacheOptions = {}) {
   let projects = [];
   let loadedAt = 0;
   let loaded = false;
 
-  function invalidate() {
+  function invalidate(): void {
     projects = [];
     loadedAt = 0;
     loaded = false;
   }
 
-  /**
-   * @param {string[]} projectIds
-   * @returns {boolean}
-   */
-  function hasUnknownProjectIds(projectIds = []) {
+  function hasUnknownProjectIds(projectIds: string[] = []): boolean {
     const knownIds = new Set(projects.map((project) => String(project?.id || "").trim()).filter(Boolean));
     return projectIds.some((projectId) => !knownIds.has(String(projectId || "").trim()));
   }
 
-  /**
-   * @param {TwiccCommandOptions} options
-   * @param {TwiccProjectCacheGetOptions} cacheOptions
-   * @returns {Promise<TwiccProject[]>}
-   */
-  async function get(options = {}, { force = false, projectIds = [] } = {}) {
+  async function get(options: TwiccCommandOptions = {}, { force = false, projectIds = [] }: TwiccProjectCacheGetOptions = {}): Promise<TwiccProject[]> {
     const expired = !loaded || now() - loadedAt >= ttlMs;
     if (force || expired || hasUnknownProjectIds(projectIds)) {
       projects = await loadProjects(options);
@@ -186,11 +184,7 @@ function createTwiccProjectCache({
   });
 }
 
-/**
- * @param {TwiccCommandOptions} options
- * @returns {Promise<TwiccProcess[]>}
- */
-async function loadTwiccProcesses({ execFileAsync }: { execFileAsync?: import("../pluginTypes").ExecFileAsync } = {}) {
+async function loadTwiccProcesses({ execFileAsync }: TwiccCommandOptions = {}): Promise<TwiccProcess[]> {
   if (typeof execFileAsync !== "function") {
     return [];
   }
@@ -201,17 +195,13 @@ async function loadTwiccProcesses({ execFileAsync }: { execFileAsync?: import(".
       windowsHide: true
     });
     const processes = JSON.parse(stdout);
-    return Array.isArray(processes) ? /** @type {TwiccProcess[]} */ (processes) : [];
+    return Array.isArray(processes) ? processes.filter(isTwiccProcess) : [];
   } catch {
     return [];
   }
 }
 
-/**
- * @param {unknown} state
- * @returns {TwiccNormalizedProcessState | ""}
- */
-function normalizeTwiccProcessState(state) {
+function normalizeTwiccProcessState(state: unknown): TwiccNormalizedProcessState | "" {
   if (state === "assistant_turn") {
     return "working";
   }
@@ -227,16 +217,12 @@ function normalizeTwiccProcessState(state) {
   return "";
 }
 
-/**
- * @param {unknown} processes
- * @returns {TwiccProjectProcessStatuses}
- */
-function getTwiccProjectProcessStatuses(processes) {
+function getTwiccProjectProcessStatuses(processes: unknown): TwiccProjectProcessStatuses {
   if (!Array.isArray(processes)) {
     return {};
   }
 
-  const processList = /** @type {TwiccProcess[]} */ (processes);
+  const processList = processes.filter(isTwiccProcess);
   const priority = {
     input: 3,
     working: 2,
@@ -271,21 +257,20 @@ function getTwiccProjectProcessStatuses(processes) {
 
     statuses[projectId] = current;
     return statuses;
-  }, /** @type {TwiccProjectProcessStatuses} */ ({}));
+  }, {} as TwiccProjectProcessStatuses);
 }
 
-/**
- * @param {Array<TwiccProjectProcessStatus | null | undefined>} statuses
- * @returns {TwiccProjectProcessStatus | null}
- */
-function mergeTwiccProjectProcessStatuses(statuses = []) {
+function mergeTwiccProjectProcessStatuses(statuses: Array<TwiccProjectProcessStatus | null | undefined> = []): TwiccProjectProcessStatus | null {
   const priority = {
     input: 3,
     working: 2,
     done: 1
   };
-  /** @type {{ state: TwiccNormalizedProcessState | "", count: number, sessions: TwiccSessionStatus[] }} */
-  const merged = {
+  const merged: {
+    count: number;
+    sessions: TwiccSessionStatus[];
+    state: TwiccNormalizedProcessState | "";
+  } = {
     state: "",
     count: 0,
     sessions: []
@@ -304,15 +289,16 @@ function mergeTwiccProjectProcessStatuses(statuses = []) {
     }
   }
 
-  return merged.state ? /** @type {TwiccProjectProcessStatus} */ (merged) : null;
+  return merged.state
+    ? {
+        count: merged.count,
+        sessions: merged.sessions,
+        state: merged.state
+      }
+    : null;
 }
 
-/**
- * @param {TwiccProject | null | undefined} twiccProject
- * @param {TwiccProject[]} twiccProjects
- * @returns {string[]}
- */
-function getRelatedTwiccProjectIds(twiccProject, twiccProjects = []) {
+function getRelatedTwiccProjectIds(twiccProject: TwiccProject | null | undefined, twiccProjects: TwiccProject[] = []): string[] {
   if (!twiccProject?.id) {
     return [];
   }
@@ -331,13 +317,11 @@ function getRelatedTwiccProjectIds(twiccProject, twiccProjects = []) {
   return [...relatedIds];
 }
 
-/**
- * @param {TwiccProjectProcessStatuses} statuses
- * @param {TwiccProject[]} twiccProjects
- * @param {BoatyardProject[]} boatyardProjects
- * @returns {TwiccProjectProcessStatuses}
- */
-function aliasTwiccProjectProcessStatuses(statuses = {}, twiccProjects = [], boatyardProjects = []) {
+function aliasTwiccProjectProcessStatuses(
+  statuses: TwiccProjectProcessStatuses = {},
+  twiccProjects: TwiccProject[] = [],
+  boatyardProjects: BoatyardProject[] = []
+): TwiccProjectProcessStatuses {
   const aliased = { ...statuses };
 
   for (const project of Array.isArray(boatyardProjects) ? boatyardProjects : []) {
@@ -353,30 +337,16 @@ function aliasTwiccProjectProcessStatuses(statuses = {}, twiccProjects = [], boa
   return aliased;
 }
 
-/**
- * @param {TwiccCommandOptions} options
- * @returns {Promise<TwiccProjectProcessStatuses>}
- */
-async function loadTwiccProjectProcessStatuses(options) {
+async function loadTwiccProjectProcessStatuses(options: TwiccCommandOptions): Promise<TwiccProjectProcessStatuses> {
   return getTwiccProjectProcessStatuses(await loadTwiccProcesses(options));
 }
 
-/**
- * @param {unknown} sourcePath
- * @param {TwiccCommandOptions} options
- * @returns {Promise<TwiccProjectInspection | null>}
- */
-async function inspectTwiccProject(sourcePath, options) {
+async function inspectTwiccProject(sourcePath: unknown, options: TwiccCommandOptions): Promise<TwiccProjectInspection | null> {
   const projects = await loadTwiccProjects(options);
   return inspectTwiccProjectFromProjects(sourcePath, projects);
 }
 
-/**
- * @param {unknown} sourcePath
- * @param {unknown} projects
- * @returns {TwiccProjectInspection | null}
- */
-function inspectTwiccProjectFromProjects(sourcePath, projects) {
+function inspectTwiccProjectFromProjects(sourcePath: unknown, projects: unknown): TwiccProjectInspection | null {
   const match = findTwiccProjectMatchForPath(projects, sourcePath);
   return match?.project?.id
     ? {
@@ -387,15 +357,14 @@ function inspectTwiccProjectFromProjects(sourcePath, projects) {
     : null;
 }
 
-/**
- * @param {unknown} sourcePath
- * @param {TwiccCommandOptions} options
- * @returns {Promise<TwiccProjectInspection | null>}
- */
-async function createTwiccProject(sourcePath, { execFileAsync }) {
+async function createTwiccProject(sourcePath: unknown, { execFileAsync }: TwiccCommandOptions): Promise<TwiccProjectInspection | null> {
   const normalizedSourcePath = normalizePathForMatch(sourcePath);
   if (!normalizedSourcePath) {
     throw new Error("Source path is required to create a TwiCC project.");
+  }
+
+  if (typeof execFileAsync !== "function") {
+    throw new Error("TwiCC command runner is required.");
   }
 
   await execFileAsync("twicc", ["create-project", normalizedSourcePath], {
