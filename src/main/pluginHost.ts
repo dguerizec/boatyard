@@ -6,7 +6,7 @@ import type {
   PluginContext,
   PluginProjectInspectors,
   PluginStateMigrations
-} from "../plugins/pluginTypes";
+} from "../shared/pluginTypes";
 
 const fs = require("node:fs");
 const path = require("node:path");

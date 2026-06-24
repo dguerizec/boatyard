@@ -1,6 +1,6 @@
 "use strict";
 
-import type { ExecFileAsync, PluginActions, PluginProjectInspectors } from "../pluginTypes";
+import type { ExecFileAsync, PluginActions, PluginProjectInspectors } from "../../shared/pluginTypes";
 
 const {
   aliasTwiccProjectProcessStatuses,

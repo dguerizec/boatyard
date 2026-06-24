@@ -1,6 +1,6 @@
 "use strict";
 
-import type { ExecFileAsync } from "../pluginTypes";
+import type { ExecFileAsync } from "../../shared/pluginTypes";
 
 const { execFile } = require("node:child_process");
 const path = require("node:path");

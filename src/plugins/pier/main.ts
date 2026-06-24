@@ -1,6 +1,6 @@
 "use strict";
 
-import type { ExecFileAsync, PluginActions, PluginMetadata } from "../pluginTypes";
+import type { ExecFileAsync, PluginActions, PluginMetadata } from "../../shared/pluginTypes";
 
 type WorktreeCommandOptions = { cwd?: unknown; execFileAsync: ExecFileAsync };
 type WorktreeAddInput = { worktreePath?: unknown; branchName?: unknown; fromRef?: unknown; startAfterCreate?: unknown };

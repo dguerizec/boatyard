@@ -1,6 +1,6 @@
 "use strict";
 
-import type { PluginActions, PluginEvents, PluginPaths } from "../pluginTypes";
+import type { PluginActions, PluginEvents, PluginPaths } from "../../shared/pluginTypes";
 
 const { TelegramService } = require("./service");
 const fs = require("node:fs");
