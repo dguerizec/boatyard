@@ -6,10 +6,19 @@ type PaneLayoutWebApp = {
   id: string;
 };
 
+type PaneLayoutTransientWebApp = Record<string, unknown> & {
+  id?: string;
+  label?: unknown;
+  parentLabel?: string;
+  parentWebAppId?: string;
+  url?: string;
+};
+
 type PaneNode = {
   type: "pane";
   id: string;
   selectedWebAppId?: string | null;
+  transientWebApp?: PaneLayoutTransientWebApp;
 };
 
 type SplitNode = {
@@ -54,7 +63,7 @@ type PaneLayoutStateApi = {
   getSelectedWebApp(project: PaneLayoutProject, paneId: string, webApps: PaneLayoutWebApp[]): PaneLayoutWebApp;
   getSelectedWebAppForPane(paneId: string): string | undefined;
   getSelectedWebAppForProject(projectId: string): string | undefined;
-  hydratePaneLayouts(persistedLayouts?: Record<string, PaneLayoutNode>): void;
+  hydratePaneLayouts(persistedLayouts?: Record<string, unknown>): void;
   persistPaneLayout(project: PaneLayoutProject): void;
   removePaneNode(node: PaneLayoutNode | null | undefined, paneId: string): RemovePaneResult;
   replacePaneNode(node: PaneLayoutNode, paneId: string, replacement: PaneLayoutNode): PaneLayoutNode;
@@ -65,8 +74,7 @@ type PaneLayoutStateApi = {
   deleteSelectedWebAppForProject(projectId: string): boolean;
 };
 
-(function () {
-  function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptions): PaneLayoutStateApi {
+export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptions): PaneLayoutStateApi {
     const selectedWebAppByProject = new Map<string, string>();
     const paneLayoutsByProject = new Map<string, PaneLayoutNode>();
     const selectedWebAppByPane = new Map<string, string>();
@@ -422,12 +430,13 @@ type PaneLayoutStateApi = {
     }
 
     /**
-     * @param {Record<string, PaneLayoutNode>} persistedLayouts
+     * @param {Record<string, unknown>} persistedLayouts
      */
-    function hydratePaneLayouts(persistedLayouts: Record<string, PaneLayoutNode> = {}) {
+    function hydratePaneLayouts(persistedLayouts: Record<string, unknown> = {}) {
       for (const [projectId, layout] of Object.entries(persistedLayouts)) {
-        paneLayoutsByProject.set(projectId, layout);
-        hydratePaneLayoutSelections(layout);
+        const paneLayout = layout as PaneLayoutNode;
+        paneLayoutsByProject.set(projectId, paneLayout);
+        hydratePaneLayoutSelections(paneLayout);
       }
     }
 
@@ -457,10 +466,4 @@ type PaneLayoutStateApi = {
       deleteSelectedWebAppForPane: (paneId) => selectedWebAppByPane.delete(paneId),
       deleteSelectedWebAppForProject: (projectId) => selectedWebAppByProject.delete(projectId)
     };
-  }
-
-  const globalScope: PaneLayoutStateWindow = window;
-  globalScope.BoatyardPaneLayoutState = Object.freeze({
-    create: createPaneLayoutState
-  });
-})();
+}

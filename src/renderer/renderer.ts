@@ -1,3 +1,4 @@
+import { createPaneLayoutState } from "./paneLayoutState.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 
 type RendererProject = UnknownRecord & {
@@ -164,7 +165,6 @@ type BoatyardRendererWindow = Window & {
   BoatyardOverlayDialog?: {
     show(dialog: HTMLDialogElement, options?: UnknownRecord): unknown;
   };
-  BoatyardPaneLayoutState: RendererCreateModule<PaneLayoutStateInstance>;
   BoatyardPaneLayoutView: RendererCreateModule<PaneLayoutViewInstance>;
   BoatyardPaneNavigation?: {
     openProjectWebApp(projectId: string | undefined, webAppId: string, url: string): boolean;
@@ -739,7 +739,7 @@ function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {
   });
 }
 
-const paneLayoutState = boatyardWindow.BoatyardPaneLayoutState.create({
+const paneLayoutState = createPaneLayoutState({
   updatePaneLayout: (projectId, layout) => boatyardWindow.boatyard.updatePaneLayout(projectId, layout)
 });
 

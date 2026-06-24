@@ -10,6 +10,7 @@
   },
   "include": [
     "src/shared/pluginTypes.d.ts",
+    "src/renderer/paneLayoutState.ts",
     "src/renderer/renderer.ts",
     "src/renderer/rendererGlobals.d.ts",
     "src/renderer/rendererRecords.ts"
