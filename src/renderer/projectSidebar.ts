@@ -1,9 +1,6 @@
-"use strict";
-
-(function () {
-  type ProjectGroupMenu = HTMLDivElement & {
-    cleanup?: () => void;
-  };
+type ProjectGroupMenu = HTMLDivElement & {
+  cleanup?: () => void;
+};
 
   type ProjectNavRowOptions = {
     grouped?: boolean;
@@ -14,7 +11,7 @@
     dragImage?: "collapsed-group";
   };
 
-  function createProjectSidebar({
+export function createProjectSidebar({
     elements,
     getViewState,
     getProjects,
@@ -1473,10 +1470,4 @@
       closeProjectGroupMenu,
       renderProjectList
     };
-  }
-
-  const globalScope: ProjectSidebarGlobal = window;
-  globalScope.BoatyardProjectSidebar = {
-    create: createProjectSidebar
-  };
-})();
+}

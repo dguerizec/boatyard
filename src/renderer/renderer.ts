@@ -1,6 +1,7 @@
 import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
+import { createProjectSidebar } from "./projectSidebar.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createUpdateViews } from "./updateViews.js";
@@ -189,7 +190,6 @@ type BoatyardRendererWindow = Window & {
     readFieldValue(field: UnknownRecord, input: HTMLElement, options?: UnknownRecord): unknown;
   };
   BoatyardProjectSettingsViews: RendererCreateModule<ProjectSettingsViewsInstance>;
-  BoatyardProjectSidebar: RendererCreateModule;
   BoatyardWidgetRegistry: {
     register(definition: UnknownRecord): unknown;
   };
@@ -1873,7 +1873,7 @@ function openOnboardingTour(options = {}) {
   return onboardingTour.openOnboardingTour(options);
 }
 
-const projectSidebar = boatyardWindow.BoatyardProjectSidebar.create({
+const projectSidebar = createProjectSidebar({
   elements: {
     addProjectButton,
     globalNav,
