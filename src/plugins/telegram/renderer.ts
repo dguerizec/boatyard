@@ -61,7 +61,56 @@
   };
 
   type TelegramRendererService = PluginRegistryRecord & {
+    completeLoginCode(code: unknown): Promise<TelegramStatus>;
+    completeLoginPassword(password: unknown): Promise<TelegramStatus>;
+    getMessages(project: TelegramProject, options?: TelegramConversationProps): Promise<{
+      messages?: TelegramMessage[];
+      status?: TelegramStatus;
+      target?: Partial<TelegramTarget>;
+    }>;
     getStatus(options?: TelegramConversationProps): Promise<TelegramStatus>;
+    getTarget(project?: TelegramProject, projectConfig?: TelegramConfig, globalConfig?: TelegramConfig): TelegramTarget;
+    logout(): Promise<TelegramStatus>;
+    onMessage(callback: (update: TelegramUpdate) => void): () => void;
+    sendMessage(project: TelegramProject, text: string, options?: TelegramConversationProps): Promise<unknown>;
+    startLogin(globalConfig: TelegramConfig | undefined, phoneNumber: string): Promise<TelegramStatus>;
+  };
+  type TelegramSettingsFields = {
+    setActionMessage(key: string, value: string): void;
+    setDefaultValue(key: string, value: string): void;
+  };
+  type TelegramFieldContext = {
+    fields: TelegramSettingsFields;
+    project: TelegramProject;
+  };
+  type TelegramCoreFieldChangedEvent = {
+    coreFields: TelegramProject;
+    field: string;
+    fields?: TelegramSettingsFields;
+  };
+  type TelegramGlobalSettingsOpenedEvent = {
+    globalConfig?: TelegramConfig;
+  };
+  type TelegramPluginContext = PluginRegistryRecord & {
+    events: {
+      on(eventName: string, callback: (event: unknown) => void): void;
+    };
+    panes: {
+      register(definition: Record<string, unknown>): void;
+    };
+    services: {
+      provide(id: string, service: unknown): void;
+    };
+    settings: {
+      registerGlobalSection(section: Record<string, unknown>): void;
+      registerProjectSection(section: Record<string, unknown>): void;
+    };
+    status: {
+      set(status: unknown): void;
+    };
+    widgets: {
+      register(definition: Record<string, unknown>): void;
+    };
   };
 
   const registry = globalScope.BoatyardPluginRegistry;
@@ -70,15 +119,15 @@
     throw new Error("Plugin registry is unavailable.");
   }
 
-  function invokePlugin(actionName, payload = {}) {
+  function invokePlugin(actionName: string, payload: Record<string, unknown> = {}) {
     return globalScope.boatyard?.invokePlugin?.("boatyard.telegram", actionName, payload);
   }
 
-  function normalizeText(value) {
+  function normalizeText(value: unknown) {
     return String(value || "").trim();
   }
 
-  function stripTopicMetadataPrefix(text) {
+  function stripTopicMetadataPrefix(text: unknown) {
     return String(text || "").replace(/^<boatyard-topic\b[^>]*\/>\s*\n?/, "").trim();
   }
 
@@ -125,7 +174,7 @@
     return "";
   }
 
-  function isNumericTelegramChatId(value) {
+  function isNumericTelegramChatId(value: unknown) {
     return /^-?\d+$/.test(normalizeText(value));
   }
 
@@ -175,23 +224,23 @@
         }
         return invokePlugin("messages", { target, globalConfig: options.globalPluginConfig || {} });
       },
-      async sendMessage(project: TelegramProject, text, options: TelegramConversationProps = {}) {
+      async sendMessage(project: TelegramProject, text: string, options: TelegramConversationProps = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
         return invokePlugin("sendMessage", { target, text, globalConfig: options.globalPluginConfig || {} });
       },
-      async startLogin(globalConfig, phoneNumber) {
+      async startLogin(globalConfig: TelegramConfig | undefined, phoneNumber: string) {
         return invokePlugin("startLogin", { globalConfig: globalConfig || {}, phoneNumber });
       },
-      async completeLoginCode(code) {
+      async completeLoginCode(code: unknown) {
         return invokePlugin("completeLoginCode", { code });
       },
-      async completeLoginPassword(password) {
+      async completeLoginPassword(password: unknown) {
         return invokePlugin("completeLoginPassword", { password });
       },
       async logout() {
         return invokePlugin("logout");
       },
-      onMessage(callback) {
+      onMessage(callback: (update: TelegramUpdate) => void) {
         return globalScope.boatyard?.onPluginEvent?.("boatyard.telegram", "message", callback) || (() => {});
       },
       openTelegram(target: Partial<TelegramTarget> = {}) {
@@ -308,7 +357,7 @@
     input.style.overflowY = input.scrollHeight + verticalBorder > maxHeight ? "auto" : "hidden";
   }
 
-  function createTelegramConversation(container: HTMLElement, props: TelegramConversationProps = {}, service, options: TelegramConversationOptions = {}) {
+  function createTelegramConversation(container: HTMLElement, props: TelegramConversationProps = {}, service: TelegramRendererService, options: TelegramConversationOptions = {}) {
     const project = props.project || {};
     const target = service.getTarget(project, props.projectConfig || props.pluginConfig, props.globalPluginConfig);
     const compact = options.compact === true;
@@ -430,7 +479,7 @@
       } catch (error) {
         setStatusText(status, {
           state: "error",
-          summary: error.message
+          summary: (error as Error).message
         });
       } finally {
         refreshButton.disabled = false;
@@ -447,7 +496,7 @@
       } catch (error) {
         setStatusText(status, {
           state: "error",
-          summary: error.message
+          summary: (error as Error).message
         });
       } finally {
         startLoginButton.disabled = false;
@@ -465,7 +514,7 @@
       } catch (error) {
         setStatusText(status, {
           state: "error",
-          summary: error.message
+          summary: (error as Error).message
         });
       } finally {
         codeButton.disabled = false;
@@ -483,7 +532,7 @@
       } catch (error) {
         setStatusText(status, {
           state: "error",
-          summary: error.message
+          summary: (error as Error).message
         });
       } finally {
         passwordButton.disabled = false;
@@ -502,7 +551,7 @@
       }
     });
     input.addEventListener("input", () => resizeComposerInput(input));
-    form.addEventListener("submit", async (event) => {
+    form.addEventListener("submit", async (event: SubmitEvent) => {
       event.preventDefault();
       const text = normalizeText(input.value);
       if (!text) {
@@ -518,7 +567,7 @@
       } catch (error) {
         setStatusText(status, {
           state: "error",
-          summary: error.message
+          summary: (error as Error).message
         });
       } finally {
         sendButton.disabled = false;
@@ -529,7 +578,7 @@
     container.append(shell);
     load();
 
-    const unsubscribeTelegramMessage = service.onMessage((update) => {
+    const unsubscribeTelegramMessage = service.onMessage((update: TelegramUpdate) => {
       if (!shell.isConnected) {
         unsubscribeTelegramMessage();
         return;
@@ -542,11 +591,11 @@
     return unsubscribeTelegramMessage;
   }
 
-  function createTelegramPane(container, props = {}, service) {
+  function createTelegramPane(container: HTMLElement, props: TelegramConversationProps = {}, service: TelegramRendererService) {
     return createTelegramConversation(container, props, service);
   }
 
-  function createTelegramWidget(project, props = {}, service) {
+  function createTelegramWidget(project: TelegramProject, props: TelegramConversationProps = {}, service: TelegramRendererService) {
     const card = document.createElement("article");
     card.className = "widget-card telegram-widget";
 
@@ -557,7 +606,7 @@
     return card;
   }
 
-  function syncProjectTopicField(event) {
+  function syncProjectTopicField(event: TelegramCoreFieldChangedEvent) {
     if (!["slug", "name"].includes(event.field)) {
       return;
     }
@@ -565,7 +614,7 @@
     event.fields?.setDefaultValue("telegramTopicTitle", getProjectTopicTitle(event.coreFields));
   }
 
-  async function refreshTelegramStatus(ctx, globalConfig = {}) {
+  async function refreshTelegramStatus(ctx: TelegramPluginContext, globalConfig: TelegramConfig = {}) {
     const service = registry.getService<TelegramRendererService>("boatyard.telegram");
     if (!service) {
       return;
@@ -596,12 +645,12 @@
       ]
     },
     {
-      activate(ctx) {
+      activate(ctx: TelegramPluginContext) {
         const service = createTelegramService();
         ctx.services.provide("boatyard.telegram", service);
         ctx.events.on("boatyard.projectForm.coreFieldChanged", syncProjectTopicField);
-        ctx.events.on("boatyard.globalSettings.opened", (event) => {
-          refreshTelegramStatus(ctx, event.globalConfig || {});
+        ctx.events.on("boatyard.globalSettings.opened", (event: unknown) => {
+          refreshTelegramStatus(ctx, (event as TelegramGlobalSettingsOpenedEvent).globalConfig || {});
         });
 
         ctx.status.set({
@@ -661,7 +710,7 @@
                 label: "Logout",
                 pendingLabel: "Logging out...",
                 message: "Disconnect the Telegram user session.",
-                async run({ fields }) {
+                async run({ fields }: Pick<TelegramFieldContext, "fields">) {
                   const nextStatus = await service.logout();
                   ctx.status.set(nextStatus);
                   fields.setActionMessage("telegramSession", "Telegram user is logged out.");
@@ -694,7 +743,7 @@
               label: "Telegram topic title",
               type: "text",
               valueType: "text",
-              defaultValue({ project }) {
+              defaultValue({ project }: Pick<TelegramFieldContext, "project">) {
                 return getProjectTopicTitle(project);
               }
             },
@@ -715,7 +764,7 @@
           title: "Telegram",
           kind: "dom",
           scope: "project",
-          render(container, props) {
+          render(container: HTMLElement, props: TelegramConversationProps) {
             return createTelegramPane(container, props, service);
           }
         });
@@ -733,7 +782,7 @@
             default: { columns: 4, rows: 4 },
             min: { columns: 3, rows: 3 }
           },
-          createElement(project, props = {}) {
+          createElement(project: TelegramProject, props: TelegramConversationProps = {}) {
             return createTelegramWidget(project, props, service);
           }
         });
