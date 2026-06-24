@@ -229,7 +229,7 @@ function getTwiccProjectProcessStatuses(processes: unknown): TwiccProjectProcess
     done: 1
   };
 
-  return processList.reduce((statuses, process) => {
+  return processList.reduce<TwiccProjectProcessStatuses>((statuses, process) => {
     const projectId = String(process?.project_id || "").trim();
     const state = normalizeTwiccProcessState(process?.state);
 
@@ -257,7 +257,7 @@ function getTwiccProjectProcessStatuses(processes: unknown): TwiccProjectProcess
 
     statuses[projectId] = current;
     return statuses;
-  }, {} as TwiccProjectProcessStatuses);
+  }, {});
 }
 
 function mergeTwiccProjectProcessStatuses(statuses: Array<TwiccProjectProcessStatus | null | undefined> = []): TwiccProjectProcessStatus | null {

@@ -20,7 +20,6 @@ type HawserProjectInspection = { matchType: "exact"; name: string; url: string }
 type HawserCliStatus = { available: boolean; error?: string; version?: string };
 type HawserStatusOptions = { execFileAsync?: ExecFileAsync; fetchImpl?: typeof fetch };
 type ExternalRef = { id?: string; kind?: string };
-type ExternalRefContainer = { external_refs?: ExternalRef[]; externalRefs?: ExternalRef[] };
 type HawserApiMessage = {
   body?: string;
   created_at?: string;
@@ -83,6 +82,14 @@ function isExternalRef(value: unknown): value is ExternalRef {
 
 function isHawserApiMessage(value: unknown): value is HawserApiMessage {
   return isRecord(value);
+}
+
+function getErrorCode(error: unknown): string {
+  return isRecord(error) ? String(error.code || "") : "";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error || "");
 }
 
 function getHawserApiUrl(settings: HawserSettings = {}): string {
@@ -212,10 +219,9 @@ async function getHawserCliStatus(runCommand: ExecFileAsync = execFileAsync): Pr
       version: String(stdout || "").trim()
     };
   } catch (error: unknown) {
-    const cliError = error as NodeJS.ErrnoException;
     return {
       available: false,
-      error: cliError.code === "ENOENT" ? "Hawser CLI was not found in PATH." : cliError.message
+      error: getErrorCode(error) === "ENOENT" ? "Hawser CLI was not found in PATH." : getErrorMessage(error)
     };
   }
 }
@@ -435,7 +441,7 @@ function normalizeExternalRefs(value: unknown): ExternalRef[] {
     return value.filter(isExternalRef);
   }
 
-  const container = isRecord(value) ? value as ExternalRefContainer : null;
+  const container = isRecord(value) ? value : null;
   if (Array.isArray(container?.external_refs)) {
     return container.external_refs.filter(isExternalRef);
   }

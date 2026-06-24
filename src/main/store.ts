@@ -32,6 +32,14 @@ function toRecord(value: unknown): UnknownRecord {
   return isRecord(value) ? value : {};
 }
 
+function getErrorCode(error: unknown): string {
+  return isRecord(error) ? String(error.code || "") : "";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error || "");
+}
+
 type Bounds = {
   x: number;
   y: number;
@@ -1125,9 +1133,8 @@ class ProjectStore {
         app: normalizeAppState(parsed.app)
       };
     } catch (error: unknown) {
-      const loadError = error as NodeJS.ErrnoException;
-      if (loadError.code !== "ENOENT") {
-        console.warn(`Could not load Boatyard state: ${loadError.message}`);
+      if (getErrorCode(error) !== "ENOENT") {
+        console.warn(`Could not load Boatyard state: ${getErrorMessage(error)}`);
       }
       this.state = createDefaultState();
     }

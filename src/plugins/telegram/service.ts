@@ -89,6 +89,10 @@ function getRecord(value: unknown): UnknownRecord {
   return isRecord(value) ? value : {};
 }
 
+function getErrorCode(error: unknown): string {
+  return isRecord(error) ? String(error.code || "") : "";
+}
+
 function normalizeText(value: unknown): string {
   return String(value || "").trim();
 }
@@ -240,8 +244,7 @@ class TelegramService extends EventEmitter {
 
       return safeStorage.decryptString(Buffer.from(encryptedSession, "base64"));
     } catch (error: unknown) {
-      const readError = error as NodeJS.ErrnoException;
-      if (readError.code === "ENOENT") {
+      if (getErrorCode(error) === "ENOENT") {
         return "";
       }
       throw error;
@@ -268,8 +271,7 @@ class TelegramService extends EventEmitter {
     try {
       fs.unlinkSync(this.sessionFilePath);
     } catch (error: unknown) {
-      const unlinkError = error as NodeJS.ErrnoException;
-      if (unlinkError.code !== "ENOENT") {
+      if (getErrorCode(error) !== "ENOENT") {
         throw error;
       }
     }
