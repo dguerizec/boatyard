@@ -63,7 +63,7 @@
   type TelegramGlobal = Window & {
     BoatyardPluginRegistry?: PluginRegistryApi;
     boatyard?: {
-      invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<any>;
+      invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<unknown>;
       onPluginEvent?: (pluginId: string, eventName: string, callback: (payload: TelegramUpdate) => void) => () => void;
       openExternal?: (url: string) => unknown;
       updateProjectPluginConfig?: (projectId: string, pluginId: string, config: TelegramConfig) => Promise<unknown>;

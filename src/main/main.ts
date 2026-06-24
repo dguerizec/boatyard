@@ -18,7 +18,7 @@ const UPDATE_REPOSITORY = {
   owner: "dguerizec",
   name: "boatyard"
 };
-type UnknownRecord = Record<string, any>;
+type UnknownRecord = Record<string, unknown>;
 
 const APPIMAGE_NAME_PATTERN = /^Boatyard-(\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?)\.AppImage$/;
 const CHANGELOG_JSON_PATH = path.join(__dirname, "..", "shared", "changelog.json");

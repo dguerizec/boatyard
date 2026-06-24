@@ -64,7 +64,7 @@
     };
     BoatyardPluginRegistry?: PluginRegistryApi;
     boatyard?: {
-      invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<any>;
+      invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<unknown>;
       openExternal?: (url: string) => unknown;
       writeClipboardText?: (value: string) => Promise<unknown>;
     };

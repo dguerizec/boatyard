@@ -313,7 +313,7 @@ type PluginRegistryWindow = Window & {
             throw new Error(`Event ${name} handler must be a function.`);
           }
 
-          const eventHandler = handler as (payload: any) => void;
+          const eventHandler = handler as (payload: unknown) => void;
           const nextHandlers = [
             ...(eventHandlers.get(name) || []),
             { pluginId, handler: eventHandler }

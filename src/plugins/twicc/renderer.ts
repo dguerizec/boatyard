@@ -28,6 +28,10 @@
     state?: string;
   };
 
+  type TwiccCreatedProject = {
+    url?: string;
+  };
+
   type TwiccUsageProvider = {
     extra_usage_is_enabled?: boolean;
     extra_usage_remaining_credits?: number;
@@ -49,7 +53,7 @@
   type TwiccGlobal = Window & {
     BoatyardPluginRegistry?: PluginRegistryApi;
     boatyard?: {
-      invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<any>;
+      invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<unknown>;
       openExternal?: (url: string) => unknown;
     };
   };
@@ -74,6 +78,18 @@
 
   function invokePlugin(actionName, payload = {}) {
     return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.twicc", actionName, payload);
+  }
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function asProjectProcessStatuses(value: unknown): Record<string, TwiccProjectStatus> {
+    return isRecord(value) ? value as Record<string, TwiccProjectStatus> : {};
+  }
+
+  function asCreatedProject(value: unknown): TwiccCreatedProject {
+    return isRecord(value) ? value as TwiccCreatedProject : {};
   }
 
   function normalizeBaseUrl(value) {
@@ -133,7 +149,7 @@
     }
 
     try {
-      const nextStatuses = await invokePlugin("projectProcessStatuses");
+      const nextStatuses = asProjectProcessStatuses(await invokePlugin("projectProcessStatuses"));
       if (JSON.stringify(projectProcessStatuses) !== JSON.stringify(nextStatuses)) {
         projectProcessStatuses = nextStatuses;
       }
@@ -686,7 +702,7 @@
                     throw new Error("Source path is required to create a TwiCC project.");
                   }
 
-                  const created = await invokePlugin("createProject", { sourcePath });
+                  const created = asCreatedProject(await invokePlugin("createProject", { sourcePath }));
                   if (!created?.url) {
                     throw new Error("TwiCC project was created but no URL was returned.");
                   }

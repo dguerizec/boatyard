@@ -5,7 +5,7 @@ type OnboardingTourProject = {
 type OnboardingTourPaneNode = {
   id: string;
   selectedWebAppId?: string | null;
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 type OnboardingTourLayoutNode = OnboardingTourPaneNode & {
@@ -17,7 +17,7 @@ type OnboardingTourWebApp = {
   id: string;
   key?: string;
   url?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 };
 
 type OnboardingTourManualStep = {

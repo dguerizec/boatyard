@@ -115,7 +115,7 @@ test("createHawserProject registers source path with runtime", async () => {
   const calls = [];
   const result = await createHawserProject("/workspace/app", "claude", {
     execFileAsync: async (command, args, options = {}) => {
-      calls.push({ command, args, cwd: (options as any).cwd });
+      calls.push({ command, args, cwd: (options as { cwd?: string }).cwd });
       if (args[0] === "list") {
         return { stdout: "app - /workspace/app\n" };
       }

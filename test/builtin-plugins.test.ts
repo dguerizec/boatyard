@@ -9,6 +9,42 @@ const { resolveFieldDefault } = require(`${process.cwd()}/build/renderer/pluginS
 
 const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette"];
 
+type MockFetch = (...args: unknown[]) => Promise<unknown>;
+
+type LooseVmValue = ((...args: unknown[]) => LooseVmValue) & {
+  [key: number]: LooseVmValue;
+  [key: string]: LooseVmValue;
+};
+
+type BuiltinRendererContext = {
+  URL: typeof URL;
+  console: Console;
+  document: {
+    createElement: () => {
+      addEventListener(): void;
+      append(): void;
+      classList: { add(): void; remove(): void };
+      setAttribute(): void;
+    };
+  };
+  fetch: MockFetch;
+  window: Record<string, unknown> & {
+    BoatyardPluginRegistry?: LooseVmValue;
+    boatyard: {
+      invokePlugin(pluginId: string, actionName: string): Promise<unknown>;
+      onPluginEvent(): () => void;
+      openExternal(): void;
+      writeClipboardText(): void;
+    };
+    BoatyardHawserUI: {
+      createWidget(): Record<string, never>;
+    };
+    clearInterval(): void;
+    setInterval(callback: () => void): number;
+    window?: BuiltinRendererContext["window"];
+  };
+};
+
 function readBuiltinPluginRendererPath(pluginDir) {
   const manifestPath = path.join(process.cwd(), "src/plugins", pluginDir, "plugin.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
@@ -27,7 +63,7 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
       }
     ]
   }
-}, mockFetch: (...args: any[]) => Promise<any> = async () => ({ ok: true, json: async () => [] })) {
+}, mockFetch: MockFetch = async () => ({ ok: true, json: async () => [] })) {
   return loadRendererPluginContext(twiccProjectProcessStatuses, mockFetch).registry;
 }
 
@@ -43,9 +79,9 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
       }
     ]
   }
-}, mockFetch: (...args: any[]) => Promise<any> = async () => ({ ok: true, json: async () => [] })) {
+}, mockFetch: MockFetch = async () => ({ ok: true, json: async () => [] })) {
   const intervalCallbacks = [];
-  const context: any = {
+  const context: BuiltinRendererContext = {
     console,
     URL,
     window: {
@@ -140,6 +176,10 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function fieldMap(fields: unknown): Record<string, LooseVmValue> {
+  return Object.fromEntries(fields as Iterable<readonly [PropertyKey, LooseVmValue]>) as Record<string, LooseVmValue>;
+}
+
 test("Built-in plugins register project integrations and widgets", () => {
   const registry = loadRendererPluginEnvironment();
 
@@ -226,7 +266,7 @@ test("Twicc global settings expose base URL and API token fields", () => {
   const twiccSection = registry
     .listGlobalSettingsSections()
     .find((section) => section.id === "boatyard.twicc.global");
-  const fields = Object.fromEntries(twiccSection.fields.map((field) => [field.key, field]));
+  const fields = fieldMap(twiccSection.fields.map((field) => [field.key, field]));
 
   assert.equal(fields.twiccBaseUrl.valueType, "url");
   assert.equal(fields.twiccApiToken.type, "password");
@@ -346,7 +386,7 @@ test("Hawser global settings expose a copyable install command", () => {
   const hawserSection = registry
     .listGlobalSettingsSections()
     .find((section) => section.id === "boatyard.hawser.global");
-  const fields = Object.fromEntries(hawserSection.fields.map((field) => [field.key, field]));
+  const fields = fieldMap(hawserSection.fields.map((field) => [field.key, field]));
 
   assert.equal(fields.hawserDefaultRuntime.defaultValue, "codex");
   assert.equal(fields.hawserInstallCommand.persist, false);
@@ -362,7 +402,7 @@ test("Pier project settings derive defaults from project identity", () => {
   const pierSection = registry
     .listProjectSettingsSections()
     .find((section) => section.id === "boatyard.pier.project");
-  const fields = Object.fromEntries(pierSection.fields.map((field) => [field.key, field]));
+  const fields = fieldMap(pierSection.fields.map((field) => [field.key, field]));
 
   assert.equal(
     resolveFieldDefault(fields.pierProjectName, {

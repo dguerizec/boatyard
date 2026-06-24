@@ -119,7 +119,7 @@ function buildTwiccProjectUrl(projectId, baseUrl = DEFAULT_TWICC_BASE_URL) {
  * @param {TwiccCommandOptions} options
  * @returns {Promise<TwiccProject[]>}
  */
-async function loadTwiccProjects({ execFileAsync }: { execFileAsync?: any } = {}) {
+async function loadTwiccProjects({ execFileAsync }: { execFileAsync?: import("../pluginTypes").ExecFileAsync } = {}) {
   if (typeof execFileAsync !== "function") {
     return [];
   }
@@ -190,7 +190,7 @@ function createTwiccProjectCache({
  * @param {TwiccCommandOptions} options
  * @returns {Promise<TwiccProcess[]>}
  */
-async function loadTwiccProcesses({ execFileAsync }: { execFileAsync?: any } = {}) {
+async function loadTwiccProcesses({ execFileAsync }: { execFileAsync?: import("../pluginTypes").ExecFileAsync } = {}) {
   if (typeof execFileAsync !== "function") {
     return [];
   }

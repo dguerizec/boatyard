@@ -22,14 +22,32 @@
     allProjectPluginConfig?: Record<string, Record<string, unknown>>;
   };
 
+  type HawserWidgetMessage = {
+    twiccSessionUrl?: string;
+  };
+
+  type HawserWidgetOptions = {
+    loadData?: () => Promise<unknown>;
+    onOpenMessage?: (message: HawserWidgetMessage) => void;
+    subtitle?: string;
+    title?: string;
+  };
+
+  type HawserCreatedProject = {
+    name?: string;
+    url?: string;
+  };
+
   type HawserGlobal = Window & {
-    BoatyardHawserUI?: any;
+    BoatyardHawserUI?: {
+      createWidget(project: HawserProject, options: HawserWidgetOptions): HTMLElement;
+    };
     BoatyardPaneNavigation?: {
       openProjectWebApp?: (projectId: string | undefined, webAppId: string, url: string) => void;
     };
     BoatyardPluginRegistry?: PluginRegistryApi;
     boatyard?: {
-      invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<any>;
+      invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<unknown>;
       writeClipboardText?: (value: string) => Promise<unknown>;
     };
   };
@@ -56,6 +74,10 @@
 
   function invokePlugin(actionName, payload = {}) {
     return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.hawser", actionName, payload);
+  }
+
+  function asCreatedProject(value: unknown): HawserCreatedProject {
+    return value && typeof value === "object" && !Array.isArray(value) ? value as HawserCreatedProject : {};
   }
 
   function normalizeApiUrl(value) {
@@ -295,10 +317,10 @@
                     throw new Error("Source path is required to create a Hawser project.");
                   }
 
-                  const created = await invokePlugin("createProject", {
+                  const created = asCreatedProject(await invokePlugin("createProject", {
                     sourcePath,
                     runtime: getDefaultRuntime(globalConfig)
-                  });
+                  }));
                   if (!created?.name) {
                     throw new Error("Hawser project was created but no project name was returned.");
                   }

@@ -405,13 +405,15 @@ function normalizeWebAppHomeTabs(homeTabs: unknown = {}, projects: UnknownRecord
   return normalized;
 }
 
-function normalizePaneLayoutNode(node: any, seenIds = new Set<string>()) {
+function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()) {
   if (!node || typeof node !== "object") {
     return null;
   }
 
-  if (node.type === "pane") {
-    const id = String(node.id || "").trim();
+  const source = node as UnknownRecord;
+
+  if (source.type === "pane") {
+    const id = String(source.id || "").trim();
 
     if (!id || seenIds.has(id)) {
       return null;
@@ -423,12 +425,12 @@ function normalizePaneLayoutNode(node: any, seenIds = new Set<string>()) {
       id
     };
 
-    if (typeof node.selectedWebAppId === "string" && node.selectedWebAppId.trim()) {
-      normalized.selectedWebAppId = node.selectedWebAppId.trim();
+    if (typeof source.selectedWebAppId === "string" && source.selectedWebAppId.trim()) {
+      normalized.selectedWebAppId = source.selectedWebAppId.trim();
     }
 
-    const transientWebApp = node.transientWebApp && typeof node.transientWebApp === "object"
-      ? node.transientWebApp
+    const transientWebApp = source.transientWebApp && typeof source.transientWebApp === "object"
+      ? source.transientWebApp as UnknownRecord
       : null;
     if (transientWebApp) {
       const transientId = normalizeText(transientWebApp.id);
@@ -452,11 +454,11 @@ function normalizePaneLayoutNode(node: any, seenIds = new Set<string>()) {
     return normalized;
   }
 
-  if (node.type === "split") {
-    const id = String(node.id || "").trim();
-    const direction = node.direction === "horizontal" ? "horizontal" : "vertical";
-    const first = normalizePaneLayoutNode(node.first, seenIds);
-    const second = normalizePaneLayoutNode(node.second, seenIds);
+  if (source.type === "split") {
+    const id = String(source.id || "").trim();
+    const direction = source.direction === "horizontal" ? "horizontal" : "vertical";
+    const first = normalizePaneLayoutNode(source.first, seenIds);
+    const second = normalizePaneLayoutNode(source.second, seenIds);
 
     if (!id || seenIds.has(id) || !first || !second) {
       return null;
@@ -467,13 +469,13 @@ function normalizePaneLayoutNode(node: any, seenIds = new Set<string>()) {
       type: "split",
       id,
       direction,
-      ratio: Math.min(0.85, Math.max(0.15, Number.isFinite(node.ratio) ? node.ratio : 0.5)),
+      ratio: Math.min(0.85, Math.max(0.15, Number.isFinite(source.ratio) ? Number(source.ratio) : 0.5)),
       first,
       second
     };
 
-    if (node.expandedChild === "first" || node.expandedChild === "second") {
-      normalized.expandedChild = node.expandedChild;
+    if (source.expandedChild === "first" || source.expandedChild === "second") {
+      normalized.expandedChild = source.expandedChild;
     }
 
     return normalized;

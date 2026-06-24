@@ -21,9 +21,47 @@
     terminalTabsResizeObserver?: ResizeObserver;
   };
 
+  type XtermTerminal = {
+    clear(): void;
+    clearSelection(): void;
+    cols?: number;
+    dispose(): void;
+    focus(): void;
+    getSelection(): string;
+    hasSelection(): boolean;
+    loadAddon(addon: unknown): void;
+    modes: {
+      mouseTrackingMode?: string;
+    };
+    onData(callback: (data: string) => void): { dispose(): void };
+    onSelectionChange(callback: () => void): { dispose(): void };
+    open(container: Element | null): void;
+    resize(cols: number, rows: number): void;
+    rows?: number;
+    write(data: string): void;
+  };
+
+  type XtermConstructor = new (options: Record<string, unknown>) => XtermTerminal;
+
+  type XtermGlobal = XtermConstructor | {
+    Terminal?: XtermConstructor;
+  };
+
+  type FitAddonInstance = {
+    dispose?: () => void;
+    fit(): void;
+    proposeDimensions(): { cols?: number; rows?: number } | undefined;
+  };
+
+  type FitAddonConstructor = new () => FitAddonInstance;
+
+  type FitAddonGlobal = FitAddonConstructor | {
+    FitAddon?: FitAddonConstructor;
+  };
+
   type TerminalSurfacesGlobal = Window & {
-    Terminal?: any;
-    FitAddon?: any;
+    Terminal?: XtermGlobal;
+    FitAddon?: FitAddonGlobal;
     BoatyardTerminalSurfaces: {
       create: typeof createTerminalSurfaces;
     };
@@ -57,12 +95,22 @@
       });
     }
 
-    function getXtermConstructor() {
-      return globalScope.Terminal?.Terminal || globalScope.Terminal || null;
+    function getXtermConstructor(): XtermConstructor | null {
+      const terminalGlobal = globalScope.Terminal;
+      if (!terminalGlobal) {
+        return null;
+      }
+
+      return ("Terminal" in terminalGlobal ? terminalGlobal.Terminal || null : terminalGlobal) as XtermConstructor | null;
     }
 
-    function getFitAddonConstructor() {
-      return globalScope.FitAddon?.FitAddon || globalScope.FitAddon || null;
+    function getFitAddonConstructor(): FitAddonConstructor | null {
+      const fitAddonGlobal = globalScope.FitAddon;
+      if (!fitAddonGlobal) {
+        return null;
+      }
+
+      return ("FitAddon" in fitAddonGlobal ? fitAddonGlobal.FitAddon || null : fitAddonGlobal) as FitAddonConstructor | null;
     }
     function getTerminalFitSize(term, fitAddon) {
       const dimensions = fitAddon.proposeDimensions();

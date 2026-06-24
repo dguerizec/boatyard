@@ -3,6 +3,20 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
+type PluginHostStore = {
+  getState(): { plugins?: { enabled?: Record<string, boolean | undefined> } } | undefined;
+  updateGlobalPluginConfig?(pluginId: string, config: Record<string, unknown>): unknown;
+  updateProjectPluginConfig?(projectId: string, pluginId: string, config: Record<string, unknown>): unknown;
+};
+
+type PluginHostConstructorOptions = {
+  execFileAsync?: unknown;
+  pluginRoot?: string;
+  sendToRenderer?: (channel: string, payload?: unknown) => unknown;
+  store?: PluginHostStore | null;
+  userDataPath?: string;
+};
+
 /**
  * @typedef {import("../plugins/pluginTypes").ExecFileAsync} ExecFileAsync
  * @typedef {{ id?: unknown, name?: unknown, version?: unknown, apiVersion?: unknown, renderer?: unknown, main?: unknown, styles?: unknown, [key: string]: unknown }} PluginManifestInput
@@ -14,7 +28,7 @@ const path = require("node:path");
  * @typedef {(payload: { state: unknown }) => unknown | Promise<unknown>} PluginStateMigrationHandler
  * @typedef {{ pluginId: string, handler: PluginInspectorHandler }} PluginInspectorRegistration
  * @typedef {{ pluginId: string, handler: PluginStateMigrationHandler }} PluginStateMigrationRegistration
- * @typedef {{ getState(): any, updateProjectPluginConfig?(projectId: string, pluginId: string, config: Record<string, unknown>): unknown, updateGlobalPluginConfig?(pluginId: string, config: Record<string, unknown>): unknown }} PluginStore
+ * @typedef {{ getState(): unknown, updateProjectPluginConfig?(projectId: string, pluginId: string, config: Record<string, unknown>): unknown, updateGlobalPluginConfig?(pluginId: string, config: Record<string, unknown>): unknown }} PluginStore
  * @typedef {{
  *   pluginRoot?: string,
  *   store?: PluginStore | null,
@@ -127,7 +141,7 @@ class PluginHost {
   /**
    * @param {PluginHostOptions} options
    */
-  constructor(options: any = {}) {
+  constructor(options: PluginHostConstructorOptions = {}) {
     this.pluginRoot = options.pluginRoot || path.join(__dirname, "../plugins");
     this.store = options.store || null;
     this.execFileAsync = options.execFileAsync;

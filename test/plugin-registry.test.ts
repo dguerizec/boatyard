@@ -6,6 +6,21 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
+type LooseVmValue = ((...args: unknown[]) => LooseVmValue) & {
+  [key: number]: LooseVmValue;
+  [key: string]: LooseVmValue;
+};
+
+type PluginRegistryTestWindow = {
+  BoatyardPluginRegistry?: LooseVmValue;
+  BoatyardWidgetRegistry?: LooseVmValue;
+};
+
+type PluginRegistryTestContext = {
+  console: Pick<Console, "error"> & Partial<Console>;
+  window: PluginRegistryTestWindow;
+};
+
 function createEnvironment() {
   const widgetRegistrySource = fs.readFileSync(
     path.join(process.cwd(), "build/renderer/widgetRegistry.js"),
@@ -15,7 +30,7 @@ function createEnvironment() {
     path.join(process.cwd(), "build/renderer/pluginRegistry.js"),
     "utf8",
   );
-  const context: any = {
+  const context: PluginRegistryTestContext = {
     console: {
       ...console,
       error() {},
@@ -280,7 +295,7 @@ test("Plugin registry accepts DOM pane renderers", () => {
 
   registry.setEnabled("vendor.dom", true);
   const pane = registry.listPanes({ kind: "dom" })[0];
-  const container: any = {};
+  const container: { rendered?: boolean } = {};
 
   pane.render(container);
 

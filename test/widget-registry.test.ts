@@ -6,12 +6,23 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
+type LooseVmValue = ((...args: unknown[]) => LooseVmValue) & {
+  [key: number]: LooseVmValue;
+  [key: string]: LooseVmValue;
+};
+
+type WidgetRegistryTestContext = {
+  window: {
+    BoatyardWidgetRegistry?: LooseVmValue;
+  };
+};
+
 function createRegistry() {
   const source = fs.readFileSync(
     path.join(process.cwd(), "build/renderer/widgetRegistry.js"),
     "utf8",
   );
-  const context: any = {
+  const context: WidgetRegistryTestContext = {
     window: {},
   };
   vm.createContext(context);
