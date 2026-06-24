@@ -20,9 +20,40 @@ const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
 
-type UnknownRecord = Record<string, any>;
+type UnknownRecord = Record<string, unknown>;
 
-function createDefaultState() {
+function isRecord(value: unknown): value is UnknownRecord {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function toRecord(value: unknown): UnknownRecord {
+  return isRecord(value) ? value : {};
+}
+
+type ProjectStoreState = {
+  app: UnknownRecord;
+  globalUrls: UnknownRecord[];
+  navigation: UnknownRecord;
+  onboarding: UnknownRecord;
+  paneLayouts: Record<string, unknown>;
+  passwordVault: Record<string, UnknownRecord>;
+  pluginConfig: {
+    global: Record<string, UnknownRecord>;
+    projects: Record<string, Record<string, UnknownRecord>>;
+  };
+  plugins: {
+    enabled: Record<string, boolean>;
+  };
+  projects: UnknownRecord[];
+  settings: UnknownRecord;
+  terminalSelections: Record<string, Record<string, string>>;
+  terminalTabOrders: Record<string, string[]>;
+  webApps: Record<string, UnknownRecord>;
+  widgetLayouts: Record<string, unknown>;
+  window: UnknownRecord;
+};
+
+function createDefaultState(): ProjectStoreState {
   return {
     settings: {
       projectsBasePath: "",
@@ -156,13 +187,20 @@ function normalizeSlug(slug: unknown, name: unknown) {
   return normalized;
 }
 
-function normalizeBounds(bounds: unknown, fallback = DEFAULT_BOUNDS) {
-  const source: UnknownRecord = bounds && typeof bounds === "object" ? bounds : {};
+function normalizeBounds(
+  bounds: unknown,
+  fallback: { x: number; y: number; width: number; height: number } = DEFAULT_BOUNDS
+) {
+  const source = toRecord(bounds);
+  const x = Number(source.x);
+  const y = Number(source.y);
+  const width = Number(source.width);
+  const height = Number(source.height);
   const next = {
-    x: Number.isFinite(source.x) ? source.x : fallback.x,
-    y: Number.isFinite(source.y) ? source.y : fallback.y,
-    width: Number.isFinite(source.width) ? source.width : fallback.width,
-    height: Number.isFinite(source.height) ? source.height : fallback.height
+    x: Number.isFinite(x) ? x : fallback.x,
+    y: Number.isFinite(y) ? y : fallback.y,
+    width: Number.isFinite(width) ? width : fallback.width,
+    height: Number.isFinite(height) ? height : fallback.height
   };
 
   return {
@@ -191,7 +229,7 @@ function normalizeWindowState(windowState: UnknownRecord = {}) {
 }
 
 function normalizeSettings(settings: UnknownRecord = {}) {
-  const source: UnknownRecord = settings && typeof settings === "object" ? settings : {};
+  const source = toRecord(settings);
   const widgetRailWidth = Number(source.widgetRailWidth);
 
   return {
@@ -212,7 +250,7 @@ function normalizeWebAppOpenRules(rules: unknown = []) {
   const normalized = [];
 
   for (const rule of source) {
-    const entry: UnknownRecord = rule && typeof rule === "object" ? rule : {};
+    const entry = toRecord(rule);
     const pattern = normalizeText(entry.pattern || entry.match);
     const target = normalizeText(entry.target);
     const scope = normalizeText(entry.scope || "exact");
@@ -232,14 +270,14 @@ function normalizeWebAppOpenRules(rules: unknown = []) {
   return normalized;
 }
 
-function normalizePasswordVault(vault: unknown = {}) {
+function normalizePasswordVault(vault: unknown = {}): Record<string, UnknownRecord> {
   if (!vault || typeof vault !== "object" || Array.isArray(vault)) {
     return {};
   }
 
-  const normalized: UnknownRecord = {};
+  const normalized: Record<string, UnknownRecord> = {};
   for (const [origin, entry] of Object.entries(vault)) {
-    const source: UnknownRecord = entry && typeof entry === "object" ? entry : {};
+    const source = toRecord(entry);
     const normalizedOrigin = normalizeText(origin);
     const username = normalizeText(source.username);
     const encryptedPassword = normalizeText(source.encryptedPassword);
@@ -259,9 +297,10 @@ function normalizePasswordVault(vault: unknown = {}) {
 }
 
 function normalizeNavigationState(navigation: UnknownRecord = {}) {
-  const source: UnknownRecord = navigation && typeof navigation === "object" ? navigation : {};
+  const source = toRecord(navigation);
   const allowedViews = new Set(["global", "global-settings", "project", "project-edit"]);
-  const view = allowedViews.has(source.view) ? source.view : "global";
+  const requestedView = normalizeText(source.view);
+  const view = allowedViews.has(requestedView) ? requestedView : "global";
   const projectId = typeof source.projectId === "string" && source.projectId.trim()
     ? source.projectId.trim()
     : null;
@@ -278,7 +317,7 @@ function normalizeNavigationState(navigation: UnknownRecord = {}) {
 }
 
 function normalizeAppState(appState: UnknownRecord = {}) {
-  const source: UnknownRecord = appState && typeof appState === "object" ? appState : {};
+  const source = toRecord(appState);
 
   return {
     lastSeenVersion: normalizeText(source.lastSeenVersion),
@@ -314,9 +353,7 @@ function compareVersions(left: unknown, right: unknown) {
 }
 
 function normalizeOnboardingState(onboarding: UnknownRecord = {}) {
-  const source: UnknownRecord = onboarding && typeof onboarding === "object" && !Array.isArray(onboarding)
-    ? onboarding
-    : {};
+  const source = toRecord(onboarding);
   const completedVersion = Number(source.completedVersion);
 
   return {
@@ -325,12 +362,12 @@ function normalizeOnboardingState(onboarding: UnknownRecord = {}) {
   };
 }
 
-function normalizeWebAppState(webApps: unknown = {}) {
+function normalizeWebAppState(webApps: unknown = {}): Record<string, UnknownRecord> {
   if (!webApps || typeof webApps !== "object" || Array.isArray(webApps)) {
     return {};
   }
 
-  const normalized: UnknownRecord = {};
+  const normalized: Record<string, UnknownRecord> = {};
   for (const [key, webApp] of Object.entries(webApps)) {
     if (!webApp || typeof webApp !== "object") {
       continue;
@@ -348,7 +385,7 @@ function normalizeWebAppState(webApps: unknown = {}) {
   return normalized;
 }
 
-function normalizeWebAppHomeTabList(tabs: unknown = []) {
+function normalizeWebAppHomeTabList(tabs: unknown = []): UnknownRecord[] {
   if (!Array.isArray(tabs)) {
     return [];
   }
@@ -382,13 +419,13 @@ function normalizeWebAppHomeTabList(tabs: unknown = []) {
   return normalized;
 }
 
-function normalizeWebAppHomeTabs(homeTabs: unknown = {}, projects: UnknownRecord[] = []) {
+function normalizeWebAppHomeTabs(homeTabs: unknown = {}, projects: UnknownRecord[] = []): Record<string, UnknownRecord[]> {
   if (!homeTabs || typeof homeTabs !== "object" || Array.isArray(homeTabs)) {
     return {};
   }
 
   const projectIds = new Set([GLOBAL_WORKSPACE_ID, ...projects.map((project) => project.id)]);
-  const normalized: UnknownRecord = {};
+  const normalized: Record<string, UnknownRecord[]> = {};
 
   for (const [projectId, tabs] of Object.entries(homeTabs)) {
     const normalizedProjectId = normalizeText(projectId);
@@ -484,12 +521,12 @@ function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()) {
   return null;
 }
 
-function normalizePaneLayouts(paneLayouts: unknown = {}) {
+function normalizePaneLayouts(paneLayouts: unknown = {}): Record<string, unknown> {
   if (!paneLayouts || typeof paneLayouts !== "object" || Array.isArray(paneLayouts)) {
     return {};
   }
 
-  const normalized: UnknownRecord = {};
+  const normalized: Record<string, unknown> = {};
   for (const [projectId, layout] of Object.entries(paneLayouts)) {
     const normalizedLayout = normalizePaneLayoutNode(layout);
     if (normalizedLayout) {
@@ -500,14 +537,14 @@ function normalizePaneLayouts(paneLayouts: unknown = {}) {
   return normalized;
 }
 
-function normalizeTerminalSelections(terminalSelections: unknown = {}, projects: UnknownRecord[] = []) {
+function normalizeTerminalSelections(terminalSelections: unknown = {}, projects: UnknownRecord[] = []): Record<string, Record<string, string>> {
   if (!terminalSelections || typeof terminalSelections !== "object" || Array.isArray(terminalSelections)) {
     return {};
   }
 
   const projectIds = new Set(projects.map((project) => project.id));
   projectIds.add(GLOBAL_WORKSPACE_ID);
-  const normalized: UnknownRecord = {};
+  const normalized: Record<string, Record<string, string>> = {};
 
   for (const [projectId, selections] of Object.entries(terminalSelections)) {
     const normalizedProjectId = normalizeText(projectId);
@@ -515,7 +552,7 @@ function normalizeTerminalSelections(terminalSelections: unknown = {}, projects:
       continue;
     }
 
-    const normalizedSelections: UnknownRecord = {};
+    const normalizedSelections: Record<string, string> = {};
     for (const [surfaceKey, windowId] of Object.entries(selections)) {
       const normalizedSurfaceKey = normalizeText(surfaceKey);
       const normalizedWindowId = normalizeText(windowId);
@@ -532,14 +569,14 @@ function normalizeTerminalSelections(terminalSelections: unknown = {}, projects:
   return normalized;
 }
 
-function normalizeTerminalTabOrders(terminalTabOrders: unknown = {}, projects: UnknownRecord[] = []) {
+function normalizeTerminalTabOrders(terminalTabOrders: unknown = {}, projects: UnknownRecord[] = []): Record<string, string[]> {
   if (!terminalTabOrders || typeof terminalTabOrders !== "object" || Array.isArray(terminalTabOrders)) {
     return {};
   }
 
   const projectIds = new Set(projects.map((project) => project.id));
   projectIds.add(GLOBAL_WORKSPACE_ID);
-  const normalized: UnknownRecord = {};
+  const normalized: Record<string, string[]> = {};
 
   for (const [projectId, windowIds] of Object.entries(terminalTabOrders)) {
     const normalizedProjectId = normalizeText(projectId);
@@ -566,7 +603,7 @@ function normalizeTerminalTabOrders(terminalTabOrders: unknown = {}, projects: U
 }
 
 function normalizeWidgetLayout(layout: unknown = {}) {
-  const source: UnknownRecord = layout && typeof layout === "object" ? layout : {};
+  const source = toRecord(layout);
   const normalizeWidgetId = (id: unknown) => String(id || "").trim();
   const seenIds = new Set<string>();
   const order = Array.isArray(source.order)
@@ -646,7 +683,7 @@ function normalizeWidgetLayout(layout: unknown = {}) {
   };
 }
 
-function normalizeWidgetLayouts(widgetLayouts: unknown = {}) {
+function normalizeWidgetLayouts(widgetLayouts: unknown = {}): Record<string, unknown> {
   if (!widgetLayouts || typeof widgetLayouts !== "object" || Array.isArray(widgetLayouts)) {
     return {};
   }
@@ -660,9 +697,7 @@ function normalizeWidgetLayouts(widgetLayouts: unknown = {}) {
 }
 
 function normalizeProjectWidgetLayout(layout: unknown = {}) {
-  const source: UnknownRecord = layout && typeof layout === "object" && !Array.isArray(layout)
-    ? layout
-    : {};
+  const source = toRecord(layout);
   const paneLayouts = source.panes && typeof source.panes === "object" && !Array.isArray(source.panes)
     ? source.panes
     : null;
@@ -717,11 +752,9 @@ function normalizePluginConfigObject(config: unknown = {}) {
   return normalized;
 }
 
-function normalizePluginConfig(pluginConfig: unknown = {}, projects: UnknownRecord[] = []) {
-  const source: UnknownRecord = pluginConfig && typeof pluginConfig === "object" && !Array.isArray(pluginConfig)
-    ? pluginConfig
-    : {};
-  const normalized: UnknownRecord = {
+function normalizePluginConfig(pluginConfig: unknown = {}, projects: UnknownRecord[] = []): ProjectStoreState["pluginConfig"] {
+  const source = toRecord(pluginConfig);
+  const normalized: ProjectStoreState["pluginConfig"] = {
     global: {},
     projects: {}
   };
@@ -765,14 +798,12 @@ function normalizePluginConfig(pluginConfig: unknown = {}, projects: UnknownReco
   return normalized;
 }
 
-function normalizePluginsState(plugins: unknown = {}) {
-  const source: UnknownRecord = plugins && typeof plugins === "object" && !Array.isArray(plugins)
-    ? plugins
-    : {};
+function normalizePluginsState(plugins: unknown = {}): ProjectStoreState["plugins"] {
+  const source = toRecord(plugins);
   const enabledSource = source.enabled && typeof source.enabled === "object" && !Array.isArray(source.enabled)
     ? source.enabled
     : {};
-  const enabled: UnknownRecord = {};
+  const enabled: Record<string, boolean> = {};
 
   for (const [pluginId, value] of Object.entries(enabledSource)) {
     const normalizedPluginId = normalizeText(pluginId);
@@ -784,7 +815,7 @@ function normalizePluginsState(plugins: unknown = {}) {
   return { enabled };
 }
 
-function normalizeProjectUrls(urls: unknown = []) {
+function normalizeProjectUrls(urls: unknown = []): UnknownRecord[] {
   if (!Array.isArray(urls)) {
     return [];
   }
@@ -827,7 +858,7 @@ function normalizeProjectUrls(urls: unknown = []) {
     .filter(Boolean);
 }
 
-function normalizeProjectWidgetPanes(widgetPanes: unknown = []) {
+function normalizeProjectWidgetPanes(widgetPanes: unknown = []): UnknownRecord[] {
   const source = Array.isArray(widgetPanes) ? widgetPanes : [];
   const seenIds = new Set();
   const normalized = source
@@ -861,7 +892,7 @@ function normalizeProjectWidgetPanes(widgetPanes: unknown = []) {
       }];
 }
 
-function normalizeProject(project: UnknownRecord, index = 0) {
+function normalizeProject(project: UnknownRecord, index = 0): UnknownRecord {
   const id = String(project.id || crypto.randomUUID());
   const name = String(project.name || "").trim();
 
@@ -900,7 +931,7 @@ function normalizeProject(project: UnknownRecord, index = 0) {
 
 class ProjectStore {
   filePath: string;
-  state: UnknownRecord;
+  state: ProjectStoreState;
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -1072,7 +1103,9 @@ class ProjectStore {
       throw new Error("Invalid webapp home tab.");
     }
 
-    const tabs = this.state.projects[projectIndex].webAppHomeTabs || [];
+    const tabs = Array.isArray(this.state.projects[projectIndex].webAppHomeTabs)
+      ? this.state.projects[projectIndex].webAppHomeTabs
+      : [];
     this.state.projects[projectIndex] = {
       ...this.state.projects[projectIndex],
       webAppHomeTabs: [
@@ -1320,7 +1353,7 @@ class ProjectStore {
       ...current,
       ...patch,
       id: current.id,
-      bounds: patch.bounds ? normalizeBounds(patch.bounds, current.bounds) : current.bounds
+      bounds: patch.bounds ? normalizeBounds(patch.bounds, normalizeBounds(current.bounds)) : current.bounds
     }, index);
     this.state.pluginConfig = normalizePluginConfig(this.state.pluginConfig, this.state.projects);
     this.save();
@@ -1333,8 +1366,10 @@ class ProjectStore {
     this.state.projects = this.state.projects
       .map((project, index) => ({ project, index }))
       .sort((left, right) => {
-        const leftPosition = positionById.has(left.project.id) ? positionById.get(left.project.id) : order.length + left.index;
-        const rightPosition = positionById.has(right.project.id) ? positionById.get(right.project.id) : order.length + right.index;
+        const leftId = normalizeText(left.project.id);
+        const rightId = normalizeText(right.project.id);
+        const leftPosition = positionById.has(leftId) ? positionById.get(leftId) ?? left.index : order.length + left.index;
+        const rightPosition = positionById.has(rightId) ? positionById.get(rightId) ?? right.index : order.length + right.index;
         return leftPosition - rightPosition;
       })
       .map(({ project }) => project);
