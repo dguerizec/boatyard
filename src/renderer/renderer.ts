@@ -8,7 +8,7 @@ import { registerPluginRegistry } from "./pluginRegistry.js";
 import { registerPluginSettingsFields } from "./pluginSettingsFields.js";
 import { createProjectPageViews } from "./projectPageViews.js";
 import { createProjectSidebar } from "./projectSidebar.js";
-import { createProjectWebApps } from "./projectWebApps.js";
+import { createRendererWebAppRuntime } from "./rendererWebAppRuntime.js";
 import {
   applyFormControl,
   applyFormControls,
@@ -92,19 +92,10 @@ const LEGACY_WIDGET_IDS = new Map([
 ]);
 
 let state: RendererState = { projects: [] };
-const currentWebAppUrlsByKey = new Map<string, string>();
-const webAppAutofillEnabledByKey = new Map<string, boolean>();
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
 const webAppLoadTracker = createWebAppLoadTracker();
 let navigationController: ReturnType<typeof createRendererNavigationController>;
-const visibleWebApps = createVisibleWebAppTracker({
-  findPaneNode,
-  getCurrentWebAppUrl,
-  getPaneLayout: getProjectPaneLayout,
-  getVisibleWebAppProject,
-  isOnboardingTourActive,
-  persistPaneLayout
-});
+let webAppRuntime: ReturnType<typeof createRendererWebAppRuntime>;
 
 const {
   getCollapsedProjectGroups,
@@ -173,6 +164,23 @@ function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {
 
 const paneLayoutState = createPaneLayoutState({
   updatePaneLayout: (projectId, layout) => boatyardWindow.boatyard.updatePaneLayout(projectId, layout)
+});
+const {
+  collectPaneNodes,
+  countPaneNodes,
+  createSplitNode,
+  findFirstPaneNode,
+  findPaneNode,
+  findPaneNodeBySelectedWebApp,
+  replacePaneNode
+} = paneLayoutState;
+const visibleWebApps = createVisibleWebAppTracker({
+  findPaneNode,
+  getCurrentWebAppUrl,
+  getPaneLayout: getProjectPaneLayout,
+  getVisibleWebAppProject: () => webAppRuntime.getVisibleWebAppProject(),
+  isOnboardingTourActive,
+  persistPaneLayout
 });
 
 const terminalSurfaces = createTerminalSurfaces({
@@ -266,18 +274,29 @@ function renderWorkspacePaneArea(project) {
   }
 }
 
-const projectWebApps = createProjectWebApps({
+webAppRuntime = createRendererWebAppRuntime({
+  boatyard: boatyardWindow.boatyard,
+  findFirstPaneNode,
   findPaneNode,
+  findPaneNodeBySelectedWebApp,
+  getCurrentProject,
+  getCurrentView: () => navigationController.getCurrentView(),
   getGlobalPluginConfig,
+  getGlobalWorkspace,
   getPaneLayout: getProjectPaneLayout,
   getPluginPaneDefinitions,
   getProjectPluginConfig,
   getProjectWidgetPanes,
-  isGlobalWorkspace
+  getProjects,
+  getSettings,
+  isGlobalWorkspace,
+  paneLayoutState,
+  persistPaneLayout,
+  renderWorkspacePaneArea
 });
 
 function getProjectWebApps(project, paneId) {
-  return projectWebApps.getProjectWebApps(project, paneId);
+  return webAppRuntime.getProjectWebApps(project, paneId);
 }
 
 function getProjectPaneLayout(project) {
@@ -289,133 +308,35 @@ function getSelectedWebApp(project, paneId, webApps) {
 }
 
 function invokeWebApp(action, ...payload) {
-  return boatyardWindow.boatyard[action](...payload).catch((error) => {
-    console.error(`Could not ${action}:`, error);
-  });
+  return webAppRuntime.invokeWebApp(action, ...payload);
 }
 
 function isWebAppAutofillEnabled(webApp) {
-  return webAppAutofillEnabledByKey.get(webApp.key) === true;
+  return webAppRuntime.isWebAppAutofillEnabled(webApp);
 }
 
 function isPasswordManagerEnabled() {
-  const settings = getSettings();
-  return settings.passwordManagerEnabled === true && settings.passwordManagerDisclaimerAccepted === true;
+  return webAppRuntime.isPasswordManagerEnabled();
 }
 
 function syncWebAppAutofillButton(button, enabled) {
-  button.classList.toggle("active", enabled);
-  button.setAttribute("aria-pressed", String(enabled));
-  button.title = enabled
-    ? "Saved login and password fill is enabled. Click to disable."
-    : "Enable one-time fill with the saved login and password.";
-  button.setAttribute("aria-label", button.title);
+  webAppRuntime.syncWebAppAutofillButton(button, enabled);
 }
 
 async function toggleWebAppAutofill(webApp, button) {
-  const enabled = !isWebAppAutofillEnabled(webApp);
-  webAppAutofillEnabledByKey.set(webApp.key, enabled);
-  syncWebAppAutofillButton(button, enabled);
-  await invokeWebApp("updateWebAppAutofill", webApp.key, enabled);
+  await webAppRuntime.toggleWebAppAutofill(webApp, button);
 }
 
 function getCurrentWebAppUrl(webApp) {
-  if (webApp.restoreUrl === false) {
-    return webApp.url;
-  }
-
-  return currentWebAppUrlsByKey.get(webApp.key) || webApp.url;
-}
-
-function getVisibleWebAppEntryByKey(key) {
-  return visibleWebApps.getEntryByKey(key);
-}
-
-function getVisibleWebAppEntryByUrl(url) {
-  return visibleWebApps.getEntryByUrl(url);
-}
-
-function getVisibleWebAppProject() {
-  const currentView = navigationController.getCurrentView();
-
-  if (currentView === "global") {
-    return getGlobalWorkspace();
-  }
-
-  if (currentView === "project") {
-    return getCurrentProject();
-  }
-
-  return null;
+  return webAppRuntime.getCurrentWebAppUrl(webApp);
 }
 
 function persistVisibleWebAppPaneLayout(key, url = "") {
   visibleWebApps.persistPaneLayoutForWebApp(key, url);
 }
 
-function findFirstPaneNode(node) {
-  return paneLayoutState.findFirstPaneNode(node);
-}
-
-function collectPaneNodes(node, panes = []) {
-  return paneLayoutState.collectPaneNodes(node, panes);
-}
-
-function findPaneNodeBySelectedWebApp(node, webAppId) {
-  return paneLayoutState.findPaneNodeBySelectedWebApp(node, webAppId);
-}
-
-function createSplitNode(project, direction, first, selectedWebAppId = null) {
-  return paneLayoutState.createSplitNode(project, direction, first, selectedWebAppId);
-}
-
-function findPaneNode(node, paneId) {
-  return paneLayoutState.findPaneNode(node, paneId);
-}
-
-function replacePaneNode(node, paneId, replacement) {
-  return paneLayoutState.replacePaneNode(node, paneId, replacement);
-}
-
-function countPaneNodes(node) {
-  return paneLayoutState.countPaneNodes(node);
-}
-
 function openProjectWebApp(projectId, webAppId, url = "") {
-  const project = getProjects().find((candidate) => candidate.id === projectId);
-  if (!project) {
-    return false;
-  }
-
-  const layout = getProjectPaneLayout(project);
-  const paneNode = findPaneNodeBySelectedWebApp(layout, webAppId) || findFirstPaneNode(layout);
-  if (!paneNode) {
-    return false;
-  }
-
-  const webApp = getProjectWebApps(project, paneNode.id).find((candidate) => candidate.id === webAppId);
-  if (!webApp) {
-    return false;
-  }
-
-  paneLayoutState.setSelectedWebAppForPane(paneNode.id, webApp.id);
-  paneNode.selectedWebAppId = webApp.id;
-  paneLayoutState.setSelectedWebAppForProject(project.id, webApp.id);
-
-  if (url) {
-    currentWebAppUrlsByKey.set(webApp.key, url);
-  }
-
-  persistPaneLayout(project);
-  renderWorkspacePaneArea(project);
-
-  if (url) {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => invokeWebApp("navigateWebApp", webApp.key, "open", url));
-    });
-  }
-
-  return true;
+  return webAppRuntime.openProjectWebApp(projectId, webAppId, url);
 }
 
 boatyardWindow.BoatyardPaneNavigation = Object.freeze({
@@ -449,7 +370,7 @@ const paneLayoutView = createPaneLayoutView({
   toggleWebAppAutofill,
   getCurrentWebAppUrl,
   setCurrentWebAppUrl: (key, url) => {
-    currentWebAppUrlsByKey.set(key, url);
+    webAppRuntime.setCurrentWebAppUrl(key, url);
   },
   normalizeAddressInput,
   isGlobalWorkspace,
@@ -623,9 +544,9 @@ const webAppMenus = createWebAppMenus({
   getSettings,
   getProjectById,
   getProjectWidgetPanes,
-  getVisibleWebAppEntryByKey,
-  getVisibleWebAppEntryByUrl,
-  getVisibleWebAppProject,
+  getVisibleWebAppEntryByKey: (key) => visibleWebApps.getEntryByKey(key),
+  getVisibleWebAppEntryByUrl: (url) => visibleWebApps.getEntryByUrl(url),
+  getVisibleWebAppProject: () => webAppRuntime.getVisibleWebAppProject(),
   getProjectPaneLayout,
   getWebAppHostBounds,
   findPaneNode,
@@ -637,7 +558,7 @@ const webAppMenus = createWebAppMenus({
   setSelectedWebAppForProject: paneLayoutState.setSelectedWebAppForProject,
   getSelectedWebAppForProject: paneLayoutState.getSelectedWebAppForProject,
   setCurrentWebAppUrl: (key, url) => {
-    currentWebAppUrlsByKey.set(key, url);
+    webAppRuntime.setCurrentWebAppUrl(key, url);
   },
   persistPaneLayout,
   renderWorkspaceDashboard,
@@ -1022,12 +943,7 @@ function render() {
 async function loadState() {
   state = await boatyardWindow.boatyard.getState();
   boatyardWindow.BoatyardPluginRegistry?.applyEnabledState(getPluginEnabledState());
-  currentWebAppUrlsByKey.clear();
-  for (const [key, webApp] of Object.entries(state.webApps || {})) {
-    if (webApp.url) {
-      currentWebAppUrlsByKey.set(key, webApp.url);
-    }
-  }
+  webAppRuntime.hydrateCurrentWebAppUrls(state.webApps);
   hydratePaneLayouts();
   hydrateWidgetLayouts();
   hydrateTerminalTabOrders();
@@ -1054,7 +970,7 @@ registerRendererEventBindings({
   loadState,
   manualTourButton,
   markWebAppAutofillEnabled: (key, enabled) => {
-    webAppAutofillEnabledByKey.set(key, enabled);
+    webAppRuntime.markWebAppAutofillEnabled(key, enabled);
   },
   markWebAppLoaded: (payload) => {
     webAppLoadTracker.markLoaded(payload);
@@ -1070,7 +986,7 @@ registerRendererEventBindings({
   selectGlobal,
   selectGlobalSettings,
   setCurrentWebAppUrl: (key, url) => {
-    currentWebAppUrlsByKey.set(key, url);
+    webAppRuntime.setCurrentWebAppUrl(key, url);
   },
   syncWebAppAutofillButton,
   windowObject: window,

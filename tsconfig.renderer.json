@@ -40,6 +40,7 @@
     "src/renderer/rendererSettingsViewBridge.ts",
     "src/renderer/rendererStateSelectors.ts",
     "src/renderer/rendererTypes.ts",
+    "src/renderer/rendererWebAppRuntime.ts",
     "src/renderer/rendererWidgetBridge.ts",
     "src/renderer/terminalSelectionBridge.ts",
     "src/renderer/terminalTabDom.ts",
