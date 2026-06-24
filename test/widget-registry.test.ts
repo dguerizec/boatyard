@@ -8,10 +8,10 @@ const vm = require("node:vm");
 
 function createRegistry() {
   const source = fs.readFileSync(
-    path.join(__dirname, "../build/renderer/widgetRegistry.js"),
+    path.join(process.cwd(), "build/renderer/widgetRegistry.js"),
     "utf8",
   );
-  const context = {
+  const context: any = {
     window: {},
   };
   vm.createContext(context);
@@ -122,3 +122,5 @@ test("Widget registry unregisters widgets", () => {
   assert.equal(registry.unregister("temporary"), true);
   assert.equal(registry.get("temporary"), null);
 });
+
+export {};

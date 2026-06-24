@@ -8,14 +8,14 @@ const vm = require("node:vm");
 
 function createEnvironment() {
   const widgetRegistrySource = fs.readFileSync(
-    path.join(__dirname, "../build/renderer/widgetRegistry.js"),
+    path.join(process.cwd(), "build/renderer/widgetRegistry.js"),
     "utf8",
   );
   const pluginRegistrySource = fs.readFileSync(
-    path.join(__dirname, "../build/renderer/pluginRegistry.js"),
+    path.join(process.cwd(), "build/renderer/pluginRegistry.js"),
     "utf8",
   );
-  const context = {
+  const context: any = {
     console: {
       ...console,
       error() {},
@@ -280,7 +280,7 @@ test("Plugin registry accepts DOM pane renderers", () => {
 
   registry.setEnabled("vendor.dom", true);
   const pane = registry.listPanes({ kind: "dom" })[0];
-  const container = {};
+  const container: any = {};
 
   pane.render(container);
 
@@ -369,3 +369,5 @@ test("Plugin registry emits scoped plugin events and cleans handlers", () => {
 
   assert.deepEqual(received, ["vendor.events:url:project-slug"]);
 });
+
+export {};

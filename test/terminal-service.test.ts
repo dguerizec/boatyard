@@ -7,7 +7,7 @@ const {
   getProjectTmuxSessionName,
   parseTerminalEnv,
   slugifyTmuxName
-} = require(["..", "build", "main", "terminalService"].join("/"));
+} = require(`${process.cwd()}/build/main/terminalService`);
 
 test("slugifyTmuxName keeps tmux target names stable", () => {
   assert.equal(slugifyTmuxName("Boatyard Main"), "boatyard-main");
@@ -48,3 +48,5 @@ VALUE=hello world
     /Invalid project terminal environment line 1/
   );
 });
+
+export {};

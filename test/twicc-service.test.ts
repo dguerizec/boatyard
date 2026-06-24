@@ -13,7 +13,7 @@ const {
   loadTwiccProcesses,
   loadTwiccProjectProcessStatuses,
   loadTwiccProjects
-} = require(["..", "build", "plugins", "twicc", "service"].join("/"));
+} = require(`${process.cwd()}/build/plugins/twicc/service`);
 
 test("findTwiccProjectForPath matches exact directories first", () => {
   const projects = [
@@ -341,3 +341,5 @@ test("createTwiccProject registers the source path and returns the exact project
   assert.equal(result.matchType, "exact");
   assert.equal(result.url, "http://localhost:3500/project/-workspace-projects-app");
 });
+
+export {};

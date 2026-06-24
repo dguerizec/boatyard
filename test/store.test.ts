@@ -26,7 +26,7 @@ const {
   normalizeWebAppState,
   normalizeWindowBounds,
   normalizeWindowState
-} = require(["..", "build", "main", "store"].join("/"));
+} = require(`${process.cwd()}/build/main/store`);
 
 test("normalizeUrl adds https and rejects unsupported schemes", () => {
   assert.equal(normalizeUrl("example.com"), "https://example.com/");
@@ -1272,3 +1272,5 @@ test("ProjectStore migrates legacy apps state to projects", () => {
   assert.equal(state.projects[0].slug, "legacy");
   assert.equal(state.projects[0].previewUrl, "https://legacy.example.test/");
 });
+
+export {};

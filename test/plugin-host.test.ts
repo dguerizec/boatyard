@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
-const { PluginHost, getPluginEventChannel } = require(["..", "build", "main", "pluginHost"].join("/"));
+const { PluginHost, getPluginEventChannel } = require(`${process.cwd()}/build/main/pluginHost`);
 
 function createPluginFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-plugin-host-"));
@@ -57,7 +57,7 @@ test("PluginHost discovers runtime plugins and routes actions", async () => {
     name: "Example",
     version: "1.0.0",
     apiVersion: "0.1",
-    rendererPath: path.relative(path.join(__dirname, "../src/renderer"), path.join(pluginRoot, "example/renderer.js")).replaceAll(path.sep, "/"),
+    rendererPath: path.relative(path.join(process.cwd(), "src/renderer"), path.join(pluginRoot, "example/renderer.js")).replaceAll(path.sep, "/"),
     stylePaths: []
   }]);
   assert.deepEqual(await host.invoke("vendor.example", "echo", { value: "ok" }), {
@@ -120,3 +120,5 @@ test("PluginHost applies plugin-owned state migrations", async () => {
     config: { previewUrl: "https://preview.example/" }
   }]);
 });
+
+export {};

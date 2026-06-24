@@ -19,7 +19,7 @@ const {
   parseHawserSessionName,
   shouldShowWidgetMessage,
   summarizeMessages
-} = require(["..", "build", "plugins", "hawser", "service"].join("/"));
+} = require(`${process.cwd()}/build/plugins/hawser/service`);
 
 function makeResponse({ ok, status, body = {} }) {
   return {
@@ -57,7 +57,7 @@ test("getHawserStatus reports ready when CLI and service are available", async (
 });
 
 test("getHawserStatus reports unavailable when CLI and service are missing", async () => {
-  const missingCli = new Error("spawn hawser ENOENT");
+  const missingCli = new Error("spawn hawser ENOENT") as Error & { code?: string };
   missingCli.code = "ENOENT";
   const status = await getHawserStatus({}, {
     execFileAsync: async () => {
@@ -115,7 +115,7 @@ test("createHawserProject registers source path with runtime", async () => {
   const calls = [];
   const result = await createHawserProject("/workspace/app", "claude", {
     execFileAsync: async (command, args, options = {}) => {
-      calls.push({ command, args, cwd: options.cwd });
+      calls.push({ command, args, cwd: (options as any).cwd });
       if (args[0] === "list") {
         return { stdout: "app - /workspace/app\n" };
       }
@@ -303,3 +303,5 @@ test("shouldShowWidgetMessage keeps read messages with Twicc sessions", () => {
     twiccSessionId: ""
   }), false);
 });
+
+export {};

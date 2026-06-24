@@ -5,14 +5,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
-const { resolveFieldDefault } = require(["..", "build", "renderer", "pluginSettingsFields"].join("/"));
+const { resolveFieldDefault } = require(`${process.cwd()}/build/renderer/pluginSettingsFields`);
 
 const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette"];
 
 function readBuiltinPluginRendererPath(pluginDir) {
-  const manifestPath = path.join(__dirname, "../src/plugins", pluginDir, "plugin.json");
+  const manifestPath = path.join(process.cwd(), "src/plugins", pluginDir, "plugin.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  return path.join(__dirname, "../build/plugins", pluginDir, manifest.renderer);
+  return path.join(process.cwd(), "build/plugins", pluginDir, manifest.renderer);
 }
 
 function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
@@ -27,7 +27,7 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {
       }
     ]
   }
-}, mockFetch = async () => ({ ok: true, json: async () => [] })) {
+}, mockFetch: (...args: any[]) => Promise<any> = async () => ({ ok: true, json: async () => [] })) {
   return loadRendererPluginContext(twiccProjectProcessStatuses, mockFetch).registry;
 }
 
@@ -43,9 +43,9 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
       }
     ]
   }
-}, mockFetch = async () => ({ ok: true, json: async () => [] })) {
+}, mockFetch: (...args: any[]) => Promise<any> = async () => ({ ok: true, json: async () => [] })) {
   const intervalCallbacks = [];
-  const context = {
+  const context: any = {
     console,
     URL,
     window: {
@@ -119,8 +119,8 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
   vm.createContext(context);
 
   for (const file of [
-    path.join(__dirname, "../build/renderer/widgetRegistry.js"),
-    path.join(__dirname, "../build/renderer/pluginRegistry.js"),
+    path.join(process.cwd(), "build/renderer/widgetRegistry.js"),
+    path.join(process.cwd(), "build/renderer/pluginRegistry.js"),
     ...builtinPluginDirs.map(readBuiltinPluginRendererPath)
   ]) {
     vm.runInContext(fs.readFileSync(file, "utf8"), context);
@@ -546,3 +546,5 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
     ]
   );
 });
+
+export {};

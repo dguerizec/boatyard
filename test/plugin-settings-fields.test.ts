@@ -5,7 +5,7 @@ const test = require("node:test");
 const {
   readFieldValue,
   resolveFieldDefault
-} = require(["..", "build", "renderer", "pluginSettingsFields"].join("/"));
+} = require(`${process.cwd()}/build/renderer/pluginSettingsFields`);
 
 test("plugin settings fields persist dynamic defaults when user value is empty", () => {
   const input = {
@@ -80,3 +80,5 @@ test("plugin settings fields normalize URL values through caller hook", () => {
     "normalized:localhost:3500"
   );
 });
+
+export {};

@@ -5,7 +5,7 @@ const test = require("node:test");
 const {
   addTopicMetadataPrefix,
   getTopicMetadataPrefix
-} = require(["..", "build", "plugins", "telegram", "service"].join("/"));
+} = require(`${process.cwd()}/build/plugins/telegram/service`);
 
 test("getTopicMetadataPrefix serializes resolved Telegram topic metadata", () => {
   assert.equal(
@@ -41,3 +41,5 @@ test("addTopicMetadataPrefix prepends metadata to messages with topic context", 
 test("addTopicMetadataPrefix leaves messages unchanged without topic context", () => {
   assert.equal(addTopicMetadataPrefix("hello", {}), "hello");
 });
+
+export {};
