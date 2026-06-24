@@ -134,6 +134,8 @@ export type BoatyardBridge = {
   getPendingChangelog?: () => Promise<unknown>;
   getState(): Promise<RendererState>;
   getUpdateInfo?: () => Promise<unknown>;
+  hideWebApp(): Promise<unknown>;
+  navigateWebApp(...payload: unknown[]): Promise<unknown>;
   onTerminalData(callback: (payload: { terminalId: unknown; data: unknown }) => void): void;
   onTerminalExit(callback: (payload: { terminalId: unknown; projectId: unknown; windowId: unknown }) => void): void;
   onWebAppAutofillChanged?: (callback: (payload: { enabled?: boolean; key?: string }) => void) => void;
@@ -146,6 +148,8 @@ export type BoatyardBridge = {
   reorderProjects(projectIds: string[]): Promise<RendererState>;
   restoreWebApps(): Promise<unknown>;
   restartToUpdate(update: UnknownRecord): Promise<unknown>;
+  setVisibleWebApps(...payload: unknown[]): Promise<unknown>;
+  showWebApp(...payload: unknown[]): Promise<unknown>;
   updateGlobalPluginConfig(pluginId: string, values: UnknownRecord): Promise<RendererState>;
   updateGlobalUrls(urls: UnknownRecord[]): Promise<RendererState>;
   updateNavigation(values: UnknownRecord): Promise<UnknownRecord>;
@@ -155,6 +159,7 @@ export type BoatyardBridge = {
   updateProject(projectId: string, values: UnknownRecord): Promise<RendererState>;
   updateProjectPluginConfig(projectId: string, pluginId: string, config: UnknownRecord): Promise<RendererState>;
   updateSettings(values: UnknownRecord): Promise<RendererState>;
+  updateWebAppAutofill(...payload: unknown[]): Promise<unknown>;
   updateWebAppHomeTab(projectId: string, tab: UnknownRecord): Promise<RendererState>;
   updateWebAppHomeTabs(projectId: string, tabs: UnknownRecord[]): Promise<RendererState>;
 };

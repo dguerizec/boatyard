@@ -33,6 +33,25 @@ type RendererWebAppRuntimeOptions = {
   renderWorkspacePaneArea: (project: RendererProject) => void;
 };
 
+type WebAppBridgeActionName =
+  | "hideWebApp"
+  | "navigateWebApp"
+  | "setVisibleWebApps"
+  | "showWebApp"
+  | "updateWebAppAutofill";
+
+const WEB_APP_BRIDGE_ACTIONS: readonly WebAppBridgeActionName[] = [
+  "hideWebApp",
+  "navigateWebApp",
+  "setVisibleWebApps",
+  "showWebApp",
+  "updateWebAppAutofill"
+];
+
+function isWebAppBridgeActionName(action: string): action is WebAppBridgeActionName {
+  return WEB_APP_BRIDGE_ACTIONS.includes(action as WebAppBridgeActionName);
+}
+
 export function createRendererWebAppRuntime({
   boatyard,
   findFirstPaneNode,
@@ -75,8 +94,10 @@ export function createRendererWebAppRuntime({
   }
 
   function invokeWebApp(action: string, ...payload: unknown[]) {
-    const bridge = boatyard as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
-    return bridge[action](...payload).catch((error: unknown) => {
+    const bridgeAction = isWebAppBridgeActionName(action)
+      ? boatyard[action]
+      : () => Promise.reject(new Error(`Unknown webapp bridge action: ${action}`));
+    return bridgeAction(...payload).catch((error: unknown) => {
       console.error(`Could not ${action}:`, error);
     });
   }
