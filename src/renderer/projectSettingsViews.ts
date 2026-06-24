@@ -610,29 +610,30 @@ export function createProjectSettingsViews({
           const fieldState: ProjectPluginFieldState = { field, input, action: null };
     
           if (field.action) {
+            const fieldAction = field.action;
             const action = document.createElement("div");
             action.className = "field-action";
-            action.hidden = field.action.hidden !== false;
+            action.hidden = fieldAction.hidden !== false;
     
             const actionMessage = document.createElement("span");
-            actionMessage.textContent = field.action.message || "";
+            actionMessage.textContent = fieldAction.message || "";
     
             const actionButton = document.createElement("button");
             actionButton.className = "secondary-button";
             actionButton.type = "button";
-            actionButton.textContent = field.action.label || "Run";
+            actionButton.textContent = fieldAction.label || "Run";
             actionButton.addEventListener("click", async () => {
-              if (typeof field.action.run !== "function") {
+              if (typeof fieldAction.run !== "function") {
                 return;
               }
     
               options.setError?.("");
               actionButton.disabled = true;
               const originalLabel = actionButton.textContent;
-              actionButton.textContent = field.action.pendingLabel || "Working...";
+              actionButton.textContent = fieldAction.pendingLabel || "Working...";
     
               try {
-                await field.action.run({
+                await fieldAction.run({
                   project: initialValues,
                   coreFields: options.readCoreProjectFields?.() || {},
                   globalConfig: getGlobalPluginConfig(section.pluginId),

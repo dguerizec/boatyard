@@ -67,7 +67,9 @@ export function createRendererWidgetBridge(options: RendererWidgetBridgeOptions)
     getProjectPluginConfig: options.getProjectPluginConfig,
     getGlobalPluginConfig: options.getGlobalPluginConfig,
     isGlobalWorkspace: options.isGlobalWorkspace,
-    openProjectWebApp: options.openProjectWebApp,
+    openProjectWebApp: (projectId: string | undefined, webAppId: string, url: string) => (
+      projectId ? options.openProjectWebApp(projectId, webAppId, url) : false
+    ),
     createCard: (content: unknown) => options.createCard(content as CardOptions),
     createToolIcon: options.createToolIcon,
     renderWorkspaceDashboard: options.renderWorkspaceDashboard,

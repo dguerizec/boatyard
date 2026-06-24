@@ -196,7 +196,7 @@
     return Array.isArray(update.topicIds) && update.topicIds.some((id) => targetTopicIds.has(normalizeText(id)));
   }
 
-  function createTelegramService() {
+  function createTelegramService(): TelegramRendererService {
     return Object.freeze({
       version: "0.1.0",
       getTarget,
@@ -208,7 +208,7 @@
             summary: "Telegram IPC bridge is unavailable."
           };
         }
-        return invokePlugin("status", { globalConfig: options.globalPluginConfig || {} });
+        return await invokePlugin("status", { globalConfig: options.globalPluginConfig || {} }) as TelegramStatus;
       },
       async getMessages(project: TelegramProject, options: TelegramConversationProps = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
@@ -222,26 +222,28 @@
             messages: []
           };
         }
-        return invokePlugin("messages", { target, globalConfig: options.globalPluginConfig || {} });
+        return await invokePlugin("messages", { target, globalConfig: options.globalPluginConfig || {} }) as Awaited<ReturnType<TelegramRendererService["getMessages"]>>;
       },
       async sendMessage(project: TelegramProject, text: string, options: TelegramConversationProps = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
         return invokePlugin("sendMessage", { target, text, globalConfig: options.globalPluginConfig || {} });
       },
       async startLogin(globalConfig: TelegramConfig | undefined, phoneNumber: string) {
-        return invokePlugin("startLogin", { globalConfig: globalConfig || {}, phoneNumber });
+        return await invokePlugin("startLogin", { globalConfig: globalConfig || {}, phoneNumber }) as TelegramStatus;
       },
       async completeLoginCode(code: unknown) {
-        return invokePlugin("completeLoginCode", { code });
+        return await invokePlugin("completeLoginCode", { code }) as TelegramStatus;
       },
       async completeLoginPassword(password: unknown) {
-        return invokePlugin("completeLoginPassword", { password });
+        return await invokePlugin("completeLoginPassword", { password }) as TelegramStatus;
       },
       async logout() {
-        return invokePlugin("logout");
+        return await invokePlugin("logout") as TelegramStatus;
       },
       onMessage(callback: (update: TelegramUpdate) => void) {
-        return globalScope.boatyard?.onPluginEvent?.("boatyard.telegram", "message", callback) || (() => {});
+        return globalScope.boatyard?.onPluginEvent?.("boatyard.telegram", "message", (payload: unknown) => {
+          callback(payload as TelegramUpdate);
+        }) || (() => {});
       },
       openTelegram(target: Partial<TelegramTarget> = {}) {
         const link = getTelegramWebLink(target);
@@ -472,8 +474,8 @@
       try {
         const data = await service.getMessages(project, props);
         await persistResolvedTarget(props, data.target);
-        setStatusText(status, data.status);
-        updateAuthState(data.status);
+        setStatusText(status, data.status || {});
+        updateAuthState(data.status || {});
         renderMessages(list, data.messages);
         list.scrollTop = shouldScrollToBottom ? list.scrollHeight : previousScrollTop;
       } catch (error) {

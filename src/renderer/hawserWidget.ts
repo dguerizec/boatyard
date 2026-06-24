@@ -150,6 +150,10 @@ export function createHawserWidget(project: RendererProject, options: HawserWidg
   }
 
   async function refresh() {
+    if (!loadData) {
+      return;
+    }
+
     if (!document.body.contains(card)) {
       clearInterval(intervalId);
       return;

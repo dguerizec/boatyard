@@ -365,7 +365,7 @@ function createUpdateManager({ getAppState }: UpdateManagerOptions) {
         .filter(Boolean)
     );
 
-    candidates.sort((left, right) => compareVersions(right.latestVersion, left.latestVersion));
+    candidates.sort((left, right) => compareVersions(right!.latestVersion, left!.latestVersion));
     const candidate = candidates[0] || null;
 
     if (!candidate) {

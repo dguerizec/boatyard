@@ -246,7 +246,7 @@ export function createWebAppSurfaces({
 
     function getOverlayDialogFreezeRect(dialog: HTMLDialogElement) {
       const contentRect = dialog.firstElementChild?.getBoundingClientRect();
-      if (contentRect?.width > 0 && contentRect.height > 0) {
+      if (contentRect && contentRect.width > 0 && contentRect.height > 0) {
         return contentRect;
       }
 
@@ -305,7 +305,8 @@ export function createWebAppSurfaces({
         await freezeWebAppsForOverlay();
       } else if (freeze === "overlap") {
         didFreeze = true;
-        await freezeWebAppsForRect(getOverlayDialogFreezeRect(dialog), {
+        const freezeRect = getOverlayDialogFreezeRect(dialog);
+        await freezeWebAppsForRect(freezeRect, {
           margin: freezeMargin
         });
       }

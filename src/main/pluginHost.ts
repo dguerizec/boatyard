@@ -275,7 +275,7 @@ class PluginHost {
   }
 
   isPluginEnabled(pluginId: string): boolean {
-    return this.store?.getState?.().plugins?.enabled?.[pluginId] !== false;
+    return this.store?.getState?.()?.plugins?.enabled?.[pluginId] !== false;
   }
 
   registerAction(pluginId: string, actionName: unknown, handler: unknown): void {

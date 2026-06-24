@@ -88,9 +88,9 @@ export function createVisibleWebAppTracker({
 
     const sourceEntry = getEntryByKey(key);
     const project = sourceEntry ? getVisibleWebAppProject() : null;
-    if (project) {
+    if (project && sourceEntry) {
       const paneNode = findPaneNode(getPaneLayout(project), sourceEntry.paneId);
-      if (paneNode?.transientWebApp?.id === sourceEntry.webApp.id && url) {
+      if (paneNode && paneNode.transientWebApp?.id === sourceEntry.webApp.id && url) {
         paneNode.transientWebApp = {
           ...paneNode.transientWebApp,
           url

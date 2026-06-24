@@ -42,16 +42,20 @@ export function clampWidgetGridSize(definition: WidgetDefinition, size: unknown,
   const source = size && typeof size === "object" ? size as Partial<WidgetGridSize> : spec.default;
   const columns = Number(source.columns);
   const rows = Number(source.rows);
+  const defaultColumns = spec.default.columns ?? 1;
+  const defaultRows = spec.default.rows ?? 2;
+  const minColumns = spec.min.columns ?? 1;
+  const minRows = spec.min.rows ?? 1;
 
   return {
     columns: clamp(
-      Number.isFinite(columns) ? Math.round(columns) : spec.default.columns,
-      spec.min.columns,
+      Number.isFinite(columns) ? Math.round(columns) : defaultColumns,
+      minColumns,
       spec.max.columns
     ),
     rows: clamp(
-      Number.isFinite(rows) ? Math.round(rows) : spec.default.rows,
-      spec.min.rows,
+      Number.isFinite(rows) ? Math.round(rows) : defaultRows,
+      minRows,
       spec.max.rows
     )
   };

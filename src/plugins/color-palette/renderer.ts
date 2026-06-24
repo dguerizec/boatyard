@@ -113,7 +113,7 @@
     try {
       const parsed = JSON.parse(globalScope.localStorage?.getItem(getStorageKey(project)) || "[]");
       return Array.isArray(parsed)
-        ? parsed.map((item) => formatHex(parseColor(item) || parseColor(DEFAULT_COLOR))).filter(Boolean)
+        ? parsed.map((item) => formatHex(parseColor(item) || parseColor(DEFAULT_COLOR)!)).filter(Boolean)
         : [];
     } catch {
       return [];
@@ -263,6 +263,10 @@
       renderColor(nativePicker.value);
     });
     addFavorite.addEventListener("click", () => {
+      if (!currentColor) {
+        return;
+      }
+
       const color = formatHex(currentColor);
       favorites = [...favorites.filter((item) => item !== color), color].slice(-12);
       saveFavorites(project, favorites);

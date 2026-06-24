@@ -190,6 +190,10 @@ export function createGlobalWebAppOpenRulesSettings({
     deleteButton.textContent = "Remove";
     deleteButton.hidden = !onRemove;
     deleteButton.addEventListener("click", async () => {
+      if (!onRemove) {
+        return;
+      }
+
       deleteButton.disabled = true;
       try {
         await onRemove();
@@ -237,7 +241,7 @@ export function createGlobalWebAppOpenRulesSettings({
       }
 
       try {
-        await onSave(nextRule);
+        await onSave?.(nextRule);
         dialog.close();
       } catch (submitError) {
         error.textContent = asErrorMessage(submitError);

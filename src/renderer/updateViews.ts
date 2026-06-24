@@ -261,7 +261,10 @@ export function createUpdateViews({
         updateButton.hidden = true;
 
         try {
-          const result = await boatyard.prepareUpdate();
+          const result = await boatyard.prepareUpdate?.();
+          if (!result) {
+            throw new Error("Update preparation is unavailable.");
+          }
           lastUpdateCheckedAt = new Date();
           lastUpdateCheckResult = result;
           showUpdateResult(result, lastUpdateCheckedAt);

@@ -73,9 +73,13 @@ export function createRendererPluginHelpers({
   }
 
   function readPluginSettingsFieldValue(field: unknown, input: unknown) {
-    return windowObject.BoatyardPluginSettingsFields?.readFieldValue(field, input, {
+    return windowObject.BoatyardPluginSettingsFields?.readFieldValue(
+      field as PluginSettingsField | undefined,
+      input as PluginSettingsInput | null | undefined,
+      {
       normalizeUrl
-    }) || "";
+      }
+    ) || "";
   }
 
   return Object.freeze({

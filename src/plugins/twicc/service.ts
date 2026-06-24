@@ -53,7 +53,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isTwiccProject(value: unknown): value is TwiccProject {
-  return isRecord(value);
+  return isRecord(value) && typeof value.id === "string" && value.id.trim() !== "";
 }
 
 function isTwiccProcess(value: unknown): value is TwiccProcess {
@@ -140,7 +140,7 @@ async function loadTwiccProjects({ execFileAsync }: TwiccCommandOptions = {}): P
       timeout: 5000,
       windowsHide: true
     });
-    const projects = JSON.parse(stdout);
+    const projects = JSON.parse(String(stdout || "[]"));
     return Array.isArray(projects) ? projects.filter(isTwiccProject) : [];
   } catch {
     return [];
@@ -194,7 +194,7 @@ async function loadTwiccProcesses({ execFileAsync }: TwiccCommandOptions = {}): 
       timeout: 5000,
       windowsHide: true
     });
-    const processes = JSON.parse(stdout);
+    const processes = JSON.parse(String(stdout || "[]"));
     return Array.isArray(processes) ? processes.filter(isTwiccProcess) : [];
   } catch {
     return [];
@@ -305,7 +305,7 @@ function getRelatedTwiccProjectIds(twiccProject: TwiccProject | null | undefined
 
   const relatedIds = new Set([twiccProject.id]);
   for (const project of twiccProjects) {
-    if (project?.worktree_of === twiccProject.id) {
+    if (project?.id && project.worktree_of === twiccProject.id) {
       relatedIds.add(project.id);
     }
   }
