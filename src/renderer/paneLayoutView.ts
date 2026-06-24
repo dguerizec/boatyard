@@ -1,6 +1,16 @@
 "use strict";
 
 (function () {
+  type PaneLayoutViewGlobal = Window & {
+    BoatyardPaneLayoutView: {
+      create: typeof createPaneLayoutView;
+    };
+  };
+
+  type PaneLayoutHost = HTMLDivElement & {
+    boatyardCleanup?: () => void;
+  };
+
   function createPaneLayoutView({
     minWidgetRailWidth,
     webAppSplitResizerSize,
@@ -57,7 +67,8 @@
         return;
       }
 
-      const split = [...document.querySelectorAll(".webapp-split")].find((candidate) => candidate.dataset.splitId === target.node.id);
+      const split = [...document.querySelectorAll<HTMLElement>(".webapp-split")]
+        .find((candidate) => candidate.dataset.splitId === target.node.id);
       if (split) {
         split.classList.add("pane-expand-preview");
       }
@@ -386,7 +397,7 @@
       actions.append(expandPaneButton, shrinkPaneButton, verticalSplitButton, horizontalSplitButton, closePaneButton);
       header.append(tabs, actions);
 
-      const host = document.createElement("div");
+      const host = document.createElement("div") as PaneLayoutHost;
       host.className = `webapp-host${isTerminalPane ? " terminal-pane-host" : ""}`;
       host.setAttribute("role", "region");
       host.setAttribute("aria-label", `${project.name} ${selectedWebApp.label}`);
@@ -454,7 +465,7 @@
     };
   }
 
-  window.BoatyardPaneLayoutView = Object.freeze({
+  (window as unknown as PaneLayoutViewGlobal).BoatyardPaneLayoutView = Object.freeze({
     create: createPaneLayoutView
   });
 })();
