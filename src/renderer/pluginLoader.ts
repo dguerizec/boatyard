@@ -40,4 +40,4 @@
   globalScope.BoatyardPluginLoader = Object.freeze({
     ready: loadPlugins()
   });
-})(window as PluginLoaderWindow);
+})(window);

@@ -164,4 +164,4 @@
     unregister,
     unregisterAlias,
   });
-})(window as WidgetRegistryWindow);
+})(window);
