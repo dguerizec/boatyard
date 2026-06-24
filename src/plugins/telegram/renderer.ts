@@ -1,6 +1,6 @@
 "use strict";
 
-(function registerTelegramPlugin(globalScope) {
+(function registerTelegramPlugin(globalScope: BoatyardPluginRendererGlobal) {
   type TelegramProject = {
     id?: string;
     name?: string;
@@ -64,15 +64,14 @@
     getStatus(options?: TelegramConversationProps): Promise<TelegramStatus>;
   };
 
-  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
-  const registry = typedGlobalScope.BoatyardPluginRegistry;
+  const registry = globalScope.BoatyardPluginRegistry;
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
   }
 
   function invokePlugin(actionName, payload = {}) {
-    return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.telegram", actionName, payload);
+    return globalScope.boatyard?.invokePlugin?.("boatyard.telegram", actionName, payload);
   }
 
   function normalizeText(value) {
@@ -154,7 +153,7 @@
       getTarget,
       getWebLink: getTelegramWebLink,
       async getStatus(options: TelegramConversationProps = {}) {
-        if (!typedGlobalScope.boatyard?.invokePlugin) {
+        if (!globalScope.boatyard?.invokePlugin) {
           return {
             state: "unavailable",
             summary: "Telegram IPC bridge is unavailable."
@@ -164,7 +163,7 @@
       },
       async getMessages(project: TelegramProject, options: TelegramConversationProps = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
-        if (!typedGlobalScope.boatyard?.invokePlugin) {
+        if (!globalScope.boatyard?.invokePlugin) {
           return {
             status: {
               state: "unavailable",
@@ -193,11 +192,11 @@
         return invokePlugin("logout");
       },
       onMessage(callback) {
-        return typedGlobalScope.boatyard?.onPluginEvent?.("boatyard.telegram", "message", callback) || (() => {});
+        return globalScope.boatyard?.onPluginEvent?.("boatyard.telegram", "message", callback) || (() => {});
       },
       openTelegram(target: Partial<TelegramTarget> = {}) {
         const link = getTelegramWebLink(target);
-        return link ? typedGlobalScope.boatyard?.openExternal?.(link) : null;
+        return link ? globalScope.boatyard?.openExternal?.(link) : null;
       }
     });
   }
@@ -245,7 +244,7 @@
       !props.projectId ||
       !threadId ||
       hasUnchangedResolvedTarget ||
-      !typedGlobalScope.boatyard?.updateProjectPluginConfig
+      !globalScope.boatyard?.updateProjectPluginConfig
     ) {
       return;
     }
@@ -259,7 +258,7 @@
     props.projectConfig = nextConfig;
     props.pluginConfig = nextConfig;
 
-    await typedGlobalScope.boatyard.updateProjectPluginConfig(props.projectId, "boatyard.telegram", {
+    await globalScope.boatyard.updateProjectPluginConfig(props.projectId, "boatyard.telegram", {
       telegramThreadId: threadId,
       telegramTopicTopMessageId: topicTopMessageId,
       telegramTopicTitle: nextConfig.telegramTopicTitle

@@ -1,6 +1,6 @@
 "use strict";
 
-(function registerHawserPlugin(globalScope) {
+(function registerHawserPlugin(globalScope: BoatyardPluginRendererGlobal) {
   type HawserProject = {
     id?: string;
     slug?: string;
@@ -46,8 +46,7 @@
     ) => string;
   };
 
-  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
-  const registry = typedGlobalScope.BoatyardPluginRegistry;
+  const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_HAWSER_API_URL = "http://127.0.0.1:60082/";
   const DEFAULT_HAWSER_WEB_URL = "http://localhost:60082";
   const DEFAULT_HAWSER_RUNTIME = "codex";
@@ -59,7 +58,7 @@
   }
 
   function invokePlugin(actionName, payload = {}) {
-    return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.hawser", actionName, payload);
+    return globalScope.boatyard?.invokePlugin?.("boatyard.hawser", actionName, payload);
   }
 
   function isRecord(value: unknown): value is Record<string, unknown> {
@@ -154,7 +153,7 @@
   }
 
   async function refreshHawserStatus(ctx, globalConfig = {}) {
-    if (typeof typedGlobalScope.boatyard?.invokePlugin !== "function") {
+    if (typeof globalScope.boatyard?.invokePlugin !== "function") {
       ctx.status.set({
         state: "degraded",
         summary: "Hawser status probe is unavailable."
@@ -280,7 +279,7 @@
                 hidden: false,
                 async run({ fields }) {
                   const command = fields.getValue("hawserInstallCommand") || HAWSER_INSTALL_COMMAND;
-                  await typedGlobalScope.boatyard?.writeClipboardText?.(command);
+                  await globalScope.boatyard?.writeClipboardText?.(command);
                   fields.setActionMessage("hawserInstallCommand", "Install command copied.");
                 }
               }
@@ -364,7 +363,7 @@
             min: { columns: 3, rows: 3 }
           },
           createElement(project: HawserProject, props: HawserPluginOptions = {}) {
-            return typedGlobalScope.BoatyardHawserUI.createWidget(project, {
+            return globalScope.BoatyardHawserUI.createWidget(project, {
               title: "Hawser",
               subtitle: hawserService.getMainSession(project, {
                 pluginConfig: props.pluginConfig
@@ -376,7 +375,7 @@
               }),
               onOpenMessage(message) {
                 if (message.twiccSessionUrl) {
-                  typedGlobalScope.BoatyardPaneNavigation?.openProjectWebApp?.(project.id, "hawser", message.twiccSessionUrl);
+                  globalScope.BoatyardPaneNavigation?.openProjectWebApp?.(project.id, "hawser", message.twiccSessionUrl);
                 }
               }
             });

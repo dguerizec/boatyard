@@ -1,6 +1,6 @@
 "use strict";
 
-(function registerColorPalettePlugin(globalScope) {
+(function registerColorPalettePlugin(globalScope: BoatyardPluginRendererGlobal) {
   type ColorPaletteColor = {
     r: number;
     g: number;
@@ -13,8 +13,7 @@
     slug?: string;
   };
 
-  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
-  const registry = typedGlobalScope.BoatyardPluginRegistry;
+  const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_COLOR = "#41b883";
 
   if (!registry) {
@@ -142,7 +141,7 @@
     valueElement.textContent = value;
     button.append(labelElement, valueElement);
     button.addEventListener("click", () => {
-      typedGlobalScope.boatyard?.writeClipboardText?.(value);
+      globalScope.boatyard?.writeClipboardText?.(value);
     });
     return button;
   }

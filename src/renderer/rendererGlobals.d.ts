@@ -162,6 +162,8 @@ type BoatyardPluginRendererGlobal = Window & {
   BoatyardHawserUI?: {
     createWidget(project: unknown, options: unknown): HTMLElement;
   };
+  CustomEvent?: typeof CustomEvent;
+  MutationObserver?: typeof MutationObserver;
   BoatyardOverlayDialog?: {
     show?: (dialog: HTMLDialogElement, options: unknown) => Promise<boolean>;
   };

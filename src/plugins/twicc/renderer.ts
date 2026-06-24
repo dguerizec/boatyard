@@ -1,6 +1,6 @@
 "use strict";
 
-(function registerTwiccPlugin(globalScope) {
+(function registerTwiccPlugin(globalScope: BoatyardPluginRendererGlobal) {
   type TwiccProject = {
     id?: string;
   };
@@ -50,8 +50,7 @@
     seven_day_utilization?: number;
   };
 
-  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
-  const registry = typedGlobalScope.BoatyardPluginRegistry;
+  const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_TWICC_URL = "http://localhost:3500";
   const TWICC_PROJECT_STATUS_REFRESH_MS = 5000;
   const TWICC_PROJECT_STATUS_LABELS = {
@@ -69,7 +68,7 @@
   }
 
   function invokePlugin(actionName, payload = {}) {
-    return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.twicc", actionName, payload);
+    return globalScope.boatyard?.invokePlugin?.("boatyard.twicc", actionName, payload);
   }
 
   function isRecord(value: unknown): value is Record<string, unknown> {
@@ -171,7 +170,7 @@
   }
 
   async function refreshProjectProcessStatuses() {
-    if (!typedGlobalScope.boatyard?.invokePlugin) {
+    if (!globalScope.boatyard?.invokePlugin) {
       return;
     }
 
@@ -187,7 +186,7 @@
   }
 
   function startProjectStatusRefresh() {
-    if (!typedGlobalScope.boatyard?.invokePlugin) {
+    if (!globalScope.boatyard?.invokePlugin) {
       return;
     }
 
@@ -253,7 +252,7 @@
       getSessionUrl: resolveSessionUrl,
       openProject(project: TwiccProject, options: TwiccPluginOptions = {}) {
         const url = resolveProjectUrl(project, options);
-        return url ? typedGlobalScope.boatyard?.openExternal?.(url) : null;
+        return url ? globalScope.boatyard?.openExternal?.(url) : null;
       }
     });
   }

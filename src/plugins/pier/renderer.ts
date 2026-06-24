@@ -1,6 +1,6 @@
 "use strict";
 
-(function registerPierPlugin(globalScope) {
+(function registerPierPlugin(globalScope: BoatyardPluginRendererGlobal) {
   type PierProject = {
     id?: string;
     name?: string;
@@ -58,8 +58,7 @@
     pierRemoveButton: HTMLButtonElement;
   };
 
-  const typedGlobalScope = globalScope as unknown as BoatyardPluginRendererGlobal;
-  const registry = typedGlobalScope.BoatyardPluginRegistry;
+  const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_PIER_URL = "http://pier.test";
   const DEFAULT_PIER_WORKTREE_PATTERN = "<repo>/worktrees/<worktree>";
   const workloadCacheByProject = new Map();
@@ -69,7 +68,7 @@
   }
 
   function invokePlugin(actionName, payload = {}) {
-    return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.pier", actionName, payload);
+    return globalScope.boatyard?.invokePlugin?.("boatyard.pier", actionName, payload);
   }
 
   function normalizePath(value) {
@@ -294,7 +293,7 @@
         );
       },
       createWorktree(project: PierProject, payload: PierWorktreePayload = {}) {
-        if (typeof typedGlobalScope.boatyard?.invokePlugin !== "function") {
+        if (typeof globalScope.boatyard?.invokePlugin !== "function") {
           throw new Error("Plugin actions are unavailable.");
         }
 
@@ -307,7 +306,7 @@
         });
       },
       removeWorktree(project: PierProject, payload: PierWorktreePayload = {}) {
-        if (typeof typedGlobalScope.boatyard?.invokePlugin !== "function") {
+        if (typeof globalScope.boatyard?.invokePlugin !== "function") {
           throw new Error("Plugin actions are unavailable.");
         }
 
@@ -328,14 +327,14 @@
           return true;
         }
 
-        return typedGlobalScope.boatyard?.openExternal?.(url);
+        return globalScope.boatyard?.openExternal?.(url);
       }
     });
   }
 
   async function copyText(value) {
-    if (typedGlobalScope.boatyard?.writeClipboardText) {
-      await typedGlobalScope.boatyard.writeClipboardText(value);
+    if (globalScope.boatyard?.writeClipboardText) {
+      await globalScope.boatyard.writeClipboardText(value);
       return;
     }
 
@@ -561,8 +560,8 @@
   }
 
   function showPierDialog(dialog, focusTarget) {
-    if (typeof typedGlobalScope.BoatyardOverlayDialog?.show === "function") {
-      void typedGlobalScope.BoatyardOverlayDialog.show(dialog, {
+    if (typeof globalScope.BoatyardOverlayDialog?.show === "function") {
+      void globalScope.BoatyardOverlayDialog.show(dialog, {
         freeze: "overlap",
         freezeMargin: 16
       }).then((shown) => {
