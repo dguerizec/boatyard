@@ -95,6 +95,33 @@
       });
     }
 
+    function isRecord(value: unknown): value is Record<string, unknown> {
+      return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+    }
+
+    function normalizeTerminalTab(value: unknown): TerminalTab | null {
+      const source = isRecord(value) ? value : {};
+      const id = String(source.id || "").trim();
+      const index = Number(source.index);
+
+      if (!id) {
+        return null;
+      }
+
+      return {
+        id,
+        index: Number.isFinite(index) ? index : undefined,
+        name: String(source.name || "").trim() || undefined
+      };
+    }
+
+    async function listTerminalTabs(projectId: string): Promise<TerminalTab[]> {
+      const tabs = await boatyard.listTerminalTabs(projectId);
+      return Array.isArray(tabs)
+        ? tabs.map(normalizeTerminalTab).filter((tab): tab is TerminalTab => Boolean(tab))
+        : [];
+    }
+
     function getXtermConstructor(): XtermConstructor | null {
       const terminalGlobal = globalScope.Terminal;
       if (!terminalGlobal) {
@@ -402,7 +429,7 @@
       }
 
       try {
-        const tabs = getOrderedTerminalTabs(project.id, await boatyard.listTerminalTabs(project.id) as TerminalTab[]);
+        const tabs = getOrderedTerminalTabs(project.id, await listTerminalTabs(project.id));
         if (shouldRefreshTerminalTabs(session, tabs)) {
           const closedWindowId = tabs.some((tab) => tab.id === session.activeWindowId)
             ? null
@@ -462,7 +489,7 @@
     }
 
     async function refreshProjectTerminalTabLabels(project) {
-      const tabs = getOrderedTerminalTabs(project.id, await boatyard.listTerminalTabs(project.id) as TerminalTab[]);
+      const tabs = getOrderedTerminalTabs(project.id, await listTerminalTabs(project.id));
       const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
 
       for (const session of terminalWidgetsBySurface.values()) {
@@ -795,7 +822,7 @@
 
         try {
           persistTerminalTabOrder(project.id, nextTabIds);
-          const tabs = getOrderedTerminalTabs(project.id, await boatyard.listTerminalTabs(project.id));
+          const tabs = getOrderedTerminalTabs(project.id, await listTerminalTabs(project.id));
           await refreshTerminalTabs(project, card, activeWindowId, tabs, { focus: true });
         } catch (error) {
           setTerminalStatus(card, `Could not move shell: ${error.message}`);
@@ -839,7 +866,7 @@
       try {
         const tabs = getOrderedTerminalTabs(project.id, Array.isArray(knownTabs)
           ? knownTabs
-          : await boatyard.listTerminalTabs(project.id));
+          : await listTerminalTabs(project.id));
         const preferredWindowId = activeWindowId || getPersistedTerminalWindowId(project.id, card.dataset.terminalStorageKey);
         const selectedTab = tabs.find((tab) => tab.id === preferredWindowId) || tabs[0];
 
@@ -898,7 +925,7 @@
 
     async function createTerminalTab(project, card, insertAfterWindowId = null) {
       const tab = await boatyard.createTerminalTab(project.id, "shell");
-      let tabs = await boatyard.listTerminalTabs(project.id);
+      let tabs = await listTerminalTabs(project.id);
 
       if (insertAfterWindowId) {
         const renderedTabIds = getRenderedTerminalTabIds(card).filter((windowId) => windowId !== tab.id);
@@ -933,7 +960,7 @@
       const activeWindowId = session?.activeWindowId || "";
 
       try {
-        const allTabs = await boatyard.listTerminalTabs(project.id);
+        const allTabs = await listTerminalTabs(project.id);
         if (allTabs.length <= 1) {
           return;
         }
@@ -1367,7 +1394,7 @@
       }
 
       try {
-        const tabs = await boatyard.listTerminalTabs(project.id);
+        const tabs = await listTerminalTabs(project.id);
         await refreshTerminalSurfaceAfterClosedTab(project, surfaceSession.card, exitedWindowId, tabs, {
           focus: shouldFocusAfterTerminalExit(session.surfaceId, exitedWindowId)
         });
