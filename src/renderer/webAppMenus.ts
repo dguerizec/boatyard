@@ -1,6 +1,31 @@
 "use strict";
 
 (function () {
+  type WebAppMenuElement = HTMLDivElement & {
+    cleanup?: () => void;
+  };
+
+  type WebAppOpenPayload = {
+    url?: string;
+    sourceBounds?: unknown;
+    sourceUrl?: string;
+    sourceWebAppKey?: string;
+  };
+
+  type WidgetPaneTabsOptions = {
+    editing?: boolean;
+  };
+
+  type WebAppOpenFormControls = HTMLFormControlsCollection & {
+    webAppOpenTarget: HTMLInputElement;
+  };
+
+  type WebAppMenusGlobal = Window & {
+    BoatyardWebAppMenus: {
+      create: typeof createWebAppMenus;
+    };
+  };
+
   function createWebAppMenus({
     webAppOpenSplitRatio,
     getCurrentWebAppUrl,
@@ -37,7 +62,7 @@
     isGlobalWorkspace,
     isWebAppLoaded
   }) {
-    let openWebAppTabMenu = null;
+    let openWebAppTabMenu: WebAppMenuElement | null = null;
 
     function getWebAppOpenUrlLabel(url) {
       try {
@@ -221,7 +246,7 @@
       return { label, input };
     }
 
-    async function openWebAppOpenUrlDialog(payload = {}) {
+    async function openWebAppOpenUrlDialog(payload: WebAppOpenPayload = {}) {
       let url = "";
       try {
         url = normalizeAddressInput(payload.url);
@@ -347,8 +372,9 @@
         submitButton.disabled = true;
 
         try {
+          const elements = panel.elements as WebAppOpenFormControls;
           await applyWebAppOpenChoice(payload, {
-            target: panel.elements.webAppOpenTarget.value,
+            target: elements.webAppOpenTarget.value,
             persist: persistInput.checked,
             scope: scopeSelect.value,
             label: sourceWebApp?.label || ""
@@ -449,7 +475,7 @@
       editor.select();
     }
 
-    function createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps, options = {}) {
+    function createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps, options: WidgetPaneTabsOptions = {}) {
       const widgetWebApps = webApps.filter((webApp) => webApp.kind === "widgets");
       const list = document.createElement("div");
       list.className = "widget-pane-tabs";
@@ -506,7 +532,7 @@
         keys: selectedWebApp?.key ? [selectedWebApp.key] : []
       });
 
-      const menu = document.createElement("div");
+      const menu = document.createElement("div") as WebAppMenuElement;
       menu.className = "webapp-tab-menu";
       menu.setAttribute("role", "menu");
 
@@ -603,7 +629,7 @@
         keys: selectedWebApp?.key ? [selectedWebApp.key] : []
       });
 
-      const menu = document.createElement("div");
+      const menu = document.createElement("div") as WebAppMenuElement;
       menu.className = "webapp-tab-menu";
       menu.setAttribute("role", "menu");
 
@@ -663,7 +689,7 @@
         keys: selectedWebApp?.key ? [selectedWebApp.key] : []
       });
 
-      const menu = document.createElement("div");
+      const menu = document.createElement("div") as WebAppMenuElement;
       menu.className = "webapp-tab-menu";
       menu.setAttribute("role", "menu");
 
@@ -727,7 +753,7 @@
     };
   }
 
-  window.BoatyardWebAppMenus = {
+  (window as unknown as WebAppMenusGlobal).BoatyardWebAppMenus = {
     create: createWebAppMenus
   };
 })();
