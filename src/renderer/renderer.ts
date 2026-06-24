@@ -48,6 +48,7 @@ import { createUpdateViews } from "./updateViews.js";
 import { createWebAppMenus } from "./webAppMenus.js";
 import { createWebAppLoadTracker } from "./webAppLoadTracker.js";
 import { createWebAppSurfaces } from "./webAppSurfaces.js";
+import { createVisibleWebAppTracker } from "./visibleWebAppTracker.js";
 import { registerWidgetRegistry } from "./widgetRegistry.js";
 import { createWidgetSurfaces } from "./widgetSurfaces.js";
 import { createWorkspaceDashboardViews } from "./workspaceDashboardViews.js";
@@ -95,9 +96,16 @@ let currentProjectId = null;
 let returnView = { view: "global", projectId: null };
 const currentWebAppUrlsByKey = new Map<string, string>();
 const webAppAutofillEnabledByKey = new Map<string, boolean>();
-let visibleWebAppHosts = new Map();
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
 const webAppLoadTracker = createWebAppLoadTracker();
+const visibleWebApps = createVisibleWebAppTracker({
+  findPaneNode,
+  getCurrentWebAppUrl,
+  getPaneLayout: getProjectPaneLayout,
+  getVisibleWebAppProject,
+  isOnboardingTourActive,
+  persistPaneLayout
+});
 
 const {
   getCollapsedProjectGroups,
@@ -403,44 +411,12 @@ function getCurrentWebAppUrl(webApp) {
   return currentWebAppUrlsByKey.get(webApp.key) || webApp.url;
 }
 
-function getVisibleWebAppByKey(key) {
-  for (const { webApp } of visibleWebAppHosts.values()) {
-    if (webApp.key === key) {
-      return webApp;
-    }
-  }
-
-  return null;
-}
-
 function getVisibleWebAppEntryByKey(key) {
-  for (const [paneId, entry] of visibleWebAppHosts.entries()) {
-    if (entry.webApp.key === key) {
-      return {
-        ...entry,
-        paneId
-      };
-    }
-  }
-
-  return null;
+  return visibleWebApps.getEntryByKey(key);
 }
 
 function getVisibleWebAppEntryByUrl(url) {
-  if (!url) {
-    return null;
-  }
-
-  for (const [paneId, entry] of visibleWebAppHosts.entries()) {
-    if (getCurrentWebAppUrl(entry.webApp) === url || entry.webApp.url === url) {
-      return {
-        ...entry,
-        paneId
-      };
-    }
-  }
-
-  return null;
+  return visibleWebApps.getEntryByUrl(url);
 }
 
 function getVisibleWebAppProject() {
@@ -456,22 +432,7 @@ function getVisibleWebAppProject() {
 }
 
 function persistVisibleWebAppPaneLayout(key, url = "") {
-  if (isOnboardingTourActive()) {
-    return;
-  }
-
-  const sourceEntry = getVisibleWebAppEntryByKey(key);
-  const project = sourceEntry ? getVisibleWebAppProject() : null;
-  if (project) {
-    const paneNode = findPaneNode(getProjectPaneLayout(project), sourceEntry.paneId);
-    if (paneNode?.transientWebApp?.id === sourceEntry.webApp.id && url) {
-      paneNode.transientWebApp = {
-        ...paneNode.transientWebApp,
-        url
-      };
-    }
-    persistPaneLayout(project);
-  }
+  visibleWebApps.persistPaneLayoutForWebApp(key, url);
 }
 
 function findFirstPaneNode(node) {
@@ -579,7 +540,7 @@ const paneLayoutView = createPaneLayoutView({
   getAllProjectPluginConfig: (project) => (isGlobalWorkspace(project) ? {} : state.pluginConfig?.projects?.[project.id] || {}),
   openProjectWebApp,
   setVisibleWebAppHost: (paneId, entry) => {
-    visibleWebAppHosts.set(paneId, entry);
+    visibleWebApps.set(paneId, entry);
   },
   queueWebAppSync,
   renderWorkspaceDashboard,
@@ -619,7 +580,7 @@ const workspaceDashboardViews = createWorkspaceDashboardViews({
   getProjectSummaryTarget,
   getViewState: () => ({ currentProjectId, currentView }),
   resetVisibleWebAppHosts: () => {
-    visibleWebAppHosts = new Map();
+    visibleWebApps.reset();
   },
   workspace,
   workspaceKicker,
@@ -642,7 +603,7 @@ const manualViews = createManualViews({
   hideWebApps: () => invokeWebApp("hideWebApp"),
   openOnboardingTour,
   resetVisibleWebAppHosts: () => {
-    visibleWebAppHosts = new Map();
+    visibleWebApps.reset();
   },
   workspace,
   workspaceKicker,
@@ -711,7 +672,7 @@ const globalSettingsPageView = createGlobalSettingsPageView({
   hydratePaneLayouts,
   hydrateWidgetLayouts,
   resetVisibleWebAppHosts: () => {
-    visibleWebAppHosts = new Map();
+    visibleWebApps.reset();
   },
   updateGlobalUrls: async (urls) => {
     state = await boatyardWindow.boatyard.updateGlobalUrls(urls as UnknownRecord[]);
@@ -889,7 +850,7 @@ const onboardingTour = createOnboardingTour({
   getSelectedWebAppForProject: paneLayoutState.getSelectedWebAppForProject,
   deleteSelectedWebAppForPane: paneLayoutState.deleteSelectedWebAppForPane,
   deleteSelectedWebAppForProject: paneLayoutState.deleteSelectedWebAppForProject,
-  getVisibleWebAppEntries: () => visibleWebAppHosts.values(),
+  getVisibleWebAppEntries: () => visibleWebApps.getEntries(),
   renderWorkspaceDashboard,
   closeWebAppTabMenu,
   openWebAppTabMenuFromButton,
@@ -1042,7 +1003,7 @@ const projectPageViews = createProjectPageViews({
   reloadProjectSettings,
   removeProject: (projectId) => boatyardWindow.boatyard.removeProject(projectId),
   resetVisibleWebAppHosts: () => {
-    visibleWebAppHosts = new Map();
+    visibleWebApps.reset();
   },
   restoreReturnView,
   selectGlobal,
@@ -1069,7 +1030,7 @@ function renderEditProjectPage(project) {
 const webAppSurfaces = createWebAppSurfaces({
   boatyard: boatyardWindow.boatyard,
   getSettings,
-  getVisibleWebAppEntries: () => visibleWebAppHosts.values(),
+  getVisibleWebAppEntries: () => visibleWebApps.getEntries(),
   invokeWebApp,
   isWebAppAutofillEnabled,
   markWebAppLoaded: (key) => {
