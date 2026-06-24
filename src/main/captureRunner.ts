@@ -1,3 +1,5 @@
+import type { BrowserWindow } from "electron";
+
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -26,7 +28,7 @@ type CaptureRequest = {
 };
 
 type CaptureRunnerOptions = {
-  getMainWindow: () => any;
+  getMainWindow: () => BrowserWindow | null;
   quitApp: () => void;
   requestEnvName?: string;
 };
