@@ -1,6 +1,25 @@
 "use strict";
 
 (function () {
+  type ProjectGroupMenu = HTMLDivElement & {
+    cleanup?: () => void;
+  };
+
+  type ProjectNavRowOptions = {
+    grouped?: boolean;
+    groupName?: string;
+  };
+
+  type ProjectGroupDragOptions = {
+    dragImage?: "collapsed-group";
+  };
+
+  type ProjectSidebarGlobal = Window & {
+    BoatyardProjectSidebar: {
+      create: typeof createProjectSidebar;
+    };
+  };
+
   function createProjectSidebar({
     elements,
     getViewState,
@@ -35,7 +54,7 @@
       projectSearchInput
     } = elements;
 
-    let openProjectGroupMenu = null;
+    let openProjectGroupMenu: ProjectGroupMenu | null = null;
     let projectSearchQuery = "";
     let draggedProjectId = null;
     let draggedProjectGroupName = null;
@@ -60,7 +79,7 @@
       openProjectGroupMenu = null;
     }
 
-    function createProjectNavRow(project, options = {}) {
+    function createProjectNavRow(project, options: ProjectNavRowOptions = {}) {
       const isActiveProject =
         (getViewState().currentView === "project" || getViewState().currentView === "project-edit") && project.id === getViewState().currentProjectId;
       const row = document.createElement("div");
@@ -336,7 +355,7 @@
       for (const project of projects) {
         const scratch = document.createElement("div");
         renderProjectNavBadges(project, scratch, { isActiveProject: false });
-        for (const badge of scratch.querySelectorAll(".project-nav-badge")) {
+        for (const badge of scratch.querySelectorAll<HTMLElement>(".project-nav-badge")) {
           const stateName = [...badge.classList].find((className) => priority.has(className)) || "";
           const key = stateName || badge.textContent || badge.className;
           const summary = badgeSummaries.get(key) || {
@@ -866,7 +885,7 @@
       event.preventDefault();
       closeProjectGroupMenu();
 
-      const menu = document.createElement("div");
+      const menu = document.createElement("div") as ProjectGroupMenu;
       menu.className = "webapp-tab-menu project-group-context-menu";
       menu.setAttribute("role", "menu");
 
@@ -901,7 +920,7 @@
       openProjectGroupMenu = menu;
 
       function onPointerDown(pointerEvent) {
-        if (!menu.contains(pointerEvent.target)) {
+        if (!menu.contains(pointerEvent.target as Node)) {
           closeProjectGroupMenu();
         }
       }
@@ -929,7 +948,7 @@
       event.preventDefault();
       closeProjectGroupMenu();
 
-      const menu = document.createElement("div");
+      const menu = document.createElement("div") as ProjectGroupMenu;
       menu.className = "webapp-tab-menu project-group-context-menu";
       menu.setAttribute("role", "menu");
 
@@ -954,7 +973,7 @@
       openProjectGroupMenu = menu;
 
       function onPointerDown(pointerEvent) {
-        if (!menu.contains(pointerEvent.target)) {
+        if (!menu.contains(pointerEvent.target as Node)) {
           closeProjectGroupMenu();
         }
       }
@@ -978,7 +997,7 @@
       menu.querySelector("button")?.focus();
     }
 
-    function attachProjectGroupDragHandlers(element, groupName, projects, options = {}) {
+    function attachProjectGroupDragHandlers(element, groupName, projects, options: ProjectGroupDragOptions = {}) {
       element.addEventListener("dragstart", (event) => {
         const rect = element.getBoundingClientRect();
         clearProjectListDragImage();
@@ -1076,7 +1095,7 @@
         cancelPendingProjectGroupCollapse(groupName);
       });
       group.addEventListener("dragleave", (event) => {
-        if (group.contains(event.relatedTarget)) {
+        if (group.contains(event.relatedTarget as Node | null)) {
           return;
         }
 
@@ -1113,7 +1132,7 @@
         updateProjectGroupInsertionPlaceholder(projectRows, event, groupName);
       });
       projectRows.addEventListener("dragleave", (event) => {
-        if (projectRows.contains(event.relatedTarget)) {
+        if (projectRows.contains(event.relatedTarget as Node | null)) {
           return;
         }
 
@@ -1462,7 +1481,7 @@
     };
   }
 
-  window.BoatyardProjectSidebar = {
+  (window as unknown as ProjectSidebarGlobal).BoatyardProjectSidebar = {
     create: createProjectSidebar
   };
 })();
