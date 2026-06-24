@@ -3,16 +3,30 @@ import type {
   ContextMenuParams,
   HandlerDetails,
   IpcMainInvokeEvent,
-  MenuItemConstructorOptions,
   Rectangle,
-  WebContents as ElectronWebContents,
-  WebContentsView as ElectronWebContentsView
+  WebContents as ElectronWebContents
 } from "electron";
+import type {
+  MainProject,
+  PasswordManagerInstance,
+  PluginHostInstance,
+  ProjectStoreInstance,
+  ShowWebAppPayload,
+  TerminalServiceInstance,
+  UnknownRecord,
+  UpdateManagerInstance,
+  WebAppCapture,
+  WebAppItem,
+  WebAppLookup,
+  WebAppOpenOptions,
+  WebAppOpenRule
+} from "./mainTypes.js";
+import { createWebAppContextMenu } from "./webAppContextMenu.js";
 
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
-const { app, BrowserWindow, WebContentsView, Menu, clipboard, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell } = require("electron");
 const { createCaptureRunner } = require("./captureRunner");
 const { PasswordManager } = require("./passwordManager");
 const { PluginHost } = require("./pluginHost");
@@ -23,113 +37,6 @@ const { createUpdateManager, normalizeVersionTag } = require("./updateManager");
 const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
-type UnknownRecord = Record<string, unknown>;
-type WebAppOpenRule = {
-  pattern?: string;
-  scope?: string;
-  target?: string;
-};
-type MainProject = UnknownRecord & {
-  id?: string;
-  name?: string;
-  slug?: string;
-  sourcePath?: string;
-};
-type AppState = UnknownRecord & {
-  projects: MainProject[];
-  settings?: UnknownRecord & {
-    projectsBasePath?: string;
-    webAppOpenRules?: WebAppOpenRule[];
-  };
-};
-type ProjectStoreInstance = {
-  addProject(values: unknown): unknown;
-  dismissChangelog(version: string): unknown;
-  getAppState(): unknown;
-  getState(): AppState;
-  getWebAppUrl(key: string): string;
-  getWindowState(): { bounds: Partial<Rectangle>; isMaximized?: boolean };
-  load(): unknown;
-  reconcileAppVersion(version: string): unknown;
-  removeProject(id: string): unknown;
-  reorderProjects(projectIds: unknown): unknown;
-  updateGlobalPluginConfig(pluginId: string, patch: unknown): unknown;
-  updateGlobalUrls(urls: unknown): unknown;
-  updateNavigation(navigation: unknown): unknown;
-  updateOnboarding(onboarding: unknown): unknown;
-  updatePaneLayout(projectId: string | null | undefined, layout: unknown): unknown;
-  updatePluginEnabled(pluginId: string, enabled: boolean): unknown;
-  updateProject(id: string, patch: unknown): unknown;
-  updateProjectPluginConfig(projectId: string, pluginId: string, patch: unknown): unknown;
-  updateSettings(patch: UnknownRecord): unknown;
-  updateTerminalSelection(projectId: string, surfaceKey: string, windowId: string): unknown;
-  updateTerminalTabOrder(projectId: string, windowIds: unknown): unknown;
-  updateWebAppHomeTab(projectId: string, tab: unknown): unknown;
-  updateWebAppHomeTabs(projectId: string, tabs: unknown): unknown;
-  updateWebAppState(key: string, state: UnknownRecord): unknown;
-  updateWidgetLayout(projectId: string | null | undefined, layout: unknown): unknown;
-  updateWindowState(state: { bounds: Rectangle; isMaximized: boolean }): unknown;
-};
-type TerminalServiceInstance = {
-  attach(projectId: string, windowId: string, size: unknown): unknown;
-  closeTab(projectId: string, windowId: string): unknown;
-  createTab(projectId: string, name: string): unknown;
-  detach(terminalId: string): unknown;
-  detachAll(): unknown;
-  listTabs(projectId: string): unknown;
-  renameTab(projectId: string, windowId: string, name: string): unknown;
-  resize(terminalId: string, size: unknown): unknown;
-  write(terminalId: string, data: string): void;
-};
-type PasswordManagerInstance = {
-  getCredential(url: string): unknown;
-  getStatus(): { encryptionAvailable?: boolean };
-  saveCredential(credential: unknown): unknown;
-};
-type PluginHostInstance = {
-  applyStateMigrations(): Promise<unknown>;
-  discover(): unknown;
-  inspectSourcePath(values: UnknownRecord): Promise<unknown>;
-  invoke(pluginId: string, actionName: string, payload: unknown): unknown;
-  listRendererPlugins(): unknown;
-};
-type UpdateManagerInstance = {
-  checkForUpdates(): unknown;
-  cleanupOldAppImages(): Promise<unknown>;
-  ensureCurrentAppImageInstalled(): Promise<unknown>;
-  getPendingChangelog(): unknown;
-  getUpdateInfo(): unknown;
-  prepareUpdate(): unknown;
-  readChangelogReleases(): unknown;
-  restartToUpdate(update: unknown): unknown;
-};
-type WebAppItem = {
-  autofillEnabled: boolean;
-  bounds: Rectangle | null;
-  url: string | null;
-  view: ElectronWebContentsView;
-};
-type WebAppLookup = {
-  item: WebAppItem;
-  key: string;
-};
-type ShowWebAppPayload = {
-  autofillEnabled?: unknown;
-  bounds?: unknown;
-  key?: unknown;
-  restoreUrl?: boolean;
-  url?: string;
-};
-type WebAppOpenOptions = UnknownRecord & {
-  sourceBounds?: unknown;
-  sourceUrl?: unknown;
-  target?: unknown;
-};
-type WebAppCapture = {
-  bounds: Rectangle;
-  dataUrl: string;
-  key: string;
-};
 
 if (process.env.BOATYARD_USER_DATA_PATH) {
   app.setPath("userData", process.env.BOATYARD_USER_DATA_PATH);
@@ -288,84 +195,6 @@ async function inspectSourcePath(sourcePath: string) {
   };
 }
 
-function createWebAppContextMenu(webContents: ElectronWebContents, params: ContextMenuParams) {
-  const template: MenuItemConstructorOptions[] = [];
-
-  if (params.isEditable) {
-    template.push(
-      { role: "undo", enabled: params.editFlags?.canUndo },
-      { role: "redo", enabled: params.editFlags?.canRedo },
-      { type: "separator" },
-      { role: "cut", enabled: params.editFlags?.canCut },
-      { role: "copy", enabled: params.editFlags?.canCopy },
-      { role: "paste", enabled: params.editFlags?.canPaste },
-      { role: "delete", enabled: params.editFlags?.canDelete },
-      { type: "separator" },
-      { role: "selectAll", enabled: params.editFlags?.canSelectAll }
-    );
-  } else if (params.selectionText) {
-    template.push({ role: "copy" });
-  }
-
-  if (params.linkURL) {
-    if (template.length) {
-      template.push({ type: "separator" });
-    }
-    template.push(
-      {
-        label: "Open with...",
-        click: () => {
-          const webApp = getWebAppForWebContents(webContents);
-          if (!sendWebAppOpenUrlRequest(webApp?.key || "", params.linkURL, "context-menu")) {
-            openExternalUrl(params.linkURL);
-          }
-        }
-      },
-      {
-        label: "Open link in browser",
-        click: () => openExternalUrl(params.linkURL)
-      },
-      {
-        label: "Copy link address",
-        click: () => clipboard.writeText(params.linkURL)
-      }
-    );
-  }
-
-  if (template.length) {
-    template.push({ type: "separator" });
-  }
-
-  template.push(
-    {
-      label: "Back",
-      enabled: webContents.canGoBack(),
-      click: () => webContents.goBack()
-    },
-    {
-      label: "Forward",
-      enabled: webContents.canGoForward(),
-      click: () => webContents.goForward()
-    },
-    {
-      label: "Reload",
-      click: () => webContents.reload()
-    }
-  );
-
-  if (!app.isPackaged) {
-    template.push(
-      { type: "separator" },
-      {
-        label: "Inspect element",
-        click: () => webContents.inspectElement(params.x, params.y)
-      }
-    );
-  }
-
-  return Menu.buildFromTemplate(template);
-}
-
 function parseHttpUrl(url: unknown) {
   try {
     const parsedUrl = new URL(String(url || ""));
@@ -507,7 +336,11 @@ function ensureWebAppView(key: string): WebAppItem {
   view.setBackgroundColor("#0b0f14");
   view.webContents.setWindowOpenHandler((details: HandlerDetails) => handleWebAppWindowOpen(key, details));
   view.webContents.on("context-menu", (_event: Event, params: ContextMenuParams) => {
-    createWebAppContextMenu(view.webContents, params).popup({
+    createWebAppContextMenu(view.webContents, params, {
+      getSourceKey: (webContents) => getWebAppForWebContents(webContents)?.key || "",
+      openExternalUrl,
+      sendOpenUrlRequest: sendWebAppOpenUrlRequest
+    }).popup({
       window: mainWindow || undefined
     });
   });
