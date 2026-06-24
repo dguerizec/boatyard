@@ -167,7 +167,7 @@ function getStorePath() {
 function createMainWindow() {
   const windowState = store.getWindowState();
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     ...windowState.bounds,
     minWidth: 920,
     minHeight: 620,
@@ -181,23 +181,24 @@ function createMainWindow() {
       sandbox: false
     }
   });
+  mainWindow = window;
 
   if (windowState.isMaximized) {
-    mainWindow.maximize();
+    window.maximize();
   }
 
-  mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+  window.loadFile(path.join(__dirname, "../renderer/index.html"));
   if (captureRunner.isCaptureMode()) {
-    mainWindow.webContents.on("console-message", (event) => {
+    window.webContents.on("console-message", (event: UnknownRecord) => {
       const details = event;
       console.log(`[capture renderer:${details.level}] ${details.message} (${details.sourceId}:${details.lineNumber})`);
     });
-    mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    window.webContents.on("render-process-gone", (_event: Event, details: { reason?: string }) => {
       console.error(`[capture renderer gone] ${details.reason}`);
     });
   }
-  mainWindow.once("ready-to-show", () => {
-    mainWindow.show();
+  window.once("ready-to-show", () => {
+    window.show();
 
     if (captureRunner.isCaptureMode()) {
       captureRunner.runCaptureRequest().catch((error: Error) => {
@@ -211,15 +212,15 @@ function createMainWindow() {
       setTimeout(() => app.quit(), 500);
     }
   });
-  mainWindow.on("closed", () => {
+  window.on("closed", () => {
     mainWindow = null;
   });
 
-  mainWindow.on("move", scheduleWindowStateSave);
-  mainWindow.on("resize", scheduleWindowStateSave);
-  mainWindow.on("maximize", saveWindowState);
-  mainWindow.on("unmaximize", saveWindowState);
-  mainWindow.on("close", () => {
+  window.on("move", scheduleWindowStateSave);
+  window.on("resize", scheduleWindowStateSave);
+  window.on("maximize", saveWindowState);
+  window.on("unmaximize", saveWindowState);
+  window.on("close", () => {
     saveWindowState();
     terminalService?.detachAll();
     destroyWebAppViews();
@@ -238,7 +239,9 @@ function saveWindowState() {
 }
 
 function scheduleWindowStateSave() {
-  clearTimeout(saveWindowStateTimer);
+  if (saveWindowStateTimer) {
+    clearTimeout(saveWindowStateTimer);
+  }
   saveWindowStateTimer = setTimeout(saveWindowState, 250);
 }
 
@@ -405,7 +408,7 @@ function getWebAppOpenRule(url: unknown) {
     }
 
     if (rule.scope === "path-prefix") {
-      return parsedUrl.toString().startsWith(rule.pattern);
+      return typeof rule.pattern === "string" && parsedUrl.toString().startsWith(rule.pattern);
     }
 
     return parsedUrl.toString() === rule.pattern;
@@ -488,6 +491,10 @@ function ensureWebAppView(key: string): WebAppItem {
     return existing;
   }
 
+  if (!mainWindow) {
+    throw new Error("Main window is not available.");
+  }
+
   const view = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
@@ -526,13 +533,14 @@ function ensureWebAppView(key: string): WebAppItem {
   });
 
   mainWindow.contentView.addChildView(view);
-  webAppViews.set(key, {
+  const item: WebAppItem = {
     view,
     url: null,
     bounds: null,
     autofillEnabled: false
-  });
-  return webAppViews.get(key);
+  };
+  webAppViews.set(key, item);
+  return item;
 }
 
 function getWebAppForWebContents(webContents: ElectronWebContents): WebAppLookup | null {
@@ -565,7 +573,11 @@ function showWebApp({ key, url, bounds, autofillEnabled, restoreUrl = true }: Sh
   }
 
   const restoredUrl = store.getWebAppUrl(String(key));
-  const parsedUrl = new URL(restoreUrl === false ? url : (restoredUrl || url));
+  const nextUrl = restoreUrl === false ? url : (restoredUrl || url);
+  if (!nextUrl) {
+    throw new Error("Webapp URL is required.");
+  }
+  const parsedUrl = new URL(nextUrl);
 
   if (!["http:", "https:"].includes(parsedUrl.protocol)) {
     throw new Error("Only http and https webapps are supported.");
@@ -677,7 +689,7 @@ function setVisibleWebApps(keys: unknown) {
     item.view.setVisible(visibleWebAppKeys.has(key) && !allWebAppsFrozen && !frozenWebAppKeys.has(key));
   }
 
-  activeWebAppKey = visibleWebAppKeys.size > 0 ? [...visibleWebAppKeys].at(-1) : null;
+  activeWebAppKey = visibleWebAppKeys.size > 0 ? [...visibleWebAppKeys].at(-1) || null : null;
 }
 
 function hideWebApp() {
@@ -699,7 +711,9 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: st
       timeout = setTimeout(() => reject(new Error(errorMessage)), timeoutMs);
     })
   ]).finally(() => {
-    clearTimeout(timeout);
+    if (timeout) {
+      clearTimeout(timeout);
+    }
   });
 }
 
