@@ -35,6 +35,27 @@ type UpdateManagerOptions = {
 };
 
 type UnknownRecord = Record<string, unknown>;
+type ChangelogFeature = {
+  body: string;
+  category?: string;
+  description?: string;
+  title: string;
+};
+type ChangelogRelease = {
+  date?: string;
+  features?: ChangelogFeature[];
+  version?: string;
+};
+type NormalizedChangelogRelease = {
+  date: string;
+  features: ChangelogFeature[];
+  version: string;
+};
+type AppImageCandidate = {
+  filePath: string;
+  name: string;
+  version: string;
+};
 
 const UPDATE_REPOSITORY = {
   owner: "dguerizec",
@@ -50,6 +71,10 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function toRecord(value: unknown): UnknownRecord {
   return isRecord(value) ? value : {};
+}
+
+function isAppImageCandidate(value: AppImageCandidate | null): value is AppImageCandidate {
+  return value !== null;
 }
 
 function normalizeVersionTag(version: unknown) {
@@ -98,25 +123,26 @@ function readChangelogEntries(fromVersion: unknown, toVersion: unknown) {
 
   try {
     const parsed = JSON.parse(fs.readFileSync(CHANGELOG_JSON_PATH, "utf8"));
-    const releases = Array.isArray(parsed.releases) ? parsed.releases : [];
+    const releases: ChangelogRelease[] = Array.isArray(parsed.releases) ? parsed.releases : [];
 
     return releases
-      .map((release) => ({
+      .map((release: ChangelogRelease) => ({
         version: normalizeVersionTag(release?.version),
         features: Array.isArray(release?.features) ? release.features : []
       }))
-      .filter((release) => compareVersions(release.version, from) > 0 && compareVersions(release.version, to) <= 0)
-      .sort((left, right) => compareVersions(left.version, right.version))
-      .flatMap((release) => release.features
-        .map((feature) => ({
+      .filter((release: Pick<NormalizedChangelogRelease, "features" | "version">) => compareVersions(release.version, from) > 0 && compareVersions(release.version, to) <= 0)
+      .sort((left: Pick<NormalizedChangelogRelease, "version">, right: Pick<NormalizedChangelogRelease, "version">) => compareVersions(left.version, right.version))
+      .flatMap((release: Pick<NormalizedChangelogRelease, "features" | "version">) => release.features
+        .map((feature: ChangelogFeature) => ({
           version: release.version,
           title: String(feature?.title || "").trim(),
           body: String(feature?.body || feature?.description || "").trim()
         }))
-        .filter((feature) => feature.title && feature.body));
+        .filter((feature: ChangelogFeature & { version: string }) => feature.title && feature.body));
   } catch (error) {
-    if (error.code !== "ENOENT") {
-      console.warn(`Could not read changelog data: ${error.message}`);
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code !== "ENOENT") {
+      console.warn(`Could not read changelog data: ${nodeError.message}`);
     }
     return [];
   }
@@ -125,27 +151,28 @@ function readChangelogEntries(fromVersion: unknown, toVersion: unknown) {
 function readChangelogReleases() {
   try {
     const parsed = JSON.parse(fs.readFileSync(CHANGELOG_JSON_PATH, "utf8"));
-    const releases = Array.isArray(parsed.releases) ? parsed.releases : [];
+    const releases: ChangelogRelease[] = Array.isArray(parsed.releases) ? parsed.releases : [];
 
     return releases
-      .map((release) => ({
+      .map((release: ChangelogRelease) => ({
         version: normalizeVersionTag(release?.version),
         date: String(release?.date || "").trim(),
         features: Array.isArray(release?.features)
           ? release.features
-            .map((feature) => ({
+            .map((feature: ChangelogFeature) => ({
               category: String(feature?.category || "").trim(),
               title: String(feature?.title || "").trim(),
               body: String(feature?.body || feature?.description || "").trim()
             }))
-            .filter((feature) => feature.title && feature.body)
+            .filter((feature: ChangelogFeature) => feature.title && feature.body)
           : []
       }))
-      .filter((release) => parseVersion(release.version) && release.features.length)
-      .sort((left, right) => compareVersions(right.version, left.version));
+      .filter((release: NormalizedChangelogRelease) => parseVersion(release.version) && release.features.length)
+      .sort((left: NormalizedChangelogRelease, right: NormalizedChangelogRelease) => compareVersions(right.version, left.version));
   } catch (error) {
-    if (error.code !== "ENOENT") {
-      console.warn(`Could not read changelog data: ${error.message}`);
+    const nodeError = error as NodeJS.ErrnoException;
+    if (nodeError.code !== "ENOENT") {
+      console.warn(`Could not read changelog data: ${nodeError.message}`);
     }
     return [];
   }
@@ -414,12 +441,12 @@ function createUpdateManager({ getAppState }: UpdateManagerOptions) {
 
     const entries = await fs.promises.readdir(binDir);
     const appImages = entries
-      .map((name) => {
+      .map((name: string) => {
         const match = name.match(APPIMAGE_NAME_PATTERN);
         return match ? { name, version: match[1], filePath: path.join(binDir, name) } : null;
       })
-      .filter(Boolean)
-      .sort((left, right) => compareVersions(right.version, left.version));
+      .filter(isAppImageCandidate)
+      .sort((left: AppImageCandidate, right: AppImageCandidate) => compareVersions(right.version, left.version));
 
     const current = normalizeVersionTag(currentVersion);
     const kept = new Set([current]);
@@ -442,7 +469,7 @@ function createUpdateManager({ getAppState }: UpdateManagerOptions) {
         await fs.promises.unlink(appImage.filePath);
         deleted.push(appImage.filePath);
       } catch (error) {
-        console.warn(`Could not delete old AppImage ${appImage.filePath}: ${error.message}`);
+        console.warn(`Could not delete old AppImage ${appImage.filePath}: ${(error as Error).message}`);
       }
     }
 
@@ -463,13 +490,13 @@ function createUpdateManager({ getAppState }: UpdateManagerOptions) {
     const currentVersion = normalizeVersionTag(app.getVersion());
     const entries = await fs.promises.readdir(stagingDir);
     const prepared = entries
-      .map((name) => {
+      .map((name: string) => {
         const match = name.match(APPIMAGE_NAME_PATTERN);
         return match ? { name, version: match[1], filePath: path.join(stagingDir, name) } : null;
       })
-      .filter(Boolean)
-      .filter((candidate) => compareVersions(candidate.version, currentVersion) > 0)
-      .sort((left, right) => compareVersions(right.version, left.version))[0];
+      .filter(isAppImageCandidate)
+      .filter((candidate: AppImageCandidate) => compareVersions(candidate.version, currentVersion) > 0)
+      .sort((left: AppImageCandidate, right: AppImageCandidate) => compareVersions(right.version, left.version))[0];
 
     if (!prepared) {
       return null;

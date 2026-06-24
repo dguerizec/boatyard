@@ -8,6 +8,8 @@ import type {
   PluginStateMigrations
 } from "../shared/pluginTypes";
 
+import type { Dirent } from "node:fs";
+
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -158,9 +160,9 @@ function listPluginManifestPaths(pluginRoot: string): string[] {
   }
 
   return fs.readdirSync(pluginRoot, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => path.join(pluginRoot, entry.name, "plugin.json"))
-    .filter((manifestPath) => fs.existsSync(manifestPath))
+    .filter((entry: Dirent) => entry.isDirectory())
+    .map((entry: Dirent) => path.join(pluginRoot, entry.name, "plugin.json"))
+    .filter((manifestPath: string) => fs.existsSync(manifestPath))
     .sort();
 }
 

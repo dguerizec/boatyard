@@ -1,5 +1,7 @@
 "use strict";
 
+import type { IpcRendererEvent } from "electron";
+
 const { ipcRenderer } = require("electron");
 
 const PASSWORD_SELECTOR = 'input[type="password"]';
@@ -206,7 +208,7 @@ function scheduleAutofill(): void {
   }, 250);
 }
 
-ipcRenderer.on("webapp:autofill-enabled", (_event, enabled) => {
+ipcRenderer.on("webapp:autofill-enabled", (_event: IpcRendererEvent, enabled: unknown) => {
   autofillEnabled = enabled === true;
   if (autofillEnabled) {
     scheduleAutofill();
