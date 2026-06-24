@@ -419,7 +419,12 @@
             min: { columns: 3, rows: 3 }
           },
           createElement(project: HawserProject, props: HawserPluginOptions = {}) {
-            return globalScope.BoatyardHawserUI.createWidget(project, {
+            const hawserUi = globalScope.BoatyardHawserUI;
+            if (!hawserUi) {
+              throw new Error("Hawser UI is unavailable.");
+            }
+
+            return hawserUi.createWidget(project, {
               title: "Hawser",
               subtitle: hawserService.getMainSession(project, {
                 pluginConfig: props.pluginConfig

@@ -218,9 +218,10 @@
       worktree: branchSlug
     };
     const pattern = getPierWorktreePattern(options);
-    return pattern.replace(/\{(repo|project|worktree)\}|<(repo|project|worktree)>/g, (_match, bracedToken: keyof typeof tokens | undefined, angledToken: keyof typeof tokens | undefined) => (
-      tokens[bracedToken || angledToken]
-    ));
+    return pattern.replace(/\{(repo|project|worktree)\}|<(repo|project|worktree)>/g, (_match, bracedToken: keyof typeof tokens | undefined, angledToken: keyof typeof tokens | undefined) => {
+      const token = bracedToken || angledToken;
+      return token ? tokens[token] : "";
+    });
   }
 
   function isCurrentProjectWorktree(project: PierProject, entry: PierWorkload) {
@@ -351,14 +352,14 @@
       listProjectWorkloads,
       down(workload: PierWorkload, options: PierOptions = {}) {
         return fetchPierJson(
-          `/api/v1/workloads/${encodeURIComponent(workload.project)}/${encodeURIComponent(workload.slug)}/down`,
+          `/api/v1/workloads/${encodeURIComponent(workload.project || "")}/${encodeURIComponent(workload.slug || "")}/down`,
           options,
           { method: "POST" }
         );
       },
       up(workload: PierWorkload, options: PierOptions = {}) {
         return fetchPierJson(
-          `/api/v1/workloads/${encodeURIComponent(workload.project)}/${encodeURIComponent(workload.slug)}/up`,
+          `/api/v1/workloads/${encodeURIComponent(workload.project || "")}/${encodeURIComponent(workload.slug || "")}/up`,
           options,
           {
             method: "POST",
@@ -397,6 +398,9 @@
         const url = typeof entry === "string" ? entry : entry?.url;
         const slug = typeof entry === "string" ? "" : entry?.slug;
         const webAppId = slug ? `pier:${slug}` : "pier";
+        if (!url) {
+          return false;
+        }
 
         if (typeof options.openProjectWebApp === "function" && options.openProjectWebApp(webAppId, url)) {
           return true;
@@ -437,8 +441,8 @@
     row.pierEntry = entry;
     row.classList.toggle("stopped", !entry.running);
     row.pierLink.href = entry.url || "#";
-    row.pierLink.textContent = entry.url || entry.slug;
-    row.pierLink.title = entry.url || entry.slug;
+    row.pierLink.textContent = entry.url || entry.slug || "";
+    row.pierLink.title = entry.url || entry.slug || "";
     row.pierPathText.textContent = entry.worktreePath || "No worktree path";
     row.pierPathButton.title = entry.worktreePath ? `Copy ${entry.worktreePath}` : "";
     row.pierPathButton.disabled = !entry.worktreePath;
@@ -509,7 +513,7 @@
     removeButton.addEventListener("click", () => {
       const row = getClosestPierUrlRow(removeButton);
       const entry = row?.pierEntry || {};
-      if (!entry.worktreePath || removeButton.disabled) {
+      if (!row || !entry.worktreePath || removeButton.disabled) {
         return;
       }
 
@@ -541,7 +545,7 @@
   ) {
     const existingRows = new Map([...list.querySelectorAll(".pier-url-row")]
       .filter(isPierUrlRow)
-      .map((row) => [row.dataset.key, row]));
+      .flatMap((row) => row.dataset.key ? [[row.dataset.key, row] as const] : []));
     const nextKeys = new Set<string>();
 
     for (const entry of urls) {
@@ -766,7 +770,7 @@
     const copy = document.createElement("p");
     copy.textContent = `This stops the workload and removes the "${entry.slug}" worktree directory. The Boatyard project entry is not removed.`;
     const pathCopy = document.createElement("code");
-    pathCopy.textContent = entry.worktreePath;
+    pathCopy.textContent = entry.worktreePath || "";
     confirmation.append(copy, pathCopy);
 
     const purgeInput = document.createElement("input");

@@ -234,11 +234,11 @@ async function getHawserStatus(
   const token = String(settings.hawserToken || "").trim();
   const fetchImpl = options.fetchImpl || fetch;
   const cli = await getHawserCliStatus(options.execFileAsync);
-  const headers = token
+  const headers: HeadersInit | undefined = token
     ? {
         Authorization: `Bearer ${token}`
       }
-    : {};
+    : undefined;
 
   try {
     const response = await fetchImpl(`${apiUrl}/api/health`, {
