@@ -1,4 +1,6 @@
 import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSettings.js";
+import type { BoatyardBridge } from "./rendererTypes.js";
+import type { UnknownRecord } from "./rendererRecords.js";
 
   type PluginFieldApiSetOptions = {
     ifUnedited?: boolean;
@@ -8,6 +10,79 @@ import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSett
   type PluginSettingsOptions = {
     onSaved?: () => void;
   };
+
+  type GlobalSettingsBoatyardBridge = BoatyardBridge & {
+    selectProjectsBasePath?: (currentPath?: string) => Promise<string>;
+  };
+
+  type GlobalSettingsFormOptions = {
+    settings: UnknownRecord;
+    onSubmit: (values: UnknownRecord) => void | Promise<void>;
+  };
+
+  type GlobalSettingsViewsOptions = {
+    boatyard: GlobalSettingsBoatyardBridge;
+    applyFormControl: (control: HTMLElement) => void;
+    applyFormControls: (container: HTMLElement) => void;
+    getInstalledWidgets: () => unknown[];
+    getPluginGlobalSettingsSections: () => unknown[];
+    getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
+    readPluginSettingsFieldValue: (field: PluginGlobalSettingsField, input: HTMLInputElement) => unknown;
+    showOverlayDialog: (dialog: HTMLDialogElement, options?: UnknownRecord) => Promise<boolean>;
+    renderGlobalSettingsPage: () => void;
+    updatePluginEnabled: (pluginId: string, enabled: boolean) => Promise<unknown>;
+    updateGlobalPluginConfig: (pluginId: string, values: UnknownRecord) => Promise<unknown>;
+  };
+
+  type PluginFieldAction = {
+    hidden?: boolean;
+    label?: string;
+    message?: string;
+    pendingLabel?: string;
+    run?: (context: { globalConfig: UnknownRecord; fields: PluginFieldApi }) => unknown | Promise<unknown>;
+  };
+
+  type PluginGlobalSettingsField = PluginSettingsFieldDefinition & {
+    action?: PluginFieldAction;
+    description?: string;
+    persist?: boolean;
+    readOnly?: boolean;
+  };
+
+  type PluginGlobalSettingsSection = PluginSettingsSection & {
+    fields: PluginGlobalSettingsField[];
+  };
+
+  type PluginFieldState = {
+    action: {
+      button: HTMLButtonElement;
+      element: HTMLDivElement;
+      message: HTMLSpanElement;
+    } | null;
+    field: PluginGlobalSettingsField;
+    input: HTMLInputElement;
+  };
+
+  type PluginFieldApi = {
+    getValue(key: string): string;
+    isEdited(key: string): boolean;
+    setActionMessage(key: string, message: unknown): boolean;
+    setActionVisible(key: string, visible: boolean): boolean;
+    setDefaultValue(key: string, value: unknown): boolean;
+    setValue(key: string, value: unknown, options?: PluginFieldApiSetOptions): boolean;
+  };
+
+  function asErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  function asWidgetDefinition(value: unknown): WidgetDefinition {
+    return value as WidgetDefinition;
+  }
+
+  function asPluginSettingsSection(value: unknown): PluginSettingsSection {
+    return value as PluginSettingsSection;
+  }
 
 const globalScope: GlobalSettingsViewsGlobal = window;
 
@@ -23,13 +98,13 @@ export function createGlobalSettingsViews({
     renderGlobalSettingsPage,
     updatePluginEnabled,
     updateGlobalPluginConfig
-  }) {
+  }: GlobalSettingsViewsOptions) {
     const webAppOpenRulesSettings = createGlobalWebAppOpenRulesSettings({
       applyFormControl,
       showOverlayDialog
     });
 
-    function createGlobalProjectsSettingsForm({ settings, onSubmit }) {
+    function createGlobalProjectsSettingsForm({ settings, onSubmit }: GlobalSettingsFormOptions) {
       const shell = document.createElement("section");
       shell.className = "project-form-page";
 
@@ -54,7 +129,7 @@ export function createGlobalSettingsViews({
       projectsBasePathInput.type = "text";
       projectsBasePathInput.autocomplete = "off";
       projectsBasePathInput.placeholder = "/workspace/projects";
-      projectsBasePathInput.value = settings.projectsBasePath;
+      projectsBasePathInput.value = String(settings.projectsBasePath || "");
 
       const projectsBasePathControl = document.createElement("div");
       projectsBasePathControl.className = "path-picker";
@@ -68,12 +143,15 @@ export function createGlobalSettingsViews({
         error.hidden = true;
 
         try {
+          if (typeof boatyard.selectProjectsBasePath !== "function") {
+            throw new Error("Project path picker is unavailable.");
+          }
           const selectedPath = await boatyard.selectProjectsBasePath(projectsBasePathInput.value);
           if (selectedPath) {
             projectsBasePathInput.value = selectedPath;
           }
         } catch (selectError) {
-          error.textContent = selectError.message;
+          error.textContent = asErrorMessage(selectError);
           error.hidden = false;
         }
       });
@@ -108,7 +186,7 @@ export function createGlobalSettingsViews({
             projectsBasePath: projectsBasePathInput.value
           });
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
@@ -118,7 +196,7 @@ export function createGlobalSettingsViews({
       return shell;
     }
 
-    function createGlobalPresentationSettingsForm({ settings, onSubmit }) {
+    function createGlobalPresentationSettingsForm({ settings, onSubmit }: GlobalSettingsFormOptions) {
       const shell = document.createElement("section");
       shell.className = "project-form-page";
 
@@ -145,7 +223,7 @@ export function createGlobalSettingsViews({
       const blurSwitch = document.createElement("input");
       blurSwitch.name = "blurWebAppOverlays";
       blurSwitch.type = "checkbox";
-      blurSwitch.checked = settings.blurWebAppOverlays;
+      blurSwitch.checked = settings.blurWebAppOverlays !== false;
 
       const switchTrack = document.createElement("span");
       switchTrack.className = "switch-track";
@@ -180,7 +258,7 @@ export function createGlobalSettingsViews({
             blurWebAppOverlays: blurSwitch.checked
           });
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
@@ -189,7 +267,7 @@ export function createGlobalSettingsViews({
       return shell;
     }
 
-    function createGlobalTerminalSettingsForm({ settings, onSubmit }) {
+    function createGlobalTerminalSettingsForm({ settings, onSubmit }: GlobalSettingsFormOptions) {
       const shell = document.createElement("section");
       shell.className = "project-form-page";
 
@@ -212,7 +290,7 @@ export function createGlobalSettingsViews({
       terminalEnvInput.autocomplete = "off";
       terminalEnvInput.rows = 4;
       terminalEnvInput.placeholder = "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never";
-      terminalEnvInput.value = settings.terminalEnv || "";
+      terminalEnvInput.value = String(settings.terminalEnv || "");
       terminalEnvLabel.append(terminalEnvInput);
 
       const error = document.createElement("p");
@@ -242,7 +320,7 @@ export function createGlobalSettingsViews({
             terminalEnv: terminalEnvInput.value
           });
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
@@ -251,7 +329,7 @@ export function createGlobalSettingsViews({
       return shell;
     }
 
-    function createGlobalPasswordManagerSettingsForm({ settings, onSubmit }) {
+    function createGlobalPasswordManagerSettingsForm({ settings, onSubmit }: GlobalSettingsFormOptions) {
       const shell = document.createElement("section");
       shell.className = "project-form-page password-manager-settings";
 
@@ -338,7 +416,7 @@ export function createGlobalSettingsViews({
             passwordManagerDisclaimerAccepted: acceptCheckbox.checked
           });
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
@@ -347,7 +425,7 @@ export function createGlobalSettingsViews({
       return shell;
     }
 
-    function createGlobalWebAppOpenRulesSettingsForm({ settings, onSubmit }) {
+    function createGlobalWebAppOpenRulesSettingsForm({ settings, onSubmit }: GlobalSettingsFormOptions) {
       return webAppOpenRulesSettings.createGlobalWebAppOpenRulesSettingsForm({ settings, onSubmit });
     }
 
@@ -368,7 +446,7 @@ export function createGlobalSettingsViews({
       const list = document.createElement("div");
       list.className = "installed-widget-list";
 
-      for (const widget of getInstalledWidgets()) {
+      for (const widget of getInstalledWidgets().map(asWidgetDefinition)) {
         const item = document.createElement("article");
         item.className = "installed-widget-item";
 
@@ -424,6 +502,7 @@ export function createGlobalSettingsViews({
       for (const plugin of globalScope.BoatyardPluginRegistry?.list() || []) {
         const status = globalScope.BoatyardPluginRegistry.getStatus(plugin.id);
         const globalSettingsSections = getPluginGlobalSettingsSections()
+          .map(asPluginSettingsSection)
           .filter((section) => section.pluginId === plugin.id);
         const item = document.createElement("article");
         item.className = "installed-plugin-item";
@@ -527,7 +606,7 @@ export function createGlobalSettingsViews({
       return shell;
     }
 
-    function openGlobalPluginSettingsDialog(plugin, sections) {
+    function openGlobalPluginSettingsDialog(plugin: PluginListEntry, sections: PluginSettingsSection[]) {
       const dialog = document.createElement("dialog");
       dialog.className = "plugin-settings-dialog";
 
@@ -567,14 +646,14 @@ export function createGlobalSettingsViews({
       });
     }
 
-    function createGlobalPluginSettingsForm(section, options: PluginSettingsOptions = {}) {
+    function createGlobalPluginSettingsForm(section: PluginSettingsSection, options: PluginSettingsOptions = {}) {
       const form = document.createElement("form");
       form.className = "plugin-global-settings-form";
 
       const pluginConfig = getGlobalPluginConfig(section.pluginId);
-      const inputs = new Map();
+      const inputs = new Map<string, PluginFieldState>();
 
-      for (const field of section.fields) {
+      for (const field of section.fields as PluginGlobalSettingsField[]) {
         const label = document.createElement("label");
         label.textContent = field.label;
 
@@ -586,7 +665,7 @@ export function createGlobalSettingsViews({
         input.readOnly = field.readOnly === true;
         const defaultValue = globalScope.BoatyardPluginSettingsFields.resolveFieldDefault(field);
         input.dataset.defaultValue = String(defaultValue || "");
-        input.value = pluginConfig[field.key] || input.dataset.defaultValue;
+        input.value = String(pluginConfig[field.key] || input.dataset.defaultValue);
         label.append(input);
         if (field.description) {
           const description = document.createElement("small");
@@ -594,7 +673,7 @@ export function createGlobalSettingsViews({
           description.textContent = field.description;
           label.append(description);
         }
-        const fieldState = { field, input, action: null };
+        const fieldState: PluginFieldState = { field, input, action: null };
 
         if (field.action) {
           const action = document.createElement("div");
@@ -625,7 +704,7 @@ export function createGlobalSettingsViews({
                 fields: createPluginFieldApi(inputs)
               });
             } catch (actionError) {
-              error.textContent = actionError.message;
+              error.textContent = asErrorMessage(actionError);
               error.hidden = false;
             } finally {
               actionButton.disabled = false;
@@ -664,7 +743,7 @@ export function createGlobalSettingsViews({
         error.textContent = "";
 
         try {
-          const values = {};
+          const values: UnknownRecord = {};
           for (const [key, { field, input }] of inputs) {
             if (field.persist === false) {
               continue;
@@ -680,7 +759,7 @@ export function createGlobalSettingsViews({
             renderGlobalSettingsPage();
           }
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
@@ -688,12 +767,12 @@ export function createGlobalSettingsViews({
       return form;
     }
 
-    function createPluginFieldApi(inputs) {
+    function createPluginFieldApi(inputs: Map<string, PluginFieldState>): PluginFieldApi {
       return Object.freeze({
-        getValue(key) {
+        getValue(key: string) {
           return inputs.get(key)?.input.value || "";
         },
-        setValue(key, value, options: PluginFieldApiSetOptions = {}) {
+        setValue(key: string, value: unknown, options: PluginFieldApiSetOptions = {}) {
           const input = inputs.get(key)?.input;
           if (!input) {
             return false;
@@ -709,10 +788,10 @@ export function createGlobalSettingsViews({
           }
           return true;
         },
-        isEdited(key) {
+        isEdited(key: string) {
           return inputs.get(key)?.input.dataset.edited === "true";
         },
-        setDefaultValue(key, value) {
+        setDefaultValue(key: string, value: unknown) {
           const input = inputs.get(key)?.input;
           if (!input) {
             return false;
@@ -723,7 +802,7 @@ export function createGlobalSettingsViews({
           input.placeholder = nextValue || inputs.get(key)?.field.placeholder || "";
           return true;
         },
-        setActionVisible(key, visible) {
+        setActionVisible(key: string, visible: boolean) {
           const action = inputs.get(key)?.action;
           if (!action) {
             return false;
@@ -732,7 +811,7 @@ export function createGlobalSettingsViews({
           action.element.hidden = !visible;
           return true;
         },
-        setActionMessage(key, message) {
+        setActionMessage(key: string, message: unknown) {
           const action = inputs.get(key)?.action;
           if (!action) {
             return false;
