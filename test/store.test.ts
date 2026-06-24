@@ -28,6 +28,11 @@ const {
   normalizeWindowState
 } = require(`${process.cwd()}/build/main/store`);
 
+type StoreProject = {
+  id: string;
+  name?: string;
+};
+
 test("normalizeUrl adds https and rejects unsupported schemes", () => {
   assert.equal(normalizeUrl("example.com"), "https://example.com/");
   assert.equal(normalizeUrl("localhost:5173"), "http://localhost:5173/");
@@ -898,7 +903,7 @@ test("ProjectStore persists project webapp home tabs", () => {
     label: "Health",
     url: "localhost:60082/api/health"
   });
-  assert.equal(reloaded.removeProject(projectId).projects.some((project) => project.id === projectId), false);
+  assert.equal(reloaded.removeProject(projectId).projects.some((project: StoreProject) => project.id === projectId), false);
 });
 
 test("ProjectStore migrates top-level webapp home tabs into projects", () => {
@@ -1200,13 +1205,13 @@ test("ProjectStore reorders projects", () => {
     sourcePath: "/tmp/third"
   });
 
-  const ids = store.getState().projects.map((project) => project.id);
+  const ids = store.getState().projects.map((project: StoreProject) => project.id);
   const reordered = store.reorderProjects([ids[2], ids[0], ids[1]]);
 
-  assert.deepEqual(reordered.projects.map((project) => project.name), ["Third", "First", "Second"]);
+  assert.deepEqual(reordered.projects.map((project: StoreProject) => project.name), ["Third", "First", "Second"]);
 
   const reloaded = new ProjectStore(filePath);
-  assert.deepEqual(reloaded.load().projects.map((project) => project.name), ["Third", "First", "Second"]);
+  assert.deepEqual(reloaded.load().projects.map((project: StoreProject) => project.name), ["Third", "First", "Second"]);
 });
 
 test("ProjectStore persists project updates and removals", () => {
@@ -1281,7 +1286,7 @@ test("ProjectStore migrates legacy apps state to projects", () => {
   const store = new ProjectStore(filePath);
   const state = store.load();
 
-  assert.deepEqual(state.projects.map((project) => project.id), ["legacy-id"]);
+  assert.deepEqual(state.projects.map((project: StoreProject) => project.id), ["legacy-id"]);
   assert.equal(state.projects[0].slug, "legacy");
   assert.equal(state.projects[0].previewUrl, "https://legacy.example.test/");
 });

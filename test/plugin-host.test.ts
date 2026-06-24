@@ -7,6 +7,17 @@ const path = require("node:path");
 const test = require("node:test");
 const { PluginHost, getPluginEventChannel } = require(`${process.cwd()}/build/main/pluginHost`);
 
+type RendererEvent = {
+  channel: string;
+  payload: unknown;
+};
+
+type PluginMigration = {
+  config: unknown;
+  pluginId: string;
+  projectId: string;
+};
+
 function createPluginFixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-plugin-host-"));
   const pluginDir = path.join(root, "example");
@@ -40,12 +51,12 @@ test("PluginHost discovers runtime plugins and routes actions", async () => {
   const store = {
     getState: () => ({ plugins: { enabled: {} } })
   };
-  const sentEvents = [];
+  const sentEvents: RendererEvent[] = [];
   const host = new PluginHost({
     pluginRoot,
     store,
     userDataPath: "/workspace/example/user-data",
-    sendToRenderer: (channel, payload) => {
+    sendToRenderer: (channel: string, payload: unknown) => {
       sentEvents.push({ channel, payload });
     }
   });
@@ -95,7 +106,7 @@ test("PluginHost skips disabled plugin actions and inspectors", async () => {
 
 test("PluginHost applies plugin-owned state migrations", async () => {
   const pluginRoot = createPluginFixture();
-  const migrated = [];
+  const migrated: PluginMigration[] = [];
   const store = {
     getState: () => ({
       plugins: { enabled: {} },
@@ -104,7 +115,7 @@ test("PluginHost applies plugin-owned state migrations", async () => {
         previewUrl: "https://preview.example/"
       }]
     }),
-    updateProjectPluginConfig: (projectId, pluginId, config) => {
+    updateProjectPluginConfig: (projectId: string, pluginId: string, config: unknown) => {
       migrated.push({ projectId, pluginId, config });
     },
     updateGlobalPluginConfig: () => {}

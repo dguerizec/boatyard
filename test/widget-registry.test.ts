@@ -14,13 +14,17 @@ type WidgetRegistryTestContext = {
   };
 };
 
+type ListedWidget = {
+  id: string;
+};
+
 function createRegistry() {
   const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widgetRegistry`);
   const window: WidgetRegistryTestContext["window"] = {};
   return registerWidgetRegistry(window);
 }
 
-function plain(value) {
+function plain(value: unknown) {
   return JSON.parse(JSON.stringify(value));
 }
 
@@ -52,15 +56,15 @@ test("Widget registry normalizes and filters definitions", () => {
   assert.deepEqual(plain(first.scopes), ["project", "global"]);
   assert.equal(registry.get("project-terminal").name, "Terminal");
   assert.deepEqual(
-    plain(registry.list({ scope: "project" }).map((widget) => widget.id)),
+    plain(registry.list({ scope: "project" }).map((widget: ListedWidget) => widget.id)),
     ["project-terminal"],
   );
   assert.deepEqual(
-    plain(registry.list({ scope: "global" }).map((widget) => widget.id)),
+    plain(registry.list({ scope: "global" }).map((widget: ListedWidget) => widget.id)),
     ["project-terminal", "global-usage"],
   );
   assert.deepEqual(
-    plain(registry.list({ status: "experimental" }).map((widget) => widget.id)),
+    plain(registry.list({ status: "experimental" }).map((widget: ListedWidget) => widget.id)),
     ["global-usage"],
   );
 });

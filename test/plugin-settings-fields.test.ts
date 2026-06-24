@@ -7,6 +7,13 @@ const {
   resolveFieldDefault
 } = require(`${process.cwd()}/build/renderer/pluginSettingsFields`);
 
+type DefaultContext = {
+  project: {
+    devBranch?: string;
+    slug: string;
+  };
+};
+
 test("plugin settings fields persist dynamic defaults when user value is empty", () => {
   const input = {
     value: "",
@@ -38,7 +45,7 @@ test("plugin settings fields keep explicit user values over dynamic defaults", (
 test("plugin settings fields resolve function defaults from context", () => {
   assert.equal(
     resolveFieldDefault({
-      defaultValue({ project }) {
+      defaultValue({ project }: DefaultContext) {
         return `${project.slug}:${project.devBranch || "main"}`;
       }
     }, {
@@ -73,7 +80,7 @@ test("plugin settings fields normalize URL values through caller hook", () => {
 
   assert.equal(
     readFieldValue({ valueType: "url" }, input, {
-      normalizeUrl(value) {
+      normalizeUrl(value: string) {
         return `normalized:${value}`;
       }
     }),

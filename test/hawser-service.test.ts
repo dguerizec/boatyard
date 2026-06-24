@@ -21,7 +21,19 @@ const {
   summarizeMessages
 } = require(`${process.cwd()}/build/plugins/hawser/service`);
 
-function makeResponse({ ok, status, body = {} }) {
+type MockResponseOptions = {
+  body?: unknown;
+  ok: boolean;
+  status: number;
+};
+
+type ExecCall = {
+  args: string[];
+  command: string;
+  cwd?: string;
+};
+
+function makeResponse({ ok, status, body = {} }: MockResponseOptions) {
   return {
     ok,
     status,
@@ -112,9 +124,9 @@ boatyard.dev-web         web              /workspace/boatyard.dev-web
 });
 
 test("createHawserProject registers source path with runtime", async () => {
-  const calls = [];
+  const calls: ExecCall[] = [];
   const result = await createHawserProject("/workspace/app", "claude", {
-    execFileAsync: async (command, args, options = {}) => {
+    execFileAsync: async (command: string, args: string[], options: { cwd?: string } = {}) => {
       calls.push({ command, args, cwd: (options as { cwd?: string }).cwd });
       if (args[0] === "list") {
         return { stdout: "app - /workspace/app\n" };
@@ -277,7 +289,7 @@ test("addSessionRefsToMessages enriches sent tasks before replies arrive", async
       toSession: "main",
       twiccSessionId: ""
     }
-  ], {}, async (project, session) => {
+  ], {}, async (project: string, session: string) => {
     assert.equal(project, "twicc");
     assert.equal(session, "main");
     return [

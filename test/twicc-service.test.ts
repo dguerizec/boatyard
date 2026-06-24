@@ -15,6 +15,11 @@ const {
   loadTwiccProjects
 } = require(`${process.cwd()}/build/plugins/twicc/service`);
 
+type ExecCall = {
+  args: string[];
+  command: string;
+};
+
 test("findTwiccProjectForPath matches exact directories first", () => {
   const projects = [
     {
@@ -89,7 +94,7 @@ test("buildTwiccProjectUrl points to the project route", () => {
 
 test("loadTwiccProjects returns JSON projects from the CLI", async () => {
   const projects = await loadTwiccProjects({
-    execFileAsync: async (command, args) => {
+    execFileAsync: async (command: string, args: string[]) => {
       assert.equal(command, "twicc");
       assert.deepEqual(args, ["projects", "--limit", "1000", "--include-archived"]);
       return {
@@ -103,7 +108,7 @@ test("loadTwiccProjects returns JSON projects from the CLI", async () => {
 
 test("createTwiccProjectCache reuses projects until the TTL expires", async () => {
   let currentTime = 1000;
-  const calls = [];
+  const calls: number[] = [];
   const cache = createTwiccProjectCache({
     ttlMs: 600000,
     now: () => currentTime,
@@ -155,7 +160,7 @@ test("createTwiccProjectCache supports explicit invalidation", async () => {
 
 test("loadTwiccProcesses returns JSON processes from the CLI", async () => {
   const processes = await loadTwiccProcesses({
-    execFileAsync: async (command, args) => {
+    execFileAsync: async (command: string, args: string[]) => {
       assert.equal(command, "twicc");
       assert.deepEqual(args, ["processes", "--limit", "1000", "--include-hidden"]);
       return {
@@ -311,9 +316,9 @@ test("loadTwiccProjects can feed source path URL detection", async () => {
 });
 
 test("createTwiccProject registers the source path and returns the exact project", async () => {
-  const calls = [];
+  const calls: ExecCall[] = [];
   const result = await createTwiccProject("/workspace/projects/app", {
-    execFileAsync: async (command, args) => {
+    execFileAsync: async (command: string, args: string[]) => {
       calls.push({ command, args });
       if (args[0] === "create-project") {
         return { stdout: "" };
