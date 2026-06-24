@@ -31,6 +31,7 @@
     "src/renderer/projectUtils.ts",
     "src/renderer/projectWebApps.ts",
     "src/renderer/renderer.ts",
+    "src/renderer/rendererEventBindings.ts",
     "src/renderer/rendererGlobals.d.ts",
     "src/renderer/rendererRecords.ts",
     "src/renderer/rendererTypes.ts",

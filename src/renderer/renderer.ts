@@ -5,7 +5,6 @@ import { createManualViews } from "./manualViews.js";
 import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
-import { createPluginLoader } from "./pluginLoader.js";
 import { registerPluginRegistry } from "./pluginRegistry.js";
 import { registerPluginSettingsFields } from "./pluginSettingsFields.js";
 import { createProjectPageViews } from "./projectPageViews.js";
@@ -21,6 +20,7 @@ import {
   slugify
 } from "./projectUtils.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
+import { registerRendererEventBindings } from "./rendererEventBindings.js";
 import type {
   GlobalSettingsViewsInstance,
   PaneLayoutStateInstance,
@@ -92,7 +92,6 @@ const loadedWebAppUrlsByKey = new Map<string, string>();
 const webAppLoadWaiters = new Set<(payload: unknown) => void>();
 const webAppAutofillEnabledByKey = new Map<string, boolean>();
 let visibleWebAppHosts = new Map();
-let pierWorkloadPaneRefreshFrame = null;
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
 
 function getProjects() {
@@ -1428,100 +1427,47 @@ async function loadState() {
   }
 }
 
-boatyardWindow.boatyard.onWebAppUrlChanged(({ key, url }) => {
-  if (!key || !url) {
-    return;
-  }
-
-  currentWebAppUrlsByKey.set(key, url);
-  persistVisibleWebAppPaneLayout(key, url);
-  for (const input of document.querySelectorAll<HTMLInputElement>(".webapp-url")) {
-    if (input.dataset.webappKey === key && input !== document.activeElement) {
-      input.value = url;
+registerRendererEventBindings({
+  addProjectButton,
+  applyWebAppOpenChoice,
+  boatyard: boatyardWindow.boatyard,
+  globalNav,
+  globalSettingsButton,
+  globalViewButton,
+  getCurrentProject,
+  getCurrentView: () => currentView,
+  handleTerminalData: (payload) => terminalSurfaces.handleTerminalData(payload),
+  handleTerminalExit: (payload) => terminalSurfaces.handleTerminalExit(payload),
+  loadState,
+  manualTourButton,
+  markWebAppAutofillEnabled: (key, enabled) => {
+    webAppAutofillEnabledByKey.set(key, enabled);
+  },
+  markWebAppLoaded: (payload) => {
+    const { key, url } = payload;
+    if (!key || !url) {
+      return;
     }
-  }
-});
-
-boatyardWindow.boatyard.onWebAppLoaded?.((payload) => {
-  const { key, url } = payload || {};
-  if (!key || !url) {
-    return;
-  }
-
-  loadedWebAppKeys.add(key);
-  loadedWebAppUrlsByKey.set(key, url);
-  for (const waiter of [...webAppLoadWaiters]) {
-    waiter(payload);
-  }
-});
-
-boatyardWindow.boatyard.onWebAppAutofillChanged?.(({ key, enabled }) => {
-  if (!key) {
-    return;
-  }
-
-  webAppAutofillEnabledByKey.set(key, enabled === true);
-  for (const button of document.querySelectorAll<HTMLButtonElement>(".webapp-tool-button.autofill")) {
-    if (button.dataset.webappKey === key) {
-      syncWebAppAutofillButton(button, enabled === true);
+    loadedWebAppKeys.add(key);
+    loadedWebAppUrlsByKey.set(key, url);
+    for (const waiter of [...webAppLoadWaiters]) {
+      waiter(payload);
     }
-  }
+  },
+  openOnboardingTour,
+  openWebAppOpenUrlDialog,
+  persistVisibleWebAppPaneLayout,
+  queueWebAppSync,
+  renderGlobalSettingsPage,
+  renderProjectList,
+  renderWorkspacePaneArea,
+  selectCreateProject,
+  selectGlobal,
+  selectGlobalSettings,
+  setCurrentWebAppUrl: (key, url) => {
+    currentWebAppUrlsByKey.set(key, url);
+  },
+  syncWebAppAutofillButton,
+  windowObject: window,
+  workspace
 });
-
-boatyardWindow.boatyard.onWebAppOpenUrlRequested?.((payload) => {
-  if (payload?.target) {
-    applyWebAppOpenChoice(payload, {
-      target: payload.target,
-      persist: false,
-      scope: "exact",
-      label: ""
-    }).catch((error) => {
-      console.error("Could not apply webapp URL opening rule:", error);
-    });
-    return;
-  }
-
-  openWebAppOpenUrlDialog(payload);
-});
-
-boatyardWindow.boatyard.onTerminalData((payload) => {
-  terminalSurfaces.handleTerminalData(payload);
-});
-
-boatyardWindow.boatyard.onTerminalExit((payload) => {
-  terminalSurfaces.handleTerminalExit(payload);
-});
-
-window.addEventListener("boatyard:plugin-status-changed", () => {
-  if (currentView === "global-settings") {
-    renderGlobalSettingsPage();
-  }
-});
-
-window.addEventListener("boatyard:project-nav-badges-changed", renderProjectList);
-
-window.addEventListener("boatyard:pier-workloads-changed", () => {
-  if (currentView !== "project" || pierWorkloadPaneRefreshFrame) {
-    return;
-  }
-
-  pierWorkloadPaneRefreshFrame = requestAnimationFrame(() => {
-    pierWorkloadPaneRefreshFrame = null;
-    renderWorkspacePaneArea(getCurrentProject());
-  });
-});
-
-globalNav.addEventListener("click", selectGlobal);
-globalSettingsButton.addEventListener("click", selectGlobalSettings);
-globalViewButton.addEventListener("click", selectGlobal);
-manualTourButton.addEventListener("click", () => openOnboardingTour({ force: true }));
-addProjectButton.addEventListener("click", selectCreateProject);
-window.addEventListener("resize", queueWebAppSync);
-workspace.addEventListener("scroll", queueWebAppSync);
-
-const pluginLoader = createPluginLoader(window);
-pluginLoader.ready
-  .catch((error) => {
-    console.error("Could not load plugins:", error);
-  })
-  .finally(loadState);
