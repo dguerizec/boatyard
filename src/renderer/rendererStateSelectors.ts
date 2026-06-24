@@ -58,7 +58,7 @@ export function createRendererStateSelectors({
       blurWebAppOverlays: false,
       passwordManagerDisclaimerAccepted: false,
       passwordManagerEnabled: false,
-      webAppOpenRules: [],
+      webAppOpenRules: [] as UnknownRecord[],
       widgetRailWidth: 340,
       terminalEnv: "",
       ...(getState().settings || {})

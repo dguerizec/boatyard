@@ -72,7 +72,7 @@ export function createProjectPageViews({
       submitLabel: "Add project",
       initialValues: {},
       onCancel: () => restoreReturnView(),
-      onSubmit: async (values) => {
+      onSubmit: async (values: UnknownRecord) => {
         let nextState = await addProject({
           name: values.name,
           slug: values.slug,
@@ -86,7 +86,7 @@ export function createProjectPageViews({
         const project = nextState.projects[nextState.projects.length - 1];
         nextState = await persistProjectPluginConfig(
           project.id,
-          values.pluginConfig
+          values.pluginConfig as UnknownRecord | undefined
         );
         setState(nextState);
         selectProject(project.id);
@@ -110,7 +110,7 @@ export function createProjectPageViews({
       submitLabel: "Save changes",
       initialValues: project,
       onCancel: () => selectProject(project.id),
-      onSubmit: async (values) => {
+      onSubmit: async (values: UnknownRecord) => {
         let nextState = await updateProject(project.id, {
           name: values.name,
           slug: values.slug,
@@ -123,7 +123,7 @@ export function createProjectPageViews({
         setState(nextState);
         nextState = await persistProjectPluginConfig(
           project.id,
-          values.pluginConfig
+          values.pluginConfig as UnknownRecord | undefined
         );
         setState(nextState);
         reloadProjectSettings(project.id);
@@ -132,25 +132,25 @@ export function createProjectPageViews({
 
     secondaryColumn.append(createProjectTerminalSettingsForm({
       project,
-      onSubmit: async (values) => {
+      onSubmit: async (values: UnknownRecord) => {
         setState(await updateProject(project.id, values));
         reloadProjectSettings(project.id);
       }
     }), createProjectUrlsForm({
       project,
-      onSubmit: async (urls) => {
+      onSubmit: async (urls: UnknownRecord[]) => {
         setState(await updateProject(project.id, { urls }));
         reloadProjectSettings(project.id);
       }
     }), createProjectWebAppHomeTabsForm({
       project,
-      onSubmit: async (homeTabs) => {
+      onSubmit: async (homeTabs: UnknownRecord[]) => {
         setState(await updateWebAppHomeTabs(project.id, homeTabs));
         reloadProjectSettings(project.id);
       }
     }), createProjectWidgetPanesForm({
       project,
-      onSubmit: async (widgetPanes) => {
+      onSubmit: async (widgetPanes: UnknownRecord[]) => {
         setState(await updateProject(project.id, { widgetPanes }));
         reloadProjectSettings(project.id);
       }

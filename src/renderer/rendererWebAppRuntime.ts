@@ -74,7 +74,8 @@ export function createRendererWebAppRuntime({
   }
 
   function invokeWebApp(action: string, ...payload: unknown[]) {
-    return boatyard[action](...payload).catch((error: unknown) => {
+    const bridge = boatyard as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>;
+    return bridge[action](...payload).catch((error: unknown) => {
       console.error(`Could not ${action}:`, error);
     });
   }

@@ -320,7 +320,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
      * @param {PaneLayoutNode | null | undefined} node
      * @returns {number}
      */
-    function countPaneNodes(node: PaneLayoutNode | null | undefined) {
+    function countPaneNodes(node: PaneLayoutNode | null | undefined): number {
       if (!node) {
         return 0;
       }

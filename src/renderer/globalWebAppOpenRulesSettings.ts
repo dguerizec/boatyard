@@ -1,7 +1,7 @@
 type WebAppOpenRule = {
   pattern?: string;
-  target?: string;
-  scope?: string;
+  target?: keyof typeof WEBAPP_OPEN_TARGET_LABELS | string;
+  scope?: keyof typeof WEBAPP_OPEN_SCOPE_LABELS | string;
   label?: string;
 };
 
@@ -13,6 +13,18 @@ type WebAppOpenRuleDialogOptions = {
 type WebAppOpenRulesSettingsOptions = {
   applyFormControl: (control: HTMLElement) => void;
   showOverlayDialog: (dialog: HTMLDialogElement, options?: Record<string, unknown>) => Promise<boolean>;
+};
+
+type WebAppOpenRuleListItemHandlers = {
+  onEdit: (ruleIndex: number) => void;
+  onRemove: (ruleIndex: number) => void | Promise<void>;
+};
+
+type WebAppOpenRulesFormOptions = {
+  settings: {
+    webAppOpenRules?: WebAppOpenRule[];
+  };
+  onSubmit: (values: { webAppOpenRules: WebAppOpenRule[] }) => void | Promise<void>;
 };
 
 const WEBAPP_OPEN_TARGET_LABELS = {
@@ -48,7 +60,23 @@ function createWebAppOpenRuleSelect(name: string, labelText: string, options: Re
   return { label, select };
 }
 
-function createWebAppOpenRuleListItem(rule: WebAppOpenRule, index: number, { onEdit, onRemove }) {
+function getOpenTargetLabel(target: WebAppOpenRule["target"]) {
+  return WEBAPP_OPEN_TARGET_LABELS[target as keyof typeof WEBAPP_OPEN_TARGET_LABELS] || target || "";
+}
+
+function getOpenScopeLabel(scope: WebAppOpenRule["scope"]) {
+  return WEBAPP_OPEN_SCOPE_LABELS[scope as keyof typeof WEBAPP_OPEN_SCOPE_LABELS] || scope || "";
+}
+
+function asErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function createWebAppOpenRuleListItem(
+  rule: WebAppOpenRule,
+  index: number,
+  { onEdit, onRemove }: WebAppOpenRuleListItemHandlers
+) {
   const item = document.createElement("article");
   item.className = "webapp-open-rule-item";
 
@@ -63,7 +91,7 @@ function createWebAppOpenRuleListItem(rule: WebAppOpenRule, index: number, { onE
   const meta = document.createElement("span");
   meta.className = "webapp-open-rule-meta";
   const label = rule.label ? ` · ${rule.label}` : "";
-  meta.textContent = `${WEBAPP_OPEN_TARGET_LABELS[rule.target] || rule.target} · ${WEBAPP_OPEN_SCOPE_LABELS[rule.scope] || rule.scope}${label}`;
+  meta.textContent = `${getOpenTargetLabel(rule.target)} · ${getOpenScopeLabel(rule.scope)}${label}`;
 
   editButton.append(pattern, meta);
 
@@ -167,7 +195,7 @@ export function createGlobalWebAppOpenRulesSettings({
         await onRemove();
         dialog.close();
       } catch (removeError) {
-        error.textContent = removeError.message;
+        error.textContent = asErrorMessage(removeError);
         error.hidden = false;
       } finally {
         deleteButton.disabled = false;
@@ -212,7 +240,7 @@ export function createGlobalWebAppOpenRulesSettings({
         await onSave(nextRule);
         dialog.close();
       } catch (submitError) {
-        error.textContent = submitError.message;
+        error.textContent = asErrorMessage(submitError);
         error.hidden = false;
       } finally {
         submitButton.disabled = false;
@@ -232,7 +260,7 @@ export function createGlobalWebAppOpenRulesSettings({
     });
   }
 
-  function createGlobalWebAppOpenRulesSettingsForm({ settings, onSubmit }) {
+  function createGlobalWebAppOpenRulesSettingsForm({ settings, onSubmit }: WebAppOpenRulesFormOptions) {
     const shell = document.createElement("section");
     shell.className = "project-form-page";
 
@@ -279,7 +307,7 @@ export function createGlobalWebAppOpenRulesSettings({
 
       rules.forEach((rule, index) => {
         list.append(createWebAppOpenRuleListItem(rule, index, {
-          onEdit: (ruleIndex) => {
+          onEdit: (ruleIndex: number) => {
             openWebAppOpenRuleSettingsDialog(rules[ruleIndex], {
               onSave: (nextRule) => {
                 const nextRules = rules.map((currentRule, currentIndex) => (
@@ -290,7 +318,7 @@ export function createGlobalWebAppOpenRulesSettings({
               onRemove: () => saveRules(rules.filter((_, currentIndex) => currentIndex !== ruleIndex))
             });
           },
-          onRemove: (ruleIndex) => saveRules(rules.filter((_, currentIndex) => currentIndex !== ruleIndex))
+          onRemove: (ruleIndex: number) => saveRules(rules.filter((_, currentIndex) => currentIndex !== ruleIndex))
         }));
       });
     }

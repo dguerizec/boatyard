@@ -54,7 +54,7 @@ export function createWebAppSurfaces({
     isWebAppAutofillEnabled,
     markWebAppLoaded
   }: WebAppSurfacesOptions) {
-    let webAppBoundsFrame = null;
+    let webAppBoundsFrame: number | null = null;
     let frozenWebAppLayer: HTMLElement | null = null;
 
     function getWebAppHostBounds(host: Element | null | undefined): WebAppBounds | null {
@@ -270,7 +270,7 @@ export function createWebAppSurfaces({
       queueWebAppSync();
     }
 
-    async function showOverlayDialog(dialog, {
+    async function showOverlayDialog(dialog: HTMLDialogElement, {
       freeze = "overlap",
       freezeMargin = 16,
       onClose = null,
