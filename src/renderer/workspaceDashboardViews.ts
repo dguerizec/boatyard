@@ -1,4 +1,4 @@
-import type { RendererProject } from "./rendererTypes.js";
+import type { RendererPaneLayoutNode, RendererProject } from "./rendererTypes.js";
 
 type WorkspaceDashboardViewState = {
   currentProjectId?: string | null;
@@ -10,11 +10,11 @@ type WorkspaceDashboardViewsOptions = {
   closeTerminalTabMenu: () => void;
   closeWebAppTabMenu: () => void;
   closeWidgetAddMenu: () => void;
-  createPaneLayout: (project: RendererProject, paneLayout: unknown) => HTMLElement;
+  createPaneLayout: (project: RendererProject, paneLayout: RendererPaneLayoutNode) => HTMLElement;
   dashboardGrid: HTMLElement;
   detachProjectTerminal: (projectId?: string) => void;
   getGlobalWorkspace: () => RendererProject;
-  getPaneLayout: (project: RendererProject) => unknown;
+  getPaneLayout: (project: RendererProject) => RendererPaneLayoutNode;
   getProjectSummaryTarget: (project: RendererProject) => string;
   getViewState: () => WorkspaceDashboardViewState;
   resetVisibleWebAppHosts: () => void;

@@ -154,18 +154,18 @@ type BoatyardPluginRendererBridge = {
   invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<unknown>;
   onPluginEvent?: (pluginId: string, eventName: string, callback: (payload: unknown) => void) => () => void;
   openExternal?: (url: string) => unknown;
-  updateProjectPluginConfig?: (projectId: string, pluginId: string, config: unknown) => Promise<unknown>;
+  updateProjectPluginConfig?: (projectId: string, pluginId: string, config: Record<string, unknown>) => Promise<unknown>;
   writeClipboardText?: (value: string) => Promise<unknown>;
 };
 
 type BoatyardPluginRendererGlobal = Window & {
   BoatyardHawserUI?: {
-    createWidget(project: unknown, options: unknown): HTMLElement;
+    createWidget(project: Record<string, unknown>, options?: Record<string, unknown>): HTMLElement;
   };
   CustomEvent?: typeof CustomEvent;
   MutationObserver?: typeof MutationObserver;
   BoatyardOverlayDialog?: {
-    show?: (dialog: HTMLDialogElement, options: unknown) => Promise<boolean>;
+    show?: (dialog: HTMLDialogElement, options?: Record<string, unknown>) => Promise<boolean>;
   };
   BoatyardPaneNavigation?: {
     openProjectWebApp?: (projectId: string | undefined, webAppId: string, url: string) => void;

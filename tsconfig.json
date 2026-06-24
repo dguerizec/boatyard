@@ -13,6 +13,7 @@
     "skipLibCheck": true,
     "strict": false,
     "strictBindCallApply": true,
+    "strictFunctionTypes": true,
     "target": "ES2023",
     "types": ["node"],
     "useUnknownInCatchVariables": true

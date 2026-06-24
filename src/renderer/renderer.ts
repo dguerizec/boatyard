@@ -37,6 +37,7 @@ import type {
   RendererCreateModule,
   RendererModuleInstance,
   RendererPaneLayoutNode,
+  RendererPaneNode,
   RendererProject,
   RendererState,
   UpdateViewsInstance,
@@ -616,7 +617,7 @@ function closeWebAppTabMenu() {
 
 function createWidgetPaneTabs(
   project: RendererProject,
-  paneNode: RendererPaneLayoutNode,
+  paneNode: RendererPaneNode,
   selectedWebApp: UnknownRecord,
   webApps: UnknownRecord[],
   options: UnknownRecord = {}
@@ -631,7 +632,7 @@ function normalizeAddressInput(rawUrl: string) {
 function openWebAppHomeMenu(
   event: MouseEvent,
   project: RendererProject,
-  paneNode: RendererPaneLayoutNode,
+  paneNode: RendererPaneNode,
   selectedWebApp: UnknownRecord
 ) {
   return webAppMenus.openWebAppHomeMenu(event, project, paneNode, selectedWebApp);
@@ -648,7 +649,7 @@ function openWebAppRefreshMenu(event: MouseEvent, selectedWebApp: UnknownRecord)
 function openWebAppTabMenuFromButton(
   button: HTMLButtonElement,
   project: RendererProject,
-  paneNode: RendererPaneLayoutNode,
+  paneNode: RendererPaneNode,
   selectedWebApp: UnknownRecord,
   webApps: UnknownRecord[]
 ) {

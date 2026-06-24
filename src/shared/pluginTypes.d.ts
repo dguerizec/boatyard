@@ -284,7 +284,10 @@ declare global {
       list(): Array<{ id: string; pluginId: string }>;
     };
     events: {
-      on(eventName: unknown, handler: (payload: PluginRegistryRecord) => void): () => void;
+      on<TPayload extends PluginRegistryRecord = PluginRegistryRecord>(
+        eventName: unknown,
+        handler: (payload: TPayload) => void
+      ): () => void;
     };
   };
 

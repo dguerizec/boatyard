@@ -1,4 +1,4 @@
-import type { RendererProject } from "./rendererTypes.js";
+import type { RendererPaneLayoutNode, RendererPaneNode, RendererProject } from "./rendererTypes.js";
 
 type VisibleWebAppEntry = {
   host: HTMLElement;
@@ -11,9 +11,9 @@ type VisibleWebAppEntry = {
 };
 
 type VisibleWebAppTrackerOptions = {
-  findPaneNode: (layout: unknown, paneId?: string) => { transientWebApp?: Record<string, unknown> } | null;
+  findPaneNode: (layout: RendererPaneLayoutNode | null | undefined, paneId?: string) => RendererPaneNode | null;
   getCurrentWebAppUrl: (webApp: VisibleWebAppEntry["webApp"]) => string | undefined;
-  getPaneLayout: (project: RendererProject) => unknown;
+  getPaneLayout: (project: RendererProject) => RendererPaneLayoutNode;
   getVisibleWebAppProject: () => RendererProject | null;
   isOnboardingTourActive: () => boolean;
   persistPaneLayout: (project: RendererProject) => void;

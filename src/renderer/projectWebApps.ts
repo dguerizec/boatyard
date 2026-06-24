@@ -1,5 +1,6 @@
 import type {
   RendererPaneLayoutNode,
+  RendererPaneNode,
   RendererProject,
   WebAppDefinition
 } from "./rendererTypes.js";
@@ -15,9 +16,9 @@ type PluginPaneDefinition = UnknownRecord & {
 };
 
 type ProjectWebAppsOptions = {
-  findPaneNode: (layout: unknown, paneId?: string) => RendererPaneLayoutNode | null;
+  findPaneNode: (layout: RendererPaneLayoutNode | null | undefined, paneId?: string) => RendererPaneNode | null;
   getGlobalPluginConfig: (pluginId?: string) => UnknownRecord;
-  getPaneLayout: (project: RendererProject) => unknown;
+  getPaneLayout: (project: RendererProject) => RendererPaneLayoutNode;
   getPluginPaneDefinitions: (filter: UnknownRecord) => PluginPaneDefinition[];
   getProjectPluginConfig: (projectId?: string, pluginId?: string) => UnknownRecord;
   getProjectWidgetPanes: (project: RendererProject) => UnknownRecord[];

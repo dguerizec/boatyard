@@ -3,6 +3,7 @@ import type { UnknownRecord } from "./rendererRecords.js";
 import type {
   BoatyardBridge,
   RendererPaneLayoutNode,
+  RendererPaneNode,
   RendererProject,
   RendererState,
   WebAppDefinition
@@ -10,9 +11,9 @@ import type {
 
 type RendererWebAppRuntimeOptions = {
   boatyard: BoatyardBridge;
-  findFirstPaneNode: (node: unknown) => RendererPaneLayoutNode | null;
-  findPaneNode: (node: unknown, paneId?: string) => RendererPaneLayoutNode | null;
-  findPaneNodeBySelectedWebApp: (node: unknown, webAppId?: string) => RendererPaneLayoutNode | null;
+  findFirstPaneNode: (node: RendererPaneLayoutNode | null | undefined) => RendererPaneNode | null;
+  findPaneNode: (node: RendererPaneLayoutNode | null | undefined, paneId?: string) => RendererPaneNode | null;
+  findPaneNodeBySelectedWebApp: (node: RendererPaneLayoutNode | null | undefined, webAppId?: string) => RendererPaneNode | null;
   getCurrentProject: () => RendererProject | null | undefined;
   getCurrentView: () => string;
   getGlobalPluginConfig: (pluginId?: string) => UnknownRecord;

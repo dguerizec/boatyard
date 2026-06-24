@@ -1,5 +1,5 @@
 type PaneLayoutProject = {
-  id: string;
+  id?: string;
 };
 
 type PaneLayoutWebApp = {
@@ -14,14 +14,14 @@ type PaneLayoutTransientWebApp = Record<string, unknown> & {
   url?: string;
 };
 
-type PaneNode = {
+export type PaneNode = {
   type: "pane";
   id: string;
   selectedWebAppId?: string | null;
   transientWebApp?: PaneLayoutTransientWebApp;
 };
 
-type SplitNode = {
+export type SplitNode = {
   type: "split";
   id: string;
   direction: string;
@@ -31,7 +31,7 @@ type SplitNode = {
   expandedChild?: "first" | "second" | "" | null;
 };
 
-type PaneLayoutNode = PaneNode | SplitNode;
+export type PaneLayoutNode = PaneNode | SplitNode;
 
 type PaneAncestorPathItem = {
   node: SplitNode;

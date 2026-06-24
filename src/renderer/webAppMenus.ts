@@ -1,5 +1,12 @@
-import type { RendererProject } from "./rendererTypes.js";
+import type { SplitNode } from "./paneLayoutState.js";
+import type {
+  RendererPaneLayoutNode,
+  RendererPaneNode,
+  RendererProject,
+  WebAppDefinition
+} from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
+import type { WidgetPane } from "./widgetSurfaceTypes.js";
 
 type WebAppMenuElement = HTMLDivElement & {
   cleanup?: () => void;
@@ -12,18 +19,11 @@ type WebAppMenuElement = HTMLDivElement & {
     height: number;
   };
 
-  type MenuPaneNode = UnknownRecord & {
-    id?: string;
-    selectedWebAppId?: string | null;
-    transientWebApp?: unknown;
-  };
+  type MenuPaneNode = RendererPaneNode;
 
-  type MenuSplitNode = UnknownRecord & {
-    ratio?: number;
-    second: MenuPaneNode;
-  };
+  type MenuSplitNode = SplitNode;
 
-  type MenuWebApp = UnknownRecord & {
+  type MenuWebApp = WebAppDefinition & {
     homeTab?: boolean;
     homeTabId?: string;
     id?: string;
@@ -33,10 +33,7 @@ type WebAppMenuElement = HTMLDivElement & {
     parentLabel?: unknown;
     parentWebAppId?: string;
     url?: string;
-    widgetPane?: UnknownRecord & {
-      id?: string;
-      label?: string;
-    };
+    widgetPane?: WidgetPane;
   };
 
   type VisibleWebAppEntry = {
@@ -78,24 +75,24 @@ type WebAppMenuElement = HTMLDivElement & {
 
   type WebAppMenusOptions = {
     webAppOpenSplitRatio: number;
-    getCurrentWebAppUrl: (webApp: unknown) => string;
+    getCurrentWebAppUrl: (webApp: MenuWebApp) => string | undefined;
     getSettings: () => UnknownRecord & { webAppOpenRules?: WebAppOpenRule[] };
     getProjectById: (projectId?: string) => RendererProject | null;
     getProjectWidgetPanes: (project: RendererProject) => UnknownRecord[];
     getVisibleWebAppEntryByKey: (key?: string) => VisibleWebAppEntry | null;
     getVisibleWebAppEntryByUrl: (url?: string) => VisibleWebAppEntry | null;
     getVisibleWebAppProject: () => RendererProject | null;
-    getProjectPaneLayout: (project: RendererProject) => unknown;
+    getProjectPaneLayout: (project: RendererProject) => RendererPaneLayoutNode;
     getWebAppHostBounds: (host?: Element | null) => WebAppBounds | null;
-    findPaneNode: (layout: unknown, paneId?: string) => unknown;
+    findPaneNode: (layout: RendererPaneLayoutNode | null | undefined, paneId?: string) => RendererPaneNode | null;
     createSplitNode: (
       project: RendererProject,
       direction: string,
-      first: unknown,
+      first: RendererPaneLayoutNode,
       selectedWebAppId?: string | null
-    ) => unknown;
-    replacePaneNode: (layout: unknown, paneId: string, replacement: unknown) => unknown;
-    setPaneLayout: (projectId: string | undefined, layout: unknown) => unknown;
+    ) => MenuSplitNode;
+    replacePaneNode: (layout: RendererPaneLayoutNode, paneId: string, replacement: RendererPaneLayoutNode) => RendererPaneLayoutNode;
+    setPaneLayout: (projectId: string | undefined, layout: RendererPaneLayoutNode) => unknown;
     setSelectedWebAppForPane: (paneId: string, webAppId?: string) => unknown;
     getSelectedWebAppForPane: (paneId: string) => string;
     setSelectedWebAppForProject: (projectId: string | undefined, webAppId?: string) => unknown;
@@ -173,7 +170,7 @@ export function createWebAppMenus({
       return {
         id: `transient:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
         label: label || getWebAppOpenUrlLabel(url),
-        parentLabel: parentWebApp?.label || "",
+        parentLabel: String(parentWebApp?.label || ""),
         parentWebAppId: parentWebApp?.id || "",
         url
       };
@@ -261,15 +258,20 @@ export function createWebAppMenus({
         splitDirection,
         { ...sourcePaneNode, selectedWebAppId: sourceWebAppId },
         null
-      ) as MenuSplitNode;
+      );
       replacement.ratio = webAppOpenSplitRatio;
       const transientWebApp = createTransientWebApp(url, label, sourceEntry.webApp);
-      replacement.second.transientWebApp = transientWebApp;
-      replacement.second.selectedWebAppId = transientWebApp.id;
+      const replacementPane = findPaneNode(replacement.second, replacement.second.id);
+      if (!replacementPane) {
+        return false;
+      }
+
+      replacementPane.transientWebApp = transientWebApp;
+      replacementPane.selectedWebAppId = transientWebApp.id;
 
       setPaneLayout(project.id, replacePaneNode(layout, sourceEntry.paneId, replacement));
       setSelectedWebAppForPane(sourceEntry.paneId, sourceWebAppId);
-      setSelectedWebAppForPane(replacement.second.id || "", replacement.second.selectedWebAppId);
+      setSelectedWebAppForPane(replacementPane.id, replacementPane.selectedWebAppId);
 
       persistPaneLayout(project);
       renderWorkspaceDashboard(project);

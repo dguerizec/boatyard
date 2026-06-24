@@ -3,7 +3,7 @@ type CardAction = {
   onClick: () => void;
 };
 
-type CardOptions = {
+export type CardOptions = {
   action?: CardAction;
   body: string;
   eyebrow?: string;

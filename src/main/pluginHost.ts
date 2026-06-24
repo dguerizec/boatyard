@@ -88,7 +88,7 @@ function normalizeText(value: unknown): string {
   return String(value || "").trim();
 }
 
-function requireFunction<THandler extends (...args: unknown[]) => unknown>(
+function requireFunction<THandler>(
   value: unknown,
   message: string
 ): THandler {

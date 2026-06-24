@@ -18,7 +18,7 @@ type TerminalTabMenuControllerOptions = {
     project: TerminalTabMenuProject,
     card: TerminalCard,
     tab: TerminalTab,
-    tabButton: HTMLElement
+    tabButton: HTMLButtonElement
   ) => void;
   setTerminalStatus: (card: TerminalCard, message: string) => void;
 };
@@ -27,7 +27,7 @@ type OpenTerminalTabContextMenuOptions = {
   card: TerminalCard;
   project: TerminalTabMenuProject;
   tab: TerminalTab;
-  tabButton: HTMLElement;
+  tabButton: HTMLButtonElement;
   tabList: HTMLElement;
 };
 

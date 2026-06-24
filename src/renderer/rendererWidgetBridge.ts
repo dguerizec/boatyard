@@ -1,6 +1,7 @@
 import { createWidgetSurfaces } from "./widgetSurfaces.js";
-import type { BoatyardBridge, RendererState } from "./rendererTypes.js";
+import type { BoatyardBridge, RendererProject, RendererState } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
+import type { CardOptions } from "./rendererDomHelpers.js";
 
 type WidgetRegistryWindow = Window & {
   BoatyardWidgetRegistry?: {
@@ -11,19 +12,19 @@ type WidgetRegistryWindow = Window & {
 type RendererWidgetBridgeOptions = {
   boatyard: BoatyardBridge;
   clamp: (value: number, min: number, max: number) => number;
-  createCard: (options: UnknownRecord) => HTMLElement;
-  createTerminalWidget: (project: unknown, props?: UnknownRecord) => HTMLElement;
+  createCard: (options: CardOptions) => HTMLElement;
+  createTerminalWidget: (project: RendererProject, props?: UnknownRecord) => HTMLElement;
   createToolIcon: (name: string) => Element;
   dashboardGrid: HTMLElement;
   defaultWidgetPaneId: string;
   getGlobalPluginConfig: (pluginId?: string) => UnknownRecord;
   getProjectPluginConfig: (projectId?: string, pluginId?: string) => UnknownRecord;
   getState: () => RendererState;
-  isGlobalWorkspace: (project: unknown) => boolean;
+  isGlobalWorkspace: (project: RendererProject | null | undefined) => boolean;
   legacyWidgetIds: Map<string, string>;
   minWidgetRailWidth: number;
   openProjectWebApp: (projectId: string, webAppId: string, url?: string) => boolean;
-  renderWorkspaceDashboard: (project: unknown) => void;
+  renderWorkspaceDashboard: (project: RendererProject) => void;
   widgetGridGap: number;
   widgetGridMaxColumnWidth: number;
   widgetGridMinColumnWidth: number;
@@ -52,7 +53,7 @@ function registerBuiltinWidgets(windowObject: WidgetRegistryWindow, createTermin
         default: { columns: 4, rows: 5 },
         min: { columns: 2, rows: 3 }
       },
-      createElement: (project: unknown, props: UnknownRecord) => createTerminalWidget(project, props)
+      createElement: (project: RendererProject, props: UnknownRecord) => createTerminalWidget(project, props)
     }
   ].forEach((definition) => registry.register(definition));
 }
@@ -67,7 +68,7 @@ export function createRendererWidgetBridge(options: RendererWidgetBridgeOptions)
     getGlobalPluginConfig: options.getGlobalPluginConfig,
     isGlobalWorkspace: options.isGlobalWorkspace,
     openProjectWebApp: options.openProjectWebApp,
-    createCard: options.createCard,
+    createCard: (content: unknown) => options.createCard(content as CardOptions),
     createToolIcon: options.createToolIcon,
     renderWorkspaceDashboard: options.renderWorkspaceDashboard,
     dashboardGrid: options.dashboardGrid,

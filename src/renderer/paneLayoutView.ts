@@ -1,5 +1,6 @@
-import type { RendererProject } from "./rendererTypes.js";
+import type { RendererPaneNode, RendererProject } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
+import type { WidgetLayout, WidgetPane } from "./widgetSurfaceTypes.js";
 
 type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
@@ -7,16 +8,23 @@ type PaneLayoutHost = HTMLDivElement & {
 
 type PaneSplitSide = "first" | "second";
 
-type PaneLayoutNode = UnknownRecord & {
-  direction?: string;
-  expandedChild?: PaneSplitSide;
-  first?: PaneLayoutNode;
+type PaneNode = UnknownRecord & {
   id: string;
-  ratio?: number;
-  second?: PaneLayoutNode;
   selectedWebAppId?: string | null;
-  type?: string;
+  type: "pane";
 };
+
+type SplitNode = UnknownRecord & {
+  direction: string;
+  expandedChild?: PaneSplitSide;
+  first: PaneLayoutNode;
+  id: string;
+  ratio: number;
+  second: PaneLayoutNode;
+  type: "split";
+};
+
+type PaneLayoutNode = PaneNode | SplitNode;
 
 type PaneAncestorPathItem = {
   node: PaneLayoutNode;
@@ -53,7 +61,7 @@ type PaneWebApp = UnknownRecord & {
     render(host: HTMLElement, props: UnknownRecord): unknown;
   };
   url?: string;
-  widgetPane?: UnknownRecord & { id?: string };
+  widgetPane?: WidgetPane;
 };
 
 type VisiblePaneWebAppEntry = {
@@ -74,18 +82,18 @@ type PaneLayoutViewOptions = {
   getProjectWebApps: (project: RendererProject, paneId?: string) => unknown[];
   getProjectPaneLayout: (project: RendererProject) => unknown;
   getSelectedWebApp: (project: RendererProject, paneId: string, webApps: unknown[]) => unknown;
-  getProjectWidgetLayout: (project: RendererProject, columns: number | null, widgetPaneId?: string) => UnknownRecord;
+  getProjectWidgetLayout: (project: RendererProject, columns: number | null, widgetPaneId?: string) => WidgetLayout;
   getWidgetGridColumnCount: (width: number | null) => number;
   createWidgetPaneActions: (
     project: RendererProject,
-    widgetPane: UnknownRecord | undefined,
-    widgetLayout: UnknownRecord | null,
+    widgetPane: WidgetPane,
+    widgetLayout: WidgetLayout,
     columns: number | null
   ) => HTMLElement;
-  createWidgetPaneSurface: (project: RendererProject, widgetPane?: UnknownRecord) => HTMLElement;
+  createWidgetPaneSurface: (project: RendererProject, widgetPane: WidgetPane) => HTMLElement;
   createWidgetPaneTabs: (
     project: RendererProject,
-    paneNode: PaneLayoutNode,
+    paneNode: RendererPaneNode,
     selectedWebApp: PaneWebApp,
     webApps: PaneWebApp[],
     options: UnknownRecord
@@ -95,14 +103,14 @@ type PaneLayoutViewOptions = {
   openWebAppTabMenuFromButton: (
     button: HTMLButtonElement,
     project: RendererProject,
-    paneNode: PaneLayoutNode,
+    paneNode: RendererPaneNode,
     selectedWebApp: PaneWebApp,
     webApps: PaneWebApp[]
   ) => void;
   openWebAppHomeMenu: (
     event: MouseEvent,
     project: RendererProject,
-    paneNode: PaneLayoutNode,
+    paneNode: RendererPaneNode,
     selectedWebApp: PaneWebApp
   ) => void;
   openWebAppRefreshMenu: (event: MouseEvent, selectedWebApp: PaneWebApp) => void;
@@ -112,7 +120,7 @@ type PaneLayoutViewOptions = {
   isWebAppAutofillEnabled: (webApp: PaneWebApp) => boolean;
   syncWebAppAutofillButton: (button: HTMLButtonElement, enabled: boolean) => void;
   toggleWebAppAutofill: (webApp: PaneWebApp, button: HTMLButtonElement) => Promise<unknown>;
-  getCurrentWebAppUrl: (webApp: PaneWebApp) => string;
+  getCurrentWebAppUrl: (webApp: PaneWebApp) => string | undefined;
   setCurrentWebAppUrl: (key: string, url: string) => void;
   normalizeAddressInput: (value: string) => string;
   isGlobalWorkspace: (project: RendererProject) => boolean;
@@ -308,7 +316,7 @@ export function createPaneLayoutView({
       }
     }
 
-    function createWebAppPane(project: RendererProject, paneNode: PaneLayoutNode) {
+    function createWebAppPane(project: RendererProject, paneNode: PaneNode) {
       const webApps = getProjectWebApps(project, paneNode.id).map((webApp) => webApp as PaneWebApp);
       const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps) as PaneWebApp;
       const isTerminalPane = selectedWebApp.kind === "terminal";

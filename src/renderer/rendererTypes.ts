@@ -1,4 +1,5 @@
 import type { UnknownRecord } from "./rendererRecords";
+import type { PaneLayoutNode, PaneNode } from "./paneLayoutState.js";
 
 export type RendererProject = UnknownRecord & {
   devBranch?: string;
@@ -48,11 +49,8 @@ export type WebAppDefinition = UnknownRecord & {
   url?: string;
 };
 
-export type RendererPaneLayoutNode = UnknownRecord & {
-  id?: string;
-  selectedWebAppId?: string | null;
-  transientWebApp?: WebAppDefinition;
-};
+export type RendererPaneLayoutNode = PaneLayoutNode;
+export type RendererPaneNode = PaneNode;
 
 type RendererManualSection = {
   body?: string;
@@ -74,20 +72,20 @@ export type RendererCreateModule<TInstance extends RendererModuleInstance = Rend
 };
 
 export type PaneLayoutStateInstance = RendererModuleInstance & {
-  collectPaneNodes(node: unknown, panes?: RendererPaneLayoutNode[]): RendererPaneLayoutNode[];
-  countPaneNodes(node: unknown): number;
-  createSplitNode(project: RendererProject, direction: string, first: unknown, selectedWebAppId?: string | null): RendererPaneLayoutNode;
+  collectPaneNodes(node: RendererPaneLayoutNode | null | undefined, panes?: RendererPaneNode[]): RendererPaneNode[];
+  countPaneNodes(node: RendererPaneLayoutNode | null | undefined): number;
+  createSplitNode(project: RendererProject, direction: string, first: RendererPaneLayoutNode, selectedWebAppId?: string | null): RendererPaneLayoutNode;
   deleteSelectedWebAppForPane(paneId: string): unknown;
   deleteSelectedWebAppForProject(projectId?: string): unknown;
-  findFirstPaneNode(node: unknown): RendererPaneLayoutNode | null;
-  findPaneNode(node: unknown, paneId?: string): RendererPaneLayoutNode | null;
-  findPaneNodeBySelectedWebApp(node: unknown, webAppId?: string): RendererPaneLayoutNode | null;
+  findFirstPaneNode(node: RendererPaneLayoutNode | null | undefined): RendererPaneNode | null;
+  findPaneNode(node: RendererPaneLayoutNode | null | undefined, paneId?: string): RendererPaneNode | null;
+  findPaneNodeBySelectedWebApp(node: RendererPaneLayoutNode | null | undefined, webAppId?: string): RendererPaneNode | null;
   getPaneLayout(project: RendererProject): RendererPaneLayoutNode;
   getSelectedWebAppForPane(paneId: string): string;
   getSelectedWebAppForProject(projectId?: string): string;
   hydratePaneLayouts(layouts: unknown): void;
-  replacePaneNode(node: unknown, paneId: string, replacement: unknown): RendererPaneLayoutNode;
-  setPaneLayout(projectId: string | undefined, layout: unknown): unknown;
+  replacePaneNode(node: RendererPaneLayoutNode, paneId: string, replacement: RendererPaneLayoutNode): RendererPaneLayoutNode;
+  setPaneLayout(projectId: string | undefined, layout: RendererPaneLayoutNode): unknown;
   setSelectedWebAppForPane(paneId: string, webAppId?: string): unknown;
   setSelectedWebAppForProject(projectId: string | undefined, webAppId?: string): unknown;
 };

@@ -1,24 +1,13 @@
-type OnboardingTourProject = {
-  id: string;
-};
+import type { PaneLayoutNode, PaneNode, SplitNode } from "./paneLayoutState.js";
+import type { RendererProject, WebAppDefinition } from "./rendererTypes.js";
 
-type OnboardingTourPaneNode = {
-  id: string;
-  selectedWebAppId?: string | null;
-  [key: string]: unknown;
-};
+type OnboardingTourProject = RendererProject;
 
-type OnboardingTourLayoutNode = OnboardingTourPaneNode & {
-  first?: OnboardingTourLayoutNode;
-  second?: OnboardingTourLayoutNode;
-};
+type OnboardingTourPaneNode = PaneNode;
 
-type OnboardingTourWebApp = {
-  id?: string;
-  key?: string;
-  url?: string;
-  [key: string]: unknown;
-};
+type OnboardingTourLayoutNode = PaneLayoutNode;
+
+type OnboardingTourWebApp = WebAppDefinition;
 
 type OnboardingTourManualStep = {
   title: string;
@@ -55,7 +44,7 @@ type OnboardingTourOptions = {
     direction: string,
     first: OnboardingTourLayoutNode,
     selectedWebAppId?: string | null
-  ) => OnboardingTourLayoutNode;
+  ) => SplitNode;
   replacePaneNode: (
     node: OnboardingTourLayoutNode,
     paneId: string,
@@ -73,7 +62,7 @@ type OnboardingTourOptions = {
   renderWorkspaceDashboard: (project: OnboardingTourProject) => void;
   closeWebAppTabMenu: () => void;
   openWebAppTabMenuFromButton: (
-    button: Element,
+    button: HTMLButtonElement,
     project: OnboardingTourProject,
     paneNode: OnboardingTourPaneNode,
     selectedWebApp: OnboardingTourWebApp,
@@ -204,12 +193,18 @@ export function createOnboardingTour({
           getSelectedWebAppForProject(project.id) ||
           "widgets:widgets-0";
         const replacement = createSplitNode(project, "vertical", { ...sourcePane });
-        const splitWebAppId = getDefaultOnboardingPaneWebAppId(project, replacement.second.id);
-        replacement.first.selectedWebAppId = currentWebAppId;
-        replacement.second.selectedWebAppId = splitWebAppId;
+        const firstPane = findFirstPaneNode(replacement.first);
+        const secondPane = findFirstPaneNode(replacement.second);
+        if (!firstPane || !secondPane) {
+          return;
+        }
+
+        const splitWebAppId = getDefaultOnboardingPaneWebAppId(project, secondPane.id);
+        firstPane.selectedWebAppId = currentWebAppId;
+        secondPane.selectedWebAppId = splitWebAppId;
         setPaneLayout(project.id, replacePaneNode(layout, sourcePane.id, replacement));
-        setSelectedWebAppForPane(replacement.first.id, currentWebAppId);
-        setSelectedWebAppForPane(replacement.second.id, splitWebAppId);
+        setSelectedWebAppForPane(firstPane.id, currentWebAppId);
+        setSelectedWebAppForPane(secondPane.id, splitWebAppId);
         layout = replacement;
       }
 
@@ -256,7 +251,7 @@ export function createOnboardingTour({
       const project = getGlobalWorkspace();
       const panes = [...document.querySelectorAll(".webapp-pane")];
       const pane = panes.at(-1) as HTMLElement | undefined;
-      const button = pane?.querySelector(".webapp-tab-picker");
+      const button = pane?.querySelector<HTMLButtonElement>(".webapp-tab-picker");
       const paneId = pane?.dataset.paneId;
       const paneNode = paneId ? findPaneNode(getProjectPaneLayout(project), paneId) : null;
       if (!button || !paneNode) {

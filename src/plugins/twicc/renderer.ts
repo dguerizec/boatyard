@@ -74,7 +74,7 @@
   };
   type TwiccPluginContext = PluginRegistryRecord & {
     events: {
-      on(eventName: string, callback: (event: unknown) => void): void;
+      on<TEvent extends PluginRegistryRecord = PluginRegistryRecord>(eventName: string, callback: (event: TEvent) => void): void;
     };
     panes: {
       register(definition: Record<string, unknown>): void;

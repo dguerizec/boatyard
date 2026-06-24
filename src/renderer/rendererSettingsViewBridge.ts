@@ -7,9 +7,9 @@ type RendererSettingsViewBridgeOptions = {
   applyFormControl: (control: HTMLElement) => void;
   applyFormControls: (root: HTMLElement) => void;
   boatyard: BoatyardBridge;
-  deriveProjectNameFromPath: (sourcePath: string) => string;
-  deriveRepoUrl: (gitUrl?: string) => string;
-  formatProjectNameFromPath: (sourcePath: string) => string;
+  deriveProjectNameFromPath: (sourcePath: unknown) => string;
+  deriveRepoUrl: (gitUrl?: unknown) => string;
+  formatProjectNameFromPath: (sourcePath: unknown) => string;
   getGlobalPluginConfig: (pluginId?: string) => UnknownRecord;
   getInstalledWidgets: (filter?: UnknownRecord) => unknown[];
   getPluginGlobalSettingsSections: () => unknown[];
@@ -22,7 +22,7 @@ type RendererSettingsViewBridgeOptions = {
   readPluginSettingsFieldValue: (field?: unknown, input?: unknown, options?: UnknownRecord) => string;
   renderGlobalSettingsPage: () => void;
   showOverlayDialog: (dialog: HTMLDialogElement, options?: UnknownRecord) => Promise<boolean>;
-  slugify: (value: string) => string;
+  slugify: (value: unknown) => string;
   updateGlobalPluginConfig: (pluginId: string, values: UnknownRecord) => Promise<unknown>;
   updatePluginEnabled: (pluginId: string, enabled: boolean) => Promise<unknown>;
 };
