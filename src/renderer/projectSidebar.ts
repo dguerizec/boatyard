@@ -35,7 +35,6 @@ import type { ProjectNavBadgeRenderOptions, RendererProject } from "./rendererTy
 
   type ProjectSidebarOptions = {
     applyFormControl: (control: HTMLElement) => void;
-    applyFormControls: (container: HTMLElement) => void;
     clamp: (value: number, min: number, max: number) => number;
     elements: ProjectSidebarElements;
     ensureOnboardingDemoProject: () => Promise<unknown> | unknown;
@@ -73,7 +72,6 @@ export function createProjectSidebar({
     selectEditProject,
     clamp,
     applyFormControl,
-    applyFormControls,
     showOverlayDialog,
     isOnboardingDemoProjectVisible,
     ensureOnboardingDemoProject,

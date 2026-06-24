@@ -170,7 +170,7 @@
     return String(value || DEFAULT_TWICC_URL).replace(/\/+$/g, "");
   }
 
-  function resolveProjectUrl(project: TwiccProject, options: TwiccPluginOptions = {}) {
+  function resolveProjectUrl(_project: TwiccProject, options: TwiccPluginOptions = {}) {
     return options.pluginConfig?.twiccProjectUrl || "";
   }
 
@@ -617,7 +617,7 @@
     return row;
   }
 
-  function createUsageWidget(project: TwiccProject, props: TwiccPluginOptions = {}) {
+  function createUsageWidget(_project: TwiccProject, props: TwiccPluginOptions = {}) {
     const card = document.createElement("article");
     card.className = "widget-card twicc-usage-widget";
 

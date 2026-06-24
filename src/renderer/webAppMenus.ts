@@ -94,9 +94,7 @@ type WebAppMenuElement = HTMLDivElement & {
     replacePaneNode: (layout: RendererPaneLayoutNode, paneId: string, replacement: RendererPaneLayoutNode) => RendererPaneLayoutNode;
     setPaneLayout: (projectId: string | undefined, layout: RendererPaneLayoutNode) => unknown;
     setSelectedWebAppForPane: (paneId: string, webAppId?: string) => unknown;
-    getSelectedWebAppForPane: (paneId: string) => string;
     setSelectedWebAppForProject: (projectId: string | undefined, webAppId?: string) => unknown;
-    getSelectedWebAppForProject: (projectId?: string) => string;
     setCurrentWebAppUrl: (key: string, url: string) => void;
     persistPaneLayout: (project: RendererProject) => void;
     renderWorkspaceDashboard: (project: RendererProject) => void;
@@ -135,9 +133,7 @@ export function createWebAppMenus({
     replacePaneNode,
     setPaneLayout,
     setSelectedWebAppForPane,
-    getSelectedWebAppForPane,
     setSelectedWebAppForProject,
-    getSelectedWebAppForProject,
     setCurrentWebAppUrl,
     persistPaneLayout,
     renderWorkspaceDashboard,

@@ -697,7 +697,6 @@ export function createTerminalSurfaces({
     }
 
     function attachTerminalTabDragHandlers(
-      card: TerminalCard,
       tab: TerminalTab,
       tabButton: HTMLButtonElement,
       tabList: HTMLElement
@@ -756,7 +755,7 @@ export function createTerminalSurfaces({
           tabButton.dataset.windowId = tab.id;
           tabButton.textContent = tab.name || `shell ${tab.index}`;
           tabButton.title = "Double-click to rename shell";
-          attachTerminalTabDragHandlers(card, tab, tabButton, tabList);
+          attachTerminalTabDragHandlers(tab, tabButton, tabList);
           tabButton.addEventListener("click", () => {
             selectTerminalTab(project, card, tab).catch((error: unknown) => {
               setTerminalStatus(card, `Could not switch shell: ${asErrorMessage(error)}`);

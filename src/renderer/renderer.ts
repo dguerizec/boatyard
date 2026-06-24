@@ -575,9 +575,7 @@ const webAppMenus = createWebAppMenus({
   replacePaneNode,
   setPaneLayout: paneLayoutState.setPaneLayout,
   setSelectedWebAppForPane: paneLayoutState.setSelectedWebAppForPane,
-  getSelectedWebAppForPane: paneLayoutState.getSelectedWebAppForPane,
   setSelectedWebAppForProject: paneLayoutState.setSelectedWebAppForProject,
-  getSelectedWebAppForProject: paneLayoutState.getSelectedWebAppForProject,
   setCurrentWebAppUrl: (key: string, url: string) => {
     webAppRuntime.setCurrentWebAppUrl(key, url);
   },
@@ -786,7 +784,6 @@ const projectSidebar = createProjectSidebar({
   selectEditProject,
   clamp,
   applyFormControl,
-  applyFormControls,
   showOverlayDialog,
   isOnboardingDemoProjectVisible,
   ensureOnboardingDemoProject,

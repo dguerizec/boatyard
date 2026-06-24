@@ -595,7 +595,7 @@
     return createTelegramConversation(container, props, service);
   }
 
-  function createTelegramWidget(project: TelegramProject, props: TelegramConversationProps = {}, service: TelegramRendererService) {
+  function createTelegramWidget(_project: TelegramProject, props: TelegramConversationProps = {}, service: TelegramRendererService) {
     const card = document.createElement("article");
     card.className = "widget-card telegram-widget";
 
