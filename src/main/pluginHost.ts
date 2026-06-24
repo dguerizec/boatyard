@@ -1,62 +1,96 @@
 "use strict";
 
+import type {
+  ExecFileAsync,
+  PluginActionHandler,
+  PluginContext,
+  PluginProjectInspectors,
+  PluginStateMigrations
+} from "../plugins/pluginTypes";
+
 const fs = require("node:fs");
 const path = require("node:path");
 
+type UnknownRecord = Record<string, unknown>;
+
 type PluginHostStore = {
   getState(): { plugins?: { enabled?: Record<string, boolean | undefined> } } | undefined;
-  updateGlobalPluginConfig?(pluginId: string, config: Record<string, unknown>): unknown;
-  updateProjectPluginConfig?(projectId: string, pluginId: string, config: Record<string, unknown>): unknown;
+  updateGlobalPluginConfig?(pluginId: string, config: UnknownRecord): unknown;
+  updateProjectPluginConfig?(projectId: string, pluginId: string, config: UnknownRecord): unknown;
 };
 
 type PluginHostConstructorOptions = {
-  execFileAsync?: unknown;
+  execFileAsync?: ExecFileAsync;
   pluginRoot?: string;
   sendToRenderer?: (channel: string, payload?: unknown) => unknown;
   store?: PluginHostStore | null;
   userDataPath?: string;
 };
 
-/**
- * @typedef {import("../plugins/pluginTypes").ExecFileAsync} ExecFileAsync
- * @typedef {{ id?: unknown, name?: unknown, version?: unknown, apiVersion?: unknown, renderer?: unknown, main?: unknown, styles?: unknown, [key: string]: unknown }} PluginManifestInput
- * @typedef {PluginManifestInput & { id: string, name: string, version: string, apiVersion: string, renderer: string, main: string, styles: string[] }} PluginManifest
- * @typedef {PluginManifest & { directory: string, rendererPath: string, stylePaths: string[] }} RuntimePlugin
- * @typedef {{ id: string, name: string, version: string, apiVersion: string, rendererPath: string, stylePaths: string[] }} RendererPlugin
- * @typedef {(payload?: unknown) => unknown | Promise<unknown>} PluginActionHandler
- * @typedef {(input?: unknown) => unknown | Promise<unknown>} PluginInspectorHandler
- * @typedef {(payload: { state: unknown }) => unknown | Promise<unknown>} PluginStateMigrationHandler
- * @typedef {{ pluginId: string, handler: PluginInspectorHandler }} PluginInspectorRegistration
- * @typedef {{ pluginId: string, handler: PluginStateMigrationHandler }} PluginStateMigrationRegistration
- * @typedef {{ getState(): unknown, updateProjectPluginConfig?(projectId: string, pluginId: string, config: Record<string, unknown>): unknown, updateGlobalPluginConfig?(pluginId: string, config: Record<string, unknown>): unknown }} PluginStore
- * @typedef {{
- *   pluginRoot?: string,
- *   store?: PluginStore | null,
- *   execFileAsync?: ExecFileAsync,
- *   userDataPath?: string,
- *   sendToRenderer?: (channel: string, payload?: unknown) => unknown
- * }} PluginHostOptions
- */
+type PluginManifestInput = UnknownRecord & {
+  apiVersion?: unknown;
+  id?: unknown;
+  main?: unknown;
+  name?: unknown;
+  renderer?: unknown;
+  styles?: unknown;
+  version?: unknown;
+};
 
-/**
- * @param {unknown} value
- * @returns {string}
- */
-function normalizeText(value) {
+type PluginManifest = PluginManifestInput & {
+  apiVersion: string;
+  id: string;
+  main: string;
+  name: string;
+  renderer: string;
+  styles: string[];
+  version: string;
+};
+
+type RuntimePlugin = PluginManifest & {
+  directory: string;
+  rendererPath: string;
+  stylePaths: string[];
+};
+
+type RendererPlugin = {
+  apiVersion: string;
+  id: string;
+  name: string;
+  rendererPath: string;
+  stylePaths: string[];
+  version: string;
+};
+
+type PluginInspectorHandler = (input?: unknown) => unknown | Promise<unknown>;
+type PluginStateMigrationHandler = (payload: { state: unknown }) => unknown | Promise<unknown>;
+type PluginInspectorRegistration = { pluginId: string; handler: PluginInspectorHandler };
+type PluginStateMigrationRegistration = { pluginId: string; handler: PluginStateMigrationHandler };
+type PluginMigrationResult = {
+  globalPluginConfig?: unknown;
+  projectPluginConfig?: Array<{ config?: unknown; projectId?: unknown }>;
+} | null | undefined;
+
+type RuntimePluginContext = Omit<PluginContext<unknown>, "execFileAsync" | "projectInspectors" | "stateMigrations"> & {
+  execFileAsync?: ExecFileAsync;
+  projectInspectors: PluginProjectInspectors;
+  stateMigrations: PluginStateMigrations<unknown>;
+};
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeText(value: unknown): string {
   return String(value || "").trim();
 }
 
-/**
- * @param {unknown} manifest
- * @param {string} manifestPath
- * @returns {PluginManifest}
- */
-function normalizeManifest(manifest, manifestPath) {
-  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest)) {
+function normalizeManifest(manifest: unknown, manifestPath: string): PluginManifest {
+  if (!isRecord(manifest)) {
     throw new Error(`Plugin manifest must be an object: ${manifestPath}`);
   }
 
-  const source = /** @type {PluginManifestInput} */ (manifest);
+  const source: PluginManifestInput = manifest;
   const id = normalizeText(source.id);
   const name = normalizeText(source.name);
 
@@ -80,19 +114,11 @@ function normalizeManifest(manifest, manifestPath) {
   };
 }
 
-/**
- * @param {string} filePath
- * @returns {unknown}
- */
-function readJson(filePath) {
+function readJson(filePath: string): unknown {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
 }
 
-/**
- * @param {string} pluginRoot
- * @returns {string[]}
- */
-function listPluginManifestPaths(pluginRoot) {
+function listPluginManifestPaths(pluginRoot: string): string[] {
   if (!fs.existsSync(pluginRoot)) {
     return [];
   }
@@ -104,20 +130,11 @@ function listPluginManifestPaths(pluginRoot) {
     .sort();
 }
 
-/**
- * @param {string} filePath
- * @returns {string}
- */
-function toRendererPath(filePath) {
+function toRendererPath(filePath: string): string {
   return path.relative(path.join(__dirname, "../renderer"), filePath).replaceAll(path.sep, "/");
 }
 
-/**
- * @param {unknown} pluginId
- * @param {unknown} eventName
- * @returns {string}
- */
-function getPluginEventChannel(pluginId, eventName) {
+function getPluginEventChannel(pluginId: unknown, eventName: unknown): string {
   const normalizedPluginId = normalizeText(pluginId);
   const normalizedEventName = normalizeText(eventName);
   if (!normalizedPluginId || !normalizedEventName) {
@@ -128,39 +145,29 @@ function getPluginEventChannel(pluginId, eventName) {
 }
 
 class PluginHost {
-  pluginRoot;
-  store;
-  execFileAsync;
-  userDataPath;
-  sendToRenderer;
-  actions;
-  inspectors;
-  stateMigrations;
-  plugins;
+  pluginRoot: string;
+  store: PluginHostStore | null;
+  execFileAsync?: ExecFileAsync;
+  userDataPath: string;
+  sendToRenderer: (channel: string, payload?: unknown) => unknown;
+  actions: Map<string, PluginActionHandler>;
+  inspectors: PluginInspectorRegistration[];
+  stateMigrations: PluginStateMigrationRegistration[];
+  plugins: RuntimePlugin[];
 
-  /**
-   * @param {PluginHostOptions} options
-   */
   constructor(options: PluginHostConstructorOptions = {}) {
     this.pluginRoot = options.pluginRoot || path.join(__dirname, "../plugins");
     this.store = options.store || null;
     this.execFileAsync = options.execFileAsync;
     this.userDataPath = options.userDataPath || "";
     this.sendToRenderer = options.sendToRenderer || (() => {});
-    /** @type {Map<string, PluginActionHandler>} */
     this.actions = new Map();
-    /** @type {PluginInspectorRegistration[]} */
     this.inspectors = [];
-    /** @type {PluginStateMigrationRegistration[]} */
     this.stateMigrations = [];
-    /** @type {RuntimePlugin[]} */
     this.plugins = [];
   }
 
-  /**
-   * @returns {RuntimePlugin[]}
-   */
-  discover() {
+  discover(): RuntimePlugin[] {
     this.actions.clear();
     this.inspectors = [];
     this.stateMigrations = [];
@@ -184,10 +191,7 @@ class PluginHost {
     return this.plugins;
   }
 
-  /**
-   * @returns {RendererPlugin[]}
-   */
-  listRendererPlugins() {
+  listRendererPlugins(): RendererPlugin[] {
     return this.plugins.map((plugin) => ({
       id: plugin.id,
       name: plugin.name,
@@ -198,11 +202,7 @@ class PluginHost {
     }));
   }
 
-  /**
-   * @param {RuntimePlugin} plugin
-   * @param {string} mainPath
-   */
-  loadMainPlugin(plugin, mainPath) {
+  loadMainPlugin(plugin: RuntimePlugin, mainPath: string): void {
     const runtime = require(mainPath);
     const activate = typeof runtime === "function" ? runtime : runtime?.activate;
 
@@ -213,10 +213,7 @@ class PluginHost {
     activate(this.createContext(plugin));
   }
 
-  /**
-   * @param {RuntimePlugin} plugin
-   */
-  createContext(plugin) {
+  createContext(plugin: RuntimePlugin): RuntimePluginContext {
     const pluginId = plugin.id;
 
     return {
@@ -242,20 +239,11 @@ class PluginHost {
     };
   }
 
-  /**
-   * @param {string} pluginId
-   * @returns {boolean}
-   */
-  isPluginEnabled(pluginId) {
+  isPluginEnabled(pluginId: string): boolean {
     return this.store?.getState?.().plugins?.enabled?.[pluginId] !== false;
   }
 
-  /**
-   * @param {string} pluginId
-   * @param {unknown} actionName
-   * @param {unknown} handler
-   */
-  registerAction(pluginId, actionName, handler) {
+  registerAction(pluginId: string, actionName: unknown, handler: unknown): void {
     const name = normalizeText(actionName);
     if (!name) {
       throw new Error(`Plugin ${pluginId} action name is required.`);
@@ -265,37 +253,26 @@ class PluginHost {
       throw new Error(`Plugin ${pluginId} action ${name} handler must be a function.`);
     }
 
-    this.actions.set(`${pluginId}:${name}`, /** @type {PluginActionHandler} */ (handler));
+    this.actions.set(`${pluginId}:${name}`, handler as PluginActionHandler);
   }
 
-  /**
-   * @param {string} pluginId
-   * @param {unknown} handler
-   */
-  registerProjectInspector(pluginId, handler) {
+  registerProjectInspector(pluginId: string, handler: unknown): void {
     if (typeof handler !== "function") {
       throw new Error(`Plugin ${pluginId} project inspector must be a function.`);
     }
 
-    this.inspectors.push({ pluginId, handler: /** @type {PluginInspectorHandler} */ (handler) });
+    this.inspectors.push({ pluginId, handler: handler as PluginInspectorHandler });
   }
 
-  /**
-   * @param {string} pluginId
-   * @param {unknown} handler
-   */
-  registerStateMigration(pluginId, handler) {
+  registerStateMigration(pluginId: string, handler: unknown): void {
     if (typeof handler !== "function") {
       throw new Error(`Plugin ${pluginId} state migration must be a function.`);
     }
 
-    this.stateMigrations.push({ pluginId, handler: /** @type {PluginStateMigrationHandler} */ (handler) });
+    this.stateMigrations.push({ pluginId, handler: handler as PluginStateMigrationHandler });
   }
 
-  /**
-   * @returns {Promise<void>}
-   */
-  async applyStateMigrations() {
+  async applyStateMigrations(): Promise<void> {
     if (!this.store) {
       return;
     }
@@ -306,34 +283,28 @@ class PluginHost {
       }
 
       const result = await migration.handler({ state: this.store.getState() });
-      const migrationResult = /** @type {{ projectPluginConfig?: Array<{ projectId?: unknown, config?: unknown }>, globalPluginConfig?: unknown } | null | undefined} */ (result);
+      const migrationResult = isRecord(result) ? result as PluginMigrationResult : null;
       for (const entry of migrationResult?.projectPluginConfig || []) {
-        if (!entry?.projectId || !entry.config || typeof entry.config !== "object") {
+        if (!entry?.projectId || !isRecord(entry.config)) {
           continue;
         }
         this.store.updateProjectPluginConfig?.(
           String(entry.projectId),
           migration.pluginId,
-          /** @type {Record<string, unknown>} */ (entry.config)
+          entry.config
         );
       }
 
-      if (migrationResult?.globalPluginConfig && typeof migrationResult.globalPluginConfig === "object") {
+      if (isRecord(migrationResult?.globalPluginConfig)) {
         this.store.updateGlobalPluginConfig?.(
           migration.pluginId,
-          /** @type {Record<string, unknown>} */ (migrationResult.globalPluginConfig)
+          migrationResult.globalPluginConfig
         );
       }
     }
   }
 
-  /**
-   * @param {unknown} pluginId
-   * @param {unknown} actionName
-   * @param {unknown} payload
-   * @returns {Promise<unknown>}
-   */
-  async invoke(pluginId, actionName, payload) {
+  async invoke(pluginId: unknown, actionName: unknown, payload: unknown): Promise<unknown> {
     const normalizedPluginId = normalizeText(pluginId);
     if (!this.isPluginEnabled(normalizedPluginId)) {
       throw new Error(`Plugin is disabled: ${normalizedPluginId}`);
@@ -347,13 +318,8 @@ class PluginHost {
     return action(payload);
   }
 
-  /**
-   * @param {unknown} input
-   * @returns {Promise<Record<string, unknown>>}
-   */
-  async inspectSourcePath(input) {
-    /** @type {Record<string, unknown>} */
-    const plugins = {};
+  async inspectSourcePath(input: unknown): Promise<UnknownRecord> {
+    const plugins: UnknownRecord = {};
 
     for (const inspector of this.inspectors) {
       if (!this.isPluginEnabled(inspector.pluginId)) {
@@ -361,7 +327,7 @@ class PluginHost {
       }
 
       const result = await inspector.handler(input);
-      if (result && typeof result === "object" && !Array.isArray(result)) {
+      if (isRecord(result)) {
         plugins[inspector.pluginId] = result;
       }
     }
