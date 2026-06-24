@@ -8,8 +8,102 @@ import {
   getXtermConstructor
 } from "./terminalXtermRuntime.js";
 import type { TerminalCard, TerminalTab } from "./terminalTypes.js";
+import type { BoatyardBridge, RendererProject, RendererState } from "./rendererTypes.js";
+import type { UnknownRecord } from "./rendererRecords.js";
 
 const globalScope: TerminalSurfacesGlobal = window;
+
+type TerminalSurfacesBridge = BoatyardBridge & {
+  attachTerminal(projectId: string, windowId: string, size: unknown): Promise<{
+    tab: TerminalTab;
+    terminalId: string;
+  }>;
+  closeTerminalTab(projectId: string, windowId: string): Promise<TerminalTab[]>;
+  createTerminalTab(projectId: string, name: string): Promise<TerminalTab>;
+  detachTerminal(terminalId: string): Promise<unknown>;
+  listTerminalTabs(projectId: string): Promise<unknown>;
+  readTerminalSelection: () => Promise<string>;
+  renameTerminalTab(projectId: string, windowId: string, name: string): Promise<unknown>;
+  resizeTerminal(terminalId: string, size: unknown): Promise<unknown> | unknown;
+  updateTerminalSelection?: (
+    projectId: string,
+    surfaceKey: string,
+    windowId: string
+  ) => Promise<UnknownRecord>;
+  updateTerminalTabOrder?: (projectId: string, windowIds: string[]) => Promise<unknown>;
+  writeTerminal(terminalId: string, data: string): Promise<unknown> | unknown;
+  writeTerminalSelection: (selection: string) => Promise<unknown>;
+};
+
+type TerminalState = RendererState & {
+  terminalSelections?: Record<string, Record<string, string>>;
+  terminalTabOrders?: Record<string, string[]>;
+};
+
+type TerminalSurfacesOptions = {
+  boatyard: TerminalSurfacesBridge;
+  getProjectById: (projectId?: string) => RendererProject | null;
+  getState: () => TerminalState;
+  createToolIcon: (name: string) => Node;
+  clamp: (value: number, min: number, max: number) => number;
+  defaultWidgetPaneId: string;
+};
+
+type TerminalSurfaceSession = {
+  activeWindowId: string;
+  card: TerminalCard;
+  disposables?: Array<{ dispose?: () => void }>;
+  fitAddon?: FitAddonInstance;
+  lastOutputTabSyncAt?: number;
+  projectId: string;
+  removeMiddleClickPaste?: () => void;
+  resizeObserver?: ResizeObserver;
+  surfaceId: string;
+  tabsResizeObserver?: ResizeObserver;
+  term?: XtermTerminal;
+  terminalId?: string;
+};
+
+type TerminalOutputSession = {
+  lastOutputTabSyncAt: number;
+  projectId: string;
+  surfaceId: string;
+  term: XtermTerminal;
+};
+
+type TerminalTabSyncTimer = {
+  followupsRemaining: number;
+  timer: ReturnType<typeof setTimeout>;
+};
+
+type TerminalCloseFocus = {
+  surfaceId: string;
+  timestamp: number;
+  windowId: string;
+};
+
+type TerminalSurfaceOptions = {
+  actionsContainer?: HTMLElement | null;
+  className?: string;
+  storageKey?: string;
+  tabsContainer?: HTMLElement | null;
+  tagName?: keyof HTMLElementTagNameMap;
+};
+
+type TerminalExitPayload = {
+  projectId?: unknown;
+  terminalId?: unknown;
+  windowId?: unknown;
+};
+
+type TerminalDataPayload = {
+  data?: unknown;
+  terminalId?: unknown;
+};
+
+function asErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function createTerminalSurfaces({
     boatyard,
@@ -18,13 +112,13 @@ export function createTerminalSurfaces({
     createToolIcon,
     clamp,
     defaultWidgetPaneId
-  }) {
-    const terminalWidgetsBySurface = new Map();
-    const terminalWidgetsByTerminal = new Map();
-    const terminalTabSyncTimers = new Map();
+  }: TerminalSurfacesOptions) {
+    const terminalWidgetsBySurface = new Map<string, TerminalSurfaceSession>();
+    const terminalWidgetsByTerminal = new Map<string, TerminalOutputSession>();
+    const terminalTabSyncTimers = new Map<string, TerminalTabSyncTimer>();
     const terminalTabOrdersByProject = new Map<string, string[]>();
     let nextTerminalSurfaceId = 1;
-    let pendingTerminalCloseFocus = null;
+    let pendingTerminalCloseFocus: TerminalCloseFocus | null = null;
     const TERMINAL_TAB_SYNC_DELAY_MS = 150;
     const TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS = 250;
     const TERMINAL_OUTPUT_TAB_SYNC_THROTTLE_MS = 2000;
@@ -40,7 +134,9 @@ export function createTerminalSurfaces({
       getTerminalTabList,
       updateTerminalTabDropMarker,
       updateTerminalTabScrollControls
-    } = createTerminalTabDom({ createToolIcon });
+    } = createTerminalTabDom({
+      createToolIcon: (name: string) => createToolIcon(name) as HTMLElement
+    });
     const {
       closeTerminalTabMenu,
       openTerminalTabContextMenu
@@ -85,7 +181,7 @@ export function createTerminalSurfaces({
         : [];
     }
 
-    function getTerminalSurfaceId(card) {
+    function getTerminalSurfaceId(card: TerminalCard) {
       if (!card.dataset.terminalSurfaceId) {
         card.dataset.terminalSurfaceId = `terminal-surface-${nextTerminalSurfaceId}`;
         nextTerminalSurfaceId += 1;
@@ -94,7 +190,7 @@ export function createTerminalSurfaces({
       return card.dataset.terminalSurfaceId;
     }
 
-    function detachTerminalSurface(surfaceId) {
+    function detachTerminalSurface(surfaceId: string) {
       const session = terminalWidgetsBySurface.get(surfaceId);
 
       if (!session) {
@@ -102,7 +198,7 @@ export function createTerminalSurfaces({
       }
 
       if (session.terminalId) {
-        boatyard.detachTerminal(session.terminalId).catch((error) => {
+        boatyard.detachTerminal(session.terminalId).catch((error: unknown) => {
           console.error("Could not detach terminal:", error);
         });
         terminalWidgetsByTerminal.delete(session.terminalId);
@@ -120,7 +216,7 @@ export function createTerminalSurfaces({
       terminalWidgetsBySurface.delete(surfaceId);
     }
 
-    function detachProjectTerminal(projectId) {
+    function detachProjectTerminal(projectId: string) {
       for (const [surfaceId, session] of terminalWidgetsBySurface.entries()) {
         if (session.projectId === projectId) {
           detachTerminalSurface(surfaceId);
@@ -128,7 +224,7 @@ export function createTerminalSurfaces({
       }
     }
 
-    function detachInactiveProjectTerminals(activeProjectId = null) {
+    function detachInactiveProjectTerminals(activeProjectId: string | null = null) {
       for (const [surfaceId, session] of terminalWidgetsBySurface.entries()) {
         if (session.projectId !== activeProjectId) {
           detachTerminalSurface(surfaceId);
@@ -136,22 +232,22 @@ export function createTerminalSurfaces({
       }
     }
 
-    function setTerminalStatus(card, message) {
+    function setTerminalStatus(card: TerminalCard, message: string) {
       const status = card.querySelector(".terminal-status");
       if (status) {
         status.replaceChildren(document.createTextNode(message));
       }
     }
 
-    function rememberTerminalTabOrder(projectId, orderedWindowIds) {
+    function rememberTerminalTabOrder(projectId: string, orderedWindowIds: unknown[]) {
       const normalizedProjectId = String(projectId);
-      const normalizedWindowIds = orderedWindowIds.map((windowId) => String(windowId));
+      const normalizedWindowIds = orderedWindowIds.map((windowId: unknown) => String(windowId));
       terminalTabOrdersByProject.set(normalizedProjectId, normalizedWindowIds);
 
       return normalizedWindowIds;
     }
 
-    function persistTerminalTabOrder(projectId, orderedWindowIds) {
+    function persistTerminalTabOrder(projectId: string, orderedWindowIds: unknown[]) {
       const normalizedProjectId = String(projectId);
       const normalizedWindowIds = rememberTerminalTabOrder(normalizedProjectId, orderedWindowIds);
       getState().terminalTabOrders = {
@@ -163,12 +259,12 @@ export function createTerminalSurfaces({
         return;
       }
 
-      boatyard.updateTerminalTabOrder(normalizedProjectId, normalizedWindowIds).catch((error) => {
+      boatyard.updateTerminalTabOrder(normalizedProjectId, normalizedWindowIds).catch((error: unknown) => {
         console.error("Could not persist terminal tab order:", error);
       });
     }
 
-    function getOrderedTerminalTabs(projectId, tabs: TerminalTab[]) {
+    function getOrderedTerminalTabs(projectId: string, tabs: TerminalTab[]) {
       const order = terminalTabOrdersByProject.get(String(projectId));
       if (!order?.length) {
         rememberTerminalTabOrder(projectId, tabs.map((tab) => tab.id));
@@ -196,10 +292,14 @@ export function createTerminalSurfaces({
       return orderedTabs;
     }
 
-    function getTerminalReplacementWindowId(card, removedWindowId, remainingTabs) {
+    function getTerminalReplacementWindowId(
+      card: TerminalCard,
+      removedWindowId: unknown,
+      remainingTabs: TerminalTab[]
+    ) {
       const remainingTabIds = remainingTabs
-        .map((tab) => tab.id)
-        .filter((tabId) => tabId !== String(removedWindowId));
+        .map((tab: TerminalTab) => tab.id)
+        .filter((tabId: string) => tabId !== String(removedWindowId));
       const removedIndex = getRenderedTerminalTabIds(card).indexOf(String(removedWindowId));
 
       if (removedIndex === -1 || !remainingTabIds.length) {
@@ -209,7 +309,7 @@ export function createTerminalSurfaces({
       return remainingTabIds[Math.min(removedIndex, remainingTabIds.length - 1)] || null;
     }
 
-    function markTerminalCloseFocus(surfaceId, windowId) {
+    function markTerminalCloseFocus(surfaceId: string, windowId: unknown) {
       pendingTerminalCloseFocus = {
         surfaceId,
         windowId: String(windowId),
@@ -217,7 +317,7 @@ export function createTerminalSurfaces({
       };
     }
 
-    function shouldFocusAfterTerminalExit(surfaceId, windowId) {
+    function shouldFocusAfterTerminalExit(surfaceId: string, windowId: unknown) {
       if (!pendingTerminalCloseFocus) {
         return true;
       }
@@ -234,8 +334,8 @@ export function createTerminalSurfaces({
       return shouldFocus;
     }
 
-    function shouldRefreshTerminalTabs(session, tabs) {
-      const tabIds = tabs.map((tab) => tab.id);
+    function shouldRefreshTerminalTabs(session: TerminalSurfaceSession, tabs: TerminalTab[]) {
+      const tabIds = tabs.map((tab: TerminalTab) => tab.id);
       const renderedTabIds = getRenderedTerminalTabIds(session.card);
 
       return !tabIds.includes(session.activeWindowId)
@@ -243,7 +343,7 @@ export function createTerminalSurfaces({
         || tabIds.some((tabId, index) => tabId !== renderedTabIds[index]);
     }
 
-    async function syncTerminalTabsForSurface(surfaceId, followupsRemaining = 0) {
+    async function syncTerminalTabsForSurface(surfaceId: string, followupsRemaining = 0) {
       terminalTabSyncTimers.delete(surfaceId);
       const session = terminalWidgetsBySurface.get(surfaceId);
       if (!session?.card?.isConnected) {
@@ -267,7 +367,7 @@ export function createTerminalSurfaces({
           return;
         }
       } catch (error) {
-        setTerminalStatus(session.card, `Could not refresh shells: ${error.message}`);
+        setTerminalStatus(session.card, `Could not refresh shells: ${asErrorMessage(error)}`);
       }
 
       if (followupsRemaining > 0 && terminalWidgetsBySurface.has(surfaceId)) {
@@ -275,7 +375,11 @@ export function createTerminalSurfaces({
       }
     }
 
-    function scheduleTerminalSurfaceTabSync(surfaceId, followupsRemaining = 0, delay = TERMINAL_TAB_SYNC_DELAY_MS) {
+    function scheduleTerminalSurfaceTabSync(
+      surfaceId: string,
+      followupsRemaining = 0,
+      delay = TERMINAL_TAB_SYNC_DELAY_MS
+    ) {
       const scheduled = terminalTabSyncTimers.get(surfaceId);
       if (scheduled) {
         scheduled.followupsRemaining = Math.max(scheduled.followupsRemaining, followupsRemaining);
@@ -291,7 +395,7 @@ export function createTerminalSurfaces({
       terminalTabSyncTimers.set(surfaceId, scheduledSync);
     }
 
-    function scheduleTerminalTabSync(terminalId, followupsRemaining = 0) {
+    function scheduleTerminalTabSync(terminalId: string, followupsRemaining = 0) {
       const terminalSession = terminalWidgetsByTerminal.get(terminalId);
       if (!terminalSession) {
         return;
@@ -300,7 +404,7 @@ export function createTerminalSurfaces({
       scheduleTerminalSurfaceTabSync(terminalSession.surfaceId, followupsRemaining);
     }
 
-    function scheduleTerminalOutputTabSync(terminalId) {
+    function scheduleTerminalOutputTabSync(terminalId: string) {
       const terminalSession = terminalWidgetsByTerminal.get(terminalId);
       if (!terminalSession) {
         return;
@@ -315,7 +419,7 @@ export function createTerminalSurfaces({
       scheduleTerminalSurfaceTabSync(terminalSession.surfaceId);
     }
 
-    async function refreshProjectTerminalTabLabels(project) {
+    async function refreshProjectTerminalTabLabels(project: RendererProject) {
       const tabs = getOrderedTerminalTabs(project.id, await listTerminalTabs(project.id));
       const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
 
@@ -338,18 +442,23 @@ export function createTerminalSurfaces({
       }
     }
 
-    async function renameTerminalTab(project, tab, nextName) {
+    async function renameTerminalTab(project: RendererProject, tab: TerminalTab, nextName: unknown) {
       const currentName = tab.name || `shell ${tab.index}`;
-      const normalizedName = nextName.trim();
+      const normalizedName = String(nextName || "").trim();
       if (!normalizedName || normalizedName === currentName) {
         return;
       }
 
-      await boatyard.renameTerminalTab(project.id, tab.id, normalizedName);
+      await boatyard.renameTerminalTab(project.id || "", tab.id, normalizedName);
       await refreshProjectTerminalTabLabels(project);
     }
 
-    function editTerminalTabName(project, card, tab, tabButton) {
+    function editTerminalTabName(
+      project: RendererProject,
+      card: TerminalCard,
+      tab: TerminalTab,
+      tabButton: HTMLButtonElement
+    ) {
       const currentName = tab.name || `shell ${tab.index}`;
       const editor = document.createElement("input");
       editor.className = "terminal-tab terminal-tab-editor";
@@ -359,7 +468,7 @@ export function createTerminalSurfaces({
       editor.setAttribute("aria-label", "Shell name");
 
       let finished = false;
-      const finish = async (shouldSave) => {
+      const finish = async (shouldSave: boolean) => {
         if (finished) {
           return;
         }
@@ -374,7 +483,7 @@ export function createTerminalSurfaces({
         try {
           await renameTerminalTab(project, tab, nextName);
         } catch (error) {
-          setTerminalStatus(card, `Could not rename shell: ${error.message}`);
+          setTerminalStatus(card, `Could not rename shell: ${asErrorMessage(error)}`);
         }
       };
 
@@ -394,15 +503,15 @@ export function createTerminalSurfaces({
       editor.select();
     }
 
-    function getTerminalSurfaceSession(card) {
+    function getTerminalSurfaceSession(card: TerminalCard) {
       return terminalWidgetsBySurface.get(getTerminalSurfaceId(card)) || null;
     }
 
-    function getPersistedTerminalWindowId(projectId, surfaceKey) {
+    function getPersistedTerminalWindowId(projectId: string | undefined, surfaceKey: string | undefined) {
       return getState().terminalSelections?.[projectId]?.[surfaceKey] || null;
     }
 
-    function rememberTerminalSelection(projectId, surfaceKey, windowId) {
+    function rememberTerminalSelection(projectId: unknown, surfaceKey: unknown, windowId: unknown) {
       const normalizedProjectId = String(projectId || "").trim();
       const normalizedSurfaceKey = String(surfaceKey || "").trim();
       const normalizedWindowId = String(windowId || "").trim();
@@ -430,35 +539,37 @@ export function createTerminalSurfaces({
       };
     }
 
-    function persistTerminalSelection(projectId, surfaceKey, windowId) {
+    function persistTerminalSelection(projectId: unknown, surfaceKey: unknown, windowId: unknown) {
       if (!surfaceKey || !boatyard.updateTerminalSelection) {
         return;
       }
 
       rememberTerminalSelection(projectId, surfaceKey, windowId);
 
-      boatyard.updateTerminalSelection(projectId, surfaceKey, windowId)
-        .then((selections) => {
+      const normalizedProjectId = String(projectId || "").trim();
+      const normalizedSurfaceKey = String(surfaceKey || "").trim();
+      const normalizedWindowId = String(windowId || "").trim();
+      boatyard.updateTerminalSelection(normalizedProjectId, normalizedSurfaceKey, normalizedWindowId)
+        .then((selections: UnknownRecord) => {
           if (!selections || typeof selections !== "object" || Array.isArray(selections)) {
             return;
           }
 
-          const normalizedProjectId = String(projectId || "").trim();
           getState().terminalSelections = {
             ...(getState().terminalSelections || {})
           };
           if (Object.keys(selections).length) {
-            getState().terminalSelections[normalizedProjectId] = selections;
+            getState().terminalSelections[normalizedProjectId] = selections as Record<string, string>;
           } else {
             delete getState().terminalSelections[normalizedProjectId];
           }
         })
-        .catch((error) => {
+        .catch((error: unknown) => {
           console.error("Could not persist terminal selection:", error);
         });
     }
 
-    async function selectTerminalTab(project, card, tab) {
+    async function selectTerminalTab(project: RendererProject, card: TerminalCard, tab: TerminalTab) {
       const session = getTerminalSurfaceSession(card);
       const pendingWindowId = card.dataset.pendingTerminalWindowId;
       if (session?.activeWindowId === tab.id) {
@@ -482,7 +593,7 @@ export function createTerminalSurfaces({
       }
     }
 
-    function selectAdjacentTerminalTab(project, card, direction) {
+    function selectAdjacentTerminalTab(project: RendererProject, card: TerminalCard, direction: number) {
       const tabList = getTerminalTabList(card);
       if (tabList?.querySelector(".terminal-tab-editor")) {
         return;
@@ -503,12 +614,12 @@ export function createTerminalSurfaces({
         return;
       }
 
-      selectTerminalTab(project, card, { id: nextWindowId }).catch((error) => {
-        setTerminalStatus(card, `Could not switch shell: ${error.message}`);
+      selectTerminalTab(project, card, { id: nextWindowId }).catch((error: unknown) => {
+        setTerminalStatus(card, `Could not switch shell: ${asErrorMessage(error)}`);
       });
     }
 
-    function handleTerminalTabShortcut(project, card, event) {
+    function handleTerminalTabShortcut(project: RendererProject, card: TerminalCard, event: KeyboardEvent) {
       if (!event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) {
         return;
       }
@@ -519,7 +630,8 @@ export function createTerminalSurfaces({
           ? 1
           : 0;
 
-      if (!direction || event.target?.closest?.(".terminal-tab-editor")) {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!direction || target?.closest?.(".terminal-tab-editor")) {
         return;
       }
 
@@ -528,7 +640,7 @@ export function createTerminalSurfaces({
       selectAdjacentTerminalTab(project, card, direction);
     }
 
-    function bindTerminalTabDropHandlers(project, card, tabList) {
+    function bindTerminalTabDropHandlers(project: RendererProject, card: TerminalCard, tabList: HTMLElement) {
       tabList.ondragover = (event) => {
         const draggedWindowId = tabList.dataset.draggedWindowId;
         if (!draggedWindowId) {
@@ -547,13 +659,13 @@ export function createTerminalSurfaces({
         updateTerminalTabDropMarker(tabList, dropPosition);
       };
 
-      tabList.ondragleave = (event) => {
-        if (!event.relatedTarget || !tabList.contains(event.relatedTarget)) {
+      tabList.ondragleave = (event: DragEvent) => {
+        if (!event.relatedTarget || !tabList.contains(event.relatedTarget as Node)) {
           clearTerminalTabDropMarkers(tabList);
         }
       };
 
-      tabList.ondrop = async (event) => {
+      tabList.ondrop = async (event: DragEvent) => {
         const draggedWindowId = tabList.dataset.draggedWindowId || event.dataTransfer?.getData("text/plain");
         if (!draggedWindowId) {
           return;
@@ -575,16 +687,21 @@ export function createTerminalSurfaces({
         const activeWindowId = session?.activeWindowId || draggedWindowId;
 
         try {
-          persistTerminalTabOrder(project.id, nextTabIds);
-          const tabs = getOrderedTerminalTabs(project.id, await listTerminalTabs(project.id));
+          persistTerminalTabOrder(project.id || "", nextTabIds);
+          const tabs = getOrderedTerminalTabs(project.id || "", await listTerminalTabs(project.id || ""));
           await refreshTerminalTabs(project, card, activeWindowId, tabs, { focus: true });
         } catch (error) {
-          setTerminalStatus(card, `Could not move shell: ${error.message}`);
+          setTerminalStatus(card, `Could not move shell: ${asErrorMessage(error)}`);
         }
       };
     }
 
-    function attachTerminalTabDragHandlers(card, tab, tabButton, tabList) {
+    function attachTerminalTabDragHandlers(
+      card: TerminalCard,
+      tab: TerminalTab,
+      tabButton: HTMLButtonElement,
+      tabList: HTMLElement
+    ) {
       tabButton.draggable = true;
 
       tabButton.addEventListener("dragstart", (event) => {
@@ -607,7 +724,13 @@ export function createTerminalSurfaces({
       });
     }
 
-    async function refreshTerminalTabs(project, card, activeWindowId = null, knownTabs = null, { focus = false } = {}) {
+    async function refreshTerminalTabs(
+      project: RendererProject,
+      card: TerminalCard,
+      activeWindowId: string | null = null,
+      knownTabs: TerminalTab[] | null = null,
+      { focus = false }: { focus?: boolean } = {}
+    ) {
       const tabList = getTerminalTabList(card);
       if (!tabList) {
         setTerminalStatus(card, "Terminal tabs unavailable.");
@@ -618,10 +741,11 @@ export function createTerminalSurfaces({
       bindTerminalTabDropHandlers(project, card, tabList);
 
       try {
-        const tabs = getOrderedTerminalTabs(project.id, Array.isArray(knownTabs)
+        const projectId = project.id || "";
+        const tabs = getOrderedTerminalTabs(projectId, Array.isArray(knownTabs)
           ? knownTabs
-          : await listTerminalTabs(project.id));
-        const preferredWindowId = activeWindowId || getPersistedTerminalWindowId(project.id, card.dataset.terminalStorageKey);
+          : await listTerminalTabs(projectId));
+        const preferredWindowId = activeWindowId || getPersistedTerminalWindowId(projectId, card.dataset.terminalStorageKey);
         const selectedTab = tabs.find((tab) => tab.id === preferredWindowId) || tabs[0];
 
         for (const tab of tabs) {
@@ -634,8 +758,8 @@ export function createTerminalSurfaces({
           tabButton.title = "Double-click to rename shell";
           attachTerminalTabDragHandlers(card, tab, tabButton, tabList);
           tabButton.addEventListener("click", () => {
-            selectTerminalTab(project, card, tab).catch((error) => {
-              setTerminalStatus(card, `Could not switch shell: ${error.message}`);
+            selectTerminalTab(project, card, tab).catch((error: unknown) => {
+              setTerminalStatus(card, `Could not switch shell: ${asErrorMessage(error)}`);
             });
           });
           tabButton.addEventListener("dblclick", (event) => {
@@ -661,15 +785,21 @@ export function createTerminalSurfaces({
           }
 
           await attachTerminalTab(project, card, selectedTab.id, { focus });
-          persistTerminalSelection(project.id, card.dataset.terminalStorageKey, selectedTab.id);
+          persistTerminalSelection(projectId, card.dataset.terminalStorageKey, selectedTab.id);
         }
       } catch (error) {
-        setTerminalStatus(card, `Terminal unavailable: ${error.message}`);
+        setTerminalStatus(card, `Terminal unavailable: ${asErrorMessage(error)}`);
       }
     }
 
-    async function refreshTerminalSurfaceAfterClosedTab(project, card, closedWindowId, knownTabs, { focus = false } = {}) {
-      const orderedTabs = getOrderedTerminalTabs(project.id, knownTabs);
+    async function refreshTerminalSurfaceAfterClosedTab(
+      project: RendererProject,
+      card: TerminalCard,
+      closedWindowId: unknown,
+      knownTabs: TerminalTab[],
+      { focus = false }: { focus?: boolean } = {}
+    ) {
+      const orderedTabs = getOrderedTerminalTabs(project.id || "", knownTabs);
       const activeWindowId = closedWindowId
         ? getTerminalReplacementWindowId(card, closedWindowId, orderedTabs)
         : null;
@@ -677,23 +807,28 @@ export function createTerminalSurfaces({
       await refreshTerminalTabs(project, card, activeWindowId, orderedTabs, { focus });
     }
 
-    async function createTerminalTab(project, card, insertAfterWindowId = null) {
-      const tab = await boatyard.createTerminalTab(project.id, "shell");
-      let tabs = await listTerminalTabs(project.id);
+    async function createTerminalTab(
+      project: RendererProject,
+      card: TerminalCard,
+      insertAfterWindowId: string | null = null
+    ) {
+      const projectId = project.id || "";
+      const tab = await boatyard.createTerminalTab(projectId, "shell");
+      let tabs = await listTerminalTabs(projectId);
 
       if (insertAfterWindowId) {
         const renderedTabIds = getRenderedTerminalTabIds(card).filter((windowId) => windowId !== tab.id);
         const targetIndex = renderedTabIds.indexOf(String(insertAfterWindowId));
         const nextTabIds = [...renderedTabIds];
         nextTabIds.splice(targetIndex === -1 ? nextTabIds.length : targetIndex + 1, 0, tab.id);
-        persistTerminalTabOrder(project.id, nextTabIds);
-        tabs = getOrderedTerminalTabs(project.id, tabs);
+        persistTerminalTabOrder(projectId, nextTabIds);
+        tabs = getOrderedTerminalTabs(projectId, tabs);
       }
 
       await refreshTerminalTabs(project, card, tab.id, tabs, { focus: true });
     }
 
-    async function closeTerminalTab(project, card, windowId) {
+    async function closeTerminalTab(project: RendererProject, card: TerminalCard, windowId: unknown) {
       const normalizedWindowId = String(windowId || "");
       if (!normalizedWindowId) {
         return;
@@ -704,7 +839,8 @@ export function createTerminalSurfaces({
       const activeWindowId = session?.activeWindowId || "";
 
       try {
-        const allTabs = await listTerminalTabs(project.id);
+        const projectId = project.id || "";
+        const allTabs = await listTerminalTabs(projectId);
         if (allTabs.length <= 1) {
           return;
         }
@@ -713,8 +849,8 @@ export function createTerminalSurfaces({
           markTerminalCloseFocus(surfaceId, normalizedWindowId);
         }
 
-        const remainingTabs = (await boatyard.closeTerminalTab(project.id, normalizedWindowId))
-          .filter((tab) => tab.id !== normalizedWindowId);
+        const remainingTabs = (await boatyard.closeTerminalTab(projectId, normalizedWindowId))
+          .filter((tab: TerminalTab) => tab.id !== normalizedWindowId);
         const nextActiveWindowId = activeWindowId === normalizedWindowId
           ? getTerminalReplacementWindowId(card, normalizedWindowId, remainingTabs)
           : activeWindowId;
@@ -722,11 +858,16 @@ export function createTerminalSurfaces({
           focus: activeWindowId === normalizedWindowId
         });
       } catch (error) {
-        setTerminalStatus(card, `Could not close shell: ${error.message}`);
+        setTerminalStatus(card, `Could not close shell: ${asErrorMessage(error)}`);
       }
     }
 
-    async function attachTerminalTab(project, card, windowId, { focus = false } = {}) {
+    async function attachTerminalTab(
+      project: RendererProject,
+      card: TerminalCard,
+      windowId: string,
+      { focus = false }: { focus?: boolean } = {}
+    ) {
       if (!card.isConnected) {
         return;
       }
@@ -741,7 +882,11 @@ export function createTerminalSurfaces({
 
       const surfaceId = getTerminalSurfaceId(card);
       detachTerminalSurface(surfaceId);
-      const viewport = card.querySelector(".terminal-viewport");
+      const viewport = card.querySelector<HTMLElement>(".terminal-viewport");
+      if (!viewport) {
+        setTerminalStatus(card, "Terminal viewport unavailable.");
+        return;
+      }
       viewport.innerHTML = "";
       setTerminalStatus(card, "Attaching...");
 
@@ -762,8 +907,9 @@ export function createTerminalSurfaces({
       await nextAnimationFrame();
       let lastFitSize = fitTerminal(term, fitAddon);
 
-      const attachResult = await boatyard.attachTerminal(project.id, windowId, lastFitSize);
-      const disposable = term.onData((data) => {
+      const projectId = project.id || "";
+      const attachResult = await boatyard.attachTerminal(projectId, windowId, lastFitSize);
+      const disposable = term.onData((data: string) => {
         if (data.includes("\x04")) {
           markTerminalCloseFocus(surfaceId, attachResult.tab.id);
         }
@@ -778,7 +924,7 @@ export function createTerminalSurfaces({
         getSession: () => terminalWidgetsBySurface.get(surfaceId),
         scheduleTerminalTabSync
       });
-      let resizeAnimationFrame = null;
+      let resizeAnimationFrame: number | null = null;
       const resizeObserver = new ResizeObserver(() => {
         if (resizeAnimationFrame) {
           return;
@@ -798,7 +944,8 @@ export function createTerminalSurfaces({
       });
       resizeObserver.observe(viewport);
       terminalWidgetsBySurface.set(surfaceId, {
-        projectId: project.id,
+        surfaceId,
+        projectId,
         card,
         terminalId: attachResult.terminalId,
         activeWindowId: attachResult.tab.id,
@@ -820,7 +967,7 @@ export function createTerminalSurfaces({
         tabsResizeObserver: card.terminalTabsResizeObserver
       });
       terminalWidgetsByTerminal.set(attachResult.terminalId, {
-        projectId: project.id,
+        projectId,
         surfaceId,
         term,
         lastOutputTabSyncAt: 0
@@ -836,13 +983,13 @@ export function createTerminalSurfaces({
       }
     }
 
-    function createTerminalSurface(project, {
+    function createTerminalSurface(project: RendererProject, {
       tagName = "article",
       className = "widget-card terminal-widget",
       storageKey = "widget:default",
       tabsContainer = null,
       actionsContainer = null
-    } = {}) {
+    }: TerminalSurfaceOptions = {}) {
       const card = document.createElement(tagName) as TerminalCard;
       card.className = className;
       card.dataset.terminalStorageKey = storageKey;
@@ -902,7 +1049,7 @@ export function createTerminalSurfaces({
       return card;
     }
 
-    function createTerminalWidget(project, props: { widgetPaneId?: string } = {}) {
+    function createTerminalWidget(project: RendererProject, props: { widgetPaneId?: string } = {}) {
       return createTerminalSurface(project, {
         storageKey: `widget:${props.widgetPaneId || defaultWidgetPaneId}`
       });
@@ -919,27 +1066,29 @@ export function createTerminalSurfaces({
       }
     }
 
-    function handleTerminalData({ terminalId, data }) {
-      const session = terminalWidgetsByTerminal.get(terminalId);
+    function handleTerminalData({ terminalId, data }: TerminalDataPayload) {
+      const normalizedTerminalId = String(terminalId || "");
+      const session = terminalWidgetsByTerminal.get(normalizedTerminalId);
       if (session) {
-        session.term.write(data);
+        session.term.write(String(data || ""));
       }
-      scheduleTerminalOutputTabSync(terminalId);
+      scheduleTerminalOutputTabSync(normalizedTerminalId);
     }
 
-    async function handleTerminalExit({ terminalId, projectId, windowId }) {
-      const session = terminalWidgetsByTerminal.get(terminalId);
+    async function handleTerminalExit({ terminalId, projectId, windowId }: TerminalExitPayload) {
+      const normalizedTerminalId = String(terminalId || "");
+      const session = terminalWidgetsByTerminal.get(normalizedTerminalId);
       if (!session) {
         return;
       }
 
-      terminalWidgetsByTerminal.delete(terminalId);
+      terminalWidgetsByTerminal.delete(normalizedTerminalId);
       const surfaceSession = terminalWidgetsBySurface.get(session.surfaceId);
-      if (!surfaceSession || surfaceSession.terminalId !== terminalId) {
+      if (!surfaceSession || surfaceSession.terminalId !== normalizedTerminalId) {
         return;
       }
 
-      const exitedProjectId = projectId || surfaceSession.projectId;
+      const exitedProjectId = String(projectId || surfaceSession.projectId);
       const exitedWindowId = windowId || surfaceSession.activeWindowId;
       if (!exitedProjectId || !exitedWindowId) {
         terminalWidgetsBySurface.delete(session.surfaceId);

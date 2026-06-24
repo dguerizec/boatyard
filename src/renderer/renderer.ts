@@ -186,7 +186,7 @@ const visibleWebApps = createVisibleWebAppTracker({
 });
 
 const terminalSurfaces = createTerminalSurfaces({
-  boatyard: boatyardWindow.boatyard,
+  boatyard: boatyardWindow.boatyard as Parameters<typeof createTerminalSurfaces>[0]["boatyard"],
   getProjectById,
   getState: () => state,
   createToolIcon,
