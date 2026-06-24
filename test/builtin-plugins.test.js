@@ -12,7 +12,7 @@ const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette
 function readBuiltinPluginRendererPath(pluginDir) {
   const manifestPath = path.join(__dirname, "../src/plugins", pluginDir, "plugin.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  return path.join(path.dirname(manifestPath), manifest.renderer);
+  return path.join(__dirname, "../build/plugins", pluginDir, manifest.renderer);
 }
 
 function loadRendererPluginEnvironment(twiccProjectProcessStatuses = {

@@ -1,7 +1,27 @@
 "use strict";
 
 (function registerColorPalettePlugin(globalScope) {
-  const registry = globalScope.BoatyardPluginRegistry;
+  type ColorPaletteColor = {
+    r: number;
+    g: number;
+    b: number;
+    a?: number;
+  };
+
+  type ColorPaletteProject = {
+    id?: string;
+    slug?: string;
+  };
+
+  type ColorPaletteGlobal = Window & {
+    BoatyardPluginRegistry?: any;
+    boatyard?: {
+      writeClipboardText?: (value: string) => Promise<unknown>;
+    };
+  };
+
+  const typedGlobalScope = globalScope as unknown as ColorPaletteGlobal;
+  const registry = typedGlobalScope.BoatyardPluginRegistry;
   const DEFAULT_COLOR = "#41b883";
 
   if (!registry) {
@@ -21,7 +41,7 @@
     return Number.isFinite(alpha) ? clamp(alpha, 0, 1) : 1;
   }
 
-  function normalizeColor(color) {
+  function normalizeColor(color: ColorPaletteColor) {
     return {
       r: clamp(Math.round(color.r), 0, 255),
       g: clamp(Math.round(color.g), 0, 255),
@@ -92,7 +112,7 @@
       : `rgb(${normalized.r}, ${normalized.g}, ${normalized.b})`;
   }
 
-  function getStorageKey(project = {}) {
+  function getStorageKey(project: ColorPaletteProject = {}) {
     return `boatyard:color-palette:${String(project.id || project.slug || "project")}`;
   }
 
@@ -129,7 +149,7 @@
     valueElement.textContent = value;
     button.append(labelElement, valueElement);
     button.addEventListener("click", () => {
-      globalScope.boatyard?.writeClipboardText?.(value);
+      typedGlobalScope.boatyard?.writeClipboardText?.(value);
     });
     return button;
   }
