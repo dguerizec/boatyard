@@ -1,8 +1,8 @@
 "use strict";
 
 (function registerTwiccPlugin(globalScope: BoatyardPluginRendererGlobal) {
-  type TwiccProject = {
-    id?: string;
+  type TwiccProject = PluginRegistryRecord & {
+    id?: unknown;
   };
 
   type TwiccConfig = {
@@ -49,6 +49,54 @@
     seven_day_resets_at?: string;
     seven_day_utilization?: number;
   };
+  type TwiccSettingsFields = {
+    getValue(key: string): string;
+    isEdited(key: string): boolean;
+    setActionVisible(key: string, visible: boolean): void;
+    setValue(key: string, value: string, options?: Record<string, unknown>): void;
+  };
+  type TwiccProjectFieldContext = {
+    coreFields: {
+      sourcePath?: unknown;
+    };
+    fields: TwiccSettingsFields;
+  };
+  type TwiccSourcePathInspectedEvent = {
+    fields?: TwiccSettingsFields;
+    inspected?: {
+      plugins?: {
+        "boatyard.twicc"?: {
+          matchType?: string;
+          projectUrl?: string;
+        };
+      };
+    };
+  };
+  type TwiccPluginContext = PluginRegistryRecord & {
+    events: {
+      on(eventName: string, callback: (event: unknown) => void): void;
+    };
+    panes: {
+      register(definition: Record<string, unknown>): void;
+    };
+    projectNavBadges: {
+      register(definition: Record<string, unknown>): void;
+    };
+    services: {
+      provide(id: string, service: unknown): void;
+    };
+    settings: {
+      registerGlobalSection(section: Record<string, unknown>): void;
+      registerProjectSection(section: Record<string, unknown>): void;
+    };
+    status: {
+      set(status: unknown): void;
+    };
+    widgets: {
+      register(definition: Record<string, unknown>): void;
+      registerAlias(alias: string, targetId: string): void;
+    };
+  };
 
   const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_TWICC_URL = "http://localhost:3500";
@@ -60,14 +108,14 @@
   };
   const TWICC_USAGE_REFRESH_MS = 60000;
   let projectProcessStatuses: Record<string, TwiccProjectStatus> = {};
-  const retainedDoneProjectStatuses = new Map();
-  let projectStatusRefreshTimer = null;
+  const retainedDoneProjectStatuses = new Map<string, TwiccProjectStatus>();
+  let projectStatusRefreshTimer: number | null = null;
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
   }
 
-  function invokePlugin(actionName, payload = {}) {
+  function invokePlugin(actionName: string, payload: Record<string, unknown> = {}) {
     return globalScope.boatyard?.invokePlugin?.("boatyard.twicc", actionName, payload);
   }
 
@@ -118,7 +166,7 @@
     };
   }
 
-  function normalizeBaseUrl(value) {
+  function normalizeBaseUrl(value: unknown): string {
     return String(value || DEFAULT_TWICC_URL).replace(/\/+$/g, "");
   }
 
@@ -126,7 +174,7 @@
     return options.pluginConfig?.twiccProjectUrl || "";
   }
 
-  function resolveSessionUrl(project: TwiccProject, sessionId, options: TwiccPluginOptions = {}) {
+  function resolveSessionUrl(project: TwiccProject, sessionId: unknown, options: TwiccPluginOptions = {}) {
     const projectUrl = resolveProjectUrl(project, options);
     const id = String(sessionId || "").trim();
     if (!projectUrl || !id) {
@@ -144,9 +192,9 @@
     }
   }
 
-  function getProjectIdFromUrl(url) {
+  function getProjectIdFromUrl(url: unknown) {
     try {
-      const parsed = new URL(url);
+      const parsed = new URL(String(url || ""));
       const segments = parsed.pathname.split("/").filter(Boolean);
       const projectSegmentIndex = segments.indexOf("project");
       const id = projectSegmentIndex === -1 ? "" : segments[projectSegmentIndex + 1] || "";
@@ -159,7 +207,7 @@
   function getStatusKeysForProject(project: TwiccProject, projectConfig: TwiccConfig = {}) {
     return [
       getProjectIdFromUrl(projectConfig.twiccProjectUrl),
-      project.id
+      String(project.id || "").trim()
     ].filter(Boolean);
   }
 
@@ -213,7 +261,7 @@
     const statusKey = getStatusKeysForProject(project, projectConfig)
       .find((key) => projectProcessStatuses?.[key]);
     const liveStatus = statusKey ? projectProcessStatuses[statusKey] : null;
-    const retainKey = project.id || statusKey;
+    const retainKey = String(project.id || statusKey || "").trim();
 
     if (options.isActiveProject && retainKey) {
       retainedDoneProjectStatuses.delete(retainKey);
@@ -228,7 +276,7 @@
       return null;
     }
 
-    const label = TWICC_PROJECT_STATUS_LABELS[status.state] || status.state;
+    const label = TWICC_PROJECT_STATUS_LABELS[status.state as keyof typeof TWICC_PROJECT_STATUS_LABELS] || status.state;
     const badge = document.createElement("span");
     badge.className = `project-nav-badge project-twicc-status ${status.state}`;
     badge.textContent = label;
@@ -269,7 +317,7 @@
     return null;
   }
 
-  function formatProviderName(provider) {
+  function formatProviderName(provider: unknown) {
     return String(provider || "")
       .split(/[_\s-]+/)
       .filter(Boolean)
@@ -277,17 +325,17 @@
       .join(" ") || "Provider";
   }
 
-  function formatPercent(value) {
+  function formatPercent(value: unknown) {
     const number = Number(value);
     return Number.isFinite(number) ? `${Math.round(number)}%` : "--";
   }
 
-  function formatResetRelative(value) {
+  function formatResetRelative(value: unknown) {
     if (!value) {
       return "--";
     }
 
-    const date = new Date(value);
+    const date = new Date(String(value));
     if (Number.isNaN(date.getTime())) {
       return "--";
     }
@@ -310,7 +358,7 @@
     return `in ${Math.ceil(hours / 24)}d`;
   }
 
-  function getUsageTone(value) {
+  function getUsageTone(value: unknown) {
     const number = Number(value);
     if (!Number.isFinite(number)) {
       return "unknown";
@@ -324,7 +372,7 @@
     return "ok";
   }
 
-  function getProviderInitials(provider) {
+  function getProviderInitials(provider: unknown) {
     const normalized = String(provider || "").toLowerCase();
     return formatProviderName(provider)
       .split(/\s+/)
@@ -334,7 +382,7 @@
       .toUpperCase() || "?";
   }
 
-  function getProviderIconClass(provider) {
+  function getProviderIconClass(provider: unknown) {
     const normalized = String(provider || "").toLowerCase();
     if (normalized === "claude_code" || normalized === "claude" || normalized === "anthropic") {
       return "claude";
@@ -345,7 +393,7 @@
     return "";
   }
 
-  function createProviderIcon(provider) {
+  function createProviderIcon(provider: unknown) {
     const iconClass = getProviderIconClass(provider);
     const icon = document.createElement("span");
     icon.className = `twicc-usage-provider-icon${iconClass ? ` ${iconClass}` : ""}`;
@@ -356,7 +404,7 @@
     return icon;
   }
 
-  function getGaugePercent(value) {
+  function getGaugePercent(value: unknown) {
     const number = Number(value);
     return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 0;
   }
@@ -373,12 +421,12 @@
       provider.seven_day_burn_rate_12h;
   }
 
-  function formatBurnRate(value) {
+  function formatBurnRate(value: unknown) {
     const percent = normalizeBurnRatePercent(value);
     return Number.isFinite(percent) ? `${Math.round(percent)}%` : "--";
   }
 
-  function normalizeBurnRatePercent(value) {
+  function normalizeBurnRatePercent(value: unknown) {
     const number = Number(value);
     if (!Number.isFinite(number)) {
       return Number.NaN;
@@ -387,7 +435,7 @@
     return Math.abs(number) <= 2 ? number * 100 : number;
   }
 
-  function getBurnRateArcSegments(value) {
+  function getBurnRateArcSegments(value: unknown) {
     const percent = normalizeBurnRatePercent(value);
     if (!Number.isFinite(percent) || percent <= 0) {
       return {
@@ -410,7 +458,7 @@
     };
   }
 
-  function getBurnRateTone(value) {
+  function getBurnRateTone(value: unknown) {
     const percent = normalizeBurnRatePercent(value);
     if (!Number.isFinite(percent)) {
       return "unknown";
@@ -424,7 +472,7 @@
     return "ok";
   }
 
-  function createUsageGauge(label, percentValue, detail) {
+  function createUsageGauge(label: string, percentValue: unknown, detail: string) {
     const gauge = document.createElement("div");
     gauge.className = `twicc-usage-gauge ${getUsageTone(percentValue)}`;
     gauge.style.setProperty("--twicc-usage-percent", `${getGaugePercent(percentValue)}%`);
@@ -446,7 +494,7 @@
     return gauge;
   }
 
-  function createBurnRateGauge(label, value) {
+  function createBurnRateGauge(label: string, value: unknown) {
     const arcs = getBurnRateArcSegments(value);
     const gauge = document.createElement("div");
     gauge.className = `twicc-usage-burn-gauge ${getBurnRateTone(value)}`;
@@ -470,22 +518,35 @@
     return gauge;
   }
 
-  function normalizeUsageResult(payload) {
-    if (!payload || typeof payload !== "object") {
+  function asUsageProvider(value: unknown): TwiccUsageProvider {
+    return isRecord(value) ? value : {};
+  }
+
+  function normalizeUsageEntries(value: unknown): Record<string, TwiccUsageProvider> {
+    if (!isRecord(value)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(value).map(([key, provider]) => [key, asUsageProvider(provider)])
+    );
+  }
+
+  function normalizeUsageResult(payload: unknown): Record<string, TwiccUsageProvider> {
+    if (!isRecord(payload)) {
       return {};
     }
 
     if ("result" in payload || "exit_code" in payload || "error" in payload) {
       if (payload.exit_code && payload.exit_code !== 0) {
-        throw new Error(payload.error || "TwiCC usage request failed.");
+        throw new Error(String(payload.error || "TwiCC usage request failed."));
       }
       if (payload.error) {
         throw new Error(String(payload.error));
       }
-      return payload.result && typeof payload.result === "object" ? payload.result : {};
+      return normalizeUsageEntries(payload.result);
     }
 
-    return payload;
+    return normalizeUsageEntries(payload);
   }
 
   async function fetchUsage(globalPluginConfig: TwiccConfig = {}) {
@@ -514,8 +575,8 @@
     return normalizeUsageResult(await response.json());
   }
 
-  function renderProviderUsage(providerKey, usage) {
-    const provider = usage && typeof usage === "object" ? usage : {};
+  function renderProviderUsage(providerKey: string, usage: TwiccUsageProvider) {
+    const provider = asUsageProvider(usage);
     const providerName = formatProviderName(provider.provider || providerKey);
     const row = document.createElement("section");
     row.className = "twicc-usage-provider";
@@ -592,7 +653,7 @@
         footer.textContent = "";
       } catch (error) {
         footer.hidden = false;
-        footer.textContent = error.message;
+        footer.textContent = error instanceof Error ? error.message : String(error);
       }
     }
 
@@ -610,7 +671,7 @@
     return card;
   }
 
-  function registerUsageWidget(ctx) {
+  function registerUsageWidget(ctx: TwiccPluginContext) {
     ctx.widgets.register({
       id: "boatyard.twicc.usage",
       name: "TwiCC Usage",
@@ -629,7 +690,7 @@
     ctx.widgets.registerAlias("boatyard.twicc.projectUsage", "boatyard.twicc.usage");
   }
 
-  function syncProjectUrlField(event) {
+  function syncProjectUrlField(event: TwiccSourcePathInspectedEvent) {
     const fields = event.fields;
     const inspected = event.inspected?.plugins?.["boatyard.twicc"] || {};
     const currentValue = fields?.getValue("twiccProjectUrl") || "";
@@ -679,7 +740,9 @@
       activate(ctx) {
         const twiccService = createTwiccService();
         ctx.services.provide("boatyard.twicc.api", twiccService);
-        ctx.events.on("boatyard.projectForm.sourcePathInspected", syncProjectUrlField);
+        ctx.events.on("boatyard.projectForm.sourcePathInspected", (event: unknown) => {
+          syncProjectUrlField(event as TwiccSourcePathInspectedEvent);
+        });
         startProjectStatusRefresh();
 
         ctx.status.set({
@@ -722,7 +785,7 @@
                 label: "Create",
                 pendingLabel: "Creating...",
                 message: "TwiCC project not found. Create it?",
-                async run({ coreFields, fields }) {
+                async run({ coreFields, fields }: TwiccProjectFieldContext) {
                   const sourcePath = String(coreFields.sourcePath || "").trim();
                   if (!sourcePath) {
                     throw new Error("Source path is required to create a TwiCC project.");
@@ -748,15 +811,15 @@
           title: "Twicc",
           kind: "wcv",
           scope: "project",
-          resolveUrl({ project, projectConfig }) {
-            return twiccService.getProjectUrl(project, { pluginConfig: projectConfig });
+          resolveUrl({ project, projectConfig }: PluginPaneResolveContext) {
+            return twiccService.getProjectUrl(project || {}, { pluginConfig: projectConfig });
           }
         });
 
         ctx.projectNavBadges.register({
           id: "boatyard.twicc.projectStatus",
-          render({ project, projectConfig, isActiveProject }) {
-            return createProjectStatusBadge(project, projectConfig, { isActiveProject });
+          render({ project, projectConfig, isActiveProject }: PluginProjectNavBadgeRenderContext) {
+            return createProjectStatusBadge(project || {}, projectConfig, { isActiveProject });
           }
         });
 
