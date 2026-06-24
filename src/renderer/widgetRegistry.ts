@@ -5,14 +5,14 @@ type WidgetRegistryWindow = Window & {
 (function registerWidgetRegistry(globalScope: WidgetRegistryWindow) {
   const widgets = new Map<string, WidgetDefinition>();
   const aliases = new Map<string, string>();
-  const allowedStatuses = new Set<WidgetStatus>(["stable", "experimental"]);
+  const allowedStatuses = new Set<string>(["stable", "experimental"]);
 
   function normalizeText(value: unknown): string {
     return String(value || "").trim();
   }
 
   function isWidgetStatus(value: string): value is WidgetStatus {
-    return allowedStatuses.has(value as WidgetStatus);
+    return allowedStatuses.has(value);
   }
 
   function normalizeScopes(definition: WidgetDefinitionInput): string[] {

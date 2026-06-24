@@ -138,11 +138,12 @@ type PluginRegistryWindow = Window & {
       throw new Error(`Project nav badge ${id} must provide render.`);
     }
 
+    const { render } = definition;
     return {
       ...definition,
       id,
       pluginId,
-      render: definition.render as PluginProjectNavBadgeDefinition["render"]
+      render
     };
   }
 
