@@ -1,7 +1,61 @@
 "use strict";
 
 (function registerTwiccPlugin(globalScope) {
-  const registry = globalScope.BoatyardPluginRegistry;
+  type TwiccProject = {
+    id?: string;
+  };
+
+  type TwiccConfig = {
+    twiccApiToken?: string;
+    twiccBaseUrl?: string;
+    twiccProjectUrl?: string;
+  };
+
+  type TwiccPluginOptions = {
+    globalPluginConfig?: TwiccConfig;
+    isActiveProject?: boolean;
+    pluginConfig?: TwiccConfig;
+  };
+
+  type TwiccProjectSession = {
+    state?: string;
+    title?: string;
+  };
+
+  type TwiccProjectStatus = {
+    count?: number;
+    sessions?: TwiccProjectSession[];
+    state?: string;
+  };
+
+  type TwiccUsageProvider = {
+    extra_usage_is_enabled?: boolean;
+    extra_usage_remaining_credits?: number;
+    extra_usage_utilization?: number;
+    fetched_at?: string;
+    five_hour_burn_rate?: number;
+    five_hour_burn_rate_1h?: number;
+    five_hour_burn_rate_30min?: number;
+    five_hour_resets_at?: string;
+    five_hour_utilization?: number;
+    provider?: string;
+    seven_day_burn_rate?: number;
+    seven_day_burn_rate_12h?: number;
+    seven_day_burn_rate_24h?: number;
+    seven_day_resets_at?: string;
+    seven_day_utilization?: number;
+  };
+
+  type TwiccGlobal = Window & {
+    BoatyardPluginRegistry?: any;
+    boatyard?: {
+      invokePlugin?: (pluginId: string, actionName: string, payload: unknown) => Promise<any>;
+      openExternal?: (url: string) => unknown;
+    };
+  };
+
+  const typedGlobalScope = globalScope as unknown as TwiccGlobal;
+  const registry = typedGlobalScope.BoatyardPluginRegistry;
   const DEFAULT_TWICC_URL = "http://localhost:3500";
   const TWICC_PROJECT_STATUS_REFRESH_MS = 5000;
   const TWICC_PROJECT_STATUS_LABELS = {
@@ -10,7 +64,7 @@
     done: "Done"
   };
   const TWICC_USAGE_REFRESH_MS = 60000;
-  let projectProcessStatuses = {};
+  let projectProcessStatuses: Record<string, TwiccProjectStatus> = {};
   const retainedDoneProjectStatuses = new Map();
   let projectStatusRefreshTimer = null;
 
@@ -19,18 +73,18 @@
   }
 
   function invokePlugin(actionName, payload = {}) {
-    return globalScope.boatyard.invokePlugin("boatyard.twicc", actionName, payload);
+    return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.twicc", actionName, payload);
   }
 
   function normalizeBaseUrl(value) {
     return String(value || DEFAULT_TWICC_URL).replace(/\/+$/g, "");
   }
 
-  function resolveProjectUrl(project, options = {}) {
+  function resolveProjectUrl(project: TwiccProject, options: TwiccPluginOptions = {}) {
     return options.pluginConfig?.twiccProjectUrl || "";
   }
 
-  function resolveSessionUrl(project, sessionId, options = {}) {
+  function resolveSessionUrl(project: TwiccProject, sessionId, options: TwiccPluginOptions = {}) {
     const projectUrl = resolveProjectUrl(project, options);
     const id = String(sessionId || "").trim();
     if (!projectUrl || !id) {
@@ -60,7 +114,7 @@
     }
   }
 
-  function getStatusKeysForProject(project, projectConfig = {}) {
+  function getStatusKeysForProject(project: TwiccProject, projectConfig: TwiccConfig = {}) {
     return [
       getProjectIdFromUrl(projectConfig.twiccProjectUrl),
       project.id
@@ -74,7 +128,7 @@
   }
 
   async function refreshProjectProcessStatuses() {
-    if (!globalScope.boatyard?.invokePlugin) {
+    if (!typedGlobalScope.boatyard?.invokePlugin) {
       return;
     }
 
@@ -90,7 +144,7 @@
   }
 
   function startProjectStatusRefresh() {
-    if (!globalScope.boatyard?.invokePlugin) {
+    if (!typedGlobalScope.boatyard?.invokePlugin) {
       return;
     }
 
@@ -113,7 +167,7 @@
     dispatchProjectBadgeChange();
   }
 
-  function createProjectStatusBadge(project, projectConfig = {}, options = {}) {
+  function createProjectStatusBadge(project: TwiccProject, projectConfig: TwiccConfig = {}, options: TwiccPluginOptions = {}) {
     const statusKey = getStatusKeysForProject(project, projectConfig)
       .find((key) => projectProcessStatuses?.[key]);
     const liveStatus = statusKey ? projectProcessStatuses[statusKey] : null;
@@ -149,14 +203,14 @@
   function createTwiccService() {
     return Object.freeze({
       version: "0.1.0",
-      getBaseUrl(options = {}) {
+      getBaseUrl(options: TwiccPluginOptions = {}) {
         return normalizeBaseUrl(options.globalPluginConfig?.twiccBaseUrl);
       },
       getProjectUrl: resolveProjectUrl,
       getSessionUrl: resolveSessionUrl,
-      openProject(project, options = {}) {
+      openProject(project: TwiccProject, options: TwiccPluginOptions = {}) {
         const url = resolveProjectUrl(project, options);
-        return url ? globalScope.boatyard.openExternal(url) : null;
+        return url ? typedGlobalScope.boatyard?.openExternal?.(url) : null;
       }
     });
   }
@@ -265,13 +319,13 @@
     return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 0;
   }
 
-  function getFiveHourBurnRate(provider) {
+  function getFiveHourBurnRate(provider: TwiccUsageProvider) {
     return provider.five_hour_burn_rate ??
       provider.five_hour_burn_rate_1h ??
       provider.five_hour_burn_rate_30min;
   }
 
-  function getSevenDayBurnRate(provider) {
+  function getSevenDayBurnRate(provider: TwiccUsageProvider) {
     return provider.seven_day_burn_rate ??
       provider.seven_day_burn_rate_24h ??
       provider.seven_day_burn_rate_12h;
@@ -392,14 +446,14 @@
     return payload;
   }
 
-  async function fetchUsage(globalPluginConfig = {}) {
+  async function fetchUsage(globalPluginConfig: TwiccConfig = {}) {
     const request = getFetch();
     if (!request) {
       throw new Error("Fetch is unavailable.");
     }
 
     const token = String(globalPluginConfig.twiccApiToken || "").trim();
-    const headers = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json"
     };
     if (token) {
@@ -460,7 +514,7 @@
     return row;
   }
 
-  function createUsageWidget(project, props = {}) {
+  function createUsageWidget(project: TwiccProject, props: TwiccPluginOptions = {}) {
     const card = document.createElement("article");
     card.className = "widget-card twicc-usage-widget";
 
