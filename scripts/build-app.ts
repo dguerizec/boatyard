@@ -89,6 +89,7 @@ function copyPluginRendererScripts() {
 
 rmSync(buildRoot, { recursive: true, force: true });
 run("npx", ["tsc", "-p", "tsconfig.build.json"]);
+run("npx", ["tsc", "-p", "tsconfig.renderer.json"]);
 copyStaticAssets(sourceRoot);
 copyBrowserScripts(join(sourceRoot, "renderer"));
 copyPluginRendererScripts();

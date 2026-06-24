@@ -1,14 +1,4 @@
-"use strict";
-
-type UnknownRecord = Record<string, unknown>;
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function toUnknownRecord(value: unknown): UnknownRecord {
-  return isRecord(value) ? value : {};
-}
+import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 
 type RendererProject = UnknownRecord & {
   devBranch?: string;
