@@ -1,6 +1,50 @@
 "use strict";
 
 (function () {
+  type WebAppOpenRule = {
+    pattern?: string;
+    target?: string;
+    scope?: string;
+    label?: string;
+  };
+
+  type WebAppOpenRuleDialogOptions = {
+    onSave?: (rule: WebAppOpenRule) => void;
+    onRemove?: () => void;
+  };
+
+  type PluginFieldApiSetOptions = {
+    ifUnedited?: boolean;
+    markEdited?: boolean;
+  };
+
+  type PluginSettingsOptions = {
+    onSaved?: () => void;
+  };
+
+  type GlobalSettingsViewsGlobal = Window & {
+    BoatyardPluginRegistry?: {
+      list(): {
+        id: string;
+        name?: string;
+        enabled?: boolean;
+        description?: string;
+        version?: string;
+        contributes?: Record<string, unknown[]>;
+      }[];
+      getStatus(pluginId: string): { state?: string; summary?: string; enabled?: boolean; error?: string } | null;
+      reload(pluginId: string): void;
+    };
+    BoatyardPluginSettingsFields: {
+      resolveFieldDefault(field: unknown): unknown;
+    };
+    BoatyardGlobalSettingsViews: {
+      create: typeof createGlobalSettingsViews;
+    };
+  };
+
+  const globalScope = window as unknown as GlobalSettingsViewsGlobal;
+
   function createGlobalSettingsViews({
     boatyard,
     applyFormControl,
@@ -356,7 +400,7 @@
       for (const [value, text] of Object.entries(options)) {
         const option = document.createElement("option");
         option.value = value;
-        option.textContent = text;
+        option.textContent = String(text);
         option.selected = selectedValue === value;
         select.append(option);
       }
@@ -396,7 +440,10 @@
       return item;
     }
 
-    function openWebAppOpenRuleSettingsDialog(rule = {}, { onSave, onRemove } = {}) {
+    function openWebAppOpenRuleSettingsDialog(
+      rule: WebAppOpenRule = {},
+      { onSave, onRemove }: WebAppOpenRuleDialogOptions = {}
+    ) {
       const dialog = document.createElement("dialog");
       dialog.className = "plugin-settings-dialog webapp-open-rule-dialog";
 
@@ -696,8 +743,8 @@
       const list = document.createElement("div");
       list.className = "installed-plugin-list";
 
-      for (const plugin of window.BoatyardPluginRegistry?.list() || []) {
-        const status = window.BoatyardPluginRegistry.getStatus(plugin.id);
+      for (const plugin of globalScope.BoatyardPluginRegistry?.list() || []) {
+        const status = globalScope.BoatyardPluginRegistry.getStatus(plugin.id);
         const globalSettingsSections = getPluginGlobalSettingsSections()
           .filter((section) => section.pluginId === plugin.id);
         const item = document.createElement("article");
@@ -774,7 +821,7 @@
         reloadButton.disabled = plugin.enabled === false;
         reloadButton.addEventListener("click", () => {
           try {
-            window.BoatyardPluginRegistry.reload(plugin.id);
+            globalScope.BoatyardPluginRegistry.reload(plugin.id);
           } catch (error) {
             console.error(`Could not reload plugin ${plugin.id}:`, error);
           }
@@ -842,7 +889,7 @@
       });
     }
 
-    function createGlobalPluginSettingsForm(section, options = {}) {
+    function createGlobalPluginSettingsForm(section, options: PluginSettingsOptions = {}) {
       const form = document.createElement("form");
       form.className = "plugin-global-settings-form";
 
@@ -859,7 +906,7 @@
         input.autocomplete = "off";
         input.placeholder = field.placeholder || "";
         input.readOnly = field.readOnly === true;
-        const defaultValue = window.BoatyardPluginSettingsFields.resolveFieldDefault(field);
+        const defaultValue = globalScope.BoatyardPluginSettingsFields.resolveFieldDefault(field);
         input.dataset.defaultValue = String(defaultValue || "");
         input.value = pluginConfig[field.key] || input.dataset.defaultValue;
         label.append(input);
@@ -968,7 +1015,7 @@
         getValue(key) {
           return inputs.get(key)?.input.value || "";
         },
-        setValue(key, value, options = {}) {
+        setValue(key, value, options: PluginFieldApiSetOptions = {}) {
           const input = inputs.get(key)?.input;
           if (!input) {
             return false;
@@ -1030,7 +1077,7 @@
     };
   }
 
-  window.BoatyardGlobalSettingsViews = {
+  globalScope.BoatyardGlobalSettingsViews = {
     create: createGlobalSettingsViews
   };
 })();
