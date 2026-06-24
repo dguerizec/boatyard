@@ -1,6 +1,49 @@
+import type { RendererProject } from "./rendererTypes.js";
+import type { UnknownRecord } from "./rendererRecords.js";
+
 type WebAppMenuElement = HTMLDivElement & {
   cleanup?: () => void;
 };
+
+  type WebAppBounds = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+
+  type MenuPaneNode = UnknownRecord & {
+    id?: string;
+    selectedWebAppId?: string | null;
+    transientWebApp?: unknown;
+  };
+
+  type MenuSplitNode = UnknownRecord & {
+    ratio?: number;
+    second: MenuPaneNode;
+  };
+
+  type MenuWebApp = UnknownRecord & {
+    homeTab?: boolean;
+    homeTabId?: string;
+    id?: string;
+    key?: string;
+    kind?: string;
+    label?: unknown;
+    parentLabel?: unknown;
+    parentWebAppId?: string;
+    url?: string;
+    widgetPane?: UnknownRecord & {
+      id?: string;
+      label?: string;
+    };
+  };
+
+  type VisibleWebAppEntry = {
+    host: Element | null;
+    paneId: string;
+    webApp: MenuWebApp;
+  };
 
   type WebAppOpenPayload = {
     url?: string;
@@ -16,6 +59,68 @@ type WebAppMenuElement = HTMLDivElement & {
   type WebAppOpenFormControls = HTMLFormControlsCollection & {
     webAppOpenTarget: HTMLInputElement;
   };
+
+  type WebAppOpenRule = {
+    label?: string;
+    pattern?: string;
+    scope?: string;
+    target?: string;
+  };
+
+  type WebAppOpenChoice = WebAppOpenRule & {
+    persist?: boolean;
+  };
+
+  type OrderedWebAppMenuItem = {
+    depth: number;
+    webApp: MenuWebApp;
+  };
+
+  type WebAppMenusOptions = {
+    webAppOpenSplitRatio: number;
+    getCurrentWebAppUrl: (webApp: unknown) => string;
+    getSettings: () => UnknownRecord & { webAppOpenRules?: WebAppOpenRule[] };
+    getProjectById: (projectId?: string) => RendererProject | null;
+    getProjectWidgetPanes: (project: RendererProject) => UnknownRecord[];
+    getVisibleWebAppEntryByKey: (key?: string) => VisibleWebAppEntry | null;
+    getVisibleWebAppEntryByUrl: (url?: string) => VisibleWebAppEntry | null;
+    getVisibleWebAppProject: () => RendererProject | null;
+    getProjectPaneLayout: (project: RendererProject) => unknown;
+    getWebAppHostBounds: (host?: Element | null) => WebAppBounds | null;
+    findPaneNode: (layout: unknown, paneId?: string) => unknown;
+    createSplitNode: (
+      project: RendererProject,
+      direction: string,
+      first: unknown,
+      selectedWebAppId?: string | null
+    ) => unknown;
+    replacePaneNode: (layout: unknown, paneId: string, replacement: unknown) => unknown;
+    setPaneLayout: (projectId: string | undefined, layout: unknown) => unknown;
+    setSelectedWebAppForPane: (paneId: string, webAppId?: string) => unknown;
+    getSelectedWebAppForPane: (paneId: string) => string;
+    setSelectedWebAppForProject: (projectId: string | undefined, webAppId?: string) => unknown;
+    getSelectedWebAppForProject: (projectId?: string) => string;
+    setCurrentWebAppUrl: (key: string, url: string) => void;
+    persistPaneLayout: (project: RendererProject) => void;
+    renderWorkspaceDashboard: (project: RendererProject) => void;
+    updateWebAppHomeTab: (projectId: string, tab: UnknownRecord) => Promise<unknown>;
+    updateSettings: (values: UnknownRecord) => Promise<unknown>;
+    updateProject: (projectId: string, values: UnknownRecord) => Promise<unknown>;
+    invokeWebApp: (action: string, ...payload: unknown[]) => Promise<unknown>;
+    openExternal: (url: string) => unknown | Promise<unknown>;
+    showOverlayDialog: (dialog: HTMLDialogElement, options?: UnknownRecord) => Promise<boolean>;
+    normalizePayloadBounds: (bounds: unknown) => WebAppBounds | null;
+    freezeWebAppsForOverlay: (options?: unknown) => Promise<unknown>;
+    restoreWebAppsAfterOverlay: () => void | Promise<unknown>;
+    closeTerminalTabMenu: () => void;
+    clamp: (value: number, min: number, max: number) => number;
+    isGlobalWorkspace: (project: RendererProject) => boolean;
+    isWebAppLoaded: (key?: string) => boolean;
+  };
+
+  function asErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
 
 export function createWebAppMenus({
     webAppOpenSplitRatio,
@@ -52,19 +157,19 @@ export function createWebAppMenus({
     clamp,
     isGlobalWorkspace,
     isWebAppLoaded
-  }) {
+  }: WebAppMenusOptions) {
     let openWebAppTabMenu: WebAppMenuElement | null = null;
 
-    function getWebAppOpenUrlLabel(url) {
+    function getWebAppOpenUrlLabel(url: unknown) {
       try {
-        const parsedUrl = new URL(url);
+      const parsedUrl = new URL(String(url || ""));
         return parsedUrl.hostname || "Link";
       } catch {
         return "Link";
       }
     }
 
-    function createTransientWebApp(url, label = "", parentWebApp = null) {
+    function createTransientWebApp(url: string, label = "", parentWebApp: MenuWebApp | null = null): MenuWebApp {
       return {
         id: `transient:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
         label: label || getWebAppOpenUrlLabel(url),
@@ -78,7 +183,7 @@ export function createWebAppMenus({
       return `home:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
     }
 
-    function getParentWebAppForDerivedTab(webApp) {
+    function getParentWebAppForDerivedTab(webApp: MenuWebApp) {
       if ((webApp?.transient || webApp?.homeTab) && webApp.parentWebAppId) {
         return {
           id: webApp.parentWebAppId,
@@ -89,7 +194,11 @@ export function createWebAppMenus({
       return webApp;
     }
 
-    async function saveCurrentUrlAsWebAppHomeTab(project, paneNode, selectedWebApp) {
+    async function saveCurrentUrlAsWebAppHomeTab(
+      project: RendererProject,
+      paneNode: MenuPaneNode,
+      selectedWebApp: MenuWebApp
+    ) {
       const currentUrl = getCurrentWebAppUrl(selectedWebApp);
       if (!currentUrl) {
         return false;
@@ -108,7 +217,7 @@ export function createWebAppMenus({
         url: currentUrl
       };
 
-      await updateWebAppHomeTab(project.id, nextTab);
+      await updateWebAppHomeTab(project.id || "", nextTab);
       paneNode.selectedWebAppId = nextTab.id;
       setSelectedWebAppForPane(paneNode.id, nextTab.id);
       setSelectedWebAppForProject(project.id, nextTab.id);
@@ -120,12 +229,12 @@ export function createWebAppMenus({
       return true;
     }
 
-    function openUrlInSplitPane(sourceWebAppKey, url, label = "") {
+    function openUrlInSplitPane(sourceWebAppKey: string, url: string, label = "") {
       const sourceEntry = getVisibleWebAppEntryByKey(sourceWebAppKey);
       return openUrlInSplitPaneFromEntry(sourceEntry, url, label);
     }
 
-    function openUrlInSplitPaneFromEntry(sourceEntry, url, label = "") {
+    function openUrlInSplitPaneFromEntry(sourceEntry: VisibleWebAppEntry | null, url: string, label = "") {
       const project = sourceEntry ? getVisibleWebAppProject() : null;
       if (!sourceEntry || !project) {
         return false;
@@ -137,7 +246,7 @@ export function createWebAppMenus({
       }
 
       const layout = getProjectPaneLayout(project);
-      const sourcePaneNode = findPaneNode(layout, sourceEntry.paneId);
+      const sourcePaneNode = findPaneNode(layout, sourceEntry.paneId) as MenuPaneNode | null;
       if (!sourcePaneNode) {
         return false;
       }
@@ -152,22 +261,23 @@ export function createWebAppMenus({
         splitDirection,
         { ...sourcePaneNode, selectedWebAppId: sourceWebAppId },
         null
-      );
+      ) as MenuSplitNode;
       replacement.ratio = webAppOpenSplitRatio;
-      replacement.second.transientWebApp = createTransientWebApp(url, label, sourceEntry.webApp);
-      replacement.second.selectedWebAppId = replacement.second.transientWebApp.id;
+      const transientWebApp = createTransientWebApp(url, label, sourceEntry.webApp);
+      replacement.second.transientWebApp = transientWebApp;
+      replacement.second.selectedWebAppId = transientWebApp.id;
 
       setPaneLayout(project.id, replacePaneNode(layout, sourceEntry.paneId, replacement));
       setSelectedWebAppForPane(sourceEntry.paneId, sourceWebAppId);
-      setSelectedWebAppForPane(replacement.second.id, replacement.second.selectedWebAppId);
+      setSelectedWebAppForPane(replacement.second.id || "", replacement.second.selectedWebAppId);
 
       persistPaneLayout(project);
       renderWorkspaceDashboard(project);
       return true;
     }
 
-    function getWebAppOpenRulePattern(url, scope) {
-      const parsedUrl = new URL(url);
+    function getWebAppOpenRulePattern(url: string, scope?: string) {
+      const parsedUrl = new URL(String(url || ""));
       if (scope === "host") {
         return parsedUrl.host;
       }
@@ -179,14 +289,14 @@ export function createWebAppMenus({
       return parsedUrl.toString();
     }
 
-    function upsertWebAppOpenRule(rules, nextRule) {
+    function upsertWebAppOpenRule(rules: WebAppOpenRule[], nextRule: WebAppOpenRule) {
       return [
-        ...rules.filter((rule) => !(rule.scope === nextRule.scope && rule.pattern === nextRule.pattern)),
+        ...rules.filter((rule: WebAppOpenRule) => !(rule.scope === nextRule.scope && rule.pattern === nextRule.pattern)),
         nextRule
       ];
     }
 
-    async function applyWebAppOpenChoice(payload, choice) {
+    async function applyWebAppOpenChoice(payload: WebAppOpenPayload, choice: WebAppOpenChoice) {
       const url = normalizeAddressInput(payload.url);
 
       if (choice.target === "external") {
@@ -220,7 +330,13 @@ export function createWebAppMenus({
       });
     }
 
-    function createRadioOption(name, value, labelText, descriptionText, checked = false) {
+    function createRadioOption(
+      name: string,
+      value: string,
+      labelText: string,
+      descriptionText: string,
+      checked = false
+    ) {
       const label = document.createElement("label");
       label.className = "webapp-open-option";
 
@@ -368,11 +484,11 @@ export function createWebAppMenus({
             target: elements.webAppOpenTarget.value,
             persist: persistInput.checked,
             scope: scopeSelect.value,
-            label: sourceWebApp?.label || ""
+            label: String(sourceWebApp?.label || "")
           });
           dialog.close();
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         } finally {
           submitButton.disabled = false;
@@ -387,7 +503,7 @@ export function createWebAppMenus({
       });
     }
 
-    function normalizeAddressInput(rawUrl) {
+    function normalizeAddressInput(rawUrl: unknown) {
       const trimmed = String(rawUrl || "").trim();
 
       if (!trimmed) {
@@ -399,7 +515,7 @@ export function createWebAppMenus({
       return hasProtocol ? trimmed : `${isLocalhost ? "http" : "https"}://${trimmed}`;
     }
 
-    function selectWebApp(project, paneNode, webApp) {
+    function selectWebApp(project: RendererProject, paneNode: MenuPaneNode, webApp: MenuWebApp) {
       setSelectedWebAppForPane(paneNode.id, webApp.id);
       paneNode.selectedWebAppId = webApp.id;
       setSelectedWebAppForProject(project.id, webApp.id);
@@ -407,23 +523,27 @@ export function createWebAppMenus({
       renderWorkspaceDashboard(project);
     }
 
-    async function renameWidgetPane(project, widgetPane, nextLabel) {
+    async function renameWidgetPane(project: RendererProject, widgetPane: MenuWebApp["widgetPane"], nextLabel: unknown) {
       const currentLabel = widgetPane.label || "Widgets";
       const normalizedLabel = String(nextLabel || "").trim();
       if (!normalizedLabel || normalizedLabel === currentLabel) {
         return;
       }
 
-      const widgetPanes = getProjectWidgetPanes(project).map((pane) => (
+      const widgetPanes = getProjectWidgetPanes(project).map((pane: UnknownRecord) => (
         pane.id === widgetPane.id
           ? { ...pane, label: normalizedLabel }
           : pane
       ));
-      await updateProject(project.id, { widgetPanes });
+      await updateProject(project.id || "", { widgetPanes });
       renderWorkspaceDashboard(getProjectById(project.id) || project);
     }
 
-    function editWidgetPaneLabel(project, widgetPane, button) {
+    function editWidgetPaneLabel(
+      project: RendererProject,
+      widgetPane: MenuWebApp["widgetPane"],
+      button: HTMLButtonElement
+    ) {
       const editor = document.createElement("input");
       editor.className = "widget-pane-tab widget-pane-tab-editor";
       editor.type = "text";
@@ -431,7 +551,7 @@ export function createWebAppMenus({
       editor.setAttribute("aria-label", "Widget page name");
 
       let finished = false;
-      const finish = async (shouldSave) => {
+      const finish = async (shouldSave: boolean) => {
         if (finished) {
           return;
         }
@@ -466,8 +586,14 @@ export function createWebAppMenus({
       editor.select();
     }
 
-    function createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps, options: WidgetPaneTabsOptions = {}) {
-      const widgetWebApps = webApps.filter((webApp) => webApp.kind === "widgets");
+    function createWidgetPaneTabs(
+      project: RendererProject,
+      paneNode: MenuPaneNode,
+      selectedWebApp: MenuWebApp,
+      webApps: MenuWebApp[],
+      options: WidgetPaneTabsOptions = {}
+    ) {
+      const widgetWebApps = webApps.filter((webApp: MenuWebApp) => webApp.kind === "widgets");
       const list = document.createElement("div");
       list.className = "widget-pane-tabs";
       list.setAttribute("role", "tablist");
@@ -483,7 +609,7 @@ export function createWebAppMenus({
         button.type = "button";
         button.setAttribute("role", "tab");
         button.setAttribute("aria-selected", String(webApp.id === selectedWebApp.id));
-        button.textContent = webApp.label;
+        button.textContent = String(webApp.label || "");
         button.addEventListener("click", () => {
           if (webApp.id !== selectedWebApp.id) {
             selectWebApp(project, paneNode, webApp);
@@ -514,7 +640,13 @@ export function createWebAppMenus({
       restoreWebAppsAfterOverlay();
     }
 
-    async function openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps) {
+    async function openWebAppTabMenuFromButton(
+      button: HTMLButtonElement,
+      project: RendererProject,
+      paneNode: MenuPaneNode,
+      selectedWebApp: MenuWebApp,
+      webApps: MenuWebApp[]
+    ) {
       closeWebAppTabMenu();
       closeTerminalTabMenu();
 
@@ -530,14 +662,14 @@ export function createWebAppMenus({
       menu.style.top = `${Math.round(rect.bottom + 6)}px`;
       menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 220))}px`;
 
-      const rootWebApps = webApps.filter((webApp) => !webApp.parentWebAppId);
-      const childWebAppsByParentId = new Map();
-      for (const webApp of webApps.filter((candidate) => candidate.parentWebAppId)) {
+      const rootWebApps = webApps.filter((webApp: MenuWebApp) => !webApp.parentWebAppId);
+      const childWebAppsByParentId = new Map<string, MenuWebApp[]>();
+      for (const webApp of webApps.filter((candidate: MenuWebApp) => candidate.parentWebAppId)) {
         const children = childWebAppsByParentId.get(webApp.parentWebAppId) || [];
         children.push(webApp);
         childWebAppsByParentId.set(webApp.parentWebAppId, children);
       }
-      const orderedWebApps = [];
+      const orderedWebApps: OrderedWebAppMenuItem[] = [];
       for (const webApp of rootWebApps) {
         orderedWebApps.push({
           webApp,
@@ -568,13 +700,13 @@ export function createWebAppMenus({
         item.classList.toggle("child", depth > 0);
         item.classList.toggle("loaded", isWebAppLoaded(webApp.key));
         item.type = "button";
-        item.dataset.webAppId = webApp.id;
+        item.dataset.webAppId = webApp.id || "";
         item.setAttribute("role", "menuitem");
         item.setAttribute("aria-current", String(webApp.id === selectedWebApp.id));
         item.setAttribute("data-load-state", isWebAppLoaded(webApp.key) ? "Loaded" : "Not loaded");
         item.textContent = depth > 0 && webApp.parentLabel
           ? `${webApp.parentLabel} -> ${webApp.label}`
-          : webApp.label;
+          : String(webApp.label || "");
         item.addEventListener("click", () => {
           closeWebAppTabMenu();
           selectWebApp(project, paneNode, webApp);
@@ -585,13 +717,13 @@ export function createWebAppMenus({
       document.body.append(menu);
       openWebAppTabMenu = menu;
 
-      function onPointerDown(event) {
-        if (!menu.contains(event.target) && event.target !== button) {
+      function onPointerDown(event: PointerEvent) {
+        if (!menu.contains(event.target as Node | null) && event.target !== button) {
           closeWebAppTabMenu();
         }
       }
 
-      function onKeyDown(event) {
+      function onKeyDown(event: KeyboardEvent) {
         if (event.key === "Escape") {
           closeWebAppTabMenu();
         }
@@ -611,7 +743,12 @@ export function createWebAppMenus({
       menu.querySelector("button")?.focus();
     }
 
-    async function openWebAppHomeMenu(event, project, paneNode, selectedWebApp) {
+    async function openWebAppHomeMenu(
+      event: MouseEvent,
+      project: RendererProject,
+      paneNode: MenuPaneNode,
+      selectedWebApp: MenuWebApp
+    ) {
       event.preventDefault();
       const sourceButton = event.currentTarget;
       closeWebAppTabMenu();
@@ -637,7 +774,7 @@ export function createWebAppMenus({
       item.textContent = selectedWebApp.homeTab ? "Update this tab home" : "Save current URL as sub-tab";
       item.addEventListener("click", () => {
         closeWebAppTabMenu();
-        saveCurrentUrlAsWebAppHomeTab(project, paneNode, selectedWebApp).catch((error) => {
+        saveCurrentUrlAsWebAppHomeTab(project, paneNode, selectedWebApp).catch((error: unknown) => {
           console.error("Could not save webapp home tab:", error);
         });
       });
@@ -646,13 +783,13 @@ export function createWebAppMenus({
       document.body.append(menu);
       openWebAppTabMenu = menu;
 
-      function onPointerDown(pointerEvent) {
-        if (!menu.contains(pointerEvent.target) && pointerEvent.target !== sourceButton) {
+      function onPointerDown(pointerEvent: PointerEvent) {
+        if (!menu.contains(pointerEvent.target as Node | null) && pointerEvent.target !== sourceButton) {
           closeWebAppTabMenu();
         }
       }
 
-      function onKeyDown(keyEvent) {
+      function onKeyDown(keyEvent: KeyboardEvent) {
         if (keyEvent.key === "Escape") {
           closeWebAppTabMenu();
         }
@@ -671,7 +808,7 @@ export function createWebAppMenus({
       item.focus();
     }
 
-    async function openWebAppRefreshMenu(event, selectedWebApp) {
+    async function openWebAppRefreshMenu(event: MouseEvent, selectedWebApp: MenuWebApp) {
       event.preventDefault();
       const sourceButton = event.currentTarget;
       closeWebAppTabMenu();
@@ -697,7 +834,7 @@ export function createWebAppMenus({
       item.textContent = "Hard reload";
       item.addEventListener("click", () => {
         closeWebAppTabMenu();
-        invokeWebApp("navigateWebApp", selectedWebApp.key, "hard-refresh").catch((error) => {
+        invokeWebApp("navigateWebApp", selectedWebApp.key, "hard-refresh").catch((error: unknown) => {
           console.error("Could not hard reload webapp:", error);
         });
       });
@@ -706,13 +843,13 @@ export function createWebAppMenus({
       document.body.append(menu);
       openWebAppTabMenu = menu;
 
-      function onPointerDown(pointerEvent) {
-        if (!menu.contains(pointerEvent.target) && pointerEvent.target !== sourceButton) {
+      function onPointerDown(pointerEvent: PointerEvent) {
+        if (!menu.contains(pointerEvent.target as Node | null) && pointerEvent.target !== sourceButton) {
           closeWebAppTabMenu();
         }
       }
 
-      function onKeyDown(keyEvent) {
+      function onKeyDown(keyEvent: KeyboardEvent) {
         if (keyEvent.key === "Escape") {
           closeWebAppTabMenu();
         }
