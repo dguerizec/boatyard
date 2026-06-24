@@ -1,5 +1,7 @@
 import { createProjectSettingsRows } from "./projectSettingsRows.js";
 import { createProjectSettingsSimpleForms } from "./projectSettingsSimpleForms.js";
+import type { BoatyardBridge, RendererProject, RendererState } from "./rendererTypes.js";
+import type { UnknownRecord } from "./rendererRecords.js";
 
 type CoreFieldSetOptions = {
   ifUnedited?: boolean;
@@ -12,6 +14,10 @@ type CoreFieldSetOptions = {
     [key: string]: unknown;
   };
 
+  type CoreProjectFieldKey = "name" | "slug" | "group" | "sourcePath" | "gitUrl" | "repoUrl" | "devBranch";
+
+  type CoreProjectInputs = Record<CoreProjectFieldKey, HTMLInputElement>;
+
   type PluginFieldSetOptions = {
     ifUnedited?: boolean;
     markEdited?: boolean;
@@ -21,6 +27,100 @@ type CoreFieldSetOptions = {
     readCoreProjectFields?: () => Record<string, string>;
     setError?: (message: string) => void;
   };
+
+  type ProjectSettingsBoatyardBridge = BoatyardBridge & {
+    inspectSourcePath?: (sourcePath: string) => Promise<UnknownRecord>;
+    selectProjectsBasePath?(currentPath?: string): Promise<string>;
+  };
+
+  type ProjectSettingsViewsOptions = {
+    boatyard: ProjectSettingsBoatyardBridge;
+    getState: () => RendererState;
+    getSettings: () => UnknownRecord;
+    getProjectGroups: () => string[];
+    getProjectWidgetPanes: (project: RendererProject) => UnknownRecord[];
+    getProjectPluginConfig: (projectId: string, pluginId: string) => UnknownRecord;
+    getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
+    getPluginProjectSettingsSections: () => unknown[];
+    applyFormControl: (control: HTMLElement) => void;
+    applyFormControls: (container: HTMLElement) => void;
+    readPluginSettingsFieldValue: (field: ProjectPluginField, input: HTMLInputElement) => unknown;
+    deriveRepoUrl: (gitUrl: unknown) => string;
+    deriveProjectNameFromPath: (sourcePath: unknown) => string;
+    formatProjectNameFromPath: (sourcePath: unknown) => string;
+    slugify: (value: unknown) => string;
+  };
+
+  type ProjectFormOptions = {
+    title: string;
+    submitLabel: string;
+    initialValues?: ProjectFormInitialValues;
+    onSubmit: (values: UnknownRecord & { pluginConfig: UnknownRecord }) => void | Promise<void>;
+    onCancel: () => void;
+  };
+
+  type ProjectPluginFieldAction = {
+    hidden?: boolean;
+    label?: string;
+    message?: string;
+    pendingLabel?: string;
+    run?: (context: {
+      coreFields: Record<string, string>;
+      fields: PluginFieldApi;
+      globalConfig: UnknownRecord;
+      project: ProjectFormInitialValues;
+    }) => unknown | Promise<unknown>;
+  };
+
+  type ProjectPluginField = PluginSettingsFieldDefinition & {
+    action?: ProjectPluginFieldAction;
+    description?: string;
+  };
+
+  type ProjectPluginSettingsSection = PluginSettingsSection & {
+    fields: ProjectPluginField[];
+  };
+
+  type ProjectPluginFieldState = {
+    action: {
+      button: HTMLButtonElement;
+      element: HTMLDivElement;
+      message: HTMLSpanElement;
+    } | null;
+    field: ProjectPluginField;
+    input: HTMLInputElement;
+  };
+
+  type ProjectPluginControlsSection = {
+    inputs: Map<string, ProjectPluginFieldState>;
+    pluginId: string;
+  };
+
+  type PluginFieldApi = {
+    getValue(key: string): string;
+    isEdited(key: string): boolean;
+    setActionMessage(key: string, message: unknown): boolean;
+    setActionVisible(key: string, visible: boolean): boolean;
+    setDefaultValue(key: string, value: unknown): boolean;
+    setValue(key: string, value: unknown, options?: PluginFieldSetOptions): boolean;
+  };
+
+  type ProjectScopedFormOptions = {
+    project: RendererProject;
+    onSubmit: (values: UnknownRecord[]) => void | Promise<void>;
+  };
+
+  type GlobalUrlsFormOptions = {
+    onSubmit: (values: UnknownRecord[]) => void | Promise<void>;
+  };
+
+  function asProjectPluginSection(value: unknown): ProjectPluginSettingsSection {
+    return value as ProjectPluginSettingsSection;
+  }
+
+  function asErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
 
 const globalScope: ProjectSettingsViewsGlobal = window;
 
@@ -40,7 +140,7 @@ export function createProjectSettingsViews({
     deriveProjectNameFromPath,
     formatProjectNameFromPath,
     slugify
-  }) {
+  }: ProjectSettingsViewsOptions) {
     const {
       createProjectUrlRow,
       createProjectWebAppHomeTabRow,
@@ -54,7 +154,13 @@ export function createProjectSettingsViews({
       createProjectTerminalSettingsForm
     } = createProjectSettingsSimpleForms({ applyFormControl, applyFormControls });
 
-    function createProjectFormView({ title, submitLabel, initialValues, onSubmit, onCancel }) {
+    function createProjectFormView({
+      title,
+      submitLabel,
+      initialValues = {},
+      onSubmit,
+      onCancel
+    }: ProjectFormOptions) {
       const shell = document.createElement("section");
       shell.className = "project-form-page";
     
@@ -80,7 +186,7 @@ export function createProjectSettingsViews({
       nameInput.type = "text";
       nameInput.autocomplete = "off";
       nameInput.required = true;
-      nameInput.value = initialValues.name || "";
+      nameInput.value = String(initialValues.name || "");
       nameLabel.append(nameInput);
     
       const slugLabel = document.createElement("label");
@@ -91,7 +197,7 @@ export function createProjectSettingsViews({
       slugInput.type = "text";
       slugInput.autocomplete = "off";
       slugInput.required = true;
-      slugInput.value = initialValues.slug || "";
+      slugInput.value = String(initialValues.slug || "");
       slugLabel.append(slugInput);
     
       const groupLabel = document.createElement("label");
@@ -102,7 +208,7 @@ export function createProjectSettingsViews({
       groupInput.type = "text";
       groupInput.autocomplete = "off";
       groupInput.placeholder = "Team, product, or workspace";
-      groupInput.value = initialValues.group || "";
+      groupInput.value = String(initialValues.group || "");
     
       const groupOptions = document.createElement("datalist");
       groupOptions.id = `project-group-options-${initialValues.id || "new"}`;
@@ -123,7 +229,7 @@ export function createProjectSettingsViews({
       sourcePathInput.autocomplete = "off";
       sourcePathInput.required = true;
       sourcePathInput.placeholder = "/workspace/projects/example";
-      sourcePathInput.value = initialValues.sourcePath || "";
+      sourcePathInput.value = String(initialValues.sourcePath || "");
     
       const sourcePathControl = document.createElement("div");
       sourcePathControl.className = "path-picker";
@@ -138,15 +244,18 @@ export function createProjectSettingsViews({
     
         try {
           const settings = getSettings();
+          if (typeof boatyard.selectProjectsBasePath !== "function") {
+            throw new Error("Project path picker is unavailable.");
+          }
           const selectedPath = await boatyard.selectProjectsBasePath(
-            sourcePathInput.value || settings.projectsBasePath
+            sourcePathInput.value || String(settings.projectsBasePath || "")
           );
           if (selectedPath) {
             setCoreFieldValue("sourcePath", selectedPath, { markEdited: true, source: "browse" });
             await applySourcePathInspection(selectedPath);
           }
         } catch (selectError) {
-          error.textContent = selectError.message;
+          error.textContent = asErrorMessage(selectError);
           error.hidden = false;
         }
       });
@@ -162,7 +271,7 @@ export function createProjectSettingsViews({
       gitUrlInput.type = "text";
       gitUrlInput.autocomplete = "off";
       gitUrlInput.placeholder = "git@github.com:owner/repo.git";
-      gitUrlInput.value = initialValues.gitUrl || "";
+      gitUrlInput.value = String(initialValues.gitUrl || "");
       gitUrlLabel.append(gitUrlInput);
     
       const repoUrlLabel = document.createElement("label");
@@ -173,7 +282,7 @@ export function createProjectSettingsViews({
       repoUrlInput.type = "text";
       repoUrlInput.autocomplete = "off";
       repoUrlInput.placeholder = "https://github.com/owner/repo/tree/main/path";
-      repoUrlInput.value = initialValues.repoUrl || deriveRepoUrl(initialValues.gitUrl);
+      repoUrlInput.value = String(initialValues.repoUrl || deriveRepoUrl(initialValues.gitUrl));
       repoUrlLabel.append(repoUrlInput);
     
       const devBranchLabel = document.createElement("label");
@@ -184,10 +293,10 @@ export function createProjectSettingsViews({
       devBranchInput.type = "text";
       devBranchInput.autocomplete = "off";
       devBranchInput.placeholder = "main";
-      devBranchInput.value = initialValues.devBranch || "";
+      devBranchInput.value = String(initialValues.devBranch || "");
       devBranchLabel.append(devBranchInput);
     
-      const coreInputs = {
+      const coreInputs: CoreProjectInputs = {
         name: nameInput,
         slug: slugInput,
         group: groupInput,
@@ -203,7 +312,7 @@ export function createProjectSettingsViews({
         );
       }
     
-      function setCoreFieldValue(key, value, options: CoreFieldSetOptions = {}) {
+      function setCoreFieldValue(key: CoreProjectFieldKey, value: unknown, options: CoreFieldSetOptions = {}) {
         const input = coreInputs[key];
         if (!input) {
           return false;
@@ -230,7 +339,7 @@ export function createProjectSettingsViews({
         return true;
       }
     
-      function markCoreFieldEdited(key) {
+      function markCoreFieldEdited(key: CoreProjectFieldKey) {
         const input = coreInputs[key];
         if (input) {
           input.dataset.edited = "true";
@@ -310,7 +419,7 @@ export function createProjectSettingsViews({
         });
       });
     
-      function applySourcePathIdentity(sourcePath) {
+      function applySourcePathIdentity(sourcePath: string) {
         const projectName = formatProjectNameFromPath(sourcePath);
         const projectSlug = slugify(deriveProjectNameFromPath(sourcePath));
     
@@ -328,10 +437,12 @@ export function createProjectSettingsViews({
     
       }
     
-      async function applySourcePathInspection(sourcePath) {
+      async function applySourcePathInspection(sourcePath: string) {
         applySourcePathIdentity(sourcePath);
     
-        const inspected = await boatyard.inspectSourcePath(sourcePath);
+        const inspected = typeof boatyard.inspectSourcePath === "function"
+          ? await boatyard.inspectSourcePath(sourcePath)
+          : {};
     
         if (inspected?.gitUrl) {
           setCoreFieldValue("gitUrl", inspected.gitUrl, { source: "inspection" });
@@ -349,11 +460,11 @@ export function createProjectSettingsViews({
         });
       }
     
-      function emitProjectFormEvent(eventName, payload) {
+      function emitProjectFormEvent(eventName: string, payload: UnknownRecord) {
         globalScope.BoatyardPluginRegistry?.emit(eventName, {
           ...payload,
           projectId: initialValues.id || "",
-          forPlugin: (pluginId) => ({
+          forPlugin: (pluginId: string) => ({
             coreFields: readCoreProjectFields(),
             globalConfig: getGlobalPluginConfig(pluginId),
             fields: pluginSettings.createFieldApi(pluginId)
@@ -373,7 +484,7 @@ export function createProjectSettingsViews({
         try {
           await applySourcePathInspection(sourcePath);
         } catch (inspectionError) {
-          error.textContent = inspectionError.message;
+          error.textContent = asErrorMessage(inspectionError);
           error.hidden = false;
         }
       });
@@ -438,7 +549,7 @@ export function createProjectSettingsViews({
             pluginConfig: pluginSettings.readValues()
           });
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
@@ -452,14 +563,14 @@ export function createProjectSettingsViews({
       initialValues: ProjectFormInitialValues = {},
       options: ProjectPluginSectionOptions = {}
     ) {
-      const controls = [];
-      const sections = [];
+      const controls: HTMLElement[] = [];
+      const sections: ProjectPluginControlsSection[] = [];
     
-      for (const section of getPluginProjectSettingsSections()) {
+      for (const section of getPluginProjectSettingsSections().map(asProjectPluginSection)) {
         const projectPluginConfig = initialValues.id
           ? getProjectPluginConfig(initialValues.id, section.pluginId)
           : {};
-        const inputs = new Map();
+        const inputs = new Map<string, ProjectPluginFieldState>();
         const wrapper = document.createElement("div");
         wrapper.className = "plugin-project-settings-section";
     
@@ -485,7 +596,7 @@ export function createProjectSettingsViews({
           });
           input.dataset.defaultValue = String(defaultValue || "");
           input.placeholder = input.dataset.defaultValue || field.placeholder || "";
-          input.value = projectPluginConfig[field.key] || "";
+          input.value = String(projectPluginConfig[field.key] || "");
           input.addEventListener("input", () => {
             input.dataset.edited = "true";
           });
@@ -496,7 +607,7 @@ export function createProjectSettingsViews({
             description.textContent = field.description;
             label.append(description);
           }
-          const fieldState = { field, input, action: null };
+          const fieldState: ProjectPluginFieldState = { field, input, action: null };
     
           if (field.action) {
             const action = document.createElement("div");
@@ -528,7 +639,7 @@ export function createProjectSettingsViews({
                   fields: createPluginFieldApi(inputs)
                 });
               } catch (actionError) {
-                options.setError?.(actionError.message);
+                options.setError?.(asErrorMessage(actionError));
               } finally {
                 actionButton.disabled = false;
                 actionButton.textContent = originalLabel;
@@ -551,17 +662,17 @@ export function createProjectSettingsViews({
       return {
         controls,
         readValues() {
-          const values = {};
+          const values: UnknownRecord = {};
           for (const section of sections) {
             values[section.pluginId] = {};
             for (const [key, { field, input }] of section.inputs) {
-              values[section.pluginId][key] = readPluginSettingsFieldValue(field, input);
+              (values[section.pluginId] as UnknownRecord)[key] = readPluginSettingsFieldValue(field, input);
             }
           }
     
           return values;
         },
-        createFieldApi(pluginId) {
+        createFieldApi(pluginId: string) {
           const section = sections.find((entry) => entry.pluginId === pluginId);
           const inputs = section?.inputs || new Map();
           return createPluginFieldApi(inputs);
@@ -569,12 +680,12 @@ export function createProjectSettingsViews({
       };
     }
     
-    function createPluginFieldApi(inputs) {
+    function createPluginFieldApi(inputs: Map<string, ProjectPluginFieldState>): PluginFieldApi {
       return Object.freeze({
-        getValue(key) {
+        getValue(key: string) {
           return inputs.get(key)?.input.value || "";
         },
-        setValue(key, value, options: PluginFieldSetOptions = {}) {
+        setValue(key: string, value: unknown, options: PluginFieldSetOptions = {}) {
           const input = inputs.get(key)?.input;
           if (!input) {
             return false;
@@ -590,10 +701,10 @@ export function createProjectSettingsViews({
           }
           return true;
         },
-        isEdited(key) {
+        isEdited(key: string) {
           return inputs.get(key)?.input.dataset.edited === "true";
         },
-        setDefaultValue(key, value) {
+        setDefaultValue(key: string, value: unknown) {
           const input = inputs.get(key)?.input;
           if (!input) {
             return false;
@@ -604,7 +715,7 @@ export function createProjectSettingsViews({
           input.placeholder = nextValue || inputs.get(key)?.field.placeholder || "";
           return true;
         },
-        setActionVisible(key, visible) {
+        setActionVisible(key: string, visible: boolean) {
           const action = inputs.get(key)?.action;
           if (!action) {
             return false;
@@ -613,7 +724,7 @@ export function createProjectSettingsViews({
           action.element.hidden = !visible;
           return true;
         },
-        setActionMessage(key, message) {
+        setActionMessage(key: string, message: unknown) {
           const action = inputs.get(key)?.action;
           if (!action) {
             return false;
@@ -625,7 +736,7 @@ export function createProjectSettingsViews({
       });
     }
     
-    function createProjectUrlsForm({ project, onSubmit }) {
+    function createProjectUrlsForm({ project, onSubmit }: ProjectScopedFormOptions) {
       const shell = document.createElement("section");
       shell.className = "project-form-page";
     
@@ -684,7 +795,7 @@ export function createProjectSettingsViews({
         try {
           await onSubmit(readProjectUrlRows(list));
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
@@ -693,7 +804,7 @@ export function createProjectSettingsViews({
       return shell;
     }
     
-    function createProjectWebAppHomeTabsForm({ project, onSubmit }) {
+    function createProjectWebAppHomeTabsForm({ project, onSubmit }: ProjectScopedFormOptions) {
       const shell = document.createElement("section");
       shell.className = "project-form-page";
     
@@ -714,7 +825,7 @@ export function createProjectSettingsViews({
       list.className = "project-webapp-home-tab-list";
     
       for (const entry of project.webAppHomeTabs || []) {
-        list.append(createProjectWebAppHomeTabRow(entry));
+        list.append(createProjectWebAppHomeTabRow(entry as UnknownRecord));
       }
     
       const empty = document.createElement("p");
@@ -747,7 +858,7 @@ export function createProjectSettingsViews({
         try {
           await onSubmit(readProjectWebAppHomeTabRows(list));
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
@@ -756,7 +867,7 @@ export function createProjectSettingsViews({
       return shell;
     }
     
-    function createGlobalUrlsSettingsForm({ onSubmit }) {
+    function createGlobalUrlsSettingsForm({ onSubmit }: GlobalUrlsFormOptions) {
       const shell = document.createElement("section");
       shell.className = "project-form-page";
     
@@ -815,7 +926,7 @@ export function createProjectSettingsViews({
         try {
           await onSubmit(readProjectUrlRows(list));
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
@@ -824,7 +935,7 @@ export function createProjectSettingsViews({
       return shell;
     }
     
-    function createProjectWidgetPanesForm({ project, onSubmit }) {
+    function createProjectWidgetPanesForm({ project, onSubmit }: ProjectScopedFormOptions) {
       const shell = document.createElement("section");
       shell.className = "project-form-page";
     
@@ -879,7 +990,7 @@ export function createProjectSettingsViews({
         try {
           await onSubmit(readProjectWidgetPaneRows(list));
         } catch (submitError) {
-          error.textContent = submitError.message;
+          error.textContent = asErrorMessage(submitError);
           error.hidden = false;
         }
       });
