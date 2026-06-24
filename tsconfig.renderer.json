@@ -15,6 +15,7 @@
     "src/renderer/paneLayoutView.ts",
     "src/renderer/renderer.ts",
     "src/renderer/rendererGlobals.d.ts",
-    "src/renderer/rendererRecords.ts"
+    "src/renderer/rendererRecords.ts",
+    "src/renderer/updateViews.ts"
   ]
 }

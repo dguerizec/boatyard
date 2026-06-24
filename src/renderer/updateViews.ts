@@ -1,9 +1,6 @@
-"use strict";
-
-(function () {
-  type UpdateViewsRestartResult = {
-    pathConfigured?: boolean;
-  };
+type UpdateViewsRestartResult = {
+  pathConfigured?: boolean;
+};
 
   type UpdateViewsPreparedUpdate = {
     currentVersion?: string;
@@ -57,7 +54,7 @@
   type UpdateViewsOptions = {
     boatyard: UpdateViewsBoatyardBridge;
     createToolIcon: (name: string) => Node;
-    showOverlayDialog: (dialog: HTMLDialogElement, options?: UpdateViewsOverlayOptions) => Promise<boolean>;
+    showOverlayDialog: (dialog: HTMLDialogElement, options?: UpdateViewsOverlayOptions) => unknown;
     sidebarUpdateNotice: HTMLElement;
     updatePollIntervalMs: number;
   };
@@ -72,7 +69,7 @@
     return error instanceof Error ? error.message : String(error);
   }
 
-  function createUpdateViews({
+export function createUpdateViews({
     boatyard,
     createToolIcon,
     showOverlayDialog,
@@ -570,10 +567,4 @@
       },
       startUpdatePolling
     };
-  }
-
-  const globalScope: UpdateViewsGlobal = window;
-  globalScope.BoatyardUpdateViews = {
-    create: createUpdateViews
-  };
-})();
+}

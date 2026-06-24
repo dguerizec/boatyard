@@ -2,6 +2,7 @@ import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
+import { createUpdateViews } from "./updateViews.js";
 
 type RendererProject = UnknownRecord & {
   devBranch?: string;
@@ -133,7 +134,11 @@ type ProjectSettingsViewsInstance = RendererModuleInstance & {
 
 type BoatyardBridge = {
   addProject(values: UnknownRecord): Promise<RendererState>;
+  dismissChangelog?: () => Promise<unknown>;
+  getChangelogHistory?: () => Promise<unknown>;
+  getPendingChangelog?: () => Promise<unknown>;
   getState(): Promise<RendererState>;
+  getUpdateInfo?: () => Promise<unknown>;
   onTerminalData(callback: (payload: unknown) => void): void;
   onTerminalExit(callback: (payload: unknown) => void): void;
   onWebAppAutofillChanged?: (callback: (payload: { enabled?: boolean; key?: string }) => void) => void;
@@ -141,8 +146,10 @@ type BoatyardBridge = {
   onWebAppOpenUrlRequested?: (callback: (payload: UnknownRecord & { target?: string }) => void) => void;
   onWebAppUrlChanged(callback: (payload: { key?: string; url?: string }) => void): void;
   openExternal(url: string): unknown;
+  prepareUpdate?: () => Promise<unknown>;
   removeProject(projectId: string): Promise<RendererState>;
   reorderProjects(projectIds: string[]): Promise<RendererState>;
+  restartToUpdate(update: UnknownRecord): Promise<unknown>;
   updateGlobalPluginConfig(pluginId: string, values: UnknownRecord): Promise<RendererState>;
   updateGlobalUrls(urls: UnknownRecord[]): Promise<RendererState>;
   updateNavigation(values: UnknownRecord): Promise<UnknownRecord>;
@@ -179,7 +186,6 @@ type BoatyardRendererWindow = Window & {
   BoatyardProjectSettingsViews: RendererCreateModule<ProjectSettingsViewsInstance>;
   BoatyardProjectSidebar: RendererCreateModule;
   BoatyardTerminalSurfaces: RendererCreateModule;
-  BoatyardUpdateViews: RendererCreateModule<UpdateViewsInstance>;
   BoatyardWebAppMenus: RendererCreateModule<WebAppMenusInstance>;
   BoatyardWebAppSurfaces: RendererCreateModule;
   BoatyardWidgetRegistry: {
@@ -1767,7 +1773,7 @@ function isWebAppTabMenuOpen() {
   return webAppMenus.isWebAppTabMenuOpen();
 }
 
-const updateViews = boatyardWindow.BoatyardUpdateViews.create({
+const updateViews = createUpdateViews({
   boatyard: boatyardWindow.boatyard,
   createToolIcon,
   showOverlayDialog,
