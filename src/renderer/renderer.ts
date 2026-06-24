@@ -1,20 +1,56 @@
 "use strict";
 
-const globalNav = document.querySelector("#global-nav");
-const globalNavRow = document.querySelector("#global-nav-row");
-const globalSettingsButton = document.querySelector("#global-settings");
-const globalViewButton = document.querySelector("#global-view");
-const manualTourButton = document.querySelector("#manual-tour");
-const sidebarUpdateNotice = document.querySelector("#sidebar-update-notice");
-const addProjectButton = document.querySelector("#add-project");
-const projectCount = document.querySelector("#project-count");
-const projectSearchInput = document.querySelector("#project-search");
-const projectList = document.querySelector("#project-list");
-const workspace = document.querySelector(".workspace");
-const dashboardGrid = document.querySelector("#dashboard-grid");
-const workspaceKicker = document.querySelector("#workspace-kicker");
-const workspaceTitle = document.querySelector("#workspace-title");
-const workspaceSummary = document.querySelector("#workspace-summary");
+type BoatyardRendererWindow = Window & {
+  boatyard: any;
+  BoatyardGlobalSettingsViews: any;
+  BoatyardHawserUI?: any;
+  BoatyardManual?: any;
+  BoatyardOnboardingTour: any;
+  BoatyardOverlayDialog?: any;
+  BoatyardPaneLayoutState: any;
+  BoatyardPaneLayoutView: any;
+  BoatyardPaneNavigation?: any;
+  BoatyardPluginLoader: any;
+  BoatyardPluginRegistry: any;
+  BoatyardPluginSettingsFields: any;
+  BoatyardProjectSettingsViews: any;
+  BoatyardProjectSidebar: any;
+  BoatyardTerminalSurfaces: any;
+  BoatyardUpdateViews: any;
+  BoatyardWebAppMenus: any;
+  BoatyardWebAppSurfaces: any;
+  BoatyardWidgetRegistry: any;
+  BoatyardWidgetSurfaces: any;
+};
+
+type ProjectNavBadgeRenderOptions = {
+  isActiveProject?: boolean;
+};
+
+type HawserWidgetOptions = {
+  loadData?: (project: any) => Promise<any>;
+  onOpenMessage?: (message: any) => void;
+  subtitle?: string;
+  title?: string;
+};
+
+const boatyardWindow = window as unknown as BoatyardRendererWindow;
+
+const globalNav = document.querySelector<HTMLElement>("#global-nav");
+const globalNavRow = document.querySelector<HTMLElement>("#global-nav-row");
+const globalSettingsButton = document.querySelector<HTMLButtonElement>("#global-settings");
+const globalViewButton = document.querySelector<HTMLButtonElement>("#global-view");
+const manualTourButton = document.querySelector<HTMLButtonElement>("#manual-tour");
+const sidebarUpdateNotice = document.querySelector<HTMLElement>("#sidebar-update-notice");
+const addProjectButton = document.querySelector<HTMLButtonElement>("#add-project");
+const projectCount = document.querySelector<HTMLElement>("#project-count");
+const projectSearchInput = document.querySelector<HTMLInputElement>("#project-search");
+const projectList = document.querySelector<HTMLElement>("#project-list");
+const workspace = document.querySelector<HTMLElement>(".workspace");
+const dashboardGrid = document.querySelector<HTMLElement>("#dashboard-grid");
+const workspaceKicker = document.querySelector<HTMLElement>("#workspace-kicker");
+const workspaceTitle = document.querySelector<HTMLElement>("#workspace-title");
+const workspaceSummary = document.querySelector<HTMLElement>("#workspace-summary");
 
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
@@ -26,7 +62,7 @@ const WIDGET_GRID_GAP = 12;
 const WIDGET_GRID_SCROLL_GUARD = 10;
 const WEBAPP_SPLIT_RESIZER_SIZE = 6;
 const WEBAPP_OPEN_SPLIT_RATIO = 2 / 3;
-const ONBOARDING_VERSION = window.BoatyardManual?.version || 1;
+const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
 const LEGACY_WIDGET_IDS = new Map([
   ["project-shell", "terminal-shell"],
   ["global-shell", "terminal-shell"]
@@ -87,15 +123,15 @@ function formatProjectNameFromPath(sourcePath) {
   return projectName ? `${projectName.charAt(0).toUpperCase()}${projectName.slice(1)}` : "";
 }
 
-let state = { projects: [] };
+let state: any = { projects: [] };
 let currentView = "global";
 let currentProjectId = null;
 let returnView = { view: "global", projectId: null };
-const loadedWebAppKeys = new Set();
-const currentWebAppUrlsByKey = new Map();
-const loadedWebAppUrlsByKey = new Map();
-const webAppLoadWaiters = new Set();
-const webAppAutofillEnabledByKey = new Map();
+const loadedWebAppKeys = new Set<string>();
+const currentWebAppUrlsByKey = new Map<string, string>();
+const loadedWebAppUrlsByKey = new Map<string, string>();
+const webAppLoadWaiters = new Set<(payload: unknown) => void>();
+const webAppAutofillEnabledByKey = new Map<string, boolean>();
 let visibleWebAppHosts = new Map();
 let pierWorkloadPaneRefreshFrame = null;
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
@@ -186,14 +222,14 @@ function createToolIcon(name) {
 }
 
 function getProjects() {
-  return state.projects;
+  return state.projects as any[];
 }
 
 function getProjectGroups() {
-  return [...new Set(getProjects()
+  const groups = [...new Set(getProjects()
     .map((project) => String(project.group || "").trim())
-    .filter(Boolean))]
-    .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+    .filter(Boolean))] as string[];
+  return groups.sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
 }
 
 function normalizeProjectSearchText(value) {
@@ -251,7 +287,7 @@ function getSettings() {
 }
 
 function getManual() {
-  return window.BoatyardManual || {
+  return boatyardWindow.BoatyardManual || {
     title: "Boatyard Manual",
     description: "",
     sections: [],
@@ -305,19 +341,19 @@ function applyFormControls(root) {
 }
 
 function getPluginPaneDefinitions(filter = {}) {
-  return window.BoatyardPluginRegistry?.listPanes(filter) || [];
+  return boatyardWindow.BoatyardPluginRegistry?.listPanes(filter) || [];
 }
 
 function getPluginProjectNavBadgeDefinitions() {
-  return window.BoatyardPluginRegistry?.listProjectNavBadges() || [];
+  return boatyardWindow.BoatyardPluginRegistry?.listProjectNavBadges() || [];
 }
 
 function getPluginProjectSettingsSections() {
-  return window.BoatyardPluginRegistry?.listProjectSettingsSections() || [];
+  return boatyardWindow.BoatyardPluginRegistry?.listProjectSettingsSections() || [];
 }
 
 function getPluginGlobalSettingsSections() {
-  return window.BoatyardPluginRegistry?.listGlobalSettingsSections() || [];
+  return boatyardWindow.BoatyardPluginRegistry?.listGlobalSettingsSections() || [];
 }
 
 function getPluginEnabledState() {
@@ -329,7 +365,7 @@ function getProjectSummaryTarget(project) {
     project.slug;
 }
 
-function renderProjectNavBadges(project, container, options = {}) {
+function renderProjectNavBadges(project, container, options: ProjectNavBadgeRenderOptions = {}) {
   for (const badge of getPluginProjectNavBadgeDefinitions()) {
     try {
       const element = badge.render({
@@ -353,14 +389,14 @@ async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
   let nextState = state;
 
   for (const [pluginId, config] of Object.entries(pluginConfig)) {
-    nextState = await window.boatyard.updateProjectPluginConfig(projectId, pluginId, config);
+    nextState = await boatyardWindow.boatyard.updateProjectPluginConfig(projectId, pluginId, config);
   }
 
   return nextState;
 }
 
 function readPluginSettingsFieldValue(field, input) {
-  return window.BoatyardPluginSettingsFields.readFieldValue(field, input, {
+  return boatyardWindow.BoatyardPluginSettingsFields.readFieldValue(field, input, {
     normalizeUrl: normalizeAddressInput
   });
 }
@@ -374,7 +410,7 @@ function persistNavigation() {
     return;
   }
 
-  window.boatyard.updateNavigation({
+  boatyardWindow.boatyard.updateNavigation({
     view: currentView,
     projectId: currentProjectId,
     collapsedProjectGroups: [...getCollapsedProjectGroups()]
@@ -454,7 +490,7 @@ function createCard({ title, eyebrow, body, meta, action }) {
 }
 
 function nextAnimationFrame() {
-  return new Promise((resolve) => {
+  return new Promise<void>((resolve) => {
     requestAnimationFrame(() => resolve());
   });
 }
@@ -512,12 +548,12 @@ function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {
   });
 }
 
-const paneLayoutState = window.BoatyardPaneLayoutState.create({
-  updatePaneLayout: (projectId, layout) => window.boatyard.updatePaneLayout(projectId, layout)
+const paneLayoutState = boatyardWindow.BoatyardPaneLayoutState.create({
+  updatePaneLayout: (projectId, layout) => boatyardWindow.boatyard.updatePaneLayout(projectId, layout)
 });
 
-const terminalSurfaces = window.BoatyardTerminalSurfaces.create({
-  boatyard: window.boatyard,
+const terminalSurfaces = boatyardWindow.BoatyardTerminalSurfaces.create({
+  boatyard: boatyardWindow.boatyard,
   getProjectById,
   getState: () => state,
   createToolIcon,
@@ -553,7 +589,7 @@ function formatHawserEndpoint(message) {
   return `to ${message.toProject || "?"}${message.toSession ? `:${message.toSession}` : ""}`;
 }
 
-function createHawserWidget(project, options = {}) {
+function createHawserWidget(project, options: HawserWidgetOptions = {}) {
   const loadData = options.loadData;
   const card = document.createElement("article");
   card.className = "widget-card hawser-widget";
@@ -714,12 +750,12 @@ function createHawserWidget(project, options = {}) {
   return card;
 }
 
-window.BoatyardHawserUI = Object.freeze({
+boatyardWindow.BoatyardHawserUI = Object.freeze({
   createWidget: createHawserWidget
 });
 
 function registerBuiltinWidgets() {
-  const registry = window.BoatyardWidgetRegistry;
+  const registry = boatyardWindow.BoatyardWidgetRegistry;
 
   if (!registry) {
     throw new Error("Widget registry is unavailable.");
@@ -749,8 +785,8 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-const widgetSurfaces = window.BoatyardWidgetSurfaces.create({
-  boatyard: window.boatyard,
+const widgetSurfaces = boatyardWindow.BoatyardWidgetSurfaces.create({
+  boatyard: boatyardWindow.boatyard,
   getState: () => state,
   getProjectPluginConfig,
   getGlobalPluginConfig,
@@ -965,7 +1001,7 @@ function getSelectedWebApp(project, paneId, webApps) {
 }
 
 function invokeWebApp(action, ...payload) {
-  return window.boatyard[action](...payload).catch((error) => {
+  return boatyardWindow.boatyard[action](...payload).catch((error) => {
     console.error(`Could not ${action}:`, error);
   });
 }
@@ -1139,11 +1175,11 @@ function openProjectWebApp(projectId, webAppId, url = "") {
   return true;
 }
 
-window.BoatyardPaneNavigation = Object.freeze({
+boatyardWindow.BoatyardPaneNavigation = Object.freeze({
   openProjectWebApp
 });
 
-const paneLayoutView = window.BoatyardPaneLayoutView.create({
+const paneLayoutView = boatyardWindow.BoatyardPaneLayoutView.create({
   minWidgetRailWidth: MIN_WIDGET_RAIL_WIDTH,
   webAppSplitResizerSize: WEBAPP_SPLIT_RESIZER_SIZE,
   dashboardGrid,
@@ -1373,12 +1409,12 @@ function renderGlobalSettingsPage() {
   dashboardGrid.append(createGlobalUpdateCard(), createGlobalProjectsSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
-      state = await window.boatyard.updateSettings(values);
+      state = await boatyardWindow.boatyard.updateSettings(values);
       renderGlobalSettingsPage();
     }
   }), createGlobalUrlsSettingsForm({
     onSubmit: async (urls) => {
-      state = await window.boatyard.updateGlobalUrls(urls);
+      state = await boatyardWindow.boatyard.updateGlobalUrls(urls);
       hydratePaneLayouts();
       hydrateWidgetLayouts();
       renderGlobalSettingsPage();
@@ -1386,30 +1422,30 @@ function renderGlobalSettingsPage() {
   }), createGlobalPresentationSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
-      state = await window.boatyard.updateSettings(values);
+      state = await boatyardWindow.boatyard.updateSettings(values);
       renderGlobalSettingsPage();
     }
   }), createGlobalTerminalSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
-      state = await window.boatyard.updateSettings(values);
+      state = await boatyardWindow.boatyard.updateSettings(values);
       renderGlobalSettingsPage();
     }
   }), createGlobalPasswordManagerSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
-      state = await window.boatyard.updateSettings(values);
+      state = await boatyardWindow.boatyard.updateSettings(values);
       renderGlobalSettingsPage();
     }
   }), createGlobalWebAppOpenRulesSettingsForm({
     settings: getSettings(),
     onSubmit: async (values) => {
-      state = await window.boatyard.updateSettings(values);
+      state = await boatyardWindow.boatyard.updateSettings(values);
       renderGlobalSettingsPage();
     }
   }), createGlobalPluginsSettingsView(), createGlobalWidgetsSettingsView());
 
-  window.BoatyardPluginRegistry?.emit("boatyard.globalSettings.opened", {
+  boatyardWindow.BoatyardPluginRegistry?.emit("boatyard.globalSettings.opened", {
     forPlugin: (pluginId) => ({
       globalConfig: getGlobalPluginConfig(pluginId)
     })
@@ -1456,7 +1492,7 @@ function renderProjectPaneArea(project) {
   currentPaneLayoutElement.replaceWith(paneLayoutElement);
 }
 
-const webAppMenus = window.BoatyardWebAppMenus.create({
+const webAppMenus = boatyardWindow.BoatyardWebAppMenus.create({
   webAppOpenSplitRatio: WEBAPP_OPEN_SPLIT_RATIO,
   getCurrentWebAppUrl,
   getSettings,
@@ -1481,19 +1517,19 @@ const webAppMenus = window.BoatyardWebAppMenus.create({
   persistPaneLayout,
   renderWorkspaceDashboard,
   updateWebAppHomeTab: async (projectId, tab) => {
-    state = await window.boatyard.updateWebAppHomeTab(projectId, tab);
+    state = await boatyardWindow.boatyard.updateWebAppHomeTab(projectId, tab);
     return state;
   },
   updateSettings: async (values) => {
-    state = await window.boatyard.updateSettings(values);
+    state = await boatyardWindow.boatyard.updateSettings(values);
     return state;
   },
   updateProject: async (projectId, values) => {
-    state = await window.boatyard.updateProject(projectId, values);
+    state = await boatyardWindow.boatyard.updateProject(projectId, values);
     return state;
   },
   invokeWebApp,
-  openExternal: (url) => window.boatyard.openExternal(url),
+  openExternal: (url) => boatyardWindow.boatyard.openExternal(url),
   showOverlayDialog,
   normalizePayloadBounds,
   freezeWebAppsForOverlay,
@@ -1540,8 +1576,8 @@ function isWebAppTabMenuOpen() {
   return webAppMenus.isWebAppTabMenuOpen();
 }
 
-const updateViews = window.BoatyardUpdateViews.create({
-  boatyard: window.boatyard,
+const updateViews = boatyardWindow.BoatyardUpdateViews.create({
+  boatyard: boatyardWindow.boatyard,
   createToolIcon,
   showOverlayDialog,
   sidebarUpdateNotice,
@@ -1576,7 +1612,7 @@ function resetActiveUpdateCardUpdater() {
   updateViews.resetActiveUpdateCardUpdater();
 }
 
-const onboardingTour = window.BoatyardOnboardingTour.create({
+const onboardingTour = boatyardWindow.BoatyardOnboardingTour.create({
   elements: {
     addProjectButton,
     projectList
@@ -1616,10 +1652,10 @@ const onboardingTour = window.BoatyardOnboardingTour.create({
   restoreWebAppsAfterOverlay,
   nextAnimationFrame,
   updateOnboarding: async (values) => {
-    state.onboarding = await window.boatyard.updateOnboarding(values);
+    state.onboarding = await boatyardWindow.boatyard.updateOnboarding(values);
     return state.onboarding;
   },
-  updatePaneLayout: (projectId, layout) => window.boatyard.updatePaneLayout(projectId, layout)
+  updatePaneLayout: (projectId, layout) => boatyardWindow.boatyard.updatePaneLayout(projectId, layout)
 });
 
 function ensureOnboardingDemoProject() {
@@ -1638,7 +1674,7 @@ function openOnboardingTour(options = {}) {
   return onboardingTour.openOnboardingTour(options);
 }
 
-const projectSidebar = window.BoatyardProjectSidebar.create({
+const projectSidebar = boatyardWindow.BoatyardProjectSidebar.create({
   elements: {
     addProjectButton,
     globalNav,
@@ -1666,7 +1702,7 @@ const projectSidebar = window.BoatyardProjectSidebar.create({
   isOnboardingDemoProjectVisible,
   ensureOnboardingDemoProject,
   updateNavigation: async (values) => {
-    const navigation = await window.boatyard.updateNavigation(values);
+    const navigation = await boatyardWindow.boatyard.updateNavigation(values);
     state = {
       ...state,
       navigation
@@ -1674,11 +1710,11 @@ const projectSidebar = window.BoatyardProjectSidebar.create({
     return navigation;
   },
   updateProject: async (projectId, values) => {
-    state = await window.boatyard.updateProject(projectId, values);
+    state = await boatyardWindow.boatyard.updateProject(projectId, values);
     return state;
   },
   reorderProjectIds: async (projectIds) => {
-    state = await window.boatyard.reorderProjects(projectIds);
+    state = await boatyardWindow.boatyard.reorderProjects(projectIds);
     return state;
   },
   renderApp: render
@@ -1692,8 +1728,8 @@ function renderProjectList() {
   projectSidebar.renderProjectList();
 }
 
-const projectSettingsViews = window.BoatyardProjectSettingsViews.create({
-  boatyard: window.boatyard,
+const projectSettingsViews = boatyardWindow.BoatyardProjectSettingsViews.create({
+  boatyard: boatyardWindow.boatyard,
   getState: () => state,
   getSettings,
   getProjectGroups,
@@ -1710,8 +1746,8 @@ const projectSettingsViews = window.BoatyardProjectSettingsViews.create({
   slugify
 });
 
-const globalSettingsViews = window.BoatyardGlobalSettingsViews.create({
-  boatyard: window.boatyard,
+const globalSettingsViews = boatyardWindow.BoatyardGlobalSettingsViews.create({
+  boatyard: boatyardWindow.boatyard,
   applyFormControl,
   applyFormControls,
   getInstalledWidgets,
@@ -1721,11 +1757,11 @@ const globalSettingsViews = window.BoatyardGlobalSettingsViews.create({
   showOverlayDialog,
   renderGlobalSettingsPage,
   updatePluginEnabled: async (pluginId, enabled) => {
-    state = await window.boatyard.updatePluginEnabled(pluginId, enabled);
-    window.BoatyardPluginRegistry.setEnabled(pluginId, enabled);
+    state = await boatyardWindow.boatyard.updatePluginEnabled(pluginId, enabled);
+    boatyardWindow.BoatyardPluginRegistry.setEnabled(pluginId, enabled);
   },
   updateGlobalPluginConfig: async (pluginId, values) => {
-    state = await window.boatyard.updateGlobalPluginConfig(pluginId, values);
+    state = await boatyardWindow.boatyard.updateGlobalPluginConfig(pluginId, values);
   }
 });
 
@@ -1802,7 +1838,7 @@ function renderCreateProjectPage() {
     initialValues: {},
     onCancel: () => restoreReturnView(),
     onSubmit: async (values) => {
-      state = await window.boatyard.addProject({
+      state = await boatyardWindow.boatyard.addProject({
         name: values.name,
         slug: values.slug,
         group: values.group,
@@ -1845,7 +1881,7 @@ function renderEditProjectPage(project) {
     initialValues: project,
     onCancel: () => selectProject(project.id),
     onSubmit: async (values) => {
-      state = await window.boatyard.updateProject(project.id, {
+      state = await boatyardWindow.boatyard.updateProject(project.id, {
         name: values.name,
         slug: values.slug,
         group: values.group,
@@ -1865,31 +1901,31 @@ function renderEditProjectPage(project) {
   secondaryColumn.append(createProjectTerminalSettingsForm({
     project,
     onSubmit: async (values) => {
-      state = await window.boatyard.updateProject(project.id, values);
+      state = await boatyardWindow.boatyard.updateProject(project.id, values);
       reloadProjectSettings(project.id);
     }
   }), createProjectUrlsForm({
     project,
     onSubmit: async (urls) => {
-      state = await window.boatyard.updateProject(project.id, { urls });
+      state = await boatyardWindow.boatyard.updateProject(project.id, { urls });
       reloadProjectSettings(project.id);
     }
   }), createProjectWebAppHomeTabsForm({
     project,
     onSubmit: async (homeTabs) => {
-      state = await window.boatyard.updateWebAppHomeTabs(project.id, homeTabs);
+      state = await boatyardWindow.boatyard.updateWebAppHomeTabs(project.id, homeTabs);
       reloadProjectSettings(project.id);
     }
   }), createProjectWidgetPanesForm({
     project,
     onSubmit: async (widgetPanes) => {
-      state = await window.boatyard.updateProject(project.id, { widgetPanes });
+      state = await boatyardWindow.boatyard.updateProject(project.id, { widgetPanes });
       reloadProjectSettings(project.id);
     }
   }), createProjectDangerZone({
     project,
     onUnregister: async () => {
-      state = await window.boatyard.removeProject(project.id);
+      state = await boatyardWindow.boatyard.removeProject(project.id);
       selectGlobal();
     }
   }));
@@ -1897,8 +1933,8 @@ function renderEditProjectPage(project) {
   dashboardGrid.append(primaryColumn, secondaryColumn);
 }
 
-const webAppSurfaces = window.BoatyardWebAppSurfaces.create({
-  boatyard: window.boatyard,
+const webAppSurfaces = boatyardWindow.BoatyardWebAppSurfaces.create({
+  boatyard: boatyardWindow.boatyard,
   getSettings,
   getVisibleWebAppEntries: () => visibleWebAppHosts.values(),
   invokeWebApp,
@@ -1936,7 +1972,7 @@ function showOverlayDialog(dialog, options = {}) {
   return webAppSurfaces.showOverlayDialog(dialog, options);
 }
 
-window.BoatyardOverlayDialog = Object.freeze({
+boatyardWindow.BoatyardOverlayDialog = Object.freeze({
   show: showOverlayDialog
 });
 
@@ -2014,10 +2050,10 @@ function render() {
 }
 
 async function loadState() {
-  state = await window.boatyard.getState();
-  window.BoatyardPluginRegistry?.applyEnabledState(getPluginEnabledState());
+  state = await boatyardWindow.boatyard.getState();
+  boatyardWindow.BoatyardPluginRegistry?.applyEnabledState(getPluginEnabledState());
   currentWebAppUrlsByKey.clear();
-  for (const [key, webApp] of Object.entries(state.webApps || {})) {
+  for (const [key, webApp] of Object.entries(state.webApps || {}) as Array<[string, any]>) {
     if (webApp.url) {
       currentWebAppUrlsByKey.set(key, webApp.url);
     }
@@ -2034,21 +2070,21 @@ async function loadState() {
   }
 }
 
-window.boatyard.onWebAppUrlChanged(({ key, url }) => {
+boatyardWindow.boatyard.onWebAppUrlChanged(({ key, url }) => {
   if (!key || !url) {
     return;
   }
 
   currentWebAppUrlsByKey.set(key, url);
   persistVisibleWebAppPaneLayout(key, url);
-  for (const input of document.querySelectorAll(".webapp-url")) {
+  for (const input of document.querySelectorAll<HTMLInputElement>(".webapp-url")) {
     if (input.dataset.webappKey === key && input !== document.activeElement) {
       input.value = url;
     }
   }
 });
 
-window.boatyard.onWebAppLoaded?.((payload) => {
+boatyardWindow.boatyard.onWebAppLoaded?.((payload) => {
   const { key, url } = payload || {};
   if (!key || !url) {
     return;
@@ -2061,20 +2097,20 @@ window.boatyard.onWebAppLoaded?.((payload) => {
   }
 });
 
-window.boatyard.onWebAppAutofillChanged?.(({ key, enabled }) => {
+boatyardWindow.boatyard.onWebAppAutofillChanged?.(({ key, enabled }) => {
   if (!key) {
     return;
   }
 
   webAppAutofillEnabledByKey.set(key, enabled === true);
-  for (const button of document.querySelectorAll(".webapp-tool-button.autofill")) {
+  for (const button of document.querySelectorAll<HTMLButtonElement>(".webapp-tool-button.autofill")) {
     if (button.dataset.webappKey === key) {
       syncWebAppAutofillButton(button, enabled === true);
     }
   }
 });
 
-window.boatyard.onWebAppOpenUrlRequested?.((payload) => {
+boatyardWindow.boatyard.onWebAppOpenUrlRequested?.((payload) => {
   if (payload?.target) {
     applyWebAppOpenChoice(payload, {
       target: payload.target,
@@ -2090,11 +2126,11 @@ window.boatyard.onWebAppOpenUrlRequested?.((payload) => {
   openWebAppOpenUrlDialog(payload);
 });
 
-window.boatyard.onTerminalData((payload) => {
+boatyardWindow.boatyard.onTerminalData((payload) => {
   terminalSurfaces.handleTerminalData(payload);
 });
 
-window.boatyard.onTerminalExit((payload) => {
+boatyardWindow.boatyard.onTerminalExit((payload) => {
   terminalSurfaces.handleTerminalExit(payload);
 });
 
@@ -2125,7 +2161,7 @@ addProjectButton.addEventListener("click", selectCreateProject);
 window.addEventListener("resize", queueWebAppSync);
 workspace.addEventListener("scroll", queueWebAppSync);
 
-window.BoatyardPluginLoader?.ready
+boatyardWindow.BoatyardPluginLoader?.ready
   ?.catch((error) => {
     console.error("Could not load plugins:", error);
   })
