@@ -1,10 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const test = require("node:test");
-const vm = require("node:vm");
 
 type LooseVmValue = ((...args: unknown[]) => LooseVmValue) & {
   [key: number]: LooseVmValue;
@@ -22,14 +19,8 @@ type PluginRegistryTestContext = {
 };
 
 function createEnvironment() {
-  const widgetRegistrySource = fs.readFileSync(
-    path.join(process.cwd(), "build/renderer/widgetRegistry.js"),
-    "utf8",
-  );
-  const pluginRegistrySource = fs.readFileSync(
-    path.join(process.cwd(), "build/renderer/pluginRegistry.js"),
-    "utf8",
-  );
+  const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widgetRegistry`);
+  const { registerPluginRegistry } = require(`${process.cwd()}/build/renderer/pluginRegistry`);
   const context: PluginRegistryTestContext = {
     console: {
       ...console,
@@ -37,9 +28,8 @@ function createEnvironment() {
     },
     window: {},
   };
-  vm.createContext(context);
-  vm.runInContext(widgetRegistrySource, context);
-  vm.runInContext(pluginRegistrySource, context);
+  registerWidgetRegistry(context.window);
+  registerPluginRegistry(context.window);
   return {
     pluginRegistry: context.window.BoatyardPluginRegistry,
     widgetRegistry: context.window.BoatyardWidgetRegistry,

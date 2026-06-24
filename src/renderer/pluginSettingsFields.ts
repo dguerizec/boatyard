@@ -1,12 +1,11 @@
-(function registerPluginSettingsFields(globalScope: PluginSettingsFieldsGlobal) {
-  function resolveFieldDefault(field: PluginSettingsField = {}, context: Record<string, unknown> = {}) {
+export function resolveFieldDefault(field: PluginSettingsField = {}, context: Record<string, unknown> = {}) {
     const defaultValue = typeof field.defaultValue === "function"
       ? field.defaultValue(context)
       : field.defaultValue;
     return String(defaultValue || "");
-  }
+}
 
-  function readFieldValue(
+export function readFieldValue(
     field: PluginSettingsField = {},
     input?: PluginSettingsInput | null,
     options: PluginSettingsReadOptions = {}
@@ -27,16 +26,14 @@
     }
 
     return rawValue;
-  }
+}
 
+export function registerPluginSettingsFields(globalScope: PluginSettingsFieldsGlobal): PluginSettingsFieldsApi {
   const api = Object.freeze({
     readFieldValue,
     resolveFieldDefault
   });
 
   globalScope.BoatyardPluginSettingsFields = api;
-
-  if (typeof module !== "undefined" && module.exports) {
-    module.exports = api;
-  }
-})(typeof window !== "undefined" ? window : globalThis);
+  return api;
+}

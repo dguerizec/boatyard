@@ -1,10 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const test = require("node:test");
-const vm = require("node:vm");
 
 type LooseVmValue = ((...args: unknown[]) => LooseVmValue) & {
   [key: number]: LooseVmValue;
@@ -18,16 +15,9 @@ type WidgetRegistryTestContext = {
 };
 
 function createRegistry() {
-  const source = fs.readFileSync(
-    path.join(process.cwd(), "build/renderer/widgetRegistry.js"),
-    "utf8",
-  );
-  const context: WidgetRegistryTestContext = {
-    window: {},
-  };
-  vm.createContext(context);
-  vm.runInContext(source, context);
-  return context.window.BoatyardWidgetRegistry;
+  const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widgetRegistry`);
+  const window: WidgetRegistryTestContext["window"] = {};
+  return registerWidgetRegistry(window);
 }
 
 function plain(value) {

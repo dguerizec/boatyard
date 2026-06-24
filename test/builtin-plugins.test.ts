@@ -6,6 +6,8 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 const { resolveFieldDefault } = require(`${process.cwd()}/build/renderer/pluginSettingsFields`);
+const { registerPluginRegistry } = require(`${process.cwd()}/build/renderer/pluginRegistry`);
+const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widgetRegistry`);
 
 const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette"];
 
@@ -30,6 +32,7 @@ type BuiltinRendererContext = {
   fetch: MockFetch;
   window: Record<string, unknown> & {
     BoatyardPluginRegistry?: LooseVmValue;
+    BoatyardWidgetRegistry?: LooseVmValue;
     boatyard: {
       invokePlugin(pluginId: string, actionName: string): Promise<unknown>;
       onPluginEvent(): () => void;
@@ -152,11 +155,11 @@ function loadRendererPluginContext(twiccProjectProcessStatuses = {
     fetch: mockFetch
   };
   context.window.window = context.window;
+  registerWidgetRegistry(context.window);
+  registerPluginRegistry(context.window);
   vm.createContext(context);
 
   for (const file of [
-    path.join(process.cwd(), "build/renderer/widgetRegistry.js"),
-    path.join(process.cwd(), "build/renderer/pluginRegistry.js"),
     ...builtinPluginDirs.map(readBuiltinPluginRendererPath)
   ]) {
     vm.runInContext(fs.readFileSync(file, "utf8"), context);

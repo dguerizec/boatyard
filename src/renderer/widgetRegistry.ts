@@ -1,4 +1,4 @@
-(function registerWidgetRegistry(globalScope: WidgetRegistryWindow) {
+export function registerWidgetRegistry(globalScope: WidgetRegistryWindow): WidgetRegistryApi {
   const widgets = new Map<string, WidgetDefinition>();
   const aliases = new Map<string, string>();
   const allowedStatuses = new Set<string>(["stable", "experimental"]);
@@ -154,7 +154,7 @@
     return [...aliases.entries()].map(([alias, targetId]) => ({ alias, targetId }));
   }
 
-  globalScope.BoatyardWidgetRegistry = Object.freeze({
+  const api = Object.freeze({
     register,
     registerAlias,
     list,
@@ -164,4 +164,6 @@
     unregister,
     unregisterAlias,
   });
-})(window);
+  globalScope.BoatyardWidgetRegistry = api;
+  return api;
+}

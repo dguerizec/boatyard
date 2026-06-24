@@ -1,4 +1,4 @@
-(function createPluginLoader(globalScope: PluginLoaderWindow) {
+export function createPluginLoader(globalScope: PluginLoaderWindow): PluginLoaderApi {
   function loadScript(src: string) {
     return new Promise<void>((resolve, reject) => {
       const script = document.createElement("script");
@@ -37,7 +37,9 @@
     return plugins;
   }
 
-  globalScope.BoatyardPluginLoader = Object.freeze({
+  const api = Object.freeze({
     ready: loadPlugins()
   });
-})(window);
+  globalScope.BoatyardPluginLoader = api;
+  return api;
+}

@@ -2,6 +2,9 @@ import { createGlobalSettingsViews } from "./globalSettingsViews.js";
 import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
+import { createPluginLoader } from "./pluginLoader.js";
+import { registerPluginRegistry } from "./pluginRegistry.js";
+import { registerPluginSettingsFields } from "./pluginSettingsFields.js";
 import { createProjectSidebar } from "./projectSidebar.js";
 import { createProjectSettingsViews } from "./projectSettingsViews.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
@@ -9,6 +12,7 @@ import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createUpdateViews } from "./updateViews.js";
 import { createWebAppMenus } from "./webAppMenus.js";
 import { createWebAppSurfaces } from "./webAppSurfaces.js";
+import { registerWidgetRegistry } from "./widgetRegistry.js";
 import { createWidgetSurfaces } from "./widgetSurfaces.js";
 
 type RendererProject = UnknownRecord & {
@@ -184,9 +188,6 @@ type BoatyardRendererWindow = Window & {
   BoatyardPaneNavigation?: {
     openProjectWebApp(projectId: string | undefined, webAppId: string, url: string): boolean;
   };
-  BoatyardPluginLoader: {
-    ready?: Promise<unknown>;
-  };
   BoatyardPluginRegistry: PluginRegistryApi;
   BoatyardPluginSettingsFields: {
     readFieldValue(field: UnknownRecord, input: HTMLElement, options?: UnknownRecord): unknown;
@@ -232,6 +233,9 @@ type HawserWidgetOptions = {
 };
 
 const boatyardWindow = window as unknown as BoatyardRendererWindow;
+registerWidgetRegistry(window);
+registerPluginRegistry(window);
+registerPluginSettingsFields(window);
 
 const globalNav = document.querySelector<HTMLElement>("#global-nav");
 const globalNavRow = document.querySelector<HTMLElement>("#global-nav-row");
@@ -2360,8 +2364,9 @@ addProjectButton.addEventListener("click", selectCreateProject);
 window.addEventListener("resize", queueWebAppSync);
 workspace.addEventListener("scroll", queueWebAppSync);
 
-boatyardWindow.BoatyardPluginLoader?.ready
-  ?.catch((error) => {
+const pluginLoader = createPluginLoader(window);
+pluginLoader.ready
+  .catch((error) => {
     console.error("Could not load plugins:", error);
   })
-  .finally(loadState) || loadState();
+  .finally(loadState);

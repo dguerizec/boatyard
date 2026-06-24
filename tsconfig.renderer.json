@@ -14,6 +14,9 @@
     "src/renderer/onboardingTour.ts",
     "src/renderer/paneLayoutState.ts",
     "src/renderer/paneLayoutView.ts",
+    "src/renderer/pluginLoader.ts",
+    "src/renderer/pluginRegistry.ts",
+    "src/renderer/pluginSettingsFields.ts",
     "src/renderer/projectSidebar.ts",
     "src/renderer/projectSettingsViews.ts",
     "src/renderer/renderer.ts",
@@ -23,6 +26,7 @@
     "src/renderer/updateViews.ts",
     "src/renderer/webAppMenus.ts",
     "src/renderer/webAppSurfaces.ts",
+    "src/renderer/widgetRegistry.ts",
     "src/renderer/widgetSurfaces.ts"
   ]
 }

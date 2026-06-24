@@ -1,4 +1,4 @@
-(function registerPluginRegistry(globalScope: PluginRegistryWindow) {
+export function registerPluginRegistry(globalScope: PluginRegistryWindow): PluginRegistryApi {
   const plugins = new Map<string, RegisteredPlugin>();
   const statuses = new Map<string, PluginStatus>();
   const panes = new Map<string, PluginPaneDefinition>();
@@ -573,7 +573,7 @@
     return statuses.get(String(pluginId || "")) || null;
   }
 
-  globalScope.BoatyardPluginRegistry = Object.freeze({
+  const api = Object.freeze({
     register,
     list,
     setEnabled,
@@ -588,4 +588,6 @@
     emit,
     getStatus
   });
-})(window);
+  globalScope.BoatyardPluginRegistry = api;
+  return api;
+}
