@@ -84,12 +84,47 @@
     return !!value && typeof value === "object" && !Array.isArray(value);
   }
 
+  function normalizeOptionalNumber(value: unknown): number | undefined {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : undefined;
+  }
+
+  function normalizeProjectSession(value: unknown): TwiccProjectSession {
+    const source = isRecord(value) ? value : {};
+    return {
+      state: String(source.state || "").trim() || undefined,
+      title: String(source.title || "").trim() || undefined
+    };
+  }
+
+  function normalizeProjectStatus(value: unknown): TwiccProjectStatus {
+    const source = isRecord(value) ? value : {};
+    const sessions = Array.isArray(source.sessions)
+      ? source.sessions.map(normalizeProjectSession)
+      : undefined;
+
+    return {
+      count: normalizeOptionalNumber(source.count),
+      sessions,
+      state: String(source.state || "").trim() || undefined
+    };
+  }
+
   function asProjectProcessStatuses(value: unknown): Record<string, TwiccProjectStatus> {
-    return isRecord(value) ? value as Record<string, TwiccProjectStatus> : {};
+    if (!isRecord(value)) {
+      return {};
+    }
+
+    return Object.fromEntries(
+      Object.entries(value).map(([key, status]) => [key, normalizeProjectStatus(status)])
+    );
   }
 
   function asCreatedProject(value: unknown): TwiccCreatedProject {
-    return isRecord(value) ? value as TwiccCreatedProject : {};
+    const source = isRecord(value) ? value : {};
+    return {
+      url: String(source.url || "").trim() || undefined
+    };
   }
 
   function normalizeBaseUrl(value) {

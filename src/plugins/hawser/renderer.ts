@@ -76,8 +76,16 @@
     return typedGlobalScope.boatyard?.invokePlugin?.("boatyard.hawser", actionName, payload);
   }
 
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
   function asCreatedProject(value: unknown): HawserCreatedProject {
-    return value && typeof value === "object" && !Array.isArray(value) ? value as HawserCreatedProject : {};
+    const source = isRecord(value) ? value : {};
+    return {
+      name: String(source.name || "").trim() || undefined,
+      url: String(source.url || "").trim() || undefined
+    };
   }
 
   function normalizeApiUrl(value) {
