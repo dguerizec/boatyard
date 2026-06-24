@@ -1,11 +1,8 @@
-"use strict";
-
-(function () {
-  type TerminalTab = {
-    id: string;
-    index?: number;
-    name?: string;
-  };
+type TerminalTab = {
+  id: string;
+  index?: number;
+  name?: string;
+};
 
   type TerminalTabMenu = HTMLDivElement & {
     cleanup?: () => void;
@@ -21,9 +18,9 @@
     terminalTabsResizeObserver?: ResizeObserver;
   };
 
-  const globalScope: TerminalSurfacesGlobal = window;
+const globalScope: TerminalSurfacesGlobal = window;
 
-  function createTerminalSurfaces({
+export function createTerminalSurfaces({
     boatyard,
     getProjectById,
     getState,
@@ -1367,9 +1364,4 @@
       handleTerminalExit,
       hydrateTerminalTabOrders
     };
-  }
-
-  globalScope.BoatyardTerminalSurfaces = {
-    create: createTerminalSurfaces
-  };
-})();
+}

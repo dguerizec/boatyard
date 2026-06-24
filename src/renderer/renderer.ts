@@ -2,6 +2,7 @@ import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
+import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createUpdateViews } from "./updateViews.js";
 import { createWebAppMenus } from "./webAppMenus.js";
 import { createWebAppSurfaces } from "./webAppSurfaces.js";
@@ -142,8 +143,8 @@ type BoatyardBridge = {
   getPendingChangelog?: () => Promise<unknown>;
   getState(): Promise<RendererState>;
   getUpdateInfo?: () => Promise<unknown>;
-  onTerminalData(callback: (payload: unknown) => void): void;
-  onTerminalExit(callback: (payload: unknown) => void): void;
+  onTerminalData(callback: (payload: { terminalId: unknown; data: unknown }) => void): void;
+  onTerminalExit(callback: (payload: { terminalId: unknown; projectId: unknown; windowId: unknown }) => void): void;
   onWebAppAutofillChanged?: (callback: (payload: { enabled?: boolean; key?: string }) => void) => void;
   onWebAppLoaded?: (callback: (payload: { key?: string; url?: string }) => void) => void;
   onWebAppOpenUrlRequested?: (callback: (payload: UnknownRecord & { target?: string }) => void) => void;
@@ -189,7 +190,6 @@ type BoatyardRendererWindow = Window & {
   };
   BoatyardProjectSettingsViews: RendererCreateModule<ProjectSettingsViewsInstance>;
   BoatyardProjectSidebar: RendererCreateModule;
-  BoatyardTerminalSurfaces: RendererCreateModule;
   BoatyardWidgetRegistry: {
     register(definition: UnknownRecord): unknown;
   };
@@ -751,7 +751,7 @@ const paneLayoutState = createPaneLayoutState({
   updatePaneLayout: (projectId, layout) => boatyardWindow.boatyard.updatePaneLayout(projectId, layout)
 });
 
-const terminalSurfaces = boatyardWindow.BoatyardTerminalSurfaces.create({
+const terminalSurfaces = createTerminalSurfaces({
   boatyard: boatyardWindow.boatyard,
   getProjectById,
   getState: () => state,
