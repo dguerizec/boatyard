@@ -34,6 +34,7 @@
     "src/renderer/rendererEventBindings.ts",
     "src/renderer/rendererGlobals.d.ts",
     "src/renderer/rendererRecords.ts",
+    "src/renderer/rendererSettingsViewBridge.ts",
     "src/renderer/rendererTypes.ts",
     "src/renderer/terminalSelectionBridge.ts",
     "src/renderer/terminalTabDom.ts",

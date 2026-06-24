@@ -1,4 +1,3 @@
-import { createGlobalSettingsViews } from "./globalSettingsViews.js";
 import { createGlobalSettingsPageView } from "./globalSettingsPageView.js";
 import { createHawserWidget } from "./hawserWidget.js";
 import { createManualViews } from "./manualViews.js";
@@ -9,7 +8,6 @@ import { registerPluginRegistry } from "./pluginRegistry.js";
 import { registerPluginSettingsFields } from "./pluginSettingsFields.js";
 import { createProjectPageViews } from "./projectPageViews.js";
 import { createProjectSidebar } from "./projectSidebar.js";
-import { createProjectSettingsViews } from "./projectSettingsViews.js";
 import { createProjectWebApps } from "./projectWebApps.js";
 import {
   deriveProjectNameFromPath,
@@ -21,6 +19,7 @@ import {
 } from "./projectUtils.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 import { registerRendererEventBindings } from "./rendererEventBindings.js";
+import { createRendererSettingsViewBridge } from "./rendererSettingsViewBridge.js";
 import type {
   GlobalSettingsViewsInstance,
   PaneLayoutStateInstance,
@@ -870,6 +869,38 @@ function renderManualPage() {
   manualViews.renderManualPage();
 }
 
+function createGlobalProjectsSettingsForm(options) {
+  return settingsViewBridge.createGlobalProjectsSettingsForm(options);
+}
+
+function createGlobalPresentationSettingsForm(options) {
+  return settingsViewBridge.createGlobalPresentationSettingsForm(options);
+}
+
+function createGlobalTerminalSettingsForm(options) {
+  return settingsViewBridge.createGlobalTerminalSettingsForm(options);
+}
+
+function createGlobalPasswordManagerSettingsForm(options) {
+  return settingsViewBridge.createGlobalPasswordManagerSettingsForm(options);
+}
+
+function createGlobalWebAppOpenRulesSettingsForm(options) {
+  return settingsViewBridge.createGlobalWebAppOpenRulesSettingsForm(options);
+}
+
+function createGlobalPluginsSettingsView() {
+  return settingsViewBridge.createGlobalPluginsSettingsView();
+}
+
+function createGlobalWidgetsSettingsView() {
+  return settingsViewBridge.createGlobalWidgetsSettingsView();
+}
+
+function createGlobalUrlsSettingsForm(options) {
+  return settingsViewBridge.createGlobalUrlsSettingsForm(options);
+}
+
 const globalSettingsPageView = createGlobalSettingsPageView({
   closeTerminalTabMenu,
   closeWidgetAddMenu,
@@ -1159,7 +1190,7 @@ function renderProjectList() {
   projectSidebar.renderProjectList();
 }
 
-const projectSettingsViews = createProjectSettingsViews({
+const settingsViewBridge = createRendererSettingsViewBridge({
   boatyard: boatyardWindow.boatyard,
   getState: () => state,
   getSettings,
@@ -1174,17 +1205,9 @@ const projectSettingsViews = createProjectSettingsViews({
   deriveRepoUrl,
   deriveProjectNameFromPath,
   formatProjectNameFromPath,
-  slugify
-});
-
-const globalSettingsViews = createGlobalSettingsViews({
-  boatyard: boatyardWindow.boatyard,
-  applyFormControl,
-  applyFormControls,
+  slugify,
   getInstalledWidgets,
   getPluginGlobalSettingsSections,
-  getGlobalPluginConfig,
-  readPluginSettingsFieldValue,
   showOverlayDialog,
   renderGlobalSettingsPage,
   updatePluginEnabled: async (pluginId, enabled) => {
@@ -1196,60 +1219,28 @@ const globalSettingsViews = createGlobalSettingsViews({
   }
 });
 
-function createGlobalProjectsSettingsForm(options) {
-  return globalSettingsViews.createGlobalProjectsSettingsForm(options);
-}
-
-function createGlobalPresentationSettingsForm(options) {
-  return globalSettingsViews.createGlobalPresentationSettingsForm(options);
-}
-
-function createGlobalTerminalSettingsForm(options) {
-  return globalSettingsViews.createGlobalTerminalSettingsForm(options);
-}
-
-function createGlobalPasswordManagerSettingsForm(options) {
-  return globalSettingsViews.createGlobalPasswordManagerSettingsForm(options);
-}
-
-function createGlobalWebAppOpenRulesSettingsForm(options) {
-  return globalSettingsViews.createGlobalWebAppOpenRulesSettingsForm(options);
-}
-
-function createGlobalPluginsSettingsView() {
-  return globalSettingsViews.createGlobalPluginsSettingsView();
-}
-
-function createGlobalWidgetsSettingsView() {
-  return globalSettingsViews.createGlobalWidgetsSettingsView();
-}
-
-function createGlobalUrlsSettingsForm(options) {
-  return projectSettingsViews.createGlobalUrlsSettingsForm(options);
-}
-
 function createProjectDangerZone(options) {
-  return projectSettingsViews.createProjectDangerZone(options);
+  return settingsViewBridge.createProjectDangerZone(options);
 }
 
 function createProjectFormView(options) {
-  return projectSettingsViews.createProjectFormView(options);
+  return settingsViewBridge.createProjectFormView(options);
 }
 
 function createProjectTerminalSettingsForm(options) {
-  return projectSettingsViews.createProjectTerminalSettingsForm(options);
+  return settingsViewBridge.createProjectTerminalSettingsForm(options);
 }
 
 function createProjectUrlsForm(options) {
-  return projectSettingsViews.createProjectUrlsForm(options);
+  return settingsViewBridge.createProjectUrlsForm(options);
 }
 
 function createProjectWebAppHomeTabsForm(options) {
-  return projectSettingsViews.createProjectWebAppHomeTabsForm(options);
+  return settingsViewBridge.createProjectWebAppHomeTabsForm(options);
 }
 
 function createProjectWidgetPanesForm(options) {
-  return projectSettingsViews.createProjectWidgetPanesForm(options);
+  return settingsViewBridge.createProjectWidgetPanesForm(options);
 }
 
 const projectPageViews = createProjectPageViews({
