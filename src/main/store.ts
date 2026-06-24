@@ -19,6 +19,7 @@ const DEFAULT_WINDOW_BOUNDS = {
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
+const STORE_SCHEMA_VERSION = 1;
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -180,6 +181,7 @@ type ProjectStoreState = {
     enabled: Record<string, boolean>;
   };
   projects: StoredProject[];
+  schemaVersion: number;
   settings: SettingsState;
   terminalSelections: Record<string, Record<string, string>>;
   terminalTabOrders: Record<string, string[]>;
@@ -190,6 +192,7 @@ type ProjectStoreState = {
 
 function createDefaultState(): ProjectStoreState {
   return {
+    schemaVersion: STORE_SCHEMA_VERSION,
     settings: {
       projectsBasePath: "",
       blurWebAppOverlays: false,
@@ -461,6 +464,13 @@ function normalizeAppState(appState: unknown = {}): AppState {
     pendingChangelogFromVersion: normalizeText(source.pendingChangelogFromVersion),
     dismissedChangelogVersion: normalizeText(source.dismissedChangelogVersion)
   };
+}
+
+function normalizeSchemaVersion(schemaVersion: unknown): number {
+  const version = Number(schemaVersion);
+  return Number.isInteger(version) && version > 0
+    ? Math.min(version, STORE_SCHEMA_VERSION)
+    : STORE_SCHEMA_VERSION;
 }
 
 function parseVersion(version: unknown) {
@@ -1090,6 +1100,7 @@ class ProjectStore {
           : legacyWebAppHomeTabs[project.id] || []
       }));
       this.state = {
+        schemaVersion: normalizeSchemaVersion(parsed.schemaVersion),
         settings: normalizeSettings(parsed.settings),
         projects: projectsWithHomeTabs,
         window: normalizeWindowState(parsed.window),

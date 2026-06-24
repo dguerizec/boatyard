@@ -599,6 +599,19 @@ test("ProjectStore persists configured projects", () => {
   assert.deepEqual(reloadedState.pluginConfig.projects, {});
 });
 
+test("ProjectStore persists the store schema version", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
+  const filePath = path.join(directory, "state.json");
+  const store = new ProjectStore(filePath);
+
+  assert.equal(store.load().schemaVersion, 1);
+  store.updateSettings({ projectsBasePath: "/workspace/example" });
+
+  const saved = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  assert.equal(saved.schemaVersion, 1);
+  assert.equal(new ProjectStore(filePath).load().schemaVersion, 1);
+});
+
 test("ProjectStore persists window state", () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-store-"));
   const filePath = path.join(directory, "state.json");
