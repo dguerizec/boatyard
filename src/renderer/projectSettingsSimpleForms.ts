@@ -21,6 +21,10 @@ type ProjectDangerZoneOptions = {
   onUnregister: () => Promise<void> | void;
 };
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error || "Unknown error");
+}
+
 export function createProjectSettingsSimpleForms({
   applyFormControl,
   applyFormControls
@@ -77,7 +81,7 @@ export function createProjectSettingsSimpleForms({
           terminalEnv: terminalEnvInput.value
         });
       } catch (submitError) {
-        error.textContent = submitError.message;
+        error.textContent = getErrorMessage(submitError);
         error.hidden = false;
       }
     });
@@ -153,7 +157,7 @@ export function createProjectSettingsSimpleForms({
       try {
         await onUnregister();
       } catch (unregisterError) {
-        error.textContent = unregisterError.message;
+        error.textContent = getErrorMessage(unregisterError);
         error.hidden = false;
       }
     });

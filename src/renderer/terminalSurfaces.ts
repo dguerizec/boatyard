@@ -1107,7 +1107,7 @@ export function createTerminalSurfaces({
           focus: shouldFocusAfterTerminalExit(session.surfaceId, exitedWindowId)
         });
       } catch (error) {
-        setTerminalStatus(surfaceSession.card, `Could not refresh shells: ${error.message}`);
+        setTerminalStatus(surfaceSession.card, `Could not refresh shells: ${asErrorMessage(error)}`);
       }
     }
 
