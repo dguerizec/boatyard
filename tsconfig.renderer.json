@@ -46,6 +46,7 @@
     "src/renderer/widgetGridGeometry.ts",
     "src/renderer/widgetRegistry.ts",
     "src/renderer/widgetSurfaceTypes.ts",
-    "src/renderer/widgetSurfaces.ts"
+    "src/renderer/widgetSurfaces.ts",
+    "src/renderer/workspaceDashboardViews.ts"
   ]
 }

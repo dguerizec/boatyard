@@ -42,6 +42,7 @@ import { createWebAppMenus } from "./webAppMenus.js";
 import { createWebAppSurfaces } from "./webAppSurfaces.js";
 import { registerWidgetRegistry } from "./widgetRegistry.js";
 import { createWidgetSurfaces } from "./widgetSurfaces.js";
+import { createWorkspaceDashboardViews } from "./workspaceDashboardViews.js";
 
 const boatyardWindow = window;
 registerWidgetRegistry(window);
@@ -821,46 +822,33 @@ function hydrateTerminalTabOrders() {
   terminalSurfaces.hydrateTerminalTabOrders();
 }
 
-function renderGlobalDashboard() {
-  const globalWorkspace = getGlobalWorkspace();
-  closeWidgetAddMenu();
-  closeProjectGroupMenu();
-  closeTerminalTabMenu();
-  visibleWebAppHosts = new Map();
-  workspace.classList.add("project-mode");
-  workspaceKicker.textContent = "Global";
-  workspaceTitle.textContent = "System overview";
-  workspaceSummary.textContent = "Global workspace for cross-project widgets and operations dashboards.";
-  dashboardGrid.innerHTML = "";
-  dashboardGrid.className = "project-workbench";
-  dashboardGrid.style.gridTemplateColumns = "";
+const workspaceDashboardViews = createWorkspaceDashboardViews({
+  closeProjectGroupMenu,
+  closeTerminalTabMenu,
+  closeWebAppTabMenu,
+  closeWidgetAddMenu,
+  createPaneLayout,
+  dashboardGrid,
+  detachProjectTerminal,
+  getGlobalWorkspace,
+  getPaneLayout: getProjectPaneLayout,
+  getProjectSummaryTarget,
+  getViewState: () => ({ currentProjectId, currentView }),
+  resetVisibleWebAppHosts: () => {
+    visibleWebAppHosts = new Map();
+  },
+  workspace,
+  workspaceKicker,
+  workspaceSummary,
+  workspaceTitle
+});
 
-  dashboardGrid.append(createPaneLayout(globalWorkspace, getProjectPaneLayout(globalWorkspace)));
+function renderGlobalDashboard() {
+  workspaceDashboardViews.renderGlobalDashboard();
 }
 
 function renderGlobalPaneArea() {
-  if (
-    currentView !== "global" ||
-    !dashboardGrid.classList.contains("project-workbench")
-  ) {
-    renderGlobalDashboard();
-    return;
-  }
-
-  const globalWorkspace = getGlobalWorkspace();
-  closeWebAppTabMenu();
-  closeProjectGroupMenu();
-  closeTerminalTabMenu();
-  visibleWebAppHosts = new Map();
-  const paneLayoutElement = createPaneLayout(globalWorkspace, getProjectPaneLayout(globalWorkspace));
-  const currentPaneLayoutElement = dashboardGrid.lastElementChild;
-
-  if (!currentPaneLayoutElement) {
-    renderGlobalDashboard();
-    return;
-  }
-
-  currentPaneLayoutElement.replaceWith(paneLayoutElement);
+  workspaceDashboardViews.renderGlobalPaneArea();
 }
 
 const manualViews = createManualViews({
@@ -942,43 +930,11 @@ function renderGlobalSettingsPage() {
 }
 
 function renderProjectDashboard(project) {
-  closeWidgetAddMenu();
-  closeTerminalTabMenu();
-  detachProjectTerminal(project.id);
-  workspace.classList.add("project-mode");
-  workspaceKicker.textContent = "Project";
-  workspaceTitle.textContent = project.name;
-  workspaceSummary.textContent = getProjectSummaryTarget(project);
-  dashboardGrid.innerHTML = "";
-  dashboardGrid.className = "project-workbench";
-  dashboardGrid.style.gridTemplateColumns = "";
-  visibleWebAppHosts = new Map();
-
-  dashboardGrid.append(createPaneLayout(project, getProjectPaneLayout(project)));
+  workspaceDashboardViews.renderProjectDashboard(project);
 }
 
 function renderProjectPaneArea(project) {
-  if (
-    currentView !== "project" ||
-    currentProjectId !== project.id ||
-    !dashboardGrid.classList.contains("project-workbench")
-  ) {
-    renderProjectDashboard(project);
-    return;
-  }
-
-  closeWebAppTabMenu();
-  closeTerminalTabMenu();
-  visibleWebAppHosts = new Map();
-  const paneLayoutElement = createPaneLayout(project, getProjectPaneLayout(project));
-  const currentPaneLayoutElement = dashboardGrid.lastElementChild;
-
-  if (!currentPaneLayoutElement) {
-    renderProjectDashboard(project);
-    return;
-  }
-
-  currentPaneLayoutElement.replaceWith(paneLayoutElement);
+  workspaceDashboardViews.renderProjectPaneArea(project);
 }
 
 const webAppMenus = createWebAppMenus({
