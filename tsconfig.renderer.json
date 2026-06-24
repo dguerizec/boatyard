@@ -21,6 +21,7 @@
     "src/renderer/pluginSettingsFields.ts",
     "src/renderer/projectPageViews.ts",
     "src/renderer/projectSidebar.ts",
+    "src/renderer/projectSettingsRows.ts",
     "src/renderer/projectSettingsViews.ts",
     "src/renderer/projectUtils.ts",
     "src/renderer/renderer.ts",
