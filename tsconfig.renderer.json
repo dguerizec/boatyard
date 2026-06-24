@@ -33,6 +33,7 @@
     "src/renderer/renderer.ts",
     "src/renderer/rendererEventBindings.ts",
     "src/renderer/rendererGlobals.d.ts",
+    "src/renderer/rendererPluginHelpers.ts",
     "src/renderer/rendererRecords.ts",
     "src/renderer/rendererSettingsViewBridge.ts",
     "src/renderer/rendererStateSelectors.ts",

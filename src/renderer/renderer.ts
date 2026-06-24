@@ -17,15 +17,15 @@ import {
   projectMatchesSearch,
   slugify
 } from "./projectUtils.js";
-import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
+import type { UnknownRecord } from "./rendererRecords.js";
 import { registerRendererEventBindings } from "./rendererEventBindings.js";
+import { createRendererPluginHelpers } from "./rendererPluginHelpers.js";
 import { createRendererSettingsViewBridge } from "./rendererSettingsViewBridge.js";
 import { createRendererStateSelectors } from "./rendererStateSelectors.js";
 import type {
   GlobalSettingsViewsInstance,
   PaneLayoutStateInstance,
   PaneLayoutViewInstance,
-  ProjectNavBadgeRenderOptions,
   ProjectSettingsViewsInstance,
   RendererCreateModule,
   RendererModuleInstance,
@@ -116,6 +116,23 @@ const {
   globalWorkspaceId: GLOBAL_WORKSPACE_ID
 });
 
+const {
+  getPluginGlobalSettingsSections,
+  getPluginPaneDefinitions,
+  getPluginProjectSettingsSections,
+  persistProjectPluginConfig,
+  readPluginSettingsFieldValue,
+  renderProjectNavBadges
+} = createRendererPluginHelpers({
+  boatyard: boatyardWindow.boatyard,
+  getCurrentView: () => currentView,
+  getGlobalPluginConfig,
+  getProjectPluginConfig,
+  getState: () => state,
+  normalizeUrl: normalizeAddressInput,
+  windowObject: boatyardWindow
+});
+
 function applyFormControl(control) {
   control.classList.add("form-control");
   return control;
@@ -125,58 +142,6 @@ function applyFormControls(root) {
   root
     .querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]), textarea')
     .forEach(applyFormControl);
-}
-
-function getPluginPaneDefinitions(filter = {}) {
-  return boatyardWindow.BoatyardPluginRegistry?.listPanes(filter) || [];
-}
-
-function getPluginProjectNavBadgeDefinitions() {
-  return boatyardWindow.BoatyardPluginRegistry?.listProjectNavBadges() || [];
-}
-
-function getPluginProjectSettingsSections() {
-  return boatyardWindow.BoatyardPluginRegistry?.listProjectSettingsSections() || [];
-}
-
-function getPluginGlobalSettingsSections() {
-  return boatyardWindow.BoatyardPluginRegistry?.listGlobalSettingsSections() || [];
-}
-
-function renderProjectNavBadges(project, container, options: ProjectNavBadgeRenderOptions = {}) {
-  for (const badge of getPluginProjectNavBadgeDefinitions()) {
-    try {
-      const element = badge.render({
-        project,
-        projectConfig: getProjectPluginConfig(project.id, badge.pluginId),
-        globalConfig: getGlobalPluginConfig(badge.pluginId),
-        isActiveProject: options.isActiveProject === true,
-        currentView
-      });
-
-      if (element && typeof element === "object" && typeof element.nodeType === "number") {
-        container.append(element);
-      }
-    } catch (error) {
-      console.error(`Could not render project nav badge ${badge.id}:`, error);
-    }
-  }
-}
-
-async function persistProjectPluginConfig(projectId, pluginConfig = {}) {
-  let nextState = state;
-
-  for (const [pluginId, config] of Object.entries(toUnknownRecord(pluginConfig))) {
-    nextState = await boatyardWindow.boatyard.updateProjectPluginConfig(projectId, pluginId, toUnknownRecord(config));
-  }
-
-  return nextState;
-}
-
-function readPluginSettingsFieldValue(field, input) {
-  return boatyardWindow.BoatyardPluginSettingsFields.readFieldValue(field, input, {
-    normalizeUrl: normalizeAddressInput
-  });
 }
 
 function isRestorableView(view) {
