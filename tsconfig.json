@@ -6,6 +6,7 @@
     "module": "NodeNext",
     "moduleDetection": "legacy",
     "moduleResolution": "NodeNext",
+    "noFallthroughCasesInSwitch": true,
     "noImplicitAny": true,
     "noImplicitReturns": true,
     "noImplicitThis": true,
