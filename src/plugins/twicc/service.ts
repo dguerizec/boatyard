@@ -152,7 +152,7 @@ function createTwiccProjectCache({
   ttlMs = TWICC_PROJECT_CACHE_TTL_MS,
   now = () => Date.now()
 }: TwiccProjectCacheOptions = {}) {
-  let projects = [];
+  let projects: TwiccProject[] = [];
   let loadedAt = 0;
   let loaded = false;
 

@@ -29,7 +29,7 @@ function activate(ctx: TelegramPluginContext) {
     sessionFilePath
   });
 
-  service.on("message", (payload) => {
+  service.on("message", (payload: unknown) => {
     ctx.events.emit("message", payload);
   });
 

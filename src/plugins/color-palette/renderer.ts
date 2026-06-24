@@ -12,6 +12,7 @@
     id?: string;
     slug?: string;
   };
+  type ColorSelectHandler = (color: string) => void;
 
   const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_COLOR = "#41b883";
@@ -20,15 +21,15 @@
     throw new Error("Plugin registry is unavailable.");
   }
 
-  function clamp(value, min, max) {
+  function clamp(value: number, min: number, max: number) {
     return Math.min(max, Math.max(min, value));
   }
 
-  function toHexByte(value) {
+  function toHexByte(value: number) {
     return clamp(Math.round(value), 0, 255).toString(16).padStart(2, "0");
   }
 
-  function normalizeAlpha(value) {
+  function normalizeAlpha(value: unknown) {
     const alpha = Number(value);
     return Number.isFinite(alpha) ? clamp(alpha, 0, 1) : 1;
   }
@@ -42,7 +43,7 @@
     };
   }
 
-  function parseHexColor(value) {
+  function parseHexColor(value: unknown) {
     const match = String(value || "").trim().match(/^#?([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/);
     if (!match) {
       return null;
@@ -66,7 +67,7 @@
     });
   }
 
-  function parseRgbColor(value) {
+  function parseRgbColor(value: unknown) {
     const match = String(value || "").trim().match(
       /^rgba?\(\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)\s*,\s*([+-]?\d+(?:\.\d+)?)(?:\s*,\s*([+-]?\d*(?:\.\d+)?))?\s*\)$/i
     );
@@ -82,22 +83,22 @@
     });
   }
 
-  function parseColor(value) {
+  function parseColor(value: unknown) {
     return parseHexColor(value) || parseRgbColor(value);
   }
 
-  function formatHex(color) {
+  function formatHex(color: ColorPaletteColor) {
     const normalized = normalizeColor(color);
     const base = `#${toHexByte(normalized.r)}${toHexByte(normalized.g)}${toHexByte(normalized.b)}`;
     return normalized.a < 1 ? `${base}${toHexByte(normalized.a * 255)}` : base;
   }
 
-  function formatOpaqueHex(color) {
+  function formatOpaqueHex(color: ColorPaletteColor) {
     const normalized = normalizeColor(color);
     return `#${toHexByte(normalized.r)}${toHexByte(normalized.g)}${toHexByte(normalized.b)}`;
   }
 
-  function formatRgb(color) {
+  function formatRgb(color: ColorPaletteColor) {
     const normalized = normalizeColor(color);
     return normalized.a < 1
       ? `rgba(${normalized.r}, ${normalized.g}, ${normalized.b}, ${Number(normalized.a.toFixed(3))})`
@@ -108,7 +109,7 @@
     return `boatyard:color-palette:${String(project.id || project.slug || "project")}`;
   }
 
-  function loadFavorites(project) {
+  function loadFavorites(project: ColorPaletteProject) {
     try {
       const parsed = JSON.parse(globalScope.localStorage?.getItem(getStorageKey(project)) || "[]");
       return Array.isArray(parsed)
@@ -119,7 +120,7 @@
     }
   }
 
-  function saveFavorites(project, favorites) {
+  function saveFavorites(project: ColorPaletteProject, favorites: string[]) {
     try {
       globalScope.localStorage?.setItem(getStorageKey(project), JSON.stringify(favorites));
     } catch {
@@ -127,7 +128,7 @@
     }
   }
 
-  function createOutput(label, value) {
+  function createOutput(label: string, value: string) {
     const button = document.createElement("button");
     button.className = "color-palette-value";
     button.type = "button";
@@ -146,7 +147,7 @@
     return button;
   }
 
-  function createFavoriteButton(color, selectColor, removeColor) {
+  function createFavoriteButton(color: string, selectColor: ColorSelectHandler, removeColor: ColorSelectHandler) {
     const button = document.createElement("button");
     button.className = "color-palette-favorite";
     button.type = "button";
@@ -161,7 +162,7 @@
     return button;
   }
 
-  function createColorPaletteWidget(project) {
+  function createColorPaletteWidget(project: ColorPaletteProject) {
     const card = document.createElement("article");
     card.className = "widget-card color-palette-widget";
 
@@ -214,11 +215,11 @@
       for (const color of favorites) {
         favoritesGrid.append(createFavoriteButton(
           color,
-          (nextColor) => {
+          (nextColor: string) => {
             input.value = nextColor;
             renderColor(nextColor);
           },
-          (removedColor) => {
+          (removedColor: string) => {
             favorites = favorites.filter((item) => item !== removedColor);
             saveFavorites(project, favorites);
             renderFavorites();
@@ -228,7 +229,7 @@
       favoritesGrid.append(addFavorite);
     }
 
-    function renderColor(value) {
+    function renderColor(value: unknown) {
       const parsed = parseColor(value);
       if (!parsed) {
         error.hidden = false;
