@@ -1,5 +1,129 @@
+import type { RendererProject } from "./rendererTypes.js";
+import type { UnknownRecord } from "./rendererRecords.js";
+
 type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
+};
+
+type PaneSplitSide = "first" | "second";
+
+type PaneLayoutNode = UnknownRecord & {
+  direction?: string;
+  expandedChild?: PaneSplitSide;
+  first?: PaneLayoutNode;
+  id: string;
+  ratio?: number;
+  second?: PaneLayoutNode;
+  selectedWebAppId?: string | null;
+  type?: string;
+};
+
+type PaneAncestorPathItem = {
+  node: PaneLayoutNode;
+  side: PaneSplitSide;
+};
+
+type PaneLayoutStateApi = {
+  countPaneNodes(node: unknown): number;
+  createSplitNode(
+    project: RendererProject,
+    direction: string,
+    first: unknown,
+    selectedWebAppId?: string
+  ): unknown;
+  deleteSelectedWebAppForPane(paneId: string): unknown;
+  getPaneAncestorPath(node: unknown, paneId: string): unknown;
+  getPaneExpansionState(project: RendererProject, paneId: string): { canExpand: boolean; canShrink: boolean };
+  getPaneExpansionTarget(project: RendererProject, paneId: string): unknown;
+  getSelectedWebAppForPane(paneId: string): string;
+  getSelectedWebAppForProject(projectId?: string): string;
+  removePaneNode(node: unknown, paneId: string): unknown;
+  replacePaneNode(node: unknown, paneId: string, replacement: unknown): unknown;
+  setPaneLayout(projectId: string | undefined, layout: unknown): unknown;
+  setSelectedWebAppForPane(paneId: string, webAppId?: string): unknown;
+};
+
+type PaneWebApp = UnknownRecord & {
+  id: string;
+  key?: string;
+  kind?: string;
+  label?: string;
+  pluginPane?: {
+    pluginId: string;
+    render(host: HTMLElement, props: UnknownRecord): unknown;
+  };
+  url?: string;
+  widgetPane?: UnknownRecord & { id?: string };
+};
+
+type VisiblePaneWebAppEntry = {
+  host: HTMLElement;
+  webApp: {
+    id?: string;
+    key: string;
+    url: string;
+  };
+};
+
+type PaneLayoutViewOptions = {
+  minWidgetRailWidth: number;
+  webAppSplitResizerSize: number;
+  dashboardGrid: HTMLElement;
+  createToolIcon: (iconName: string) => Node;
+  paneLayoutState: PaneLayoutStateApi;
+  getProjectWebApps: (project: RendererProject, paneId?: string) => unknown[];
+  getProjectPaneLayout: (project: RendererProject) => unknown;
+  getSelectedWebApp: (project: RendererProject, paneId: string, webApps: unknown[]) => unknown;
+  getProjectWidgetLayout: (project: RendererProject, columns: number | null, widgetPaneId?: string) => UnknownRecord;
+  getWidgetGridColumnCount: (width: number | null) => number;
+  createWidgetPaneActions: (
+    project: RendererProject,
+    widgetPane: UnknownRecord | undefined,
+    widgetLayout: UnknownRecord | null,
+    columns: number | null
+  ) => HTMLElement;
+  createWidgetPaneSurface: (project: RendererProject, widgetPane?: UnknownRecord) => HTMLElement;
+  createWidgetPaneTabs: (
+    project: RendererProject,
+    paneNode: PaneLayoutNode,
+    selectedWebApp: PaneWebApp,
+    webApps: PaneWebApp[],
+    options: UnknownRecord
+  ) => HTMLElement;
+  isWebAppTabMenuOpen: () => boolean;
+  closeWebAppTabMenu: () => void;
+  openWebAppTabMenuFromButton: (
+    button: HTMLButtonElement,
+    project: RendererProject,
+    paneNode: PaneLayoutNode,
+    selectedWebApp: PaneWebApp,
+    webApps: PaneWebApp[]
+  ) => void;
+  openWebAppHomeMenu: (
+    event: MouseEvent,
+    project: RendererProject,
+    paneNode: PaneLayoutNode,
+    selectedWebApp: PaneWebApp
+  ) => void;
+  openWebAppRefreshMenu: (event: MouseEvent, selectedWebApp: PaneWebApp) => void;
+  createTerminalSurface: (project: RendererProject, options: UnknownRecord) => HTMLElement;
+  invokeWebApp: (action: string, ...payload: unknown[]) => Promise<unknown>;
+  isPasswordManagerEnabled: () => boolean;
+  isWebAppAutofillEnabled: (webApp: PaneWebApp) => boolean;
+  syncWebAppAutofillButton: (button: HTMLButtonElement, enabled: boolean) => void;
+  toggleWebAppAutofill: (webApp: PaneWebApp, button: HTMLButtonElement) => Promise<unknown>;
+  getCurrentWebAppUrl: (webApp: PaneWebApp) => string;
+  setCurrentWebAppUrl: (key: string, url: string) => void;
+  normalizeAddressInput: (value: string) => string;
+  isGlobalWorkspace: (project: RendererProject) => boolean;
+  getProjectPluginConfig: (projectId: string | undefined, pluginId: string) => UnknownRecord;
+  getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
+  getAllProjectPluginConfig: (project: RendererProject) => UnknownRecord;
+  openProjectWebApp: (projectId: string | undefined, webAppId: string, url: string) => unknown;
+  setVisibleWebAppHost: (paneId: string, entry: VisiblePaneWebAppEntry) => void;
+  queueWebAppSync: () => void;
+  renderWorkspaceDashboard: (project: RendererProject) => void;
+  persistPaneLayout: (project: RendererProject) => void;
 };
 
 export function createPaneLayoutView({
@@ -39,21 +163,21 @@ export function createPaneLayoutView({
     queueWebAppSync,
     renderWorkspaceDashboard,
     persistPaneLayout
-  }) {
+  }: PaneLayoutViewOptions) {
     function clearPaneExpansionPreview() {
       document.querySelectorAll(".webapp-split.pane-expand-preview").forEach((split) => {
         split.classList.remove("pane-expand-preview");
       });
     }
 
-    function previewPaneExpansion(project, paneId, enabled) {
+    function previewPaneExpansion(project: RendererProject, paneId: string, enabled: boolean) {
       clearPaneExpansionPreview();
 
       if (!enabled) {
         return;
       }
 
-      const target = paneLayoutState.getPaneExpansionTarget(project, paneId);
+      const target = paneLayoutState.getPaneExpansionTarget(project, paneId) as PaneAncestorPathItem | null;
       if (!target) {
         return;
       }
@@ -65,8 +189,8 @@ export function createPaneLayoutView({
       }
     }
 
-    function expandPane(project, paneId) {
-      const target = paneLayoutState.getPaneExpansionTarget(project, paneId);
+    function expandPane(project: RendererProject, paneId: string) {
+      const target = paneLayoutState.getPaneExpansionTarget(project, paneId) as PaneAncestorPathItem | null;
 
       if (!target) {
         return;
@@ -77,9 +201,12 @@ export function createPaneLayoutView({
       renderWorkspaceDashboard(project);
     }
 
-    function shrinkPane(project, paneId) {
-      const path = paneLayoutState.getPaneAncestorPath(getProjectPaneLayout(project), paneId) || [];
-      const target = path.find(({ node, side }) => node.expandedChild === side);
+    function shrinkPane(project: RendererProject, paneId: string) {
+      const path = (paneLayoutState.getPaneAncestorPath(
+        getProjectPaneLayout(project),
+        paneId
+      ) || []) as PaneAncestorPathItem[];
+      const target = path.find(({ node, side }: PaneAncestorPathItem) => node.expandedChild === side);
 
       if (!target) {
         return;
@@ -90,15 +217,20 @@ export function createPaneLayoutView({
       renderWorkspaceDashboard(project);
     }
 
-    function splitPane(project, paneId, direction) {
+    function splitPane(project: RendererProject, paneId: string, direction: string) {
       const layout = getProjectPaneLayout(project);
-      const webApps = getProjectWebApps(project, paneId);
+      const webApps = getProjectWebApps(project, paneId).map((webApp) => webApp as PaneWebApp);
       const currentWebAppId =
         paneLayoutState.getSelectedWebAppForPane(paneId) ||
         paneLayoutState.getSelectedWebAppForProject(project.id) ||
-        webApps[0].id;
-      const nextWebAppId = webApps.find((webApp) => webApp.id !== currentWebAppId)?.id || currentWebAppId;
-      const replacement = paneLayoutState.createSplitNode(project, direction, { type: "pane", id: paneId }, nextWebAppId);
+        webApps[0]?.id;
+      const nextWebAppId = webApps.find((webApp: PaneWebApp) => webApp.id !== currentWebAppId)?.id || currentWebAppId;
+      const replacement = paneLayoutState.createSplitNode(
+        project,
+        direction,
+        { type: "pane", id: paneId },
+        nextWebAppId
+      ) as PaneLayoutNode & { first: PaneLayoutNode };
       replacement.first.selectedWebAppId = currentWebAppId;
       paneLayoutState.setPaneLayout(project.id, paneLayoutState.replacePaneNode(layout, paneId, replacement));
       paneLayoutState.setSelectedWebAppForPane(paneId, currentWebAppId);
@@ -106,14 +238,14 @@ export function createPaneLayoutView({
       renderWorkspaceDashboard(project);
     }
 
-    function closePane(project, paneId) {
+    function closePane(project: RendererProject, paneId: string) {
       const layout = getProjectPaneLayout(project);
 
       if (paneLayoutState.countPaneNodes(layout) <= 1) {
         return;
       }
 
-      const result = paneLayoutState.removePaneNode(layout, paneId);
+      const result = paneLayoutState.removePaneNode(layout, paneId) as { node: PaneLayoutNode; removed: boolean };
       if (!result.removed) {
         return;
       }
@@ -124,7 +256,7 @@ export function createPaneLayoutView({
       renderWorkspaceDashboard(project);
     }
 
-    function createSplitResizer(project, splitNode) {
+    function createSplitResizer(project: RendererProject, splitNode: PaneLayoutNode) {
       const resizer = document.createElement("div");
       resizer.className = `webapp-split-resizer ${splitNode.direction}`;
       resizer.setAttribute("role", "separator");
@@ -136,7 +268,7 @@ export function createPaneLayoutView({
         const rect = splitElement.getBoundingClientRect();
         const isVertical = splitNode.direction === "vertical";
 
-        function onPointerMove(moveEvent) {
+        function onPointerMove(moveEvent: PointerEvent) {
           const rawRatio = isVertical
             ? (moveEvent.clientX - rect.left) / rect.width
             : (moveEvent.clientY - rect.top) / rect.height;
@@ -158,9 +290,10 @@ export function createPaneLayoutView({
       return resizer;
     }
 
-    function applySplitRatio(splitElement, splitNode) {
-      const firstRatio = Math.round(splitNode.ratio * 1000) / 10;
-      const secondRatio = Math.round((1 - splitNode.ratio) * 1000) / 10;
+    function applySplitRatio(splitElement: HTMLElement, splitNode: PaneLayoutNode) {
+      const ratio = Number(splitNode.ratio) || 0.5;
+      const firstRatio = Math.round(ratio * 1000) / 10;
+      const secondRatio = Math.round((1 - ratio) * 1000) / 10;
       const resizerOffset = webAppSplitResizerSize / 2;
       const first = `minmax(0, calc(${firstRatio}% - ${resizerOffset}px))`;
       const second = `minmax(0, calc(${secondRatio}% - ${resizerOffset}px))`;
@@ -175,9 +308,9 @@ export function createPaneLayoutView({
       }
     }
 
-    function createWebAppPane(project, paneNode) {
-      const webApps = getProjectWebApps(project, paneNode.id);
-      const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
+    function createWebAppPane(project: RendererProject, paneNode: PaneLayoutNode) {
+      const webApps = getProjectWebApps(project, paneNode.id).map((webApp) => webApp as PaneWebApp);
+      const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps) as PaneWebApp;
       const isTerminalPane = selectedWebApp.kind === "terminal";
       const isWidgetPane = selectedWebApp.kind === "widgets";
       const isDomPane = selectedWebApp.kind === "dom";
@@ -192,7 +325,7 @@ export function createPaneLayoutView({
       pane.classList.toggle("widget-pane", isWidgetPane);
       pane.classList.toggle("editing", isWidgetEditing);
       pane.dataset.paneId = paneNode.id;
-      pane.dataset.webAppId = selectedWebApp.id;
+        pane.dataset.webAppId = selectedWebApp.id;
       if (selectedWebApp.kind) {
         pane.dataset.webAppKind = selectedWebApp.kind;
       }
@@ -275,13 +408,13 @@ export function createPaneLayoutView({
         if (autofillButton) {
           autofillButton.className = "webapp-tool-button autofill";
           autofillButton.type = "button";
-          autofillButton.dataset.webappKey = selectedWebApp.key;
+          autofillButton.dataset.webappKey = selectedWebApp.key || "";
           autofillButton.title = "Autofill credentials";
           autofillButton.setAttribute("aria-label", "Autofill credentials");
           autofillButton.append(createToolIcon("key"));
           syncWebAppAutofillButton(autofillButton, isWebAppAutofillEnabled(selectedWebApp));
           autofillButton.addEventListener("click", () => {
-            toggleWebAppAutofill(selectedWebApp, autofillButton).catch((error) => {
+            toggleWebAppAutofill(selectedWebApp, autofillButton).catch((error: unknown) => {
               console.error("Could not update webapp autofill:", error);
             });
           });
@@ -301,7 +434,7 @@ export function createPaneLayoutView({
 
             try {
               const nextUrl = normalizeAddressInput(activeUrl.value);
-              setCurrentWebAppUrl(selectedWebApp.key, nextUrl);
+              setCurrentWebAppUrl(selectedWebApp.key || "", nextUrl);
               activeUrl.value = nextUrl;
               invokeWebApp("navigateWebApp", selectedWebApp.key, "open", nextUrl);
             } catch {
@@ -412,25 +545,25 @@ export function createPaneLayoutView({
           projectConfig: isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId),
           globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId),
           allProjectPluginConfig: getAllProjectPluginConfig(project),
-          openProjectWebApp(webAppId, url = "") {
+          openProjectWebApp(webAppId: string, url = "") {
             return openProjectWebApp(project.id, webAppId, url);
           }
         });
         if (typeof cleanup === "function") {
-          host.boatyardCleanup = cleanup;
+          host.boatyardCleanup = cleanup as () => void;
         }
       } else {
         setVisibleWebAppHost(paneNode.id, {
           webApp: selectedWebApp,
           host
-        });
+        } as VisiblePaneWebAppEntry);
       }
 
       queueWebAppSync();
       return pane;
     }
 
-    function createPaneLayout(project, node) {
+    function createPaneLayout(project: RendererProject, node: PaneLayoutNode): HTMLElement {
       if (node.type === "pane") {
         return createWebAppPane(project, node);
       }
