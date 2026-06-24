@@ -66,9 +66,10 @@ type PluginInspectorHandler = (input?: unknown) => unknown | Promise<unknown>;
 type PluginStateMigrationHandler = (payload: { state: unknown }) => unknown | Promise<unknown>;
 type PluginInspectorRegistration = { pluginId: string; handler: PluginInspectorHandler };
 type PluginStateMigrationRegistration = { pluginId: string; handler: PluginStateMigrationHandler };
+type PluginProjectConfigMigration = { config: UnknownRecord; projectId: string };
 type PluginMigrationResult = {
-  globalPluginConfig?: unknown;
-  projectPluginConfig?: Array<{ config?: unknown; projectId?: unknown }>;
+  globalPluginConfig?: UnknownRecord;
+  projectPluginConfig: PluginProjectConfigMigration[];
 } | null | undefined;
 
 type RuntimePluginContext = Omit<PluginContext<unknown>, "execFileAsync" | "projectInspectors" | "stateMigrations"> & {
@@ -83,6 +84,39 @@ function isRecord(value: unknown): value is UnknownRecord {
 
 function normalizeText(value: unknown): string {
   return String(value || "").trim();
+}
+
+function requireFunction<THandler extends (...args: unknown[]) => unknown>(
+  value: unknown,
+  message: string
+): THandler {
+  if (typeof value !== "function") {
+    throw new Error(message);
+  }
+
+  return value as THandler;
+}
+
+function normalizeMigrationResult(result: unknown): PluginMigrationResult {
+  if (!isRecord(result)) {
+    return null;
+  }
+
+  return {
+    globalPluginConfig: isRecord(result.globalPluginConfig) ? result.globalPluginConfig : undefined,
+    projectPluginConfig: Array.isArray(result.projectPluginConfig)
+      ? result.projectPluginConfig.flatMap((entry) => {
+          if (!isRecord(entry) || !entry.projectId || !isRecord(entry.config)) {
+            return [];
+          }
+
+          return [{
+            projectId: String(entry.projectId),
+            config: entry.config
+          }];
+        })
+      : []
+  };
 }
 
 function normalizeManifest(manifest: unknown, manifestPath: string): PluginManifest {
@@ -206,11 +240,10 @@ class PluginHost {
     const runtime = require(mainPath);
     const activate = typeof runtime === "function" ? runtime : runtime?.activate;
 
-    if (typeof activate !== "function") {
-      throw new Error(`Plugin ${plugin.id} main entry must export activate().`);
-    }
-
-    activate(this.createContext(plugin));
+    requireFunction<(context: RuntimePluginContext) => unknown>(
+      activate,
+      `Plugin ${plugin.id} main entry must export activate().`
+    )(this.createContext(plugin));
   }
 
   createContext(plugin: RuntimePlugin): RuntimePluginContext {
@@ -249,27 +282,33 @@ class PluginHost {
       throw new Error(`Plugin ${pluginId} action name is required.`);
     }
 
-    if (typeof handler !== "function") {
-      throw new Error(`Plugin ${pluginId} action ${name} handler must be a function.`);
-    }
-
-    this.actions.set(`${pluginId}:${name}`, handler as PluginActionHandler);
+    this.actions.set(
+      `${pluginId}:${name}`,
+      requireFunction<PluginActionHandler>(
+        handler,
+        `Plugin ${pluginId} action ${name} handler must be a function.`
+      )
+    );
   }
 
   registerProjectInspector(pluginId: string, handler: unknown): void {
-    if (typeof handler !== "function") {
-      throw new Error(`Plugin ${pluginId} project inspector must be a function.`);
-    }
-
-    this.inspectors.push({ pluginId, handler: handler as PluginInspectorHandler });
+    this.inspectors.push({
+      pluginId,
+      handler: requireFunction<PluginInspectorHandler>(
+        handler,
+        `Plugin ${pluginId} project inspector must be a function.`
+      )
+    });
   }
 
   registerStateMigration(pluginId: string, handler: unknown): void {
-    if (typeof handler !== "function") {
-      throw new Error(`Plugin ${pluginId} state migration must be a function.`);
-    }
-
-    this.stateMigrations.push({ pluginId, handler: handler as PluginStateMigrationHandler });
+    this.stateMigrations.push({
+      pluginId,
+      handler: requireFunction<PluginStateMigrationHandler>(
+        handler,
+        `Plugin ${pluginId} state migration must be a function.`
+      )
+    });
   }
 
   async applyStateMigrations(): Promise<void> {
@@ -282,14 +321,10 @@ class PluginHost {
         continue;
       }
 
-      const result = await migration.handler({ state: this.store.getState() });
-      const migrationResult = isRecord(result) ? result as PluginMigrationResult : null;
+      const migrationResult = normalizeMigrationResult(await migration.handler({ state: this.store.getState() }));
       for (const entry of migrationResult?.projectPluginConfig || []) {
-        if (!entry?.projectId || !isRecord(entry.config)) {
-          continue;
-        }
         this.store.updateProjectPluginConfig?.(
-          String(entry.projectId),
+          entry.projectId,
           migration.pluginId,
           entry.config
         );
