@@ -1,22 +1,5 @@
-type TerminalTab = {
-  id: string;
-  index?: number;
-  name?: string;
-};
-
-  type TerminalTabMenu = HTMLDivElement & {
-    cleanup?: () => void;
-  };
-
-  type TerminalCard = HTMLElement & {
-    terminalTabsElement?: HTMLElement;
-    terminalTabsScrollControls?: {
-      tabs: HTMLElement;
-      leftButton: HTMLButtonElement;
-      rightButton: HTMLButtonElement;
-    };
-    terminalTabsResizeObserver?: ResizeObserver;
-  };
+import { createTerminalTabDom } from "./terminalTabDom.js";
+import type { TerminalCard, TerminalTab, TerminalTabMenu } from "./terminalTypes.js";
 
 const globalScope: TerminalSurfacesGlobal = window;
 
@@ -39,6 +22,18 @@ export function createTerminalSurfaces({
     const TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS = 250;
     const TERMINAL_OUTPUT_TAB_SYNC_THROTTLE_MS = 2000;
     const TERMINAL_CLOSE_FOCUS_TTL_MS = 3000;
+    const {
+      clearTerminalTabDragState,
+      clearTerminalTabDropMarkers,
+      createTerminalTabStrip,
+      getRenderedTerminalTabIds,
+      getReorderedTerminalTabIds,
+      getTerminalTabButtons,
+      getTerminalTabDropPosition,
+      getTerminalTabList,
+      updateTerminalTabDropMarker,
+      updateTerminalTabScrollControls
+    } = createTerminalTabDom({ createToolIcon });
 
     function nextAnimationFrame() {
       return new Promise<void>((resolve) => {
@@ -168,103 +163,6 @@ export function createTerminalSurfaces({
       if (status) {
         status.replaceChildren(document.createTextNode(message));
       }
-    }
-
-    function getTerminalTabList(card) {
-      return card.terminalTabsElement || card.querySelector(".terminal-tabs");
-    }
-
-    function getTerminalTabButtons(card) {
-      return [...(getTerminalTabList(card)?.querySelectorAll(".terminal-tab") || [])];
-    }
-
-    function updateTerminalTabScrollControls(card) {
-      const controls = card?.terminalTabsScrollControls;
-      if (!controls) {
-        return;
-      }
-
-      const { tabs, leftButton, rightButton } = controls;
-      const hasOverflow = tabs.scrollWidth > tabs.clientWidth + 1;
-      const atStart = tabs.scrollLeft <= 1;
-      const atEnd = tabs.scrollLeft + tabs.clientWidth >= tabs.scrollWidth - 1;
-
-      leftButton.hidden = !hasOverflow || atStart;
-      rightButton.hidden = !hasOverflow || atEnd;
-    }
-
-    function scrollTerminalTabs(card, direction) {
-      const controls = card?.terminalTabsScrollControls;
-      if (!controls) {
-        return;
-      }
-
-      const amount = Math.max(80, Math.round(controls.tabs.clientWidth * 0.75));
-      controls.tabs.scrollBy({
-        left: direction * amount,
-        behavior: "smooth"
-      });
-    }
-
-    function createTerminalTabScrollButton(card, direction) {
-      const button = document.createElement("button");
-      button.className = "terminal-action terminal-tab-scroll-button";
-      button.type = "button";
-      button.title = direction < 0 ? "Scroll shells left" : "Scroll shells right";
-      button.setAttribute("aria-label", button.title);
-      button.append(createToolIcon(direction < 0 ? "arrowLeft" : "arrowRight"));
-      button.hidden = true;
-      button.addEventListener("click", () => scrollTerminalTabs(card, direction));
-      return button;
-    }
-
-    function createTerminalTabStrip(card, tabs) {
-      const strip = document.createElement("div");
-      strip.className = "terminal-tabs-strip";
-
-      const leftButton = createTerminalTabScrollButton(card, -1);
-      const rightButton = createTerminalTabScrollButton(card, 1);
-      strip.append(leftButton, tabs, rightButton);
-
-      card.terminalTabsScrollControls = {
-        tabs,
-        leftButton,
-        rightButton
-      };
-
-      tabs.addEventListener("scroll", () => updateTerminalTabScrollControls(card));
-      tabs.addEventListener("wheel", (event) => {
-        if (tabs.scrollWidth <= tabs.clientWidth + 1) {
-          return;
-        }
-
-        const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY)
-          ? event.deltaX
-          : event.deltaY;
-        if (!delta) {
-          return;
-        }
-
-        event.preventDefault();
-        tabs.scrollLeft += delta;
-        updateTerminalTabScrollControls(card);
-      }, { passive: false });
-
-      const resizeObserver = new ResizeObserver(() => updateTerminalTabScrollControls(card));
-      resizeObserver.observe(tabs);
-      card.terminalTabsResizeObserver = resizeObserver;
-
-      return strip;
-    }
-
-    function getRenderedTerminalTabIds(cardOrTabList) {
-      const tabList = cardOrTabList?.classList?.contains("terminal-tabs")
-        ? cardOrTabList
-        : getTerminalTabList(cardOrTabList);
-
-      return [...(tabList?.querySelectorAll(".terminal-tab") || [])]
-        .map((tabButton) => tabButton.dataset.windowId)
-        .filter(Boolean);
     }
 
     function rememberTerminalTabOrder(projectId, orderedWindowIds) {
@@ -612,7 +510,7 @@ export function createTerminalSurfaces({
         return;
       }
 
-      const tabButtons = [...(tabList?.querySelectorAll(".terminal-tab[data-window-id]") || [])];
+      const tabButtons = [...(tabList?.querySelectorAll<HTMLElement>(".terminal-tab[data-window-id]") || [])];
       if (tabButtons.length <= 1) {
         return;
       }
@@ -650,79 +548,6 @@ export function createTerminalSurfaces({
       event.preventDefault();
       event.stopPropagation();
       selectAdjacentTerminalTab(project, card, direction);
-    }
-
-    function clearTerminalTabDragState(tabList) {
-      delete tabList.dataset.draggedWindowId;
-      for (const tabButton of tabList.querySelectorAll(".terminal-tab")) {
-        tabButton.classList.remove("dragging");
-      }
-      clearTerminalTabDropMarkers(tabList);
-    }
-
-    function clearTerminalTabDropMarkers(tabList) {
-      for (const tabButton of tabList.querySelectorAll(".terminal-tab")) {
-        tabButton.classList.remove("drop-before", "drop-after");
-      }
-    }
-
-    function getReorderedTerminalTabIds(tabList, draggedWindowId, targetWindowId, insertAfter = false) {
-      const tabIds = getRenderedTerminalTabIds(tabList);
-      const sourceIndex = tabIds.indexOf(String(draggedWindowId));
-      const targetIndex = tabIds.indexOf(String(targetWindowId));
-
-      if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) {
-        return null;
-      }
-
-      const nextTabIds = [...tabIds];
-      const [movedWindowId] = nextTabIds.splice(sourceIndex, 1);
-      const targetIndexAfterRemoval = nextTabIds.indexOf(String(targetWindowId));
-      nextTabIds.splice(targetIndexAfterRemoval + (insertAfter ? 1 : 0), 0, movedWindowId);
-
-      return nextTabIds;
-    }
-
-    function getTerminalTabDropPosition(tabList, event) {
-      const directTarget = event.target?.closest?.(".terminal-tab[data-window-id]");
-      if (directTarget && tabList.contains(directTarget)) {
-        const rect = directTarget.getBoundingClientRect();
-        return {
-          targetButton: directTarget,
-          insertAfter: event.clientX > rect.left + rect.width / 2
-        };
-      }
-
-      const tabButtons = [...tabList.querySelectorAll(".terminal-tab[data-window-id]")];
-      if (!tabButtons.length) {
-        return null;
-      }
-
-      for (const tabButton of tabButtons) {
-        const rect = tabButton.getBoundingClientRect();
-        if (event.clientX <= rect.left + rect.width / 2) {
-          return {
-            targetButton: tabButton,
-            insertAfter: false
-          };
-        }
-      }
-
-      return {
-        targetButton: tabButtons.at(-1),
-        insertAfter: true
-      };
-    }
-
-    function updateTerminalTabDropMarker(tabList, dropPosition) {
-      clearTerminalTabDropMarkers(tabList);
-
-      if (!dropPosition?.targetButton) {
-        return;
-      }
-
-      dropPosition.targetButton.classList.toggle("drop-before", !dropPosition.insertAfter);
-      dropPosition.targetButton.classList.toggle("drop-after", dropPosition.insertAfter);
     }
 
     function bindTerminalTabDropHandlers(project, card, tabList) {
