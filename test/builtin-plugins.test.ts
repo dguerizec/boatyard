@@ -193,6 +193,11 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
   context.window.window = context.window;
   registerWidgetRegistry(context.window);
   registerPluginRegistry(context.window);
+  const registry = context.window.BoatyardPluginRegistry;
+  if (!registry) {
+    throw new Error("Plugin registry test environment was not initialized.");
+  }
+
   vm.createContext(context);
 
   for (const file of [
@@ -202,7 +207,7 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
   }
 
   return {
-    registry: context.window.BoatyardPluginRegistry,
+    registry,
     async refreshIntervals() {
       for (const callback of intervalCallbacks) {
         await callback();
@@ -375,7 +380,7 @@ test("Twicc done project nav badge stays visible for the active project", async 
 });
 
 test("Twicc done project nav badge is retained until the project is opened", async () => {
-  const twiccProjectProcessStatuses = {
+  const twiccProjectProcessStatuses: Record<string, unknown> = {
     "twicc-project": {
       state: "done",
       count: 1,

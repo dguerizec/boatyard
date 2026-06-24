@@ -55,9 +55,15 @@ function createEnvironment() {
   };
   registerWidgetRegistry(context.window);
   registerPluginRegistry(context.window);
+  const pluginRegistry = context.window.BoatyardPluginRegistry;
+  const widgetRegistry = context.window.BoatyardWidgetRegistry;
+  if (!pluginRegistry || !widgetRegistry) {
+    throw new Error("Plugin registry test environment was not initialized.");
+  }
+
   return {
-    pluginRegistry: context.window.BoatyardPluginRegistry,
-    widgetRegistry: context.window.BoatyardWidgetRegistry,
+    pluginRegistry,
+    widgetRegistry,
   };
 }
 
