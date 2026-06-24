@@ -20,6 +20,7 @@ import {
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 import { registerRendererEventBindings } from "./rendererEventBindings.js";
 import { createRendererSettingsViewBridge } from "./rendererSettingsViewBridge.js";
+import { createRendererStateSelectors } from "./rendererStateSelectors.js";
 import type {
   GlobalSettingsViewsInstance,
   PaneLayoutStateInstance,
@@ -93,96 +94,28 @@ const webAppAutofillEnabledByKey = new Map<string, boolean>();
 let visibleWebAppHosts = new Map();
 const UPDATE_POLL_INTERVAL_MS = 10 * 60 * 1000;
 
-function getProjects() {
-  return state.projects;
-}
-
-function getProjectGroups() {
-  const groups = [...new Set(getProjects()
-    .map((project) => String(project.group || "").trim())
-    .filter((group): group is string => Boolean(group)))];
-  return groups.sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
-}
-
-function getCollapsedProjectGroups() {
-  return new Set(Array.isArray(state.navigation?.collapsedProjectGroups)
-    ? state.navigation.collapsedProjectGroups
-    : []);
-}
-
-function getProjectGroupsByName(projects = getProjects()) {
-  const groups = new Map();
-
-  for (const project of projects) {
-    const groupName = String(project.group || "").trim();
-    if (!groupName) {
-      continue;
-    }
-
-    if (!groups.has(groupName)) {
-      groups.set(groupName, []);
-    }
-    groups.get(groupName).push(project);
-  }
-
-  return groups;
-}
-
-function getSettings() {
-  return {
-    projectsBasePath: "",
-    blurWebAppOverlays: false,
-    passwordManagerDisclaimerAccepted: false,
-    passwordManagerEnabled: false,
-    webAppOpenRules: [],
-    widgetRailWidth: 340,
-    terminalEnv: "",
-    ...(state.settings || {})
-  };
-}
-
-function getManual() {
-  return boatyardWindow.BoatyardManual || {
-    title: "Boatyard Manual",
-    description: "",
-    sections: [],
-    onboarding: []
-  };
-}
-
-function getCurrentProject() {
-  return getProjects().find((project) => project.id === currentProjectId) || null;
-}
-
-function getProjectById(projectId) {
-  return getProjects().find((project) => project.id === projectId) || null;
-}
-
-function getGlobalWorkspace() {
-  return {
-    id: GLOBAL_WORKSPACE_ID,
-    name: "Global",
-    slug: "global",
-    urls: state.globalUrls || [],
-    widgetPanes: [{
-      id: DEFAULT_WIDGET_PANE_ID,
-      label: "Widgets"
-    }],
-    isGlobalWorkspace: true
-  };
-}
-
-function isGlobalWorkspace(project) {
-  return project?.isGlobalWorkspace === true || project?.id === GLOBAL_WORKSPACE_ID;
-}
-
-function getProjectPluginConfig(projectId, pluginId) {
-  return state.pluginConfig?.projects?.[projectId]?.[pluginId] || {};
-}
-
-function getGlobalPluginConfig(pluginId) {
-  return state.pluginConfig?.global?.[pluginId] || {};
-}
+const {
+  getCollapsedProjectGroups,
+  getCurrentProject,
+  getGlobalPluginConfig,
+  getGlobalWorkspace,
+  getManual,
+  getPluginEnabledState,
+  getProjectById,
+  getProjectGroups,
+  getProjectGroupsByName,
+  getProjectPluginConfig,
+  getProjects,
+  getProjectSummaryTarget,
+  getSettings,
+  isGlobalWorkspace
+} = createRendererStateSelectors({
+  defaultWidgetPaneId: DEFAULT_WIDGET_PANE_ID,
+  getCurrentProjectId: () => currentProjectId,
+  getManualSource: () => boatyardWindow.BoatyardManual,
+  getState: () => state,
+  globalWorkspaceId: GLOBAL_WORKSPACE_ID
+});
 
 function applyFormControl(control) {
   control.classList.add("form-control");
@@ -209,15 +142,6 @@ function getPluginProjectSettingsSections() {
 
 function getPluginGlobalSettingsSections() {
   return boatyardWindow.BoatyardPluginRegistry?.listGlobalSettingsSections() || [];
-}
-
-function getPluginEnabledState() {
-  return state.plugins?.enabled || {};
-}
-
-function getProjectSummaryTarget(project) {
-  return project.sourcePath ||
-    project.slug;
 }
 
 function renderProjectNavBadges(project, container, options: ProjectNavBadgeRenderOptions = {}) {
