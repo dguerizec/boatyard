@@ -131,24 +131,38 @@ export function createProjectSidebar({
       return element instanceof HTMLElement;
     }
 
+    function isProjectId(value: unknown): value is string {
+      return typeof value === "string" && value.length > 0;
+    }
+
+    function getProjectIdList(projects: RendererProject[]) {
+      return projects.map((project) => project.id).filter(isProjectId);
+    }
+
     function createProjectNavRow(project: RendererProject, options: ProjectNavRowOptions = {}) {
+      const projectId = project.id || "";
       const isActiveProject =
-        (getViewState().currentView === "project" || getViewState().currentView === "project-edit") && project.id === getViewState().currentProjectId;
+        (getViewState().currentView === "project" || getViewState().currentView === "project-edit") && projectId === getViewState().currentProjectId;
       const row = document.createElement("div");
       row.className = "project-nav-row";
       row.classList.toggle("project-nav-row-grouped", options.grouped === true);
       row.classList.toggle("active", isActiveProject);
-      row.draggable = true;
-      row.dataset.projectId = project.id;
+      row.draggable = Boolean(projectId);
+      row.dataset.projectId = projectId;
       row.addEventListener("dragstart", (event) => {
+        const dataTransfer = event.dataTransfer;
+        if (!projectId || !dataTransfer) {
+          event.preventDefault();
+          return;
+        }
         const rect = row.getBoundingClientRect();
-        draggedProjectId = project.id;
+        draggedProjectId = projectId;
         draggedProjectGroupName = null;
         draggedProjectListPointerOffsetY = event.clientY - rect.top;
         draggedProjectListGhostHeight = rect.height;
         row.classList.add("dragging");
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", project.id);
+        dataTransfer.effectAllowed = "move";
+        dataTransfer.setData("text/plain", projectId);
       });
       row.addEventListener("dragend", () => {
         draggedProjectId = null;
@@ -170,7 +184,9 @@ export function createProjectSidebar({
         if (options.grouped && draggedProjectId && !draggedProjectGroupName) {
           event.preventDefault();
           event.stopPropagation();
-          event.dataTransfer.dropEffect = "move";
+          if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = "move";
+          }
           cancelPendingProjectGroupCollapse(options.groupName || "");
           updateProjectGroupInsertionPlaceholder(row.parentElement, event, options.groupName || "");
           return;
@@ -182,7 +198,9 @@ export function createProjectSidebar({
 
         event.preventDefault();
         event.stopPropagation();
-        event.dataTransfer.dropEffect = "move";
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
         clearProjectListInsertionPlaceholder();
         cancelPendingProjectGroupExpand();
         row.classList.add("drag-over");
@@ -203,18 +221,18 @@ export function createProjectSidebar({
           const target = projectListInsertionTarget;
           clearProjectListInsertionPlaceholder();
           await moveProjectToGroupInsertion(
-            draggedProjectId || event.dataTransfer.getData("text/plain"),
+            draggedProjectId || event.dataTransfer?.getData("text/plain") || "",
             options.groupName || "",
-            target?.beforeProjectId || project.id
+            target?.beforeProjectId || projectId
           );
           return;
         }
 
-        const sourceId = event.dataTransfer.getData("text/plain") || draggedProjectId;
-        if (!sourceId || sourceId === project.id) {
+        const sourceId = event.dataTransfer?.getData("text/plain") || draggedProjectId;
+        if (!sourceId || sourceId === projectId || !projectId) {
           return;
         }
-        await moveProjectBeforeProject(sourceId, project.id);
+        await moveProjectBeforeProject(sourceId, projectId);
       });
       row.addEventListener("contextmenu", (event) => {
         openProjectContextMenu(event, project);
@@ -229,24 +247,32 @@ export function createProjectSidebar({
       titleRow.className = "project-nav-title";
       const projectName = document.createElement("span");
       projectName.className = "project-nav-name";
-      projectName.textContent = project.name;
+      projectName.textContent = project.name || "";
       titleRow.append(projectName);
 
       renderProjectNavBadges(project, titleRow, { isActiveProject });
 
       const projectSlug = document.createElement("small");
-      projectSlug.textContent = project.slug;
+      projectSlug.textContent = project.slug || "";
       button.append(titleRow, projectSlug);
-      button.addEventListener("click", () => selectProject(project.id));
+      button.addEventListener("click", () => {
+        if (projectId) {
+          selectProject(projectId);
+        }
+      });
       row.append(button);
 
       const settingsButton = document.createElement("button");
       settingsButton.className = "project-settings-button";
       settingsButton.type = "button";
       settingsButton.title = "Project settings";
-      settingsButton.setAttribute("aria-label", `${project.name} settings`);
+      settingsButton.setAttribute("aria-label", `${project.name || "Project"} settings`);
       settingsButton.textContent = "⚙";
-      settingsButton.addEventListener("click", () => selectEditProject(project.id));
+      settingsButton.addEventListener("click", () => {
+        if (projectId) {
+          selectEditProject(projectId);
+        }
+      });
       row.append(settingsButton);
 
       return row;
@@ -337,7 +363,9 @@ export function createProjectSidebar({
       placeholder.setAttribute("aria-hidden", "true");
       placeholder.addEventListener("dragover", (event) => {
         event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
       });
       placeholder.addEventListener("drop", async (event) => {
         event.preventDefault();
@@ -354,7 +382,7 @@ export function createProjectSidebar({
           return;
         }
 
-        const sourceId = draggedProjectId || event.dataTransfer.getData("text/plain");
+        const sourceId = draggedProjectId || event.dataTransfer?.getData("text/plain");
         if (!sourceId) {
           return;
         }
@@ -495,6 +523,9 @@ export function createProjectSidebar({
 
       const projects = getProjects().filter((project) => String(project.group || "").trim() === currentGroup);
       for (const project of projects) {
+        if (!project.id) {
+          continue;
+        }
         await updateProject(project.id, {
           group: nextGroup
         });
@@ -521,6 +552,9 @@ export function createProjectSidebar({
 
       const projects = getProjects().filter((project) => String(project.group || "").trim() === currentGroup);
       for (const project of projects) {
+        if (!project.id) {
+          continue;
+        }
         await updateProject(project.id, {
           group: ""
         });
@@ -540,7 +574,7 @@ export function createProjectSidebar({
 
     async function createProjectGroupForProject(project: RendererProject, groupName: string) {
       const nextGroup = String(groupName || "").trim();
-      if (!project || !nextGroup) {
+      if (!project?.id || !nextGroup) {
         throw new Error("Group name is required.");
       }
 
@@ -561,25 +595,30 @@ export function createProjectSidebar({
       options: ProjectGroupDragOptions = {}
     ) {
       element.addEventListener("dragstart", (event) => {
+        const dataTransfer = event.dataTransfer;
+        if (!dataTransfer) {
+          event.preventDefault();
+          return;
+        }
         const rect = element.getBoundingClientRect();
         clearProjectListDragImage();
         draggedProjectId = null;
         draggedProjectGroupName = groupName;
         draggedProjectListPointerOffsetY = event.clientY - rect.top;
         draggedProjectListGhostHeight = rect.height;
-        if (options.dragImage === "collapsed-group" && event.dataTransfer) {
+        if (options.dragImage === "collapsed-group") {
           const dragImage = createProjectGroupDragImage(groupName, projects);
           document.body.append(dragImage);
           const dragImageRect = dragImage.getBoundingClientRect();
           const offsetY = dragImageRect.height / 2;
           draggedProjectListPointerOffsetY = offsetY;
           draggedProjectListGhostHeight = dragImageRect.height;
-          event.dataTransfer.setDragImage(dragImage, Math.min(24, dragImageRect.width / 2), offsetY);
+          dataTransfer.setDragImage(dragImage, Math.min(24, dragImageRect.width / 2), offsetY);
           draggedProjectListDragImage = dragImage;
         }
         element.classList.add("dragging");
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", `group:${groupName}`);
+        dataTransfer.effectAllowed = "move";
+        dataTransfer.setData("text/plain", `group:${groupName}`);
       });
       element.addEventListener("dragend", () => {
         draggedProjectId = null;
@@ -606,7 +645,9 @@ export function createProjectSidebar({
 
         event.preventDefault();
         event.stopPropagation();
-        event.dataTransfer.dropEffect = "move";
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
         clearProjectListInsertionPlaceholder();
         cancelPendingProjectGroupCollapse(groupName);
         scheduleProjectGroupExpand(groupName);
@@ -629,7 +670,7 @@ export function createProjectSidebar({
         cancelPendingProjectGroupExpand();
         cancelPendingProjectGroupCollapse();
 
-        const sourceId = draggedProjectId || event.dataTransfer.getData("text/plain");
+        const sourceId = draggedProjectId || event.dataTransfer?.getData("text/plain");
         if (!sourceId || projects.some((project) => project.id === sourceId)) {
           return;
         }
@@ -645,7 +686,9 @@ export function createProjectSidebar({
         if (draggedProjectGroupName) {
           event.preventDefault();
           event.stopPropagation();
-          event.dataTransfer.dropEffect = "move";
+          if (event.dataTransfer) {
+            event.dataTransfer.dropEffect = "move";
+          }
           clearProjectListInsertionPlaceholder();
           return;
         }
@@ -689,7 +732,9 @@ export function createProjectSidebar({
 
         event.preventDefault();
         event.stopPropagation();
-        event.dataTransfer.dropEffect = "move";
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
         cancelPendingProjectGroupCollapse(groupName);
         updateProjectGroupInsertionPlaceholder(projectRows, event, groupName);
       });
@@ -711,7 +756,7 @@ export function createProjectSidebar({
         const target = projectListInsertionTarget;
         clearProjectListInsertionPlaceholder();
 
-        const sourceId = draggedProjectId || event.dataTransfer.getData("text/plain");
+        const sourceId = draggedProjectId || event.dataTransfer?.getData("text/plain");
         if (!sourceId) {
           return;
         }
@@ -805,8 +850,11 @@ export function createProjectSidebar({
 
       const reordered = [...projects];
       const [moved] = reordered.splice(sourceIndex, 1);
+      if (!moved) {
+        return;
+      }
       reordered.splice(targetIndex, 0, moved);
-      await reorderProjectIds(reordered.map((project) => project.id));
+      await reorderProjectIds(getProjectIdList(reordered));
       renderApp();
     }
 
@@ -815,7 +863,7 @@ export function createProjectSidebar({
       const source = projects.find((project) => project.id === sourceId);
       const target = projects.find((project) => project.id === targetId);
 
-      if (!source || !target || source.id === target.id) {
+      if (!source?.id || !target?.id || source.id === target.id) {
         return;
       }
 
@@ -835,7 +883,7 @@ export function createProjectSidebar({
       const source = projects.find((project) => project.id === sourceId);
       const groupProjects = projects.filter((project) => String(project.group || "").trim() === groupName);
 
-      if (!source || !groupName || groupProjects.some((project) => project.id === source.id)) {
+      if (!source?.id || !groupName || groupProjects.some((project) => project.id === source.id)) {
         return;
       }
 
@@ -860,7 +908,7 @@ export function createProjectSidebar({
 
       const reordered = [...remaining];
       reordered.splice(targetIndex + 1, 0, source);
-      await reorderProjectIds(reordered.map((project) => project.id));
+      await reorderProjectIds(getProjectIdList(reordered));
       renderApp();
     }
 
@@ -869,7 +917,7 @@ export function createProjectSidebar({
       const projects = getProjects();
       const source = projects.find((project) => project.id === sourceId);
 
-      if (!source || !groupName) {
+      if (!source?.id || !groupName) {
         return;
       }
 
@@ -895,7 +943,7 @@ export function createProjectSidebar({
 
       const reordered = [...remaining];
       reordered.splice(beforeProjectId ? targetIndex : targetIndex + 1, 0, source);
-      await reorderProjectIds(reordered.map((project) => project.id));
+      await reorderProjectIds(getProjectIdList(reordered));
       renderApp();
     }
 
@@ -903,7 +951,7 @@ export function createProjectSidebar({
       const projects = getProjects();
       const source = projects.find((project) => project.id === sourceId);
 
-      if (!source) {
+      if (!source?.id) {
         return;
       }
 
@@ -926,7 +974,7 @@ export function createProjectSidebar({
 
       const reordered = [...remaining];
       reordered.splice(targetIndex, 0, source);
-      await reorderProjectIds(reordered.map((project) => project.id));
+      await reorderProjectIds(getProjectIdList(reordered));
       renderApp();
     }
 
@@ -950,7 +998,7 @@ export function createProjectSidebar({
 
       const reordered = [...remaining];
       reordered.splice(targetIndex, 0, ...moved);
-      await reorderProjectIds(reordered.map((project) => project.id));
+      await reorderProjectIds(getProjectIdList(reordered));
       renderApp();
     }
 
@@ -972,7 +1020,9 @@ export function createProjectSidebar({
         }
 
         event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
         updateProjectListInsertionPlaceholder(event);
       });
 
@@ -998,7 +1048,7 @@ export function createProjectSidebar({
           return;
         }
 
-        const sourceId = draggedProjectId || event.dataTransfer.getData("text/plain");
+        const sourceId = draggedProjectId || event.dataTransfer?.getData("text/plain");
         if (!sourceId) {
           return;
         }
