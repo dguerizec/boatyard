@@ -1,5 +1,7 @@
 "use strict";
 
+import type { ExecFileAsync, PluginActions, PluginMetadata } from "../pluginTypes";
+
 /**
  * @typedef {import("../pluginTypes").ExecFileAsync} ExecFileAsync
  * @typedef {import("../pluginTypes").PluginActions} PluginActions
@@ -20,6 +22,22 @@
  *   execFileAsync: ExecFileAsync
  * }} PierPluginContext
  */
+
+type WorktreeCommandOptions = { cwd?: unknown; execFileAsync: ExecFileAsync };
+type WorktreeAddInput = { worktreePath?: unknown; branchName?: unknown; fromRef?: unknown; startAfterCreate?: unknown };
+type WorktreeRemoveInput = { worktreePath?: unknown; force?: unknown; purge?: unknown; skipDown?: unknown };
+type PierProject = { id: string; previewUrl?: string };
+type PierProjectConfig = { pierPreviewUrl?: unknown };
+type PluginProjectConfig = { projects?: Record<string, Record<string, PierProjectConfig>> };
+type PierState = { projects?: PierProject[]; pluginConfig?: { projects?: PluginProjectConfig["projects"] } };
+type PierProjectConfigMigration = { projectId: string; config: { pierPreviewUrl: string } };
+type PierStateMigrationResult = { projectPluginConfig: PierProjectConfigMigration[] };
+type PierPluginContext = {
+  actions: PluginActions;
+  stateMigrations: { register(handler: (payload: { state: PierState }) => PierStateMigrationResult): void };
+  plugin: PluginMetadata;
+  execFileAsync: ExecFileAsync;
+};
 
 /**
  * @param {unknown} value
@@ -67,7 +85,7 @@ async function runPierWorktreeCommand(args, { cwd, execFileAsync }) {
  * @param {WorktreeAddInput} input
  * @returns {string[]}
  */
-function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCreate }: any = {}) {
+function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCreate }: WorktreeAddInput = {}) {
   const targetPath = normalizeText(worktreePath);
   if (!targetPath) {
     throw new Error("Worktree path is required.");
@@ -95,7 +113,7 @@ function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCre
  * @param {WorktreeRemoveInput} input
  * @returns {string[]}
  */
-function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }: any = {}) {
+function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }: WorktreeRemoveInput = {}) {
   const targetPath = normalizeText(worktreePath);
   if (!targetPath) {
     throw new Error("Worktree path is required.");
@@ -117,15 +135,15 @@ function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }: any =
 /**
  * @param {PierPluginContext} ctx
  */
-function activate(ctx) {
-  ctx.actions.handle("createWorktree", ({ cwd, worktreePath, branchName, fromRef, startAfterCreate }: any = {}) => {
+function activate(ctx: PierPluginContext) {
+  ctx.actions.handle<WorktreeAddInput & { cwd?: unknown }>("createWorktree", ({ cwd, worktreePath, branchName, fromRef, startAfterCreate } = {}) => {
     return runPierWorktreeCommand(
       buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCreate }),
       { cwd, execFileAsync: ctx.execFileAsync }
     );
   });
 
-  ctx.actions.handle("removeWorktree", ({ cwd, worktreePath, force, purge, skipDown }: any = {}) => {
+  ctx.actions.handle<WorktreeRemoveInput & { cwd?: unknown }>("removeWorktree", ({ cwd, worktreePath, force, purge, skipDown } = {}) => {
     return runPierWorktreeCommand(
       buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }),
       { cwd, execFileAsync: ctx.execFileAsync }

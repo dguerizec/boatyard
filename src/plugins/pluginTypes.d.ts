@@ -1,11 +1,14 @@
 import type { ChildProcess } from "node:child_process";
 
-export type PluginActionHandler<TPayload = any, TResult = unknown> = (
+export type PluginActionHandler<TPayload = unknown, TResult = unknown> = (
   payload?: TPayload
 ) => TResult | Promise<TResult>;
 
 export interface PluginActions {
-  handle(name: string, handler: PluginActionHandler<any, unknown>): void;
+  handle<TPayload = unknown, TResult = unknown>(
+    name: string,
+    handler: PluginActionHandler<TPayload, TResult>
+  ): void;
 }
 
 export interface PluginEvents {
@@ -25,14 +28,14 @@ export interface PromiseWithChild<T> extends Promise<T> {
 }
 
 export interface ExecFileAsync {
-  (file: string): PromiseWithChild<any>;
-  (file: string, args: readonly string[]): PromiseWithChild<any>;
+  (file: string): PromiseWithChild<{ stdout?: string; stderr?: string }>;
+  (file: string, args: readonly string[]): PromiseWithChild<{ stdout?: string; stderr?: string }>;
   (
     file: string,
     args: readonly string[],
     options: Record<string, unknown>
-  ): PromiseWithChild<any>;
-  (file: string, options: Record<string, unknown>): PromiseWithChild<any>;
+  ): PromiseWithChild<{ stdout?: string; stderr?: string }>;
+  (file: string, options: Record<string, unknown>): PromiseWithChild<{ stdout?: string; stderr?: string }>;
 }
 
 export interface PluginMetadata {
