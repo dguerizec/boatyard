@@ -17,6 +17,7 @@
     "src/renderer/rendererGlobals.d.ts",
     "src/renderer/rendererRecords.ts",
     "src/renderer/updateViews.ts",
-    "src/renderer/webAppMenus.ts"
+    "src/renderer/webAppMenus.ts",
+    "src/renderer/webAppSurfaces.ts"
   ]
 }

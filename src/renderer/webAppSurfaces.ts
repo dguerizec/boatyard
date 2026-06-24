@@ -1,12 +1,9 @@
-"use strict";
-
-(function () {
-  type WebAppBounds = {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-  };
+type WebAppBounds = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
   type SurfaceWebApp = {
     key: string;
@@ -29,7 +26,7 @@
   };
 
   type WebAppSurfaceBridge = {
-    freezeWebApps(options?: unknown): Promise<FrozenWebAppCapture[]>;
+    freezeWebApps(options?: unknown): Promise<unknown>;
     restoreWebApps(): Promise<unknown>;
   };
 
@@ -49,7 +46,7 @@
     removeOnClose?: boolean;
   };
 
-  function createWebAppSurfaces({
+export function createWebAppSurfaces({
     boatyard,
     getSettings,
     getVisibleWebAppEntries,
@@ -233,7 +230,7 @@
     async function freezeWebAppsForOverlay(options: unknown = undefined) {
       try {
         const captures = await boatyard.freezeWebApps(options);
-        renderFrozenWebApps(captures);
+        renderFrozenWebApps(Array.isArray(captures) ? captures : []);
       } catch (error) {
         console.error("Could not freeze webapps:", error);
       }
@@ -335,10 +332,4 @@
       showOverlayDialog,
       syncWebAppView
     };
-  }
-
-  const globalScope: WebAppSurfacesGlobal = window;
-  globalScope.BoatyardWebAppSurfaces = Object.freeze({
-    create: createWebAppSurfaces
-  });
-})();
+}

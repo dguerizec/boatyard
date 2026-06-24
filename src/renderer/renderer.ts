@@ -4,6 +4,7 @@ import { createPaneLayoutView } from "./paneLayoutView.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 import { createUpdateViews } from "./updateViews.js";
 import { createWebAppMenus } from "./webAppMenus.js";
+import { createWebAppSurfaces } from "./webAppSurfaces.js";
 
 type RendererProject = UnknownRecord & {
   devBranch?: string;
@@ -136,6 +137,7 @@ type ProjectSettingsViewsInstance = RendererModuleInstance & {
 type BoatyardBridge = {
   addProject(values: UnknownRecord): Promise<RendererState>;
   dismissChangelog?: () => Promise<unknown>;
+  freezeWebApps(options?: unknown): Promise<unknown>;
   getChangelogHistory?: () => Promise<unknown>;
   getPendingChangelog?: () => Promise<unknown>;
   getState(): Promise<RendererState>;
@@ -150,6 +152,7 @@ type BoatyardBridge = {
   prepareUpdate?: () => Promise<unknown>;
   removeProject(projectId: string): Promise<RendererState>;
   reorderProjects(projectIds: string[]): Promise<RendererState>;
+  restoreWebApps(): Promise<unknown>;
   restartToUpdate(update: UnknownRecord): Promise<unknown>;
   updateGlobalPluginConfig(pluginId: string, values: UnknownRecord): Promise<RendererState>;
   updateGlobalUrls(urls: UnknownRecord[]): Promise<RendererState>;
@@ -187,7 +190,6 @@ type BoatyardRendererWindow = Window & {
   BoatyardProjectSettingsViews: RendererCreateModule<ProjectSettingsViewsInstance>;
   BoatyardProjectSidebar: RendererCreateModule;
   BoatyardTerminalSurfaces: RendererCreateModule;
-  BoatyardWebAppSurfaces: RendererCreateModule;
   BoatyardWidgetRegistry: {
     register(definition: UnknownRecord): unknown;
   };
@@ -2130,7 +2132,7 @@ function renderEditProjectPage(project) {
   dashboardGrid.append(primaryColumn, secondaryColumn);
 }
 
-const webAppSurfaces = boatyardWindow.BoatyardWebAppSurfaces.create({
+const webAppSurfaces = createWebAppSurfaces({
   boatyard: boatyardWindow.boatyard,
   getSettings,
   getVisibleWebAppEntries: () => visibleWebAppHosts.values(),
