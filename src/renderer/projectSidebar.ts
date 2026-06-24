@@ -965,16 +965,6 @@ export function createProjectSidebar({
       );
     }
 
-    async function reorderProjectGroupBeforeGroup(sourceGroupName: string, targetGroupName: string) {
-      if (sourceGroupName === targetGroupName) {
-        return;
-      }
-
-      await reorderProjectGroup(sourceGroupName, (projects) =>
-        projects.findIndex((project) => String(project.group || "").trim() === targetGroupName)
-      );
-    }
-
     function bindProjectSidebarEvents() {
       projectList.addEventListener("dragover", (event) => {
         if (!draggedProjectId && !draggedProjectGroupName) {

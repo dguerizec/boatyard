@@ -222,11 +222,6 @@ export function createWebAppMenus({
       return true;
     }
 
-    function openUrlInSplitPane(sourceWebAppKey: string, url: string, label = "") {
-      const sourceEntry = getVisibleWebAppEntryByKey(sourceWebAppKey);
-      return openUrlInSplitPaneFromEntry(sourceEntry, url, label);
-    }
-
     function openUrlInSplitPaneFromEntry(sourceEntry: VisibleWebAppEntry | null, url: string, label = "") {
       const project = sourceEntry ? getVisibleWebAppProject() : null;
       if (!sourceEntry || !project) {

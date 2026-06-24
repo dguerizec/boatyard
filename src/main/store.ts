@@ -34,8 +34,7 @@ import {
   normalizeText,
   normalizeUrl,
   normalizeWindowBounds,
-  toRecord,
-  type UnknownRecord
+  toRecord
 } from "./storeUtils";
 import type {
   AppState,
@@ -45,13 +44,8 @@ import type {
   PasswordCredentialState,
   PluginConfigObject,
   ProjectStoreState,
-  ProjectUrl,
   ProjectWidgetLayout,
-  ProjectWidgetPane,
-  SettingsState,
   StoredProject,
-  WebAppHomeTab,
-  WebAppOpenRule,
   WebAppState,
   WidgetLayout,
   WidgetPosition,
@@ -59,7 +53,6 @@ import type {
   WindowState
 } from "./storeTypes";
 
-const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
 

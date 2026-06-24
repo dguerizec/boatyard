@@ -49,10 +49,6 @@ import type { UnknownRecord } from "./rendererRecords.js";
     readOnly?: boolean;
   };
 
-  type PluginGlobalSettingsSection = PluginSettingsSection & {
-    fields: PluginGlobalSettingsField[];
-  };
-
   type PluginFieldState = {
     action: {
       button: HTMLButtonElement;

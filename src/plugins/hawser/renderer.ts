@@ -27,13 +27,6 @@
     twiccSessionUrl?: string;
   };
 
-  type HawserWidgetOptions = {
-    loadData?: () => Promise<unknown>;
-    onOpenMessage?: (message: HawserWidgetMessage) => void;
-    subtitle?: string;
-    title?: string;
-  };
-
   type HawserCreatedProject = {
     name?: string;
     url?: string;

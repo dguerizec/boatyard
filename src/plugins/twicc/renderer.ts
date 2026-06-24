@@ -373,7 +373,6 @@
   }
 
   function getProviderInitials(provider: unknown) {
-    const normalized = String(provider || "").toLowerCase();
     return formatProviderName(provider)
       .split(/\s+/)
       .map((part) => part.slice(0, 1))

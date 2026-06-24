@@ -1,6 +1,5 @@
 import { createGlobalSettingsPageView } from "./globalSettingsPageView.js";
 import { createHawserWidget } from "./hawserWidget.js";
-import { createManualViews } from "./manualViews.js";
 import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
@@ -30,19 +29,10 @@ import { createRendererNavigationController } from "./rendererNavigationControll
 import { createRendererSettingsViewBridge } from "./rendererSettingsViewBridge.js";
 import { createRendererStateSelectors } from "./rendererStateSelectors.js";
 import type {
-  GlobalSettingsViewsInstance,
-  PaneLayoutStateInstance,
-  PaneLayoutViewInstance,
-  ProjectSettingsViewsInstance,
-  RendererCreateModule,
-  RendererModuleInstance,
   RendererPaneLayoutNode,
   RendererPaneNode,
   RendererProject,
   RendererState,
-  UpdateViewsInstance,
-  WebAppMenusInstance,
-  WidgetSurfacesInstance
 } from "./rendererTypes.js";
 import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createToolIcon } from "./toolIcons.js";
@@ -224,18 +214,13 @@ function clamp(value: number, min: number, max: number) {
 }
 
 const {
-  applyWidgetGridLayout,
   closeWidgetAddMenu,
-  createProjectWidget,
   createWidgetPaneActions,
   createWidgetPaneSurface,
   getInstalledWidgets,
-  getOrderedWidgetDefinitions,
-  getProjectWidgetDefinitions,
   getProjectWidgetLayout,
   getProjectWidgetPanes,
   getWidgetGridColumnCount,
-  getWidgetRailColumnCount,
   hydrateWidgetLayouts
 } = createRendererWidgetBridge({
   boatyard: boatyardWindow.boatyard,
@@ -441,25 +426,6 @@ function renderGlobalDashboard() {
 
 function renderGlobalPaneArea() {
   workspaceDashboardViews.renderGlobalPaneArea();
-}
-
-const manualViews = createManualViews({
-  closeWidgetAddMenu,
-  dashboardGrid,
-  getManual,
-  hideWebApps: () => invokeWebApp("hideWebApp"),
-  openOnboardingTour,
-  resetVisibleWebAppHosts: () => {
-    visibleWebApps.reset();
-  },
-  workspace,
-  workspaceKicker,
-  workspaceSummary,
-  workspaceTitle
-});
-
-function renderManualPage() {
-  manualViews.renderManualPage();
 }
 
 function createGlobalProjectsSettingsForm(options: UnknownRecord) {
@@ -672,10 +638,6 @@ function renderSidebarUpdateNotice() {
 
 function createGlobalUpdateCard() {
   return updateViews.createGlobalUpdateCard();
-}
-
-function openChangelogDialog(changelog: UnknownRecord, options: UnknownRecord = {}) {
-  return updateViews.openChangelogDialog(changelog, options);
 }
 
 function maybeOpenPendingChangelog() {

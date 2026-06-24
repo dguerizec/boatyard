@@ -16,11 +16,6 @@ type WebAppBounds = {
     host: Element | null;
   };
 
-  type FrozenWebAppCapture = {
-    bounds?: WebAppBounds;
-    dataUrl?: string;
-  };
-
   type WebAppSurfaceSettings = {
     blurWebAppOverlays?: boolean;
   };

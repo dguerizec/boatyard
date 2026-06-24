@@ -5,7 +5,6 @@ const { randomUUID } = require("node:crypto");
 const { promisify } = require("node:util");
 const pty = require("node-pty");
 
-type ExecFileAsync = import("../shared/pluginTypes").ExecFileAsync;
 type PtyProcess = ReturnType<typeof pty.spawn>;
 type TerminalProject = {
   id?: string;
