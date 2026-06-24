@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "allowJs": true,
+    "alwaysStrict": true,
     "checkJs": false,
     "module": "NodeNext",
     "moduleDetection": "legacy",
@@ -11,6 +12,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "strict": false,
+    "strictBindCallApply": true,
     "target": "ES2023",
     "types": ["node"],
     "useUnknownInCatchVariables": true
