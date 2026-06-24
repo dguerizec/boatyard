@@ -50,21 +50,30 @@ registerWidgetRegistry(window);
 registerPluginRegistry(window);
 registerPluginSettingsFields(window);
 
-const globalNav = document.querySelector<HTMLElement>("#global-nav");
-const globalNavRow = document.querySelector<HTMLElement>("#global-nav-row");
-const globalSettingsButton = document.querySelector<HTMLButtonElement>("#global-settings");
-const globalViewButton = document.querySelector<HTMLButtonElement>("#global-view");
-const manualTourButton = document.querySelector<HTMLButtonElement>("#manual-tour");
-const sidebarUpdateNotice = document.querySelector<HTMLElement>("#sidebar-update-notice");
-const addProjectButton = document.querySelector<HTMLButtonElement>("#add-project");
-const projectCount = document.querySelector<HTMLElement>("#project-count");
-const projectSearchInput = document.querySelector<HTMLInputElement>("#project-search");
-const projectList = document.querySelector<HTMLElement>("#project-list");
-const workspace = document.querySelector<HTMLElement>(".workspace");
-const dashboardGrid = document.querySelector<HTMLElement>("#dashboard-grid");
-const workspaceKicker = document.querySelector<HTMLElement>("#workspace-kicker");
-const workspaceTitle = document.querySelector<HTMLElement>("#workspace-title");
-const workspaceSummary = document.querySelector<HTMLElement>("#workspace-summary");
+function requireElement<T extends HTMLElement>(selector: string) {
+  const element = document.querySelector<T>(selector);
+  if (!element) {
+    throw new Error(`Missing required element: ${selector}`);
+  }
+
+  return element;
+}
+
+const globalNav = requireElement<HTMLElement>("#global-nav");
+const globalNavRow = requireElement<HTMLElement>("#global-nav-row");
+const globalSettingsButton = requireElement<HTMLButtonElement>("#global-settings");
+const globalViewButton = requireElement<HTMLButtonElement>("#global-view");
+const manualTourButton = requireElement<HTMLButtonElement>("#manual-tour");
+const sidebarUpdateNotice = requireElement<HTMLElement>("#sidebar-update-notice");
+const addProjectButton = requireElement<HTMLButtonElement>("#add-project");
+const projectCount = requireElement<HTMLElement>("#project-count");
+const projectSearchInput = requireElement<HTMLInputElement>("#project-search");
+const projectList = requireElement<HTMLElement>("#project-list");
+const workspace = requireElement<HTMLElement>(".workspace");
+const dashboardGrid = requireElement<HTMLElement>("#dashboard-grid");
+const workspaceKicker = requireElement<HTMLElement>("#workspace-kicker");
+const workspaceTitle = requireElement<HTMLElement>("#workspace-title");
+const workspaceSummary = requireElement<HTMLElement>("#workspace-summary");
 
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
@@ -115,7 +124,7 @@ navigationController = createRendererNavigationController({
   closeProjectGroupMenu,
   closeTerminalTabMenu,
   getCollapsedProjectGroups,
-  hasProject: (projectId: string) => getProjects().some((project) => project.id === projectId),
+  hasProject: (projectId) => Boolean(projectId && getProjects().some((project) => project.id === projectId)),
   render,
   updateNavigation: (values: UnknownRecord) => boatyardWindow.boatyard.updateNavigation(values)
 });
@@ -168,10 +177,10 @@ const {
   replacePaneNode
 } = paneLayoutState;
 const visibleWebApps = createVisibleWebAppTracker({
-  findPaneNode,
+  findPaneNode: (layout, paneId) => paneId ? findPaneNode(layout, paneId) : null,
   getCurrentWebAppUrl,
   getPaneLayout: getProjectPaneLayout,
-  getVisibleWebAppProject: () => webAppRuntime.getVisibleWebAppProject(),
+  getVisibleWebAppProject: () => webAppRuntime.getVisibleWebAppProject() || null,
   isOnboardingTourActive,
   persistPaneLayout
 });
@@ -189,8 +198,10 @@ function closeTerminalTabMenu() {
   terminalSurfaces.closeTerminalTabMenu();
 }
 
-function detachProjectTerminal(projectId: string) {
-  terminalSurfaces.detachProjectTerminal(projectId);
+function detachProjectTerminal(projectId?: string) {
+  if (projectId) {
+    terminalSurfaces.detachProjectTerminal(projectId);
+  }
 }
 
 function detachInactiveProjectTerminals(activeProjectId: string | null = null) {
@@ -265,9 +276,14 @@ function renderWorkspacePaneArea(project: RendererProject) {
 webAppRuntime = createRendererWebAppRuntime({
   boatyard: boatyardWindow.boatyard,
   findFirstPaneNode,
-  findPaneNode,
-  findPaneNodeBySelectedWebApp,
-  getCurrentProject,
+  findPaneNode: (node, paneId) => paneId ? findPaneNode(node, paneId) : null,
+  findPaneNodeBySelectedWebApp: (node, webAppId) => webAppId ? findPaneNodeBySelectedWebApp(node, webAppId) : null,
+  getCurrentProject: () => getCurrentProject() || getGlobalWorkspace() || ({
+    id: GLOBAL_WORKSPACE_ID,
+    isGlobalWorkspace: true,
+    name: "Global",
+    slug: "global"
+  } as RendererProject),
   getCurrentView: () => navigationController.getCurrentView(),
   getGlobalPluginConfig,
   getGlobalWorkspace,
@@ -284,7 +300,7 @@ webAppRuntime = createRendererWebAppRuntime({
 });
 
 function getProjectWebApps(project: RendererProject, paneId?: string) {
-  return webAppRuntime.getProjectWebApps(project, paneId);
+  return webAppRuntime.getProjectWebApps(project, paneId || "");
 }
 
 function getProjectPaneLayout(project: RendererProject) {
@@ -346,7 +362,9 @@ const paneLayoutView = createPaneLayoutView({
   getSelectedWebApp,
   getProjectWidgetLayout,
   getWidgetGridColumnCount,
-  createWidgetPaneActions,
+  createWidgetPaneActions: (project, widgetPane, layout, columns) => (
+    createWidgetPaneActions(project, widgetPane, layout, columns ?? getWidgetGridColumnCount(MIN_WIDGET_RAIL_WIDTH))
+  ),
   createWidgetPaneSurface,
   createWidgetPaneTabs,
   isWebAppTabMenuOpen,
@@ -531,17 +549,27 @@ const webAppMenus = createWebAppMenus({
   getSettings,
   getProjectById,
   getProjectWidgetPanes,
-  getVisibleWebAppEntryByKey: (key: string) => visibleWebApps.getEntryByKey(key),
-  getVisibleWebAppEntryByUrl: (url: string) => visibleWebApps.getEntryByUrl(url),
-  getVisibleWebAppProject: () => webAppRuntime.getVisibleWebAppProject(),
+  getVisibleWebAppEntryByKey: (key) => key ? visibleWebApps.getEntryByKey(key) : null,
+  getVisibleWebAppEntryByUrl: (url) => url ? visibleWebApps.getEntryByUrl(url) : null,
+  getVisibleWebAppProject: () => webAppRuntime.getVisibleWebAppProject() || null,
   getProjectPaneLayout,
   getWebAppHostBounds,
-  findPaneNode,
+  findPaneNode: (layout, paneId) => paneId ? findPaneNode(layout, paneId) : null,
   createSplitNode,
   replacePaneNode,
   setPaneLayout: paneLayoutState.setPaneLayout,
-  setSelectedWebAppForPane: paneLayoutState.setSelectedWebAppForPane,
-  setSelectedWebAppForProject: paneLayoutState.setSelectedWebAppForProject,
+  setSelectedWebAppForPane: (paneId, webAppId) => {
+    if (!webAppId) {
+      return undefined;
+    }
+    return paneLayoutState.setSelectedWebAppForPane(paneId, webAppId);
+  },
+  setSelectedWebAppForProject: (projectId, webAppId) => {
+    if (!projectId || !webAppId) {
+      return undefined;
+    }
+    return paneLayoutState.setSelectedWebAppForProject(projectId, webAppId);
+  },
   setCurrentWebAppUrl: (key: string, url: string) => {
     webAppRuntime.setCurrentWebAppUrl(key, url);
   },
@@ -568,7 +596,7 @@ const webAppMenus = createWebAppMenus({
   closeTerminalTabMenu,
   clamp,
   isGlobalWorkspace,
-  isWebAppLoaded: (key: string) => webAppLoadTracker.hasLoadedKey(key)
+  isWebAppLoaded: (key) => Boolean(key && webAppLoadTracker.hasLoadedKey(key))
 });
 
 function applyWebAppOpenChoice(payload: UnknownRecord, choice: UnknownRecord) {
@@ -625,7 +653,7 @@ function isWebAppTabMenuOpen() {
 }
 
 const updateViews = createUpdateViews({
-  boatyard: boatyardWindow.boatyard,
+  boatyard: boatyardWindow.boatyard as Parameters<typeof createUpdateViews>[0]["boatyard"],
   createToolIcon,
   showOverlayDialog,
   sidebarUpdateNotice,
@@ -690,7 +718,7 @@ const onboardingTour = createOnboardingTour({
   renderWorkspaceDashboard,
   closeWebAppTabMenu,
   openWebAppTabMenuFromButton,
-  waitForWebAppLoad,
+  waitForWebAppLoad: (key, expectedUrl) => key ? waitForWebAppLoad(key, expectedUrl) : Promise.resolve(false),
   syncWebAppView,
   freezeWebAppsForOverlay,
   restoreWebAppsAfterOverlay,
@@ -976,7 +1004,12 @@ registerRendererEventBindings({
   globalNav,
   globalSettingsButton,
   globalViewButton,
-  getCurrentProject,
+  getCurrentProject: () => getCurrentProject() || getGlobalWorkspace() || ({
+    id: GLOBAL_WORKSPACE_ID,
+    isGlobalWorkspace: true,
+    name: "Global",
+    slug: "global"
+  } as RendererProject),
   getCurrentView: () => navigationController.getCurrentView(),
   handleTerminalData: (payload) => terminalSurfaces.handleTerminalData(payload),
   handleTerminalExit: (payload) => terminalSurfaces.handleTerminalExit(payload),

@@ -43,8 +43,8 @@ type PaneLayoutStateApi = {
   getPaneAncestorPath(node: unknown, paneId: string): unknown;
   getPaneExpansionState(project: RendererProject, paneId: string): { canExpand: boolean; canShrink: boolean };
   getPaneExpansionTarget(project: RendererProject, paneId: string): unknown;
-  getSelectedWebAppForPane(paneId: string): string;
-  getSelectedWebAppForProject(projectId?: string): string;
+  getSelectedWebAppForPane(paneId: string): string | undefined;
+  getSelectedWebAppForProject(projectId?: string): string | undefined;
   removePaneNode(node: unknown, paneId: string): unknown;
   replacePaneNode(node: unknown, paneId: string, replacement: unknown): unknown;
   setPaneLayout(projectId: string | undefined, layout: unknown): unknown;

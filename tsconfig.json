@@ -17,6 +17,7 @@
     "skipLibCheck": true,
     "strict": false,
     "strictBindCallApply": true,
+    "strictNullChecks": true,
     "strictFunctionTypes": true,
     "target": "ES2023",
     "types": ["node"],
