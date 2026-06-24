@@ -1,126 +1,25 @@
 import { createProjectSettingsRows } from "./projectSettingsRows.js";
 import { createProjectSettingsSimpleForms } from "./projectSettingsSimpleForms.js";
-import type { BoatyardBridge, RendererProject, RendererState } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
-
-type CoreFieldSetOptions = {
-  ifUnedited?: boolean;
-  markEdited?: boolean;
-  source?: string;
-};
-
-  type ProjectFormInitialValues = {
-    id?: string;
-    [key: string]: unknown;
-  };
-
-  type CoreProjectFieldKey = "name" | "slug" | "group" | "sourcePath" | "gitUrl" | "repoUrl" | "devBranch";
-
-  type CoreProjectInputs = Record<CoreProjectFieldKey, HTMLInputElement>;
-
-  type PluginFieldSetOptions = {
-    ifUnedited?: boolean;
-    markEdited?: boolean;
-  };
-
-  type ProjectPluginSectionOptions = {
-    readCoreProjectFields?: () => Record<string, string>;
-    setError?: (message: string) => void;
-  };
-
-  type ProjectSettingsBoatyardBridge = BoatyardBridge & {
-    inspectSourcePath?: (sourcePath: string) => Promise<UnknownRecord>;
-    selectProjectsBasePath?(currentPath?: string): Promise<string>;
-  };
-
-  type ProjectSettingsViewsOptions = {
-    boatyard: ProjectSettingsBoatyardBridge;
-    getState: () => RendererState;
-    getSettings: () => UnknownRecord;
-    getProjectGroups: () => string[];
-    getProjectWidgetPanes: (project: RendererProject) => UnknownRecord[];
-    getProjectPluginConfig: (projectId: string, pluginId: string) => UnknownRecord;
-    getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
-    getPluginProjectSettingsSections: () => unknown[];
-    applyFormControl: (control: HTMLElement) => void;
-    applyFormControls: (container: HTMLElement) => void;
-    readPluginSettingsFieldValue: (field: ProjectPluginField, input: HTMLInputElement) => unknown;
-    deriveRepoUrl: (gitUrl: unknown) => string;
-    deriveProjectNameFromPath: (sourcePath: unknown) => string;
-    formatProjectNameFromPath: (sourcePath: unknown) => string;
-    slugify: (value: unknown) => string;
-  };
-
-  type ProjectFormOptions = {
-    title: string;
-    submitLabel: string;
-    initialValues?: ProjectFormInitialValues;
-    onSubmit: (values: UnknownRecord & { pluginConfig: UnknownRecord }) => void | Promise<void>;
-    onCancel: () => void;
-  };
-
-  type ProjectPluginFieldAction = {
-    hidden?: boolean;
-    label?: string;
-    message?: string;
-    pendingLabel?: string;
-    run?: (context: {
-      coreFields: Record<string, string>;
-      fields: PluginFieldApi;
-      globalConfig: UnknownRecord;
-      project: ProjectFormInitialValues;
-    }) => unknown | Promise<unknown>;
-  };
-
-  type ProjectPluginField = PluginSettingsFieldDefinition & {
-    action?: ProjectPluginFieldAction;
-    description?: string;
-  };
-
-  type ProjectPluginSettingsSection = PluginSettingsSection & {
-    fields: ProjectPluginField[];
-  };
-
-  type ProjectPluginFieldState = {
-    action: {
-      button: HTMLButtonElement;
-      element: HTMLDivElement;
-      message: HTMLSpanElement;
-    } | null;
-    field: ProjectPluginField;
-    input: HTMLInputElement;
-  };
-
-  type ProjectPluginControlsSection = {
-    inputs: Map<string, ProjectPluginFieldState>;
-    pluginId: string;
-  };
-
-  type PluginFieldApi = {
-    getValue(key: string): string;
-    isEdited(key: string): boolean;
-    setActionMessage(key: string, message: unknown): boolean;
-    setActionVisible(key: string, visible: boolean): boolean;
-    setDefaultValue(key: string, value: unknown): boolean;
-    setValue(key: string, value: unknown, options?: PluginFieldSetOptions): boolean;
-  };
-
-  type ProjectScopedFormOptions = {
-    project: RendererProject;
-    onSubmit: (values: UnknownRecord[]) => void | Promise<void>;
-  };
-
-  type GlobalUrlsFormOptions = {
-    onSubmit: (values: UnknownRecord[]) => void | Promise<void>;
-  };
-
-  function asProjectPluginSection(value: unknown): ProjectPluginSettingsSection {
-    return value as ProjectPluginSettingsSection;
-  }
-
-  function asErrorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error);
-  }
+import type {
+  CoreFieldSetOptions,
+  CoreProjectFieldKey,
+  CoreProjectInputs,
+  GlobalUrlsFormOptions,
+  PluginFieldApi,
+  PluginFieldSetOptions,
+  ProjectFormInitialValues,
+  ProjectFormOptions,
+  ProjectPluginControlsSection,
+  ProjectPluginFieldState,
+  ProjectPluginSectionOptions,
+  ProjectScopedFormOptions,
+  ProjectSettingsViewsOptions
+} from "./projectSettingsViewTypes.js";
+import {
+  asErrorMessage,
+  asProjectPluginSection
+} from "./projectSettingsViewTypes.js";
 
 const globalScope: ProjectSettingsViewsGlobal = window;
 
