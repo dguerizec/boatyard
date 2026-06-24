@@ -50,8 +50,8 @@ import { createWebAppLoadTracker } from "./webAppLoadTracker.js";
 import { createWebAppSurfaces } from "./webAppSurfaces.js";
 import { createVisibleWebAppTracker } from "./visibleWebAppTracker.js";
 import { registerWidgetRegistry } from "./widgetRegistry.js";
-import { createWidgetSurfaces } from "./widgetSurfaces.js";
 import { createWorkspaceDashboardViews } from "./workspaceDashboardViews.js";
+import { createRendererWidgetBridge } from "./rendererWidgetBridge.js";
 
 const boatyardWindow = window;
 registerWidgetRegistry(window);
@@ -233,38 +233,25 @@ boatyardWindow.BoatyardHawserUI = Object.freeze({
   createWidget: createHawserWidget
 });
 
-function registerBuiltinWidgets() {
-  const registry = boatyardWindow.BoatyardWidgetRegistry;
-
-  if (!registry) {
-    throw new Error("Widget registry is unavailable.");
-  }
-
-  [
-    {
-      id: "terminal-shell",
-      name: "Terminal",
-      title: "Terminal",
-      scopes: ["global", "project"],
-      category: "Developer tools",
-      status: "experimental",
-      description: "Persistent multi-tab tmux terminal.",
-      layout: {
-        default: { columns: 4, rows: 5 },
-        min: { columns: 2, rows: 3 }
-      },
-      createElement: (project, props) => createTerminalWidget(project, props)
-    }
-  ].forEach((definition) => registry.register(definition));
-}
-
-registerBuiltinWidgets();
-
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-const widgetSurfaces = createWidgetSurfaces({
+const {
+  applyWidgetGridLayout,
+  closeWidgetAddMenu,
+  createProjectWidget,
+  createWidgetPaneActions,
+  createWidgetPaneSurface,
+  getInstalledWidgets,
+  getOrderedWidgetDefinitions,
+  getProjectWidgetDefinitions,
+  getProjectWidgetLayout,
+  getProjectWidgetPanes,
+  getWidgetGridColumnCount,
+  getWidgetRailColumnCount,
+  hydrateWidgetLayouts
+} = createRendererWidgetBridge({
   boatyard: boatyardWindow.boatyard,
   getState: () => state,
   getProjectPluginConfig,
@@ -283,56 +270,10 @@ const widgetSurfaces = createWidgetSurfaces({
   widgetGridRowHeight: WIDGET_GRID_ROW_HEIGHT,
   widgetGridGap: WIDGET_GRID_GAP,
   widgetGridScrollGuard: WIDGET_GRID_SCROLL_GUARD,
-  legacyWidgetIds: LEGACY_WIDGET_IDS
+  legacyWidgetIds: LEGACY_WIDGET_IDS,
+  createTerminalWidget,
+  windowObject: boatyardWindow
 });
-
-function getInstalledWidgets(filter = {}) {
-  return widgetSurfaces.getInstalledWidgets(filter);
-}
-
-function getProjectWidgetDefinitions(project = null) {
-  return widgetSurfaces.getProjectWidgetDefinitions(project);
-}
-
-function getProjectWidgetPanes(project) {
-  return widgetSurfaces.getProjectWidgetPanes(project);
-}
-
-function getProjectWidgetLayout(project, columnCount = null, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
-  return widgetSurfaces.getProjectWidgetLayout(project, columnCount, widgetPaneId);
-}
-
-function getOrderedWidgetDefinitions(project, layout) {
-  return widgetSurfaces.getOrderedWidgetDefinitions(project, layout);
-}
-
-function getWidgetGridColumnCount(widgetRailWidth) {
-  return widgetSurfaces.getWidgetGridColumnCount(widgetRailWidth);
-}
-
-function getWidgetRailColumnCount(widgetRail) {
-  return widgetSurfaces.getWidgetRailColumnCount(widgetRail);
-}
-
-function applyWidgetGridLayout(widgetRail, project, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
-  widgetSurfaces.applyWidgetGridLayout(widgetRail, project, columnCount, widgetPaneId);
-}
-
-function createProjectWidget(project, definition, layout, columnCount, widgetPaneId = DEFAULT_WIDGET_PANE_ID) {
-  return widgetSurfaces.createProjectWidget(project, definition, layout, columnCount, widgetPaneId);
-}
-
-function createWidgetPaneActions(project, widgetPane, layout, columnCount) {
-  return widgetSurfaces.createWidgetPaneActions(project, widgetPane, layout, columnCount);
-}
-
-function createWidgetPaneSurface(project, widgetPane) {
-  return widgetSurfaces.createWidgetPaneSurface(project, widgetPane);
-}
-
-function closeWidgetAddMenu() {
-  widgetSurfaces.closeWidgetAddMenu();
-}
 
 function renderWorkspaceDashboard(project) {
   if (isGlobalWorkspace(project)) {
@@ -557,10 +498,6 @@ function persistPaneLayout(project) {
 
 function hydratePaneLayouts() {
   paneLayoutState.hydratePaneLayouts(state.paneLayouts || {});
-}
-
-function hydrateWidgetLayouts() {
-  widgetSurfaces.hydrateWidgetLayouts();
 }
 
 function hydrateTerminalTabOrders() {
