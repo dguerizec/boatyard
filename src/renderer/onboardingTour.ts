@@ -1,4 +1,105 @@
-"use strict";
+type OnboardingTourProject = {
+  id: string;
+};
+
+type OnboardingTourPaneNode = {
+  id: string;
+  selectedWebAppId?: string | null;
+  [key: string]: any;
+};
+
+type OnboardingTourLayoutNode = OnboardingTourPaneNode & {
+  first?: OnboardingTourLayoutNode;
+  second?: OnboardingTourLayoutNode;
+};
+
+type OnboardingTourWebApp = {
+  id: string;
+  key?: string;
+  url?: string;
+  [key: string]: any;
+};
+
+type OnboardingTourManualStep = {
+  title: string;
+  body: string;
+  target: string;
+};
+
+type OnboardingTourManual = {
+  onboarding?: OnboardingTourManualStep[];
+};
+
+type OnboardingTourOptions = {
+  elements: {
+    addProjectButton: HTMLElement;
+    projectList: HTMLElement;
+  };
+  onboardingVersion: number;
+  getManual: () => OnboardingTourManual;
+  getViewState: () => { currentView?: string };
+  selectGlobalForTour: () => void;
+  getGlobalWorkspace: () => OnboardingTourProject;
+  getProjectWebApps: (project: OnboardingTourProject, paneId?: string) => OnboardingTourWebApp[];
+  getProjectPaneLayout: (project: OnboardingTourProject) => OnboardingTourLayoutNode;
+  getSelectedWebApp: (project: OnboardingTourProject, paneId: string, webApps: OnboardingTourWebApp[]) => OnboardingTourWebApp;
+  findPaneNode: (node: OnboardingTourLayoutNode | null | undefined, paneId: string) => OnboardingTourPaneNode | null;
+  findFirstPaneNode: (node: OnboardingTourLayoutNode | null | undefined) => OnboardingTourPaneNode | null;
+  collectPaneNodes: (node: OnboardingTourLayoutNode | null | undefined, panes?: OnboardingTourPaneNode[]) => OnboardingTourPaneNode[];
+  countPaneNodes: (node: OnboardingTourLayoutNode | null | undefined) => number;
+  createSplitNode: (
+    project: OnboardingTourProject,
+    direction: string,
+    first: OnboardingTourLayoutNode,
+    selectedWebAppId?: string | null
+  ) => OnboardingTourLayoutNode;
+  replacePaneNode: (
+    node: OnboardingTourLayoutNode,
+    paneId: string,
+    replacement: OnboardingTourLayoutNode
+  ) => OnboardingTourLayoutNode;
+  setPaneLayout: (projectId: string, layout: OnboardingTourLayoutNode) => void;
+  getPaneLayout: (projectId: string) => OnboardingTourLayoutNode | undefined;
+  setSelectedWebAppForPane: (paneId: string, webAppId: string) => unknown;
+  getSelectedWebAppForPane: (paneId: string) => string | undefined;
+  setSelectedWebAppForProject: (projectId: string, webAppId: string) => unknown;
+  getSelectedWebAppForProject: (projectId: string) => string | undefined;
+  deleteSelectedWebAppForPane: (paneId: string) => unknown;
+  deleteSelectedWebAppForProject: (projectId: string) => unknown;
+  getVisibleWebAppEntries: () => Array<{ webApp: OnboardingTourWebApp }>;
+  renderWorkspaceDashboard: (project: OnboardingTourProject) => void;
+  closeWebAppTabMenu: () => void;
+  openWebAppTabMenuFromButton: (
+    button: Element,
+    project: OnboardingTourProject,
+    paneNode: OnboardingTourPaneNode,
+    selectedWebApp: OnboardingTourWebApp,
+    webApps: OnboardingTourWebApp[]
+  ) => Promise<unknown>;
+  waitForWebAppLoad: (key?: string, url?: string) => Promise<unknown>;
+  syncWebAppView: () => Promise<unknown>;
+  freezeWebAppsForOverlay: () => Promise<unknown>;
+  restoreWebAppsAfterOverlay: () => Promise<unknown>;
+  nextAnimationFrame: () => Promise<unknown>;
+  updateOnboarding: (state: { completedVersion: number; completedAt: string }) => Promise<unknown>;
+  updatePaneLayout: (projectId: string, layout: OnboardingTourLayoutNode) => Promise<unknown>;
+};
+
+type OpenOnboardingTourOptions = {
+  startView?: boolean;
+  force?: boolean;
+};
+
+type OnboardingTourGlobal = Window & {
+  BoatyardOnboardingTour?: {
+    create: (options: OnboardingTourOptions) => {
+      ensureOnboardingDemoProject: () => Element;
+      isDemoProjectVisible: () => boolean;
+      isTourActive: () => boolean;
+      openOnboardingTour: (options?: OpenOnboardingTourOptions) => Promise<void>;
+    };
+  };
+};
 
 (function () {
   function createOnboardingTour({
@@ -36,7 +137,7 @@
     nextAnimationFrame,
     updateOnboarding,
     updatePaneLayout
-  }) {
+  }: OnboardingTourOptions) {
     const { addProjectButton, projectList } = elements;
     let onboardingDemoProjectVisible = false;
     let onboardingTourActive = false;
@@ -92,7 +193,7 @@
       return row;
     }
 
-    function getDefaultOnboardingPaneWebAppId(project, paneId) {
+    function getDefaultOnboardingPaneWebAppId(project: OnboardingTourProject, paneId: string) {
       return getProjectWebApps(project, paneId).find((webApp) => webApp.id !== "manual")?.id || "manual";
     }
 
@@ -163,7 +264,7 @@
     async function openOnboardingPaneDropdown() {
       const project = getGlobalWorkspace();
       const panes = [...document.querySelectorAll(".webapp-pane")];
-      const pane = panes.at(-1);
+      const pane = panes.at(-1) as HTMLElement | undefined;
       const button = pane?.querySelector(".webapp-tab-picker");
       const paneId = pane?.dataset.paneId;
       const paneNode = paneId ? findPaneNode(getProjectPaneLayout(project), paneId) : null;
@@ -175,11 +276,11 @@
       const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps);
       button.setAttribute("aria-expanded", "true");
       await openWebAppTabMenuFromButton(button, project, paneNode, selectedWebApp, webApps);
-      document.querySelector(".webapp-tab-menu-item[data-web-app-id=\"manual\"]")?.focus();
+      (document.querySelector(".webapp-tab-menu-item[data-web-app-id=\"manual\"]") as HTMLElement | null)?.focus();
       return selectedWebApp?.key ? [selectedWebApp.key] : [];
     }
 
-    async function restoreOnboardingGlobalLayout(layout) {
+    async function restoreOnboardingGlobalLayout(layout?: OnboardingTourLayoutNode) {
       if (!layout) {
         return;
       }
@@ -208,7 +309,7 @@
       }
     }
 
-    function findOnboardingTarget(selector) {
+    function findOnboardingTarget(selector?: string) {
       if (!selector) {
         return null;
       }
@@ -236,7 +337,7 @@
       }
     }
 
-    async function openOnboardingTour(options = {}) {
+    async function openOnboardingTour(options: OpenOnboardingTourOptions = {}) {
       const manual = getManual();
       const steps = manual.onboarding || [];
       if (!steps.length) {
@@ -299,10 +400,10 @@
       document.body.append(dialog);
 
       let currentStep = 0;
-      let highlightedTarget = null;
+      let highlightedTarget: Element | null = null;
       let dialogClosed = false;
 
-      function updateSpotlight(target) {
+      function updateSpotlight(target: Element | null) {
         if (!target) {
           spotlightHole.hidden = true;
           return;
@@ -323,7 +424,7 @@
         const isManualStep = step.target === ".webapp-pane[data-web-app-id=\"manual\"] .webapp-tab-picker";
         const isPaneDropdownStep = step.target === ".webapp-tab-menu-item[data-web-app-id=\"manual\"]";
         const shouldPrepareBehindTour = (isManualStep || isPaneDropdownStep) && dialog.open;
-        let manualLoadPromise = Promise.resolve(true);
+        let manualLoadPromise: Promise<unknown> = Promise.resolve(true);
 
         if (!isPaneDropdownStep) {
           closeWebAppTabMenu();
@@ -385,7 +486,7 @@
         }
       }
 
-      async function closeDialog({ complete = false } = {}) {
+      async function closeDialog({ complete = false }: { complete?: boolean } = {}) {
         if (dialogClosed) {
           return;
         }
@@ -410,7 +511,7 @@
         updateSpotlight(highlightedTarget?.isConnected ? highlightedTarget : null);
       }
 
-      function handleOnboardingKeydown(event) {
+      function handleOnboardingKeydown(event: KeyboardEvent) {
         if (event.key === "Escape") {
           event.preventDefault();
           closeDialog({ complete: !options.force });
@@ -453,7 +554,7 @@
     };
   }
 
-  window.BoatyardOnboardingTour = {
+  (window as OnboardingTourGlobal).BoatyardOnboardingTour = {
     create: createOnboardingTour
   };
 })();
