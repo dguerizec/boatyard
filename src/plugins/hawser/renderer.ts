@@ -5,6 +5,7 @@
     id?: string;
     slug?: string;
     devBranch?: string;
+    sourcePath?: string;
   };
 
   type HawserConfig = {
@@ -37,6 +38,67 @@
     name?: string;
     url?: string;
   };
+  type HawserWidgetData = Record<string, unknown> & {
+    messages?: Array<Record<string, unknown> & {
+      twiccSessionId?: unknown;
+    }>;
+  };
+  type SettingsFields = {
+    getValue(key: string): string;
+    setActionMessage(key: string, value: string): void;
+    setActionVisible(key: string, visible: boolean): void;
+    setDefaultValue(key: string, value: string): void;
+    setValue(key: string, value: string, options?: Record<string, unknown>): void;
+  };
+  type HawserFieldContext = {
+    coreFields: HawserProject;
+    fields: SettingsFields;
+    globalConfig: HawserConfig;
+    project: HawserProject;
+  };
+  type HawserCoreFieldChangedEvent = {
+    coreFields: HawserProject;
+    field: string;
+    fields?: SettingsFields;
+  };
+  type HawserSourcePathInspectedEvent = {
+    coreFields?: HawserProject;
+    fields?: SettingsFields;
+    inspected?: {
+      plugins?: {
+        "boatyard.hawser"?: {
+          matchType?: string;
+          projectName?: string;
+          projectUrl?: string;
+        };
+      };
+    };
+    sourcePath?: string;
+  };
+  type HawserGlobalSettingsOpenedEvent = {
+    globalConfig?: HawserConfig;
+  };
+  type HawserPluginContext = PluginRegistryRecord & {
+    events: {
+      on(eventName: string, callback: (event: unknown) => void): void;
+    };
+    panes: {
+      register(definition: Record<string, unknown>): void;
+    };
+    services: {
+      provide(id: string, service: unknown): void;
+    };
+    settings: {
+      registerGlobalSection(section: Record<string, unknown>): void;
+      registerProjectSection(section: Record<string, unknown>): void;
+    };
+    status: {
+      set(status: unknown): void;
+    };
+    widgets: {
+      register(definition: Record<string, unknown>): void;
+    };
+  };
 
   type TwiccRendererService = PluginRegistryRecord & {
     getSessionUrl?: (
@@ -57,7 +119,7 @@
     throw new Error("Plugin registry is unavailable.");
   }
 
-  function invokePlugin(actionName, payload = {}) {
+  function invokePlugin(actionName: string, payload: Record<string, unknown> = {}) {
     return globalScope.boatyard?.invokePlugin?.("boatyard.hawser", actionName, payload);
   }
 
@@ -73,7 +135,7 @@
     };
   }
 
-  function normalizeApiUrl(value) {
+  function normalizeApiUrl(value: unknown) {
     return String(value || DEFAULT_HAWSER_API_URL).replace(/\/+$/g, "");
   }
 
@@ -88,12 +150,12 @@
     return slug ? `${DEFAULT_HAWSER_WEB_URL}/#/projects/${encodeURIComponent(slug)}` : "";
   }
 
-  function getProjectUrl(projectName) {
+  function getProjectUrl(projectName: unknown) {
     const name = String(projectName || "").trim();
     return name ? `${DEFAULT_HAWSER_WEB_URL}/#/projects/${encodeURIComponent(name)}` : "";
   }
 
-  function getMainSession(projectName, branch) {
+  function getMainSession(projectName: unknown, branch: unknown) {
     const name = String(projectName || "").trim();
     const session = String(branch || "").trim() || "main";
     return name ? `${name}:${session}` : "";
@@ -111,15 +173,16 @@
     return options.pluginConfig?.hawserProjectUrl || getDefaultProjectUrl(project);
   }
 
-  function addTwiccSessionUrls(project: HawserProject, data, options: HawserPluginOptions = {}) {
+  function addTwiccSessionUrls(project: HawserProject, data: unknown, options: HawserPluginOptions = {}) {
+    const source = isRecord(data) ? data as HawserWidgetData : {};
     const twicc = registry.getService<TwiccRendererService>("boatyard.twicc.api");
-    if (!twicc || !Array.isArray(data?.messages)) {
+    if (!twicc || !Array.isArray(source.messages)) {
       return data;
     }
 
     return {
-      ...data,
-      messages: data.messages.map((message) => ({
+      ...source,
+      messages: source.messages.map((message) => ({
         ...message,
         twiccSessionUrl: twicc.getSessionUrl?.(project, message.twiccSessionId, {
           pluginConfig: options.twiccProjectConfig
@@ -152,7 +215,7 @@
     });
   }
 
-  async function refreshHawserStatus(ctx, globalConfig = {}) {
+  async function refreshHawserStatus(ctx: HawserPluginContext, globalConfig: HawserConfig = {}) {
     if (typeof globalScope.boatyard?.invokePlugin !== "function") {
       ctx.status.set({
         state: "degraded",
@@ -166,12 +229,12 @@
     } catch (error) {
       ctx.status.set({
         state: "unavailable",
-        summary: error.message
+        summary: (error as Error).message
       });
     }
   }
 
-  function syncMainSessionField(event) {
+  function syncMainSessionField(event: HawserCoreFieldChangedEvent) {
     if (!["slug", "devBranch"].includes(event.field)) {
       return;
     }
@@ -181,7 +244,7 @@
     fields?.setDefaultValue("hawserProjectUrl", getDefaultProjectUrl(event.coreFields));
   }
 
-  function syncProjectRegistrationFields(event) {
+  function syncProjectRegistrationFields(event: HawserSourcePathInspectedEvent) {
     const fields = event.fields;
     const inspected = event.inspected?.plugins?.["boatyard.hawser"] || {};
     const coreFields = event.coreFields || {};
@@ -224,13 +287,13 @@
       ]
     },
     {
-      activate(ctx) {
+      activate(ctx: HawserPluginContext) {
         const hawserService = createHawserService();
         ctx.services.provide("boatyard.hawser.api", hawserService);
         ctx.events.on("boatyard.projectForm.coreFieldChanged", syncMainSessionField);
         ctx.events.on("boatyard.projectForm.sourcePathInspected", syncProjectRegistrationFields);
-        ctx.events.on("boatyard.globalSettings.opened", (event) => {
-          refreshHawserStatus(ctx, event.globalConfig || {});
+        ctx.events.on("boatyard.globalSettings.opened", (event: unknown) => {
+          refreshHawserStatus(ctx, (event as HawserGlobalSettingsOpenedEvent).globalConfig || {});
         });
 
         ctx.status.set({
@@ -277,7 +340,7 @@
                 pendingLabel: "Copying...",
                 message: `Use this if Hawser is not installed or the local service is unavailable. ${HAWSER_INSTALL_REQUIREMENTS}`,
                 hidden: false,
-                async run({ fields }) {
+                async run({ fields }: Pick<HawserFieldContext, "fields">) {
                   const command = fields.getValue("hawserInstallCommand") || HAWSER_INSTALL_COMMAND;
                   await globalScope.boatyard?.writeClipboardText?.(command);
                   fields.setActionMessage("hawserInstallCommand", "Install command copied.");
@@ -297,14 +360,14 @@
               type: "text",
               valueType: "text",
               placeholder: "project:main",
-              defaultValue({ project }) {
+              defaultValue({ project }: Pick<HawserFieldContext, "project">) {
                 return getDefaultMainSession(project);
               },
               action: {
                 label: "Create",
                 pendingLabel: "Creating...",
                 message: "Hawser project not found. Register it?",
-                async run({ coreFields, fields, globalConfig }) {
+                async run({ coreFields, fields, globalConfig }: Pick<HawserFieldContext, "coreFields" | "fields" | "globalConfig">) {
                   const sourcePath = String(coreFields.sourcePath || "").trim();
                   if (!sourcePath) {
                     throw new Error("Source path is required to create a Hawser project.");
@@ -330,7 +393,7 @@
               type: "text",
               valueType: "url",
               placeholder: `${DEFAULT_HAWSER_WEB_URL}/#/projects/project`,
-              defaultValue({ project }) {
+              defaultValue({ project }: Pick<HawserFieldContext, "project">) {
                 return getDefaultProjectUrl(project);
               }
             }
@@ -344,7 +407,7 @@
           title: "Hawser",
           kind: "wcv",
           scope: "project",
-          resolveUrl({ project, projectConfig }) {
+          resolveUrl({ project, projectConfig }: { project: HawserProject; projectConfig?: HawserConfig }) {
             return hawserService.getProjectUrl(project, { pluginConfig: projectConfig });
           }
         });
@@ -373,7 +436,7 @@
                 globalPluginConfig: props.globalPluginConfig,
                 twiccProjectConfig: props.allProjectPluginConfig?.["boatyard.twicc"] || {}
               }),
-              onOpenMessage(message) {
+              onOpenMessage(message: HawserWidgetMessage) {
                 if (message.twiccSessionUrl) {
                   globalScope.BoatyardPaneNavigation?.openProjectWebApp?.(project.id, "hawser", message.twiccSessionUrl);
                 }
