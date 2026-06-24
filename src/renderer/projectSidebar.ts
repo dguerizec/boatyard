@@ -1,5 +1,7 @@
 import { createProjectSidebarGroupMenus } from "./projectSidebarGroupMenus.js";
 import { createProjectSidebarGroupRows } from "./projectSidebarGroupRows.js";
+import type { UnknownRecord } from "./rendererRecords.js";
+import type { ProjectNavBadgeRenderOptions, RendererProject } from "./rendererTypes.js";
 
   type ProjectNavRowOptions = {
     grouped?: boolean;
@@ -8,6 +10,52 @@ import { createProjectSidebarGroupRows } from "./projectSidebarGroupRows.js";
 
   type ProjectGroupDragOptions = {
     dragImage?: "collapsed-group";
+  };
+
+  type ProjectSidebarElements = {
+    addProjectButton: HTMLButtonElement;
+    globalNav: HTMLElement;
+    globalNavRow: HTMLElement;
+    globalViewButton: HTMLButtonElement;
+    projectCount: HTMLElement;
+    projectList: HTMLElement;
+    projectSearchInput: HTMLInputElement;
+  };
+
+  type ProjectSidebarViewState = {
+    currentProjectId?: string | null;
+    currentView?: string;
+  };
+
+  type ProjectListInsertionTarget = {
+    beforeNode: Element | null;
+    beforeProjectId: string | null;
+    groupName?: string;
+  };
+
+  type ProjectSidebarOptions = {
+    applyFormControl: (control: HTMLElement) => void;
+    applyFormControls: (container: HTMLElement) => void;
+    clamp: (value: number, min: number, max: number) => number;
+    elements: ProjectSidebarElements;
+    ensureOnboardingDemoProject: () => Promise<unknown> | unknown;
+    getCollapsedProjectGroups: () => Set<string>;
+    getProjectGroups: () => string[];
+    getProjectGroupsByName: (projects?: RendererProject[]) => Map<string, RendererProject[]>;
+    getProjects: () => RendererProject[];
+    getViewState: () => ProjectSidebarViewState;
+    isOnboardingDemoProjectVisible: () => boolean;
+    normalizeProjectSearchText: (value: unknown) => string;
+    projectMatchesSearch: (project: RendererProject, query: string) => boolean;
+    renderApp: () => void;
+    renderProjectNavBadges: (project: RendererProject, container: HTMLElement, options?: ProjectNavBadgeRenderOptions) => void;
+    renderSidebarUpdateNotice: () => void;
+    reorderProjectIds: (projectIds: string[]) => Promise<unknown>;
+    selectEditProject: (projectId: string) => void;
+    selectProject: (projectId: string) => void;
+    showOverlayDialog: (dialog: HTMLDialogElement, options: UnknownRecord) => Promise<boolean>;
+    updateNavigation: (values: UnknownRecord) => Promise<unknown>;
+    updateProject: (projectId: string, values: UnknownRecord) => Promise<unknown>;
   };
 
 export function createProjectSidebar({
@@ -33,7 +81,7 @@ export function createProjectSidebar({
     updateProject,
     reorderProjectIds,
     renderApp
-  }) {
+  }: ProjectSidebarOptions) {
     const {
       addProjectButton,
       globalNav,
@@ -45,18 +93,18 @@ export function createProjectSidebar({
     } = elements;
 
     let projectSearchQuery = "";
-    let draggedProjectId = null;
-    let draggedProjectGroupName = null;
+    let draggedProjectId: string | null = null;
+    let draggedProjectGroupName: string | null = null;
     let draggedProjectListPointerOffsetY = 0;
     let draggedProjectListGhostHeight = 0;
-    let draggedProjectListDragImage = null;
-    let projectListInsertionTarget = null;
-    let projectListInsertionPlaceholder = null;
-    let pendingProjectGroupExpandTimer = null;
+    let draggedProjectListDragImage: HTMLElement | null = null;
+    let projectListInsertionTarget: ProjectListInsertionTarget | null = null;
+    let projectListInsertionPlaceholder: HTMLElement | null = null;
+    let pendingProjectGroupExpandTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingProjectGroupExpandName = "";
-    let pendingProjectGroupCollapseTimer = null;
+    let pendingProjectGroupCollapseTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingProjectGroupCollapseName = "";
-    const autoExpandedProjectGroups = new Set();
+    const autoExpandedProjectGroups = new Set<string>();
     const {
       closeProjectGroupMenu,
       openProjectContextMenu,
@@ -81,7 +129,11 @@ export function createProjectSidebar({
       setProjectGroupCollapsed
     });
 
-    function createProjectNavRow(project, options: ProjectNavRowOptions = {}) {
+    function isProjectListElement(element: Element): element is HTMLElement {
+      return element instanceof HTMLElement;
+    }
+
+    function createProjectNavRow(project: RendererProject, options: ProjectNavRowOptions = {}) {
       const isActiveProject =
         (getViewState().currentView === "project" || getViewState().currentView === "project-edit") && project.id === getViewState().currentProjectId;
       const row = document.createElement("div");
@@ -203,7 +255,7 @@ export function createProjectSidebar({
     }
 
     function getProjectListBlocks() {
-      return [...projectList.children].filter((element) =>
+      return [...projectList.children].filter(isProjectListElement).filter((element) =>
         element !== projectListInsertionPlaceholder &&
         (
           element.classList.contains("project-nav-row") ||
@@ -213,7 +265,7 @@ export function createProjectSidebar({
       );
     }
 
-    function getFirstProjectIdForProjectListBlock(block) {
+    function getFirstProjectIdForProjectListBlock(block: HTMLElement | null) {
       if (!block) {
         return null;
       }
@@ -226,7 +278,7 @@ export function createProjectSidebar({
       return getProjects().find((project) => String(project.group || "").trim() === groupName)?.id || null;
     }
 
-    function getProjectListInsertionTarget(clientY) {
+    function getProjectListInsertionTarget(clientY: number): ProjectListInsertionTarget {
       const blocks = getProjectListBlocks();
 
       for (const block of blocks) {
@@ -245,8 +297,8 @@ export function createProjectSidebar({
       };
     }
 
-    function getProjectGroupInsertionTarget(container, clientY, groupName) {
-      const rows = [...container.children].filter((element) =>
+    function getProjectGroupInsertionTarget(container: HTMLElement, clientY: number, groupName: string): ProjectListInsertionTarget {
+      const rows = [...container.children].filter(isProjectListElement).filter((element) =>
         element !== projectListInsertionPlaceholder &&
         element.classList.contains("project-nav-row")
       );
@@ -269,7 +321,7 @@ export function createProjectSidebar({
       };
     }
 
-    function getProjectListDragReferenceY(event) {
+    function getProjectListDragReferenceY(event: DragEvent) {
       if (!draggedProjectListGhostHeight) {
         return event.clientY;
       }
@@ -318,7 +370,7 @@ export function createProjectSidebar({
       return placeholder;
     }
 
-    function updateProjectListInsertionPlaceholder(event) {
+    function updateProjectListInsertionPlaceholder(event: DragEvent) {
       if (!draggedProjectId && !draggedProjectGroupName) {
         clearProjectListInsertionPlaceholder();
         return;
@@ -329,7 +381,7 @@ export function createProjectSidebar({
       projectList.insertBefore(placeholder, projectListInsertionTarget.beforeNode);
     }
 
-    function updateProjectGroupInsertionPlaceholder(container, event, groupName) {
+    function updateProjectGroupInsertionPlaceholder(container: HTMLElement | null, event: DragEvent, groupName: string) {
       if (!draggedProjectId || draggedProjectGroupName || !container) {
         clearProjectListInsertionPlaceholder();
         return;
@@ -346,7 +398,7 @@ export function createProjectSidebar({
       projectListInsertionPlaceholder = null;
     }
 
-    async function setProjectGroupCollapsed(groupName, collapsed) {
+    async function setProjectGroupCollapsed(groupName: string, collapsed: boolean) {
       const collapsedGroups = getCollapsedProjectGroups();
       if (collapsed) {
         collapsedGroups.add(groupName);
@@ -383,7 +435,7 @@ export function createProjectSidebar({
       pendingProjectGroupCollapseName = "";
     }
 
-    function scheduleProjectGroupExpand(groupName) {
+    function scheduleProjectGroupExpand(groupName: string) {
       if (!draggedProjectId || draggedProjectGroupName || !getCollapsedProjectGroups().has(groupName)) {
         return;
       }
@@ -407,7 +459,7 @@ export function createProjectSidebar({
       }, 2000);
     }
 
-    function scheduleProjectGroupCollapse(groupName) {
+    function scheduleProjectGroupCollapse(groupName: string) {
       if (!autoExpandedProjectGroups.has(groupName) || getCollapsedProjectGroups().has(groupName)) {
         return;
       }
@@ -435,7 +487,7 @@ export function createProjectSidebar({
       draggedProjectListDragImage = null;
     }
 
-    async function updateProjectGroupName(groupName, nextGroupName) {
+    async function updateProjectGroupName(groupName: string, nextGroupName: string) {
       const currentGroup = String(groupName || "").trim();
       const nextGroup = String(nextGroupName || "").trim();
 
@@ -463,7 +515,7 @@ export function createProjectSidebar({
       renderApp();
     }
 
-    async function explodeProjectGroup(groupName) {
+    async function explodeProjectGroup(groupName: string) {
       const currentGroup = String(groupName || "").trim();
       if (!currentGroup) {
         return;
@@ -488,7 +540,7 @@ export function createProjectSidebar({
       renderApp();
     }
 
-    async function createProjectGroupForProject(project, groupName) {
+    async function createProjectGroupForProject(project: RendererProject, groupName: string) {
       const nextGroup = String(groupName || "").trim();
       if (!project || !nextGroup) {
         throw new Error("Group name is required.");
@@ -504,7 +556,12 @@ export function createProjectSidebar({
       renderApp();
     }
 
-    function attachProjectGroupDragHandlers(element, groupName, projects, options: ProjectGroupDragOptions = {}) {
+    function attachProjectGroupDragHandlers(
+      element: HTMLElement,
+      groupName: string,
+      projects: RendererProject[],
+      options: ProjectGroupDragOptions = {}
+    ) {
       element.addEventListener("dragstart", (event) => {
         const rect = element.getBoundingClientRect();
         clearProjectListDragImage();
@@ -582,7 +639,7 @@ export function createProjectSidebar({
       });
     }
 
-    function createExpandedProjectGroup(groupName, projects) {
+    function createExpandedProjectGroup(groupName: string, projects: RendererProject[]) {
       const group = document.createElement("div");
       group.className = "project-group-expanded";
       group.dataset.projectGroup = groupName;
@@ -707,7 +764,7 @@ export function createProjectSidebar({
       }
 
       const groups = getProjectGroupsByName(visibleProjects);
-      const renderedGroups = new Set();
+      const renderedGroups = new Set<string>();
       const collapsedGroups = getCollapsedProjectGroups();
 
       for (const project of projects) {
@@ -739,7 +796,7 @@ export function createProjectSidebar({
       }
     }
 
-    async function reorderProjects(sourceId, targetId) {
+    async function reorderProjects(sourceId: string, targetId: string) {
       const projects = getProjects();
       const sourceIndex = projects.findIndex((project) => project.id === sourceId);
       const targetIndex = projects.findIndex((project) => project.id === targetId);
@@ -755,7 +812,7 @@ export function createProjectSidebar({
       renderApp();
     }
 
-    async function moveProjectBeforeProject(sourceId, targetId) {
+    async function moveProjectBeforeProject(sourceId: string, targetId: string) {
       const projects = getProjects();
       const source = projects.find((project) => project.id === sourceId);
       const target = projects.find((project) => project.id === targetId);
@@ -774,7 +831,7 @@ export function createProjectSidebar({
       await reorderProjects(source.id, target.id);
     }
 
-    async function moveProjectToGroup(sourceId, targetGroupName) {
+    async function moveProjectToGroup(sourceId: string, targetGroupName: string) {
       const groupName = String(targetGroupName || "").trim();
       const projects = getProjects();
       const source = projects.find((project) => project.id === sourceId);
@@ -809,7 +866,7 @@ export function createProjectSidebar({
       renderApp();
     }
 
-    async function moveProjectToGroupInsertion(sourceId, targetGroupName, beforeProjectId = null) {
+    async function moveProjectToGroupInsertion(sourceId: string, targetGroupName: string, beforeProjectId: string | null = null) {
       const groupName = String(targetGroupName || "").trim();
       const projects = getProjects();
       const source = projects.find((project) => project.id === sourceId);
@@ -844,7 +901,7 @@ export function createProjectSidebar({
       renderApp();
     }
 
-    async function moveProjectToUngroupedInsertion(sourceId, beforeProjectId = null) {
+    async function moveProjectToUngroupedInsertion(sourceId: string, beforeProjectId: string | null = null) {
       const projects = getProjects();
       const source = projects.find((project) => project.id === sourceId);
 
@@ -875,7 +932,7 @@ export function createProjectSidebar({
       renderApp();
     }
 
-    async function reorderProjectGroup(sourceGroupName, targetIndexResolver) {
+    async function reorderProjectGroup(sourceGroupName: string, targetIndexResolver: (projects: RendererProject[]) => number) {
       const groupName = String(sourceGroupName || "").trim();
       if (!groupName) {
         return;
@@ -899,7 +956,7 @@ export function createProjectSidebar({
       renderApp();
     }
 
-    async function reorderProjectGroupBeforeProject(sourceGroupName, targetProjectId) {
+    async function reorderProjectGroupBeforeProject(sourceGroupName: string, targetProjectId: string | null) {
       if (!targetProjectId) {
         await reorderProjectGroup(sourceGroupName, (projects) => projects.length);
         return;
@@ -910,7 +967,7 @@ export function createProjectSidebar({
       );
     }
 
-    async function reorderProjectGroupBeforeGroup(sourceGroupName, targetGroupName) {
+    async function reorderProjectGroupBeforeGroup(sourceGroupName: string, targetGroupName: string) {
       if (sourceGroupName === targetGroupName) {
         return;
       }
@@ -932,7 +989,7 @@ export function createProjectSidebar({
       });
 
       projectList.addEventListener("dragleave", (event) => {
-        if (projectList.contains(event.relatedTarget)) {
+        if (event.relatedTarget instanceof Node && projectList.contains(event.relatedTarget)) {
           return;
         }
 
