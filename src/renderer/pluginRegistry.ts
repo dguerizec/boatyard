@@ -15,11 +15,15 @@ type PluginRegistryWindow = Window & {
   const widgetsByPlugin = new Map<string, string[]>();
   const eventHandlers = new Map<string, PluginEventHandler[]>();
 
-  function normalizeText(value: unknown) {
+  function isRecord(value: unknown): value is PluginRegistryRecord {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function normalizeText(value: unknown): string {
     return String(value || "").trim();
   }
 
-  function requireId(value: unknown, label: string) {
+  function requireId(value: unknown, label: string): string {
     const id = normalizeText(value);
     if (!id) {
       throw new Error(`${label} id is required.`);
@@ -28,14 +32,14 @@ type PluginRegistryWindow = Window & {
     return id;
   }
 
-  function requireNamespacedContributionId(pluginId: string, id: string, label: string) {
+  function requireNamespacedContributionId(pluginId: string, id: string, label: string): void {
     if (id !== pluginId && !id.startsWith(`${pluginId}.`)) {
       throw new Error(`${label} ${id} must be prefixed with plugin id ${pluginId}.`);
     }
   }
 
   function normalizeManifest(manifest: PluginRegistryRecord): PluginManifest {
-    if (!manifest || typeof manifest !== "object") {
+    if (!isRecord(manifest)) {
       throw new Error("Plugin manifest must be an object.");
     }
 
@@ -55,7 +59,7 @@ type PluginRegistryWindow = Window & {
     };
   }
 
-  function publishStatus(pluginId: string, status: PluginStatus) {
+  function publishStatus(pluginId: string, status: PluginStatus): void {
     const currentStatus = statuses.get(pluginId) || null;
     if (JSON.stringify(currentStatus) === JSON.stringify(status)) {
       return;
@@ -73,8 +77,8 @@ type PluginRegistryWindow = Window & {
     }
   }
 
-  function normalizePaneDefinition(pluginId: string, definition: PluginRegistryRecord): PluginPaneDefinition {
-    if (!definition || typeof definition !== "object") {
+  function normalizePaneDefinition(pluginId: string, definition: PluginPaneDefinitionInput): PluginPaneDefinition {
+    if (!isRecord(definition)) {
       throw new Error(`Plugin ${pluginId} pane definition must be an object.`);
     }
 
@@ -115,8 +119,11 @@ type PluginRegistryWindow = Window & {
     };
   }
 
-  function normalizeProjectNavBadgeDefinition(pluginId: string, definition: PluginRegistryRecord): PluginProjectNavBadgeDefinition {
-    if (!definition || typeof definition !== "object") {
+  function normalizeProjectNavBadgeDefinition(
+    pluginId: string,
+    definition: PluginProjectNavBadgeDefinitionInput
+  ): PluginProjectNavBadgeDefinition {
+    if (!isRecord(definition)) {
       throw new Error(`Plugin ${pluginId} project nav badge definition must be an object.`);
     }
 
@@ -135,8 +142,24 @@ type PluginRegistryWindow = Window & {
     };
   }
 
+  function normalizeSettingsField(field: unknown, kind: string): PluginSettingsFieldDefinition {
+    if (!isRecord(field)) {
+      throw new Error(`${kind} settings field must be an object.`);
+    }
+
+    return {
+      ...field,
+      key: requireId(field.key, "Project settings field"),
+      label: normalizeText(field.label || field.title || field.key),
+      type: normalizeText(field.type || "text"),
+      valueType: normalizeText(field.valueType || field.type || "text"),
+      placeholder: normalizeText(field.placeholder),
+      required: field.required === true
+    };
+  }
+
   function normalizeSettingsSection(pluginId: string, section: PluginRegistryRecord, kind: string): PluginSettingsSection {
-    if (!section || typeof section !== "object") {
+    if (!isRecord(section)) {
       throw new Error(`Plugin ${pluginId} ${kind} settings section must be an object.`);
     }
 
@@ -144,15 +167,7 @@ type PluginRegistryWindow = Window & {
     requireNamespacedContributionId(pluginId, id, `${kind} settings section`);
     const title = normalizeText(section.title || section.name);
     const fields = Array.isArray(section.fields)
-      ? section.fields.map((field) => ({
-          ...field,
-          key: requireId(field.key, "Project settings field"),
-          label: normalizeText(field.label || field.title || field.key),
-          type: normalizeText(field.type || "text"),
-          valueType: normalizeText(field.valueType || field.type || "text"),
-          placeholder: normalizeText(field.placeholder),
-          required: field.required === true
-        }))
+      ? section.fields.map((field) => normalizeSettingsField(field, kind))
       : [];
 
     if (!title) {
@@ -172,11 +187,11 @@ type PluginRegistryWindow = Window & {
     };
   }
 
-  function normalizeGlobalSettingsSection(pluginId: string, section: PluginRegistryRecord) {
+  function normalizeGlobalSettingsSection(pluginId: string, section: PluginRegistryRecord): PluginSettingsSection {
     return normalizeSettingsSection(pluginId, section, "Global");
   }
 
-  function normalizeProjectSettingsSection(pluginId: string, section: PluginRegistryRecord) {
+  function normalizeProjectSettingsSection(pluginId: string, section: PluginRegistryRecord): PluginSettingsSection {
     return normalizeSettingsSection(pluginId, section, "Project");
   }
 
@@ -194,12 +209,12 @@ type PluginRegistryWindow = Window & {
             actions: Array.isArray(status?.actions) ? [...status.actions] : []
           });
         },
-        get() {
+        get(): PluginStatus | null {
           return statuses.get(pluginId) || null;
         }
       }),
       panes: Object.freeze({
-        register(definition: PluginRegistryRecord) {
+        register(definition: PluginPaneDefinitionInput): PluginPaneDefinition {
           const normalized = normalizePaneDefinition(pluginId, definition);
           if (panes.has(normalized.id)) {
             throw new Error(`Pane already registered: ${normalized.id}`);
@@ -210,7 +225,7 @@ type PluginRegistryWindow = Window & {
         }
       }),
       projectNavBadges: Object.freeze({
-        register(definition: PluginRegistryRecord) {
+        register(definition: PluginProjectNavBadgeDefinitionInput): PluginProjectNavBadgeDefinition {
           const normalized = normalizeProjectNavBadgeDefinition(pluginId, definition);
           if (projectNavBadges.has(normalized.id)) {
             throw new Error(`Project nav badge already registered: ${normalized.id}`);
@@ -221,7 +236,7 @@ type PluginRegistryWindow = Window & {
         }
       }),
       settings: Object.freeze({
-        registerGlobalSection(section: PluginRegistryRecord) {
+        registerGlobalSection(section: PluginRegistryRecord): PluginSettingsSection {
           const normalized = normalizeGlobalSettingsSection(pluginId, section);
           if (globalSettingsSections.has(normalized.id)) {
             throw new Error(`Global settings section already registered: ${normalized.id}`);
@@ -230,7 +245,7 @@ type PluginRegistryWindow = Window & {
           globalSettingsSections.set(normalized.id, normalized);
           return normalized;
         },
-        registerProjectSection(section: PluginRegistryRecord) {
+        registerProjectSection(section: PluginRegistryRecord): PluginSettingsSection {
           const normalized = normalizeProjectSettingsSection(pluginId, section);
           if (projectSettingsSections.has(normalized.id)) {
             throw new Error(`Project settings section already registered: ${normalized.id}`);
@@ -241,7 +256,7 @@ type PluginRegistryWindow = Window & {
         }
       }),
       widgets: Object.freeze({
-        register(definition: PluginRegistryRecord) {
+        register(definition: WidgetDefinitionInput): WidgetDefinition {
           if (!globalScope.BoatyardWidgetRegistry) {
             throw new Error("Widget registry is unavailable.");
           }
@@ -259,7 +274,7 @@ type PluginRegistryWindow = Window & {
           ]);
           return registered;
         },
-        registerAlias(alias: unknown, targetId: unknown) {
+        registerAlias(alias: unknown, targetId: unknown): WidgetAlias {
           if (!globalScope.BoatyardWidgetRegistry) {
             throw new Error("Widget registry is unavailable.");
           }
@@ -276,11 +291,11 @@ type PluginRegistryWindow = Window & {
         }
       }),
       services: Object.freeze({
-        provide(serviceId: unknown, implementation: PluginRegistryRecord) {
+        provide(serviceId: unknown, implementation: PluginRegistryRecord): PluginRegistryRecord {
           const id = requireId(serviceId, "Service");
           requireNamespacedContributionId(pluginId, id, "Service");
 
-          if (!implementation || typeof implementation !== "object") {
+          if (!isRecord(implementation)) {
             throw new Error(`Service ${id} implementation must be an object.`);
           }
 
@@ -288,7 +303,7 @@ type PluginRegistryWindow = Window & {
             throw new Error(`Service already registered: ${id}`);
           }
 
-          const service = Object.freeze({
+          const service: PluginService = Object.freeze({
             id,
             pluginId,
             implementation
@@ -296,10 +311,10 @@ type PluginRegistryWindow = Window & {
           services.set(id, service);
           return implementation;
         },
-        get<TService extends PluginRegistryRecord = PluginRegistryRecord>(serviceId: unknown) {
+        get<TService extends PluginRegistryRecord = PluginRegistryRecord>(serviceId: unknown): TService | null {
           return (services.get(String(serviceId || ""))?.implementation || null) as TService | null;
         },
-        list() {
+        list(): Array<{ id: string; pluginId: string }> {
           return [...services.values()].map((service) => ({
             id: service.id,
             pluginId: service.pluginId
@@ -307,13 +322,13 @@ type PluginRegistryWindow = Window & {
         }
       }),
       events: Object.freeze({
-        on(eventName: unknown, handler: unknown) {
+        on(eventName: unknown, handler: unknown): () => void {
           const name = requireId(eventName, "Event");
           if (typeof handler !== "function") {
             throw new Error(`Event ${name} handler must be a function.`);
           }
 
-          const eventHandler = handler as (payload: unknown) => void;
+          const eventHandler = handler as (payload: PluginRegistryRecord) => void;
           const nextHandlers = [
             ...(eventHandlers.get(name) || []),
             { pluginId, handler: eventHandler }
@@ -331,7 +346,7 @@ type PluginRegistryWindow = Window & {
     });
   }
 
-  function removePluginContributions(pluginId: string) {
+  function removePluginContributions(pluginId: string): void {
     for (const [paneId, pane] of panes) {
       if (pane.pluginId === pluginId) {
         panes.delete(paneId);
@@ -380,7 +395,7 @@ type PluginRegistryWindow = Window & {
     widgetsByPlugin.delete(pluginId);
   }
 
-  function activatePlugin(plugin: RegisteredPlugin) {
+  function activatePlugin(plugin: RegisteredPlugin): void {
     if (plugin.active) {
       return;
     }
@@ -399,7 +414,7 @@ type PluginRegistryWindow = Window & {
       plugin.active = false;
       statuses.set(plugin.manifest.id, {
         state: "error",
-        summary: error.message,
+        summary: error instanceof Error ? error.message : String(error),
         details: {},
         actions: []
       });
@@ -407,7 +422,7 @@ type PluginRegistryWindow = Window & {
     }
   }
 
-  function deactivatePlugin(plugin: RegisteredPlugin) {
+  function deactivatePlugin(plugin: RegisteredPlugin): void {
     if (!plugin.active) {
       statuses.set(plugin.manifest.id, {
         state: "disabled",
@@ -431,14 +446,14 @@ type PluginRegistryWindow = Window & {
     });
   }
 
-  function register(manifestInput: PluginRegistryRecord, runtime: PluginRuntime = {}) {
+  function register(manifestInput: PluginRegistryRecord, runtime: PluginRuntime = {}): RegisteredPlugin {
     const manifest = normalizeManifest(manifestInput);
 
     if (plugins.has(manifest.id)) {
       throw new Error(`Plugin already registered: ${manifest.id}`);
     }
 
-    const plugin = {
+    const plugin: RegisteredPlugin = {
       manifest,
       runtime,
       active: false,
@@ -455,7 +470,7 @@ type PluginRegistryWindow = Window & {
     return plugin;
   }
 
-  function list() {
+  function list(): PluginListEntry[] {
     return [...plugins.values()].map((plugin) => ({
       ...plugin.manifest,
       enabled: plugin.enabled,
@@ -463,7 +478,15 @@ type PluginRegistryWindow = Window & {
     }));
   }
 
-  function setEnabled(pluginId: unknown, enabled: unknown) {
+  function pluginListEntry(plugin: RegisteredPlugin): PluginListEntry {
+    return {
+      ...plugin.manifest,
+      enabled: plugin.enabled,
+      active: plugin.active
+    };
+  }
+
+  function setEnabled(pluginId: unknown, enabled: unknown): PluginListEntry {
     const plugin = plugins.get(String(pluginId || ""));
     if (!plugin) {
       throw new Error(`Unknown plugin: ${pluginId}`);
@@ -475,38 +498,26 @@ type PluginRegistryWindow = Window & {
     } else {
       deactivatePlugin(plugin);
     }
-    return {
-      ...plugin.manifest,
-      enabled: plugin.enabled,
-      active: plugin.active
-    };
+    return pluginListEntry(plugin);
   }
 
-  function reload(pluginId: unknown) {
+  function reload(pluginId: unknown): PluginListEntry {
     const plugin = plugins.get(String(pluginId || ""));
     if (!plugin) {
       throw new Error(`Unknown plugin: ${pluginId}`);
     }
 
     if (!plugin.enabled) {
-      return {
-        ...plugin.manifest,
-        enabled: plugin.enabled,
-        active: plugin.active
-      };
+      return pluginListEntry(plugin);
     }
 
     deactivatePlugin(plugin);
     plugin.enabled = true;
     activatePlugin(plugin);
-    return {
-      ...plugin.manifest,
-      enabled: plugin.enabled,
-      active: plugin.active
-    };
+    return pluginListEntry(plugin);
   }
 
-  function applyEnabledState(enabledByPlugin: PluginRegistryRecord = {}) {
+  function applyEnabledState(enabledByPlugin: PluginRegistryRecord = {}): void {
     for (const plugin of plugins.values()) {
       try {
         setEnabled(plugin.manifest.id, enabledByPlugin[plugin.manifest.id] !== false);
@@ -516,36 +527,36 @@ type PluginRegistryWindow = Window & {
     }
   }
 
-  function listPanes(filter: PluginRegistryRecord = {}) {
+  function listPanes(filter: PluginPaneListFilter = {}): PluginPaneDefinition[] {
     return [...panes.values()]
       .filter((pane) => !filter.scope || pane.scope === filter.scope)
       .filter((pane) => !filter.kind || pane.kind === filter.kind);
   }
 
-  function listProjectNavBadges() {
+  function listProjectNavBadges(): PluginProjectNavBadgeDefinition[] {
     return [...projectNavBadges.values()];
   }
 
-  function listGlobalSettingsSections() {
+  function listGlobalSettingsSections(): PluginSettingsSection[] {
     return [...globalSettingsSections.values()];
   }
 
-  function listProjectSettingsSections() {
+  function listProjectSettingsSections(): PluginSettingsSection[] {
     return [...projectSettingsSections.values()];
   }
 
-  function getService<TService extends PluginRegistryRecord = PluginRegistryRecord>(serviceId: unknown) {
+  function getService<TService extends PluginRegistryRecord = PluginRegistryRecord>(serviceId: unknown): TService | null {
     return (services.get(String(serviceId || ""))?.implementation || null) as TService | null;
   }
 
-  function listServices() {
+  function listServices(): Array<{ id: string; pluginId: string }> {
     return [...services.values()].map((service) => ({
       id: service.id,
       pluginId: service.pluginId
     }));
   }
 
-  function emit(eventName: unknown, payload: PluginRegistryRecord = {}) {
+  function emit(eventName: unknown, payload: PluginRegistryRecord = {}): void {
     const name = String(eventName || "").trim();
     if (!name) {
       return;
@@ -559,7 +570,7 @@ type PluginRegistryWindow = Window & {
     }
   }
 
-  function getStatus(pluginId: unknown) {
+  function getStatus(pluginId: unknown): PluginStatus | null {
     return statuses.get(String(pluginId || "")) || null;
   }
 

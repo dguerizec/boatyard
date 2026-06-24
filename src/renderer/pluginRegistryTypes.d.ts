@@ -1,10 +1,15 @@
 type PluginRegistryRecord = Record<string, unknown>;
 
+type PluginStatusAction = PluginRegistryRecord & {
+  id?: string;
+  label?: string;
+};
+
 type PluginStatus = {
   state: string;
   summary: string;
   details: PluginRegistryRecord;
-  actions: unknown[];
+  actions: PluginStatusAction[];
 };
 
 type PluginManifest = PluginRegistryRecord & {
@@ -26,6 +31,11 @@ type RegisteredPlugin = {
   runtime: PluginRuntime;
   active: boolean;
   enabled: boolean;
+};
+
+type PluginListEntry = PluginManifest & {
+  enabled: boolean;
+  active: boolean;
 };
 
 type PluginSettingsFieldDefinition = PluginRegistryRecord & {
@@ -79,6 +89,11 @@ type PluginPaneDefinition = PluginPaneDefinitionInput & {
   scope: string;
   webAppId: string;
   key: string;
+};
+
+type PluginPaneListFilter = {
+  scope?: string;
+  kind?: PluginPaneDefinition["kind"];
 };
 
 type PluginProjectNavBadgeRenderContext = {
@@ -143,11 +158,11 @@ type PluginRegistryContext = {
 
 type PluginRegistryApi = {
   register(manifestInput: PluginRegistryRecord, runtime?: PluginRuntime): RegisteredPlugin;
-  list(): Array<PluginManifest & { enabled: boolean; active: boolean }>;
-  setEnabled(pluginId: unknown, enabled: unknown): PluginManifest & { enabled: boolean; active: boolean };
-  reload(pluginId: unknown): PluginManifest & { enabled: boolean; active: boolean };
+  list(): PluginListEntry[];
+  setEnabled(pluginId: unknown, enabled: unknown): PluginListEntry;
+  reload(pluginId: unknown): PluginListEntry;
   applyEnabledState(enabledByPlugin?: PluginRegistryRecord): void;
-  listPanes(filter?: { scope?: string; kind?: string }): PluginPaneDefinition[];
+  listPanes(filter?: PluginPaneListFilter): PluginPaneDefinition[];
   listProjectNavBadges(): PluginProjectNavBadgeDefinition[];
   listGlobalSettingsSections(): PluginSettingsSection[];
   listProjectSettingsSections(): PluginSettingsSection[];
