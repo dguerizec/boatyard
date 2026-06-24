@@ -1,4 +1,5 @@
 import { createGlobalSettingsViews } from "./globalSettingsViews.js";
+import { createGlobalSettingsPageView } from "./globalSettingsPageView.js";
 import { createHawserWidget } from "./hawserWidget.js";
 import { createManualViews } from "./manualViews.js";
 import { createOnboardingTour } from "./onboardingTour.js";
@@ -870,63 +871,49 @@ function renderManualPage() {
   manualViews.renderManualPage();
 }
 
+const globalSettingsPageView = createGlobalSettingsPageView({
+  closeTerminalTabMenu,
+  closeWidgetAddMenu,
+  createGlobalPasswordManagerSettingsForm,
+  createGlobalPluginsSettingsView,
+  createGlobalPresentationSettingsForm,
+  createGlobalProjectsSettingsForm,
+  createGlobalTerminalSettingsForm,
+  createGlobalUpdateCard,
+  createGlobalUrlsSettingsForm,
+  createGlobalWebAppOpenRulesSettingsForm,
+  createGlobalWidgetsSettingsView,
+  dashboardGrid,
+  emitOpened: () => {
+    boatyardWindow.BoatyardPluginRegistry?.emit("boatyard.globalSettings.opened", {
+      forPlugin: (pluginId) => ({
+        globalConfig: getGlobalPluginConfig(pluginId)
+      })
+    });
+  },
+  getSettings,
+  hideWebApps: () => invokeWebApp("hideWebApp"),
+  hydratePaneLayouts,
+  hydrateWidgetLayouts,
+  resetVisibleWebAppHosts: () => {
+    visibleWebAppHosts = new Map();
+  },
+  updateGlobalUrls: async (urls) => {
+    state = await boatyardWindow.boatyard.updateGlobalUrls(urls as UnknownRecord[]);
+    return state;
+  },
+  updateSettings: async (values) => {
+    state = await boatyardWindow.boatyard.updateSettings(values as UnknownRecord);
+    return state;
+  },
+  workspace,
+  workspaceKicker,
+  workspaceSummary,
+  workspaceTitle
+});
+
 function renderGlobalSettingsPage() {
-  closeWidgetAddMenu();
-  closeTerminalTabMenu();
-  visibleWebAppHosts = new Map();
-  invokeWebApp("hideWebApp");
-  workspace.classList.remove("project-mode");
-  workspaceKicker.textContent = "Global";
-  workspaceTitle.textContent = "Global settings";
-  workspaceSummary.textContent = "";
-  dashboardGrid.innerHTML = "";
-  dashboardGrid.className = "project-form-layout global-settings-layout";
-  dashboardGrid.style.gridTemplateColumns = "";
-
-  dashboardGrid.append(createGlobalUpdateCard(), createGlobalProjectsSettingsForm({
-    settings: getSettings(),
-    onSubmit: async (values) => {
-      state = await boatyardWindow.boatyard.updateSettings(values);
-      renderGlobalSettingsPage();
-    }
-  }), createGlobalUrlsSettingsForm({
-    onSubmit: async (urls) => {
-      state = await boatyardWindow.boatyard.updateGlobalUrls(urls);
-      hydratePaneLayouts();
-      hydrateWidgetLayouts();
-      renderGlobalSettingsPage();
-    }
-  }), createGlobalPresentationSettingsForm({
-    settings: getSettings(),
-    onSubmit: async (values) => {
-      state = await boatyardWindow.boatyard.updateSettings(values);
-      renderGlobalSettingsPage();
-    }
-  }), createGlobalTerminalSettingsForm({
-    settings: getSettings(),
-    onSubmit: async (values) => {
-      state = await boatyardWindow.boatyard.updateSettings(values);
-      renderGlobalSettingsPage();
-    }
-  }), createGlobalPasswordManagerSettingsForm({
-    settings: getSettings(),
-    onSubmit: async (values) => {
-      state = await boatyardWindow.boatyard.updateSettings(values);
-      renderGlobalSettingsPage();
-    }
-  }), createGlobalWebAppOpenRulesSettingsForm({
-    settings: getSettings(),
-    onSubmit: async (values) => {
-      state = await boatyardWindow.boatyard.updateSettings(values);
-      renderGlobalSettingsPage();
-    }
-  }), createGlobalPluginsSettingsView(), createGlobalWidgetsSettingsView());
-
-  boatyardWindow.BoatyardPluginRegistry?.emit("boatyard.globalSettings.opened", {
-    forPlugin: (pluginId) => ({
-      globalConfig: getGlobalPluginConfig(pluginId)
-    })
-  });
+  globalSettingsPageView.renderGlobalSettingsPage();
 }
 
 function renderProjectDashboard(project) {
