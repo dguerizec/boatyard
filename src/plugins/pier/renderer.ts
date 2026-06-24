@@ -358,6 +358,19 @@
     return `${entry.project || ""}\u0000${entry.slug || ""}`;
   }
 
+  function isPierUrlRow(element: Element | null): element is PierUrlRow {
+    return Boolean(
+      element instanceof HTMLDivElement &&
+      element.classList.contains("pier-url-row") &&
+      "pierEntry" in element
+    );
+  }
+
+  function getClosestPierUrlRow(element: Element): PierUrlRow | null {
+    const row = element.closest(".pier-url-row");
+    return isPierUrlRow(row) ? row : null;
+  }
+
   function updatePierUrlRow(row: PierUrlRow, entry: PierWorkload) {
     row.pierEntry = entry;
     row.classList.toggle("stopped", !entry.running);
@@ -382,7 +395,7 @@
     link.className = "pier-url-link";
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      const entry = (link.closest(".pier-url-row") as PierUrlRow | null)?.pierEntry || {};
+      const entry = getClosestPierUrlRow(link)?.pierEntry || {};
       if (entry.url) {
         service.openUrl(entry, props);
       }
@@ -396,7 +409,7 @@
     pathButton.append(pathText);
     pathButton.addEventListener("click", async () => {
       try {
-        await copyText((pathButton.closest(".pier-url-row") as PierUrlRow | null)?.pierEntry?.worktreePath || "");
+        await copyText(getClosestPierUrlRow(pathButton)?.pierEntry.worktreePath || "");
       } catch (error) {
         onError(error);
       }
@@ -406,7 +419,7 @@
     actionButton.className = "pier-action-button";
     actionButton.type = "button";
     actionButton.addEventListener("click", async () => {
-      const entry = (actionButton.closest(".pier-url-row") as PierUrlRow | null)?.pierEntry || {};
+      const entry = getClosestPierUrlRow(actionButton)?.pierEntry || {};
       actionButton.disabled = true;
       actionButton.textContent = entry.running ? "Stopping" : "Starting";
       try {
@@ -428,7 +441,7 @@
     removeButton.type = "button";
     removeButton.textContent = "Remove";
     removeButton.addEventListener("click", () => {
-      const row = removeButton.closest(".pier-url-row") as PierUrlRow | null;
+      const row = getClosestPierUrlRow(removeButton);
       const entry = row?.pierEntry || {};
       if (!entry.worktreePath || removeButton.disabled) {
         return;
@@ -437,13 +450,16 @@
       openPierRemoveWorktreeDialog(row.pierProject, entry, service, onRefresh, onError);
     });
 
-    const row = document.createElement("div") as PierUrlRow;
+    const row = Object.assign(document.createElement("div"), {
+      pierActionButton: actionButton,
+      pierEntry: {},
+      pierLink: link,
+      pierPathButton: pathButton,
+      pierPathText: pathText,
+      pierProject: {},
+      pierRemoveButton: removeButton
+    });
     row.className = "pier-url-row";
-    row.pierLink = link;
-    row.pierPathButton = pathButton;
-    row.pierPathText = pathText;
-    row.pierActionButton = actionButton;
-    row.pierRemoveButton = removeButton;
     row.append(link, pathButton, actionButton, removeButton);
     return row;
   }
@@ -458,7 +474,8 @@
     onError: (error: Error) => void
   ) {
     const existingRows = new Map([...list.querySelectorAll(".pier-url-row")]
-      .map((row) => [(row as PierUrlRow).dataset.key, row as PierUrlRow]));
+      .filter(isPierUrlRow)
+      .map((row) => [row.dataset.key, row]));
     const nextKeys = new Set();
 
     for (const entry of urls) {
