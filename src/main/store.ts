@@ -2,50 +2,31 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
-const DEFAULT_BOUNDS = {
-  x: 48,
-  y: 92,
-  width: 720,
-  height: 460
-};
-
-const DEFAULT_WINDOW_BOUNDS = {
-  x: 80,
-  y: 60,
-  width: 1280,
-  height: 820
-};
+import {
+  DEFAULT_BOUNDS,
+  DEFAULT_WINDOW_BOUNDS,
+  compareVersions,
+  deriveRepoUrl,
+  getErrorCode,
+  getErrorMessage,
+  isRecord,
+  normalizeBounds,
+  normalizeMultilineText,
+  normalizeOptionalUrl,
+  normalizeSlug,
+  normalizeText,
+  normalizeUrl,
+  normalizeWindowBounds,
+  slugify,
+  toRecord,
+  type Bounds,
+  type UnknownRecord
+} from "./storeUtils";
 
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
 const STORE_SCHEMA_VERSION = 1;
-
-type UnknownRecord = Record<string, unknown>;
-type VersionParts = [number, number, number];
-
-function isRecord(value: unknown): value is UnknownRecord {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
-
-function toRecord(value: unknown): UnknownRecord {
-  return isRecord(value) ? value : {};
-}
-
-function getErrorCode(error: unknown): string {
-  return isRecord(error) ? String(error.code || "") : "";
-}
-
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error || "");
-}
-
-type Bounds = {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
 
 type WindowState = {
   bounds: Bounds;
@@ -247,127 +228,6 @@ function createDefaultState(): ProjectStoreState {
   };
 }
 
-function normalizeUrl(rawUrl: unknown): string {
-  const trimmed = String(rawUrl || "").trim();
-
-  if (!trimmed) {
-    throw new Error("URL is required.");
-  }
-
-  const hasProtocol = /^[a-zA-Z][a-zA-Z\d+\-.]*:\/\//.test(trimmed);
-  const isLocalhost = /^(localhost|127(?:\.\d{1,3}){3}|\[::1\])(?::\d+)?(?:\/|$)/.test(trimmed);
-  const withProtocol = hasProtocol
-    ? trimmed
-    : `${isLocalhost ? "http" : "https"}://${trimmed}`;
-  const parsed = new URL(withProtocol);
-
-  if (!["http:", "https:"].includes(parsed.protocol)) {
-    throw new Error("Only http and https URLs are supported.");
-  }
-
-  return parsed.toString();
-}
-
-function normalizeOptionalUrl(rawUrl: unknown): string {
-  const trimmed = String(rawUrl || "").trim();
-  return trimmed ? normalizeUrl(trimmed) : "";
-}
-
-function normalizeText(value: unknown): string {
-  return String(value || "").trim();
-}
-
-function normalizeMultilineText(value: unknown): string {
-  return String(value || "").replace(/\r\n?/g, "\n").trim();
-}
-
-function stripGitSuffix(pathname: string): string {
-  return pathname.replace(/\/+$/g, "").replace(/\.git$/i, "");
-}
-
-function deriveRepoUrl(gitUrl: unknown): string {
-  const trimmed = normalizeText(gitUrl);
-
-  if (!trimmed) {
-    return "";
-  }
-
-  const scpLikeMatch = trimmed.match(/^git@([^:]+):(.+)$/);
-  if (scpLikeMatch) {
-    return `https://${scpLikeMatch[1]}/${stripGitSuffix(scpLikeMatch[2])}`;
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-
-    if (parsed.protocol === "ssh:" && parsed.username === "git") {
-      return `https://${parsed.host}${stripGitSuffix(parsed.pathname)}`;
-    }
-
-    if (["http:", "https:"].includes(parsed.protocol)) {
-      return `https://${parsed.host}${stripGitSuffix(parsed.pathname)}`;
-    }
-  } catch {
-    return "";
-  }
-
-  return "";
-}
-
-function slugify(value: unknown): string {
-  return String(value || "")
-    .trim()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function normalizeSlug(slug: unknown, name: unknown): string {
-  const normalized = slugify(slug || name);
-
-  if (!normalized) {
-    throw new Error("Slug is required.");
-  }
-
-  return normalized;
-}
-
-function normalizeBounds(
-  bounds: unknown,
-  fallback: Bounds = DEFAULT_BOUNDS
-): Bounds {
-  const source = toRecord(bounds);
-  const x = Number(source.x);
-  const y = Number(source.y);
-  const width = Number(source.width);
-  const height = Number(source.height);
-  const next = {
-    x: Number.isFinite(x) ? x : fallback.x,
-    y: Number.isFinite(y) ? y : fallback.y,
-    width: Number.isFinite(width) ? width : fallback.width,
-    height: Number.isFinite(height) ? height : fallback.height
-  };
-
-  return {
-    x: Math.max(0, Math.round(next.x)),
-    y: Math.max(0, Math.round(next.y)),
-    width: Math.max(260, Math.round(next.width)),
-    height: Math.max(200, Math.round(next.height))
-  };
-}
-
-function normalizeWindowBounds(bounds: unknown, fallback: Bounds = DEFAULT_WINDOW_BOUNDS): Bounds {
-  const normalized = normalizeBounds(bounds, fallback);
-
-  return {
-    ...normalized,
-    width: Math.max(920, normalized.width),
-    height: Math.max(620, normalized.height)
-  };
-}
-
 function normalizeWindowState(windowState: unknown = {}): WindowState {
   const source = toRecord(windowState);
 
@@ -480,38 +340,6 @@ function normalizeSchemaVersion(schemaVersion: unknown): number {
   return Number.isInteger(version) && version > 0
     ? Math.min(version, STORE_SCHEMA_VERSION)
     : STORE_SCHEMA_VERSION;
-}
-
-function parseVersion(version: unknown): VersionParts | null {
-  const match = normalizeText(version).match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/i);
-  return match
-    ? [
-        Number.parseInt(match[1], 10),
-        Number.parseInt(match[2], 10),
-        Number.parseInt(match[3], 10)
-      ]
-    : null;
-}
-
-function compareVersions(left: unknown, right: unknown): number {
-  const leftParts = parseVersion(left);
-  const rightParts = parseVersion(right);
-
-  if (!leftParts || !rightParts) {
-    return 0;
-  }
-
-  for (let index = 0; index < 3; index += 1) {
-    if (leftParts[index] > rightParts[index]) {
-      return 1;
-    }
-
-    if (leftParts[index] < rightParts[index]) {
-      return -1;
-    }
-  }
-
-  return 0;
 }
 
 function normalizeOnboardingState(onboarding: unknown = {}): OnboardingState {
