@@ -1,20 +1,97 @@
 "use strict";
 
 (function () {
+  type UpdateViewsRestartResult = {
+    pathConfigured?: boolean;
+  };
+
+  type UpdateViewsPreparedUpdate = {
+    currentVersion?: string;
+    latestVersion?: string;
+    prepared?: boolean;
+    updateAvailable?: boolean;
+  };
+
+  type UpdateViewsInfo = {
+    currentVersion?: string;
+    preparedUpdate?: UpdateViewsPreparedUpdate | null;
+    install?: {
+      supported?: boolean;
+      pathConfigured?: boolean;
+    };
+  };
+
+  type UpdateViewsChangelogFeature = {
+    title: string;
+    body: string;
+    version?: string;
+  };
+
+  type UpdateViewsChangelogRelease = {
+    version: string;
+    date: string;
+    features: UpdateViewsChangelogFeature[];
+  };
+
+  type UpdateViewsChangelog = {
+    currentVersion?: string;
+    toVersion?: string;
+    features?: UpdateViewsChangelogFeature[];
+    releases?: Partial<UpdateViewsChangelogRelease>[];
+  };
+
+  type UpdateViewsBoatyardBridge = {
+    getUpdateInfo?: () => Promise<UpdateViewsInfo>;
+    prepareUpdate?: () => Promise<UpdateViewsPreparedUpdate>;
+    restartToUpdate: (update: UpdateViewsPreparedUpdate) => Promise<UpdateViewsRestartResult>;
+    getPendingChangelog?: () => Promise<UpdateViewsChangelog>;
+    getChangelogHistory?: () => Promise<UpdateViewsChangelog>;
+    dismissChangelog?: () => Promise<unknown>;
+  };
+
+  type UpdateViewsOverlayOptions = {
+    freeze?: string;
+    freezeMargin?: number;
+  };
+
+  type UpdateViewsOptions = {
+    boatyard: UpdateViewsBoatyardBridge;
+    createToolIcon: (name: string) => Node;
+    showOverlayDialog: (dialog: HTMLDialogElement, options?: UpdateViewsOverlayOptions) => Promise<boolean>;
+    sidebarUpdateNotice: HTMLElement;
+    updatePollIntervalMs: number;
+  };
+
+  type UpdateViewsChangelogDialogOptions = {
+    mode?: "history";
+  };
+
+  type UpdateViewsCardUpdater = (result: UpdateViewsPreparedUpdate | null, checkedAt?: Date) => void;
+
+  type UpdateViewsGlobal = Window & {
+    BoatyardUpdateViews: {
+      create: typeof createUpdateViews;
+    };
+  };
+
+  function getErrorMessage(error: unknown) {
+    return error instanceof Error ? error.message : String(error);
+  }
+
   function createUpdateViews({
     boatyard,
     createToolIcon,
     showOverlayDialog,
     sidebarUpdateNotice,
     updatePollIntervalMs
-  }) {
-    let preparedUpdate = null;
-    let activeUpdateCardUpdater = null;
-    let lastUpdateCheckResult = null;
-    let lastUpdateCheckedAt = null;
+  }: UpdateViewsOptions) {
+    let preparedUpdate: UpdateViewsPreparedUpdate | null = null;
+    let activeUpdateCardUpdater: UpdateViewsCardUpdater | null = null;
+    let lastUpdateCheckResult: UpdateViewsPreparedUpdate | null = null;
+    let lastUpdateCheckedAt: Date | null = null;
     let updatePollStarted = false;
 
-    function formatVersionLabel(version) {
+    function formatVersionLabel(version?: string) {
       const normalized = String(version || "").trim();
       return normalized ? `v${normalized.replace(/^v/i, "")}` : "Unknown";
     }
@@ -68,7 +145,7 @@
             ? "Installed. Add the link directory to PATH; relaunching now..."
             : "Installed. Relaunching now...";
         } catch (error) {
-          status.textContent = error.message;
+          status.textContent = getErrorMessage(error);
           restartButton.disabled = false;
           restartButton.textContent = "Restart to upgrade";
         }
@@ -123,21 +200,21 @@
       content.append(titleGroup, status, actions);
       shell.append(content);
 
-      const setBusy = (isBusy, label = "Checking...") => {
+      const setBusy = (isBusy: boolean, label = "Checking...") => {
         checkButton.disabled = isBusy;
         changelogButton.disabled = isBusy;
         updateButton.disabled = isBusy;
         checkButton.textContent = isBusy ? label : "Check for updates";
       };
 
-      const showPreparedUpdate = (update, checkedAt = new Date()) => {
+      const showPreparedUpdate = (update: UpdateViewsPreparedUpdate, checkedAt = new Date()) => {
         preparedUpdate = update;
         status.textContent = `${formatVersionLabel(update.latestVersion)} downloaded, restart required. Checked at ${formatUpdateCheckedAt(checkedAt)}`;
         updateButton.hidden = false;
         renderSidebarUpdateNotice();
       };
 
-      const showUpdateResult = (result, checkedAt = new Date()) => {
+      const showUpdateResult = (result: UpdateViewsPreparedUpdate | null, checkedAt = new Date()) => {
         if (!result) {
           return;
         }
@@ -162,8 +239,11 @@
       };
       activeUpdateCardUpdater = showUpdateResult;
 
-      boatyard.getUpdateInfo()
+      boatyard.getUpdateInfo?.()
         .then((info) => {
+          if (!info) {
+            return;
+          }
           version.textContent = `Current version ${formatVersionLabel(info.currentVersion)}`;
           if (info.preparedUpdate) {
             showPreparedUpdate(info.preparedUpdate, lastUpdateCheckedAt || new Date());
@@ -181,7 +261,7 @@
         })
         .catch((error) => {
           version.textContent = "Current version unavailable";
-          status.textContent = error.message;
+          status.textContent = getErrorMessage(error);
         });
 
       checkButton.addEventListener("click", async () => {
@@ -195,7 +275,7 @@
           lastUpdateCheckResult = result;
           showUpdateResult(result, lastUpdateCheckedAt);
         } catch (error) {
-          status.textContent = error.message;
+          status.textContent = getErrorMessage(error);
         } finally {
           setBusy(false);
         }
@@ -210,7 +290,7 @@
             status.textContent = "No changelog entries are available yet.";
           }
         } catch (error) {
-          status.textContent = error.message;
+          status.textContent = getErrorMessage(error);
         } finally {
           changelogButton.disabled = false;
         }
@@ -230,7 +310,7 @@
             ? "Installed. Add the link directory to PATH; relaunching now..."
             : "Installed. Relaunching now...";
         } catch (error) {
-          status.textContent = error.message;
+          status.textContent = getErrorMessage(error);
           setBusy(false);
         }
       });
@@ -238,7 +318,7 @@
       return shell;
     }
 
-    function getChangelogReleases(changelog) {
+    function getChangelogReleases(changelog?: UpdateViewsChangelog) {
       const releases = Array.isArray(changelog?.releases) ? changelog.releases : [];
       return releases
         .map((release) => ({
@@ -249,7 +329,7 @@
         .filter((release) => release.version && release.features.length);
     }
 
-    async function openChangelogDialog(changelog, options = {}) {
+    async function openChangelogDialog(changelog?: UpdateViewsChangelog, options: UpdateViewsChangelogDialogOptions = {}) {
       const historyMode = options.mode === "history";
       const releases = historyMode ? getChangelogReleases(changelog) : [];
       const features = historyMode
@@ -274,7 +354,7 @@
       kicker.className = "kicker";
       kicker.textContent = historyMode
         ? `Current version ${formatVersionLabel(changelog?.currentVersion)}`
-        : `Updated to ${formatVersionLabel(changelog.toVersion)}`;
+        : `Updated to ${formatVersionLabel(changelog?.toVersion)}`;
 
       const title = document.createElement("h3");
       title.textContent = historyMode ? "Changelog" : "What's new";
@@ -374,15 +454,18 @@
         nextButton.textContent = currentFeature === currentFeatures.length - 1 ? "Close" : "Next";
       }
 
-      function selectRelease(version) {
+      function selectRelease(version: string) {
         const release = releases.find((entry) => entry.version === version) || releases[0];
+        if (!release) {
+          return;
+        }
         currentReleaseVersion = release.version;
         currentFeatures = release.features.map((feature) => ({ ...feature, version: release.version }));
         currentFeature = 0;
         renderFeature();
       }
 
-      function handleKeydown(event) {
+      function handleKeydown(event: KeyboardEvent) {
         if (event.key === "Escape") {
           event.preventDefault();
           closeDialog();
@@ -452,7 +535,7 @@
         renderSidebarUpdateNotice();
         activeUpdateCardUpdater?.(result, lastUpdateCheckedAt);
       } catch (error) {
-        console.warn(`Could not prepare update: ${error.message}`);
+        console.warn(`Could not prepare update: ${getErrorMessage(error)}`);
       }
     }
 
@@ -478,7 +561,7 @@
           renderSidebarUpdateNotice();
         }
       } catch (error) {
-        console.warn(`Could not load prepared update info: ${error.message}`);
+        console.warn(`Could not load prepared update info: ${getErrorMessage(error)}`);
       }
     }
 
@@ -495,7 +578,7 @@
     };
   }
 
-  window.BoatyardUpdateViews = {
+  (window as unknown as UpdateViewsGlobal).BoatyardUpdateViews = {
     create: createUpdateViews
   };
 })();
