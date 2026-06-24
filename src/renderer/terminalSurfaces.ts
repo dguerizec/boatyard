@@ -1,5 +1,6 @@
 import { createTerminalTabDom } from "./terminalTabDom.js";
-import type { TerminalCard, TerminalTab, TerminalTabMenu } from "./terminalTypes.js";
+import { createTerminalTabMenuController } from "./terminalTabMenu.js";
+import type { TerminalCard, TerminalTab } from "./terminalTypes.js";
 
 const globalScope: TerminalSurfacesGlobal = window;
 
@@ -11,7 +12,6 @@ export function createTerminalSurfaces({
     clamp,
     defaultWidgetPaneId
   }) {
-    let openTerminalTabMenu: TerminalTabMenu | null = null;
     const terminalWidgetsBySurface = new Map();
     const terminalWidgetsByTerminal = new Map();
     const terminalTabSyncTimers = new Map();
@@ -34,6 +34,16 @@ export function createTerminalSurfaces({
       updateTerminalTabDropMarker,
       updateTerminalTabScrollControls
     } = createTerminalTabDom({ createToolIcon });
+    const {
+      closeTerminalTabMenu,
+      openTerminalTabContextMenu
+    } = createTerminalTabMenuController({
+      clamp,
+      closeTerminalTab,
+      createTerminalTab,
+      editTerminalTabName,
+      setTerminalStatus
+    });
 
     function nextAnimationFrame() {
       return new Promise<void>((resolve) => {
@@ -666,7 +676,7 @@ export function createTerminalSurfaces({
             editTerminalTabName(project, card, tab, tabButton);
           });
           tabButton.addEventListener("contextmenu", (event) => {
-            openTerminalTabContextMenu(event, project, card, tab, tabButton, tabList);
+            openTerminalTabContextMenu(event, { project, card, tab, tabButton, tabList });
           });
           tabList.append(tabButton);
         }
@@ -715,16 +725,6 @@ export function createTerminalSurfaces({
       await refreshTerminalTabs(project, card, tab.id, tabs, { focus: true });
     }
 
-    function closeTerminalTabMenu() {
-      if (!openTerminalTabMenu) {
-        return;
-      }
-
-      openTerminalTabMenu.cleanup?.();
-      openTerminalTabMenu.remove();
-      openTerminalTabMenu = null;
-    }
-
     async function closeTerminalTab(project, card, windowId) {
       const normalizedWindowId = String(windowId || "");
       if (!normalizedWindowId) {
@@ -756,83 +756,6 @@ export function createTerminalSurfaces({
       } catch (error) {
         setTerminalStatus(card, `Could not close shell: ${error.message}`);
       }
-    }
-
-    function openTerminalTabContextMenu(event, project, card, tab, tabButton, tabList) {
-      event.preventDefault();
-      event.stopPropagation();
-      closeTerminalTabMenu();
-
-      const menu = document.createElement("div") as TerminalTabMenu;
-      menu.className = "webapp-tab-menu terminal-tab-context-menu";
-      menu.setAttribute("role", "menu");
-
-      const menuWidth = 180;
-      const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
-      const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 84));
-      menu.style.left = `${Math.round(left)}px`;
-      menu.style.top = `${Math.round(top)}px`;
-
-      const renameItem = document.createElement("button");
-      renameItem.className = "webapp-tab-menu-item";
-      renameItem.type = "button";
-      renameItem.setAttribute("role", "menuitem");
-      renameItem.textContent = "Rename";
-      renameItem.addEventListener("click", () => {
-        closeTerminalTabMenu();
-        editTerminalTabName(project, card, tab, tabButton);
-      });
-
-      const newShellItem = document.createElement("button");
-      newShellItem.className = "webapp-tab-menu-item";
-      newShellItem.type = "button";
-      newShellItem.setAttribute("role", "menuitem");
-      newShellItem.textContent = "New shell to the right";
-      newShellItem.addEventListener("click", () => {
-        closeTerminalTabMenu();
-        createTerminalTab(project, card, tab.id).catch((error) => {
-          setTerminalStatus(card, `Could not create shell: ${error.message}`);
-        });
-      });
-
-      const closeItem = document.createElement("button");
-      closeItem.className = "webapp-tab-menu-item danger";
-      closeItem.type = "button";
-      closeItem.setAttribute("role", "menuitem");
-      closeItem.textContent = "Close";
-      closeItem.disabled = tabList.querySelectorAll(".terminal-tab[data-window-id]").length <= 1;
-      closeItem.addEventListener("click", () => {
-        closeTerminalTabMenu();
-        closeTerminalTab(project, card, tab.id);
-      });
-
-      menu.append(renameItem, newShellItem, closeItem);
-      document.body.append(menu);
-      openTerminalTabMenu = menu;
-
-      function onPointerDown(pointerEvent) {
-        if (!menu.contains(pointerEvent.target)) {
-          closeTerminalTabMenu();
-        }
-      }
-
-      function onKeyDown(keyEvent) {
-        if (keyEvent.key === "Escape") {
-          closeTerminalTabMenu();
-        }
-      }
-
-      menu.cleanup = () => {
-        document.removeEventListener("pointerdown", onPointerDown);
-        document.removeEventListener("keydown", onKeyDown);
-      };
-
-      setTimeout(() => {
-        document.addEventListener("pointerdown", onPointerDown);
-        document.addEventListener("keydown", onKeyDown);
-      }, 0);
-
-      menu.querySelector("button")?.focus();
     }
 
     async function attachTerminalTab(project, card, windowId, { focus = false } = {}) {
