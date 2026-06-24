@@ -1,7 +1,9 @@
+import { createGlobalSettingsViews } from "./globalSettingsViews.js";
 import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
 import { createProjectSidebar } from "./projectSidebar.js";
+import { createProjectSettingsViews } from "./projectSettingsViews.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createUpdateViews } from "./updateViews.js";
@@ -171,7 +173,6 @@ type BoatyardBridge = {
 
 type BoatyardRendererWindow = Window & {
   boatyard: BoatyardBridge;
-  BoatyardGlobalSettingsViews: RendererCreateModule<GlobalSettingsViewsInstance>;
   BoatyardHawserUI?: {
     createWidget(project: RendererProject, options?: HawserWidgetOptions): HTMLElement;
   };
@@ -189,7 +190,6 @@ type BoatyardRendererWindow = Window & {
   BoatyardPluginSettingsFields: {
     readFieldValue(field: UnknownRecord, input: HTMLElement, options?: UnknownRecord): unknown;
   };
-  BoatyardProjectSettingsViews: RendererCreateModule<ProjectSettingsViewsInstance>;
   BoatyardWidgetRegistry: {
     register(definition: UnknownRecord): unknown;
   };
@@ -1927,7 +1927,7 @@ function renderProjectList() {
   projectSidebar.renderProjectList();
 }
 
-const projectSettingsViews = boatyardWindow.BoatyardProjectSettingsViews.create({
+const projectSettingsViews = createProjectSettingsViews({
   boatyard: boatyardWindow.boatyard,
   getState: () => state,
   getSettings,
@@ -1945,7 +1945,7 @@ const projectSettingsViews = boatyardWindow.BoatyardProjectSettingsViews.create(
   slugify
 });
 
-const globalSettingsViews = boatyardWindow.BoatyardGlobalSettingsViews.create({
+const globalSettingsViews = createGlobalSettingsViews({
   boatyard: boatyardWindow.boatyard,
   applyFormControl,
   applyFormControls,

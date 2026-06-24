@@ -1,11 +1,8 @@
-"use strict";
-
-(function () {
-  type CoreFieldSetOptions = {
-    ifUnedited?: boolean;
-    markEdited?: boolean;
-    source?: string;
-  };
+type CoreFieldSetOptions = {
+  ifUnedited?: boolean;
+  markEdited?: boolean;
+  source?: string;
+};
 
   type ProjectUrlEntry = {
     id?: string;
@@ -38,9 +35,9 @@
     setError?: (message: string) => void;
   };
 
-  const globalScope: ProjectSettingsViewsGlobal = window;
+const globalScope: ProjectSettingsViewsGlobal = window;
 
-  function createProjectSettingsViews({
+export function createProjectSettingsViews({
     boatyard,
     getState,
     getSettings,
@@ -1193,9 +1190,4 @@
       createProjectWebAppHomeTabsForm,
       createProjectWidgetPanesForm
     };
-  }
-
-  globalScope.BoatyardProjectSettingsViews = {
-    create: createProjectSettingsViews
-  };
-})();
+}

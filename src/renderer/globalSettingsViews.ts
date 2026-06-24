@@ -1,12 +1,9 @@
-"use strict";
-
-(function () {
-  type WebAppOpenRule = {
-    pattern?: string;
-    target?: string;
-    scope?: string;
-    label?: string;
-  };
+type WebAppOpenRule = {
+  pattern?: string;
+  target?: string;
+  scope?: string;
+  label?: string;
+};
 
   type WebAppOpenRuleDialogOptions = {
     onSave?: (rule: WebAppOpenRule) => void;
@@ -22,9 +19,9 @@
     onSaved?: () => void;
   };
 
-  const globalScope: GlobalSettingsViewsGlobal = window;
+const globalScope: GlobalSettingsViewsGlobal = window;
 
-  function createGlobalSettingsViews({
+export function createGlobalSettingsViews({
     boatyard,
     applyFormControl,
     applyFormControls,
@@ -1054,9 +1051,4 @@
       createGlobalWebAppOpenRulesSettingsForm,
       createGlobalWidgetsSettingsView
     };
-  }
-
-  globalScope.BoatyardGlobalSettingsViews = {
-    create: createGlobalSettingsViews
-  };
-})();
+}

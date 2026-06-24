@@ -10,10 +10,12 @@
   },
   "include": [
     "src/shared/pluginTypes.d.ts",
+    "src/renderer/globalSettingsViews.ts",
     "src/renderer/onboardingTour.ts",
     "src/renderer/paneLayoutState.ts",
     "src/renderer/paneLayoutView.ts",
     "src/renderer/projectSidebar.ts",
+    "src/renderer/projectSettingsViews.ts",
     "src/renderer/renderer.ts",
     "src/renderer/rendererGlobals.d.ts",
     "src/renderer/rendererRecords.ts",
