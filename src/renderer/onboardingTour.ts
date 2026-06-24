@@ -184,7 +184,7 @@ export function createOnboardingTour({
       if (countPaneNodes(layout) < 2) {
         const sourcePane = findFirstPaneNode(layout);
         if (!sourcePane) {
-          return;
+          return null;
         }
 
         const currentWebAppId =
@@ -196,7 +196,7 @@ export function createOnboardingTour({
         const firstPane = findFirstPaneNode(replacement.first);
         const secondPane = findFirstPaneNode(replacement.second);
         if (!firstPane || !secondPane) {
-          return;
+          return null;
         }
 
         const splitWebAppId = getDefaultOnboardingPaneWebAppId(project, secondPane.id);
