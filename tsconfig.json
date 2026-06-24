@@ -5,6 +5,7 @@
     "module": "NodeNext",
     "moduleDetection": "legacy",
     "moduleResolution": "NodeNext",
+    "noImplicitAny": true,
     "noEmit": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
