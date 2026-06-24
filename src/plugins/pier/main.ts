@@ -2,27 +2,6 @@
 
 import type { ExecFileAsync, PluginActions, PluginMetadata } from "../pluginTypes";
 
-/**
- * @typedef {import("../pluginTypes").ExecFileAsync} ExecFileAsync
- * @typedef {import("../pluginTypes").PluginActions} PluginActions
- * @typedef {import("../pluginTypes").PluginMetadata} PluginMetadata
- * @typedef {{ cwd?: unknown, execFileAsync: ExecFileAsync }} WorktreeCommandOptions
- * @typedef {{ worktreePath?: unknown, branchName?: unknown, fromRef?: unknown, startAfterCreate?: unknown }} WorktreeAddInput
- * @typedef {{ worktreePath?: unknown, force?: unknown, purge?: unknown, skipDown?: unknown }} WorktreeRemoveInput
- * @typedef {{ id: string, previewUrl?: string }} PierProject
- * @typedef {{ pierPreviewUrl?: unknown }} PierProjectConfig
- * @typedef {{ projects?: Record<string, Record<string, PierProjectConfig>> }} PluginProjectConfig
- * @typedef {{ projects?: PierProject[], pluginConfig?: { projects?: PluginProjectConfig["projects"] } }} PierState
- * @typedef {{ projectId: string, config: { pierPreviewUrl: string } }} PierProjectConfigMigration
- * @typedef {{ projectPluginConfig: PierProjectConfigMigration[] }} PierStateMigrationResult
- * @typedef {{
- *   actions: PluginActions,
- *   stateMigrations: { register(handler: (payload: { state: PierState }) => PierStateMigrationResult): void },
- *   plugin: PluginMetadata,
- *   execFileAsync: ExecFileAsync
- * }} PierPluginContext
- */
-
 type WorktreeCommandOptions = { cwd?: unknown; execFileAsync: ExecFileAsync };
 type WorktreeAddInput = { worktreePath?: unknown; branchName?: unknown; fromRef?: unknown; startAfterCreate?: unknown };
 type WorktreeRemoveInput = { worktreePath?: unknown; force?: unknown; purge?: unknown; skipDown?: unknown };
@@ -39,31 +18,20 @@ type PierPluginContext = {
   execFileAsync: ExecFileAsync;
 };
 
-/**
- * @param {unknown} value
- * @returns {string}
- */
-function normalizeText(value) {
+function normalizeText(value: unknown): string {
   return String(value || "").trim();
 }
 
-/**
- * @param {unknown} error
- * @returns {string}
- */
-function normalizeCommandError(error) {
-  const commandError = /** @type {{ stderr?: unknown, stdout?: unknown, message?: unknown }} */ (error || {});
+function normalizeCommandError(error: unknown): string {
+  const commandError = error && typeof error === "object"
+    ? error as { stderr?: unknown; stdout?: unknown; message?: unknown }
+    : {};
   const stderr = normalizeText(commandError.stderr);
   const stdout = normalizeText(commandError.stdout);
   return stderr || stdout || normalizeText(commandError.message) || "Pier command failed.";
 }
 
-/**
- * @param {string[]} args
- * @param {WorktreeCommandOptions} options
- * @returns {Promise<{ output: string }>}
- */
-async function runPierWorktreeCommand(args, { cwd, execFileAsync }) {
+async function runPierWorktreeCommand(args: string[], { cwd, execFileAsync }: WorktreeCommandOptions): Promise<{ output: string }> {
   const sourcePath = normalizeText(cwd);
   if (!sourcePath) {
     throw new Error("Project source path is required.");
@@ -81,10 +49,6 @@ async function runPierWorktreeCommand(args, { cwd, execFileAsync }) {
   }
 }
 
-/**
- * @param {WorktreeAddInput} input
- * @returns {string[]}
- */
 function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCreate }: WorktreeAddInput = {}) {
   const targetPath = normalizeText(worktreePath);
   if (!targetPath) {
@@ -109,10 +73,6 @@ function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCre
   return args;
 }
 
-/**
- * @param {WorktreeRemoveInput} input
- * @returns {string[]}
- */
 function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }: WorktreeRemoveInput = {}) {
   const targetPath = normalizeText(worktreePath);
   if (!targetPath) {
@@ -132,9 +92,6 @@ function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }: Workt
   return args;
 }
 
-/**
- * @param {PierPluginContext} ctx
- */
 function activate(ctx: PierPluginContext) {
   ctx.actions.handle<WorktreeAddInput & { cwd?: unknown }>("createWorktree", ({ cwd, worktreePath, branchName, fromRef, startAfterCreate } = {}) => {
     return runPierWorktreeCommand(

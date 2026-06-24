@@ -9,26 +9,6 @@ const {
   inspectHawserProject
 } = require("./service");
 
-/**
- * @typedef {import("../pluginTypes").ExecFileAsync} ExecFileAsync
- * @typedef {import("../pluginTypes").PluginActions} PluginActions
- * @typedef {import("../pluginTypes").PluginProjectInspectors} PluginProjectInspectors
- * @typedef {{ id: string, hawserMainSession?: string }} HawserProject
- * @typedef {{ projects?: HawserProject[] }} HawserState
- * @typedef {{ hawserMainSession?: unknown }} HawserProjectConfig
- * @typedef {{ hawserApiUrl?: unknown, hawserToken?: unknown }} HawserGlobalConfig
- * @typedef {{ sourcePath?: unknown, runtime?: unknown }} CreateProjectPayload
- * @typedef {{ projectId?: unknown, projectConfig?: HawserProjectConfig, globalConfig?: HawserGlobalConfig }} WidgetDataPayload
- * @typedef {{ globalConfig?: HawserGlobalConfig }} StatusPayload
- * @typedef {{ sourcePath?: unknown }} SourcePathPayload
- * @typedef {{
- *   actions: PluginActions,
- *   execFileAsync: ExecFileAsync,
- *   getState(): HawserState,
- *   projectInspectors: PluginProjectInspectors
- * }} HawserPluginContext
- */
-
 type HawserProject = { id: string; hawserMainSession?: string };
 type HawserState = { projects?: HawserProject[] };
 type HawserProjectConfig = { hawserMainSession?: unknown };
@@ -44,9 +24,6 @@ type HawserPluginContext = {
   projectInspectors: PluginProjectInspectors;
 };
 
-/**
- * @param {HawserPluginContext} ctx
- */
 function activate(ctx: HawserPluginContext) {
   ctx.actions.handle<CreateProjectPayload>("createProject", ({ sourcePath, runtime } = {}) => {
     return createHawserProject(sourcePath, runtime, { execFileAsync: ctx.execFileAsync });

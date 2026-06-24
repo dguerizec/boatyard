@@ -12,21 +12,6 @@ const {
   getTwiccProjectProcessStatuses
 } = require("./service");
 
-/**
- * @typedef {import("../pluginTypes").ExecFileAsync} ExecFileAsync
- * @typedef {import("../pluginTypes").PluginActions} PluginActions
- * @typedef {import("../pluginTypes").PluginProjectInspectors} PluginProjectInspectors
- * @typedef {{ id: string, sourcePath?: string }} BoatyardProject
- * @typedef {{ projects?: BoatyardProject[] }} TwiccState
- * @typedef {{ sourcePath?: unknown }} SourcePathPayload
- * @typedef {{
- *   actions: PluginActions,
- *   execFileAsync: ExecFileAsync,
- *   getState(): TwiccState,
- *   projectInspectors: PluginProjectInspectors
- * }} TwiccPluginContext
- */
-
 type BoatyardProject = { id: string; sourcePath?: string };
 type TwiccState = { projects?: BoatyardProject[] };
 type SourcePathPayload = { sourcePath?: unknown };
@@ -37,9 +22,6 @@ type TwiccPluginContext = {
   projectInspectors: PluginProjectInspectors;
 };
 
-/**
- * @param {TwiccPluginContext} ctx
- */
 function activate(ctx: TwiccPluginContext) {
   const projectCache = createTwiccProjectCache();
 

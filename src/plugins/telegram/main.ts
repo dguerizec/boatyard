@@ -6,23 +6,6 @@ const { TelegramService } = require("./service");
 const fs = require("node:fs");
 const path = require("node:path");
 
-/**
- * @typedef {import("../pluginTypes").PluginActions} PluginActions
- * @typedef {import("../pluginTypes").PluginEvents} PluginEvents
- * @typedef {import("../pluginTypes").PluginPaths} PluginPaths
- * @typedef {{ globalConfig?: Record<string, unknown> }} TelegramStatusPayload
- * @typedef {{ target?: Record<string, unknown>, globalConfig?: Record<string, unknown> }} TelegramMessagesPayload
- * @typedef {{ target?: Record<string, unknown>, text?: unknown, globalConfig?: Record<string, unknown> }} TelegramSendMessagePayload
- * @typedef {{ globalConfig?: Record<string, unknown>, phoneNumber?: unknown }} TelegramStartLoginPayload
- * @typedef {{ code?: unknown }} TelegramCodePayload
- * @typedef {{ password?: unknown }} TelegramPasswordPayload
- * @typedef {{
- *   actions: PluginActions,
- *   events: PluginEvents,
- *   paths: PluginPaths
- * }} TelegramPluginContext
- */
-
 type TelegramStatusPayload = { globalConfig?: Record<string, unknown> };
 type TelegramMessagesPayload = { target?: Record<string, unknown>; globalConfig?: Record<string, unknown> };
 type TelegramSendMessagePayload = { target?: Record<string, unknown>; text?: unknown; globalConfig?: Record<string, unknown> };
@@ -35,9 +18,6 @@ type TelegramPluginContext = {
   paths: PluginPaths;
 };
 
-/**
- * @param {TelegramPluginContext} ctx
- */
 function activate(ctx: TelegramPluginContext) {
   const legacySessionPath = path.join(ctx.paths.userData, "telegram-session.json");
   const pluginSessionPath = path.join(ctx.paths.pluginData, "telegram-session.json");
