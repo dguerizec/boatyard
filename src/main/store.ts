@@ -19,166 +19,34 @@ import {
   normalizeWindowBounds,
   slugify,
   toRecord,
-  type Bounds,
   type UnknownRecord
 } from "./storeUtils";
+import type {
+  AppState,
+  NavigationState,
+  OnboardingState,
+  PaneLayoutNode,
+  PasswordCredentialState,
+  PluginConfigObject,
+  ProjectStoreState,
+  ProjectUrl,
+  ProjectWidgetLayout,
+  ProjectWidgetPane,
+  SettingsState,
+  StoredProject,
+  WebAppHomeTab,
+  WebAppOpenRule,
+  WebAppState,
+  WidgetLayout,
+  WidgetPosition,
+  WidgetSize,
+  WindowState
+} from "./storeTypes";
 
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
 const STORE_SCHEMA_VERSION = 1;
-
-type WindowState = {
-  bounds: Bounds;
-  isMaximized: boolean;
-};
-
-type WebAppOpenRule = {
-  pattern: string;
-  target: string;
-  scope: string;
-  label: string;
-};
-
-type SettingsState = {
-  projectsBasePath: string;
-  blurWebAppOverlays: boolean;
-  passwordManagerEnabled: boolean;
-  passwordManagerDisclaimerAccepted: boolean;
-  widgetRailWidth: number;
-  terminalEnv: string;
-  webAppOpenRules: WebAppOpenRule[];
-};
-
-type NavigationState = {
-  view: string;
-  projectId: string | null;
-  collapsedProjectGroups: string[];
-};
-
-type AppState = {
-  lastSeenVersion: string;
-  pendingChangelogFromVersion: string;
-  dismissedChangelogVersion: string;
-};
-
-type OnboardingState = {
-  completedVersion: number;
-  completedAt: string;
-};
-
-type PasswordCredentialState = {
-  username: string;
-  encryptedPassword: string;
-  updatedAt: string;
-};
-
-type WebAppState = {
-  url: string;
-};
-
-type WebAppHomeTab = {
-  id: string;
-  parentWebAppId: string;
-  parentLabel: string;
-  label: string;
-  url: string;
-};
-
-type PaneWebApp = WebAppHomeTab;
-
-type PaneLayoutNode = {
-  type: "pane";
-  id: string;
-  selectedWebAppId?: string;
-  transientWebApp?: PaneWebApp;
-} | {
-  type: "split";
-  id: string;
-  direction: "horizontal" | "vertical";
-  ratio: number;
-  first: PaneLayoutNode;
-  second: PaneLayoutNode;
-  expandedChild?: "first" | "second";
-};
-
-type WidgetSize = {
-  columns: number;
-  rows: number;
-};
-
-type WidgetPosition = {
-  x: number;
-  y: number;
-};
-
-type WidgetLayout = {
-  order: string[];
-  hidden: string[];
-  sizes: Record<string, WidgetSize>;
-  positions: Record<string, WidgetPosition>;
-  locked: boolean;
-};
-
-type ProjectWidgetLayout = {
-  panes: Record<string, WidgetLayout>;
-};
-
-type PluginConfigValue = string | number | boolean;
-type PluginConfigObject = Record<string, PluginConfigValue>;
-
-type ProjectUrl = {
-  id: string;
-  label: string;
-  url: string;
-};
-
-type ProjectWidgetPane = {
-  id: string;
-  label: string;
-};
-
-type StoredProject = {
-  id: string;
-  slug: string;
-  name: string;
-  group: string;
-  sourcePath: string;
-  gitUrl: string;
-  repoUrl: string;
-  devBranch: string;
-  terminalEnv: string;
-  previewUrl: string;
-  urls: ProjectUrl[];
-  webAppHomeTabs: WebAppHomeTab[];
-  widgetPanes: ProjectWidgetPane[];
-  bounds: Bounds;
-  isOpen: boolean;
-};
-
-type ProjectStoreState = {
-  app: AppState;
-  globalUrls: ProjectUrl[];
-  navigation: NavigationState;
-  onboarding: OnboardingState;
-  paneLayouts: Record<string, PaneLayoutNode>;
-  passwordVault: Record<string, PasswordCredentialState>;
-  pluginConfig: {
-    global: Record<string, PluginConfigObject>;
-    projects: Record<string, Record<string, PluginConfigObject>>;
-  };
-  plugins: {
-    enabled: Record<string, boolean>;
-  };
-  projects: StoredProject[];
-  schemaVersion: number;
-  settings: SettingsState;
-  terminalSelections: Record<string, Record<string, string>>;
-  terminalTabOrders: Record<string, string[]>;
-  webApps: Record<string, WebAppState>;
-  widgetLayouts: Record<string, ProjectWidgetLayout>;
-  window: WindowState;
-};
 
 function createDefaultState(): ProjectStoreState {
   return {
