@@ -1,6 +1,36 @@
 "use strict";
 
 (function () {
+  type TerminalTab = {
+    id: string;
+    index?: number;
+    name?: string;
+  };
+
+  type TerminalTabMenu = HTMLDivElement & {
+    cleanup?: () => void;
+  };
+
+  type TerminalCard = HTMLElement & {
+    terminalTabsElement?: HTMLElement;
+    terminalTabsScrollControls?: {
+      tabs: HTMLElement;
+      leftButton: HTMLButtonElement;
+      rightButton: HTMLButtonElement;
+    };
+    terminalTabsResizeObserver?: ResizeObserver;
+  };
+
+  type TerminalSurfacesGlobal = Window & {
+    Terminal?: any;
+    FitAddon?: any;
+    BoatyardTerminalSurfaces: {
+      create: typeof createTerminalSurfaces;
+    };
+  };
+
+  const globalScope = window as unknown as TerminalSurfacesGlobal;
+
   function createTerminalSurfaces({
     boatyard,
     getProjectById,
@@ -9,11 +39,11 @@
     clamp,
     defaultWidgetPaneId
   }) {
-    let openTerminalTabMenu = null;
+    let openTerminalTabMenu: TerminalTabMenu | null = null;
     const terminalWidgetsBySurface = new Map();
     const terminalWidgetsByTerminal = new Map();
     const terminalTabSyncTimers = new Map();
-    const terminalTabOrdersByProject = new Map();
+    const terminalTabOrdersByProject = new Map<string, string[]>();
     let nextTerminalSurfaceId = 1;
     let pendingTerminalCloseFocus = null;
     const TERMINAL_TAB_SYNC_DELAY_MS = 150;
@@ -22,17 +52,17 @@
     const TERMINAL_CLOSE_FOCUS_TTL_MS = 3000;
 
     function nextAnimationFrame() {
-      return new Promise((resolve) => {
+      return new Promise<void>((resolve) => {
         requestAnimationFrame(() => resolve());
       });
     }
 
     function getXtermConstructor() {
-      return window.Terminal?.Terminal || window.Terminal || null;
+      return globalScope.Terminal?.Terminal || globalScope.Terminal || null;
     }
 
     function getFitAddonConstructor() {
-      return window.FitAddon?.FitAddon || window.FitAddon || null;
+      return globalScope.FitAddon?.FitAddon || globalScope.FitAddon || null;
     }
     function getTerminalFitSize(term, fitAddon) {
       const dimensions = fitAddon.proposeDimensions();
@@ -236,7 +266,7 @@
       });
     }
 
-    function getOrderedTerminalTabs(projectId, tabs) {
+    function getOrderedTerminalTabs(projectId, tabs: TerminalTab[]) {
       const order = terminalTabOrdersByProject.get(String(projectId));
       if (!order?.length) {
         rememberTerminalTabOrder(projectId, tabs.map((tab) => tab.id));
@@ -324,7 +354,7 @@
       }
 
       try {
-        const tabs = getOrderedTerminalTabs(project.id, await boatyard.listTerminalTabs(project.id));
+        const tabs = getOrderedTerminalTabs(project.id, await boatyard.listTerminalTabs(project.id) as TerminalTab[]);
         if (shouldRefreshTerminalTabs(session, tabs)) {
           const closedWindowId = tabs.some((tab) => tab.id === session.activeWindowId)
             ? null
@@ -384,7 +414,7 @@
     }
 
     async function refreshProjectTerminalTabLabels(project) {
-      const tabs = getOrderedTerminalTabs(project.id, await boatyard.listTerminalTabs(project.id));
+      const tabs = getOrderedTerminalTabs(project.id, await boatyard.listTerminalTabs(project.id) as TerminalTab[]);
       const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
 
       for (const session of terminalWidgetsBySurface.values()) {
@@ -882,7 +912,7 @@
       event.stopPropagation();
       closeTerminalTabMenu();
 
-      const menu = document.createElement("div");
+      const menu = document.createElement("div") as TerminalTabMenu;
       menu.className = "webapp-tab-menu terminal-tab-context-menu";
       menu.setAttribute("role", "menu");
 
@@ -1179,7 +1209,7 @@
       tabsContainer = null,
       actionsContainer = null
     } = {}) {
-      const card = document.createElement(tagName);
+      const card = document.createElement(tagName) as TerminalCard;
       card.className = className;
       card.dataset.terminalStorageKey = storageKey;
 
@@ -1238,7 +1268,7 @@
       return card;
     }
 
-    function createTerminalWidget(project, props = {}) {
+    function createTerminalWidget(project, props: { widgetPaneId?: string } = {}) {
       return createTerminalSurface(project, {
         storageKey: `widget:${props.widgetPaneId || defaultWidgetPaneId}`
       });
@@ -1310,7 +1340,7 @@
     };
   }
 
-  window.BoatyardTerminalSurfaces = {
+  globalScope.BoatyardTerminalSurfaces = {
     create: createTerminalSurfaces
   };
 })();
