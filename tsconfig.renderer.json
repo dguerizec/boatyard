@@ -12,6 +12,7 @@
     "src/shared/pluginTypes.d.ts",
     "src/renderer/globalSettingsViews.ts",
     "src/renderer/globalWebAppOpenRulesSettings.ts",
+    "src/renderer/hawserWidget.ts",
     "src/renderer/manualViews.ts",
     "src/renderer/onboardingTour.ts",
     "src/renderer/paneLayoutState.ts",
