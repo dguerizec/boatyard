@@ -10,6 +10,12 @@ import { createProjectPageViews } from "./projectPageViews.js";
 import { createProjectSidebar } from "./projectSidebar.js";
 import { createProjectWebApps } from "./projectWebApps.js";
 import {
+  applyFormControl,
+  applyFormControls,
+  createCard,
+  nextAnimationFrame
+} from "./rendererDomHelpers.js";
+import {
   deriveProjectNameFromPath,
   deriveRepoUrl,
   formatProjectNameFromPath,
@@ -133,17 +139,6 @@ const {
   windowObject: boatyardWindow
 });
 
-function applyFormControl(control) {
-  control.classList.add("form-control");
-  return control;
-}
-
-function applyFormControls(root) {
-  root
-    .querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]), textarea')
-    .forEach(applyFormControl);
-}
-
 function isRestorableView(view) {
   return ["global", "global-settings", "project", "project-edit"].includes(view);
 }
@@ -187,55 +182,6 @@ function restoreNavigation() {
   } else {
     setCurrentView("global", null, { persist: false });
   }
-}
-
-function createCard({ title, eyebrow, body, meta, action }) {
-  const card = document.createElement("article");
-  card.className = "widget-card";
-
-  const content = document.createElement("div");
-  content.className = "widget-content";
-
-  if (eyebrow) {
-    const eyebrowNode = document.createElement("p");
-    eyebrowNode.className = "widget-eyebrow";
-    eyebrowNode.textContent = eyebrow;
-    content.append(eyebrowNode);
-  }
-
-  const titleNode = document.createElement("h3");
-  titleNode.textContent = title;
-  content.append(titleNode);
-
-  const bodyNode = document.createElement("p");
-  bodyNode.textContent = body;
-  content.append(bodyNode);
-
-  if (meta) {
-    const metaNode = document.createElement("span");
-    metaNode.className = "widget-meta";
-    metaNode.textContent = meta;
-    content.append(metaNode);
-  }
-
-  card.append(content);
-
-  if (action) {
-    const button = document.createElement("button");
-    button.className = "secondary-button";
-    button.type = "button";
-    button.textContent = action.label;
-    button.addEventListener("click", action.onClick);
-    card.append(button);
-  }
-
-  return card;
-}
-
-function nextAnimationFrame() {
-  return new Promise<void>((resolve) => {
-    requestAnimationFrame(() => resolve());
-  });
 }
 
 function waitForWebAppLoad(key, expectedUrl = "", timeoutMs = 6000) {

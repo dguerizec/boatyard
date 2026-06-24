@@ -30,6 +30,7 @@
     "src/renderer/projectSettingsViews.ts",
     "src/renderer/projectUtils.ts",
     "src/renderer/projectWebApps.ts",
+    "src/renderer/rendererDomHelpers.ts",
     "src/renderer/renderer.ts",
     "src/renderer/rendererEventBindings.ts",
     "src/renderer/rendererGlobals.d.ts",
