@@ -1,6 +1,37 @@
 {
-  "generatedForVersion": "0.7.4",
+  "generatedForVersion": "0.8.0",
   "releases": [
+    {
+      "version": "0.8.0",
+      "date": "2026-06-25",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Web app pane targets",
+          "body": "Links from web apps can now be opened directly in an existing pane, with a visual pane picker and optional saved rules for the source pane."
+        },
+        {
+          "category": "Changed",
+          "title": "Split panes",
+          "body": "Splitting a pane now opens the manual in the new pane when available, keeping the current web app in place."
+        },
+        {
+          "category": "Changed",
+          "title": "Project settings layout",
+          "body": "Project settings now use a denser two-column layout that keeps related controls easier to scan."
+        },
+        {
+          "category": "Fixed",
+          "title": "Custom URL backgrounds",
+          "body": "Custom URL web apps now use a white loading background, reducing dark flashes on light websites."
+        },
+        {
+          "category": "Fixed",
+          "title": "Web app framing",
+          "body": "Embedded web apps are inset slightly so their content fits the pane more cleanly."
+        }
+      ]
+    },
     {
       "version": "0.7.4",
       "date": "2026-06-23",

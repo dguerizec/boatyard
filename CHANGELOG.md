@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.8.0] - 2026-06-25
+
+### Summary
+
+- **v0.8.0: Web app routing polish** — Boatyard adds finer control over where web app links open, improves split-pane behavior, and polishes settings and web app presentation.
+
+### Added
+
+- **Web app pane targets** — Links from web apps can now be opened directly in an existing pane, with a visual pane picker and optional saved rules for the source pane.
+
+### Changed
+
+- **Split panes** — Splitting a pane now opens the manual in the new pane when available, keeping the current web app in place.
+- **Project settings layout** — Project settings now use a denser two-column layout that keeps related controls easier to scan.
+
+### Fixed
+
+- **Custom URL backgrounds** — Custom URL web apps now use a white loading background, reducing dark flashes on light websites.
+- **Web app framing** — Embedded web apps are inset slightly so their content fits the pane more cleanly.
+
+### Internal
+
+- **TypeScript migration** — The app, built-in plugins, scripts, and tests were migrated to strict TypeScript with a compiled build pipeline.
+
 ## [0.7.4] - 2026-06-23
 
 ### Summary
