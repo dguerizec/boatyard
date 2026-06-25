@@ -4,5 +4,8 @@
   "version": "0.1.0",
   "apiVersion": "0.1",
   "renderer": "renderer.js",
-  "main": "main.js"
+  "main": "main.js",
+  "styles": [
+    "style.css"
+  ]
 }

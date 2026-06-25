@@ -27,9 +27,11 @@ function createPluginFixture() {
     name: "Example",
     version: "1.0.0",
     renderer: "renderer.js",
+    styles: ["style.css"],
     main: "main.js"
   }));
   fs.writeFileSync(path.join(pluginDir, "renderer.js"), "\"use strict\";\n");
+  fs.writeFileSync(path.join(pluginDir, "style.css"), ".example-widget { color: red; }\n");
   fs.writeFileSync(path.join(pluginDir, "main.js"), `
     "use strict";
     module.exports.activate = (ctx) => {
@@ -69,7 +71,9 @@ test("PluginHost discovers runtime plugins and routes actions", async () => {
     version: "1.0.0",
     apiVersion: "0.1",
     rendererPath: path.relative(path.join(process.cwd(), "src/renderer"), path.join(pluginRoot, "example/renderer.js")).replaceAll(path.sep, "/"),
-    stylePaths: []
+    stylePaths: [
+      path.relative(path.join(process.cwd(), "src/renderer"), path.join(pluginRoot, "example/style.css")).replaceAll(path.sep, "/")
+    ]
   }]);
   assert.deepEqual(await host.invoke("vendor.example", "echo", { value: "ok" }), {
     value: "ok",
