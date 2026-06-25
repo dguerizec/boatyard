@@ -6,6 +6,7 @@ type WebAppBounds = {
 };
 
   type SurfaceWebApp = {
+    backgroundColor?: string;
     key: string;
     url: string;
     restoreUrl?: string;
@@ -157,6 +158,7 @@ export function createWebAppSurfaces({
           url: webApp.url,
           bounds,
           autofillEnabled: isWebAppAutofillEnabled(webApp),
+          backgroundColor: webApp.backgroundColor,
           restoreUrl: webApp.restoreUrl
         }));
       }

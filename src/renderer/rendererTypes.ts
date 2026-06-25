@@ -39,6 +39,7 @@ export type RendererState = UnknownRecord & {
 };
 
 export type WebAppDefinition = UnknownRecord & {
+  backgroundColor?: string;
   id?: string;
   key?: string;
   label?: unknown;

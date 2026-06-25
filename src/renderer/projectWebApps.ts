@@ -147,6 +147,7 @@ export function createProjectWebApps({
       const label = String(projectUrl.label || "");
       const url = String(projectUrl.url || "");
       webApps.push({
+        backgroundColor: "#ffffff",
         id: `url:${projectUrl.id}`,
         label: isGlobalWorkspace(project) ? label : `URL: ${label}`,
         key: `${paneId}:url:${projectUrl.id}`,

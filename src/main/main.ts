@@ -37,6 +37,7 @@ const { createUpdateManager, normalizeVersionTag } = require("./updateManager");
 const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
+const DEFAULT_WEBAPP_BACKGROUND_COLOR = "#0b0f14";
 
 if (process.env.BOATYARD_USER_DATA_PATH) {
   app.setPath("userData", process.env.BOATYARD_USER_DATA_PATH);
@@ -333,7 +334,7 @@ function ensureWebAppView(key: string): WebAppItem {
       sandbox: true
     }
   });
-  view.setBackgroundColor("#0b0f14");
+  view.setBackgroundColor(DEFAULT_WEBAPP_BACKGROUND_COLOR);
   view.webContents.setWindowOpenHandler((details: HandlerDetails) => handleWebAppWindowOpen(key, details));
   view.webContents.on("context-menu", (_event: Event, params: ContextMenuParams) => {
     createWebAppContextMenu(view.webContents, params, {
@@ -400,7 +401,11 @@ function persistWebAppUrl(key: string, url: string) {
   }
 }
 
-function showWebApp({ key, url, bounds, autofillEnabled, restoreUrl = true }: ShowWebAppPayload) {
+function normalizeWebAppBackgroundColor(backgroundColor: unknown) {
+  return backgroundColor === "#ffffff" ? "#ffffff" : DEFAULT_WEBAPP_BACKGROUND_COLOR;
+}
+
+function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, restoreUrl = true }: ShowWebAppPayload) {
   if (!key) {
     throw new Error("Webapp key is required.");
   }
@@ -420,6 +425,7 @@ function showWebApp({ key, url, bounds, autofillEnabled, restoreUrl = true }: Sh
   if (typeof autofillEnabled === "boolean") {
     webApp.autofillEnabled = autofillEnabled;
   }
+  webApp.view.setBackgroundColor(normalizeWebAppBackgroundColor(backgroundColor));
   webApp.bounds = normalizeWebAppBounds(bounds);
   webApp.view.setBounds(webApp.bounds);
   webApp.view.setVisible(

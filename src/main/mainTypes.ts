@@ -106,6 +106,7 @@ export type WebAppLookup = {
 
 export type ShowWebAppPayload = {
   autofillEnabled?: unknown;
+  backgroundColor?: unknown;
   bounds?: unknown;
   key?: unknown;
   restoreUrl?: boolean;
