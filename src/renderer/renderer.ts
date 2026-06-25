@@ -481,6 +481,7 @@ const webAppMenus = createWebAppMenus({
   getProjectWidgetPanes,
   getVisibleWebAppEntryByKey: (key) => key ? visibleWebApps.getEntryByKey(key) : null,
   getVisibleWebAppEntryByUrl: (url) => url ? visibleWebApps.getEntryByUrl(url) : null,
+  getVisibleWebAppEntries: () => visibleWebApps.getEntries(),
   getVisibleWebAppProject: () => webAppRuntime.getVisibleWebAppProject() || null,
   getProjectPaneLayout,
   getWebAppHostBounds,
@@ -531,6 +532,10 @@ const webAppMenus = createWebAppMenus({
 
 function applyWebAppOpenChoice(payload: UnknownRecord, choice: UnknownRecord) {
   return webAppMenus.applyWebAppOpenChoice(payload, choice);
+}
+
+function applyMatchingWebAppOpenRule(payload: UnknownRecord) {
+  return webAppMenus.applyMatchingWebAppOpenRule(payload);
 }
 
 function closeWebAppTabMenu() {
@@ -930,6 +935,7 @@ async function loadState() {
 registerRendererEventBindings({
   addProjectButton,
   applyWebAppOpenChoice,
+  applyMatchingWebAppOpenRule,
   boatyard: boatyardWindow.boatyard,
   globalNav,
   globalSettingsButton,

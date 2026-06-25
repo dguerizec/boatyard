@@ -100,7 +100,7 @@ export function normalizeSettings(settings: unknown = {}): SettingsState {
 export function normalizeWebAppOpenRules(rules: unknown = []): WebAppOpenRule[] {
   const source = Array.isArray(rules) ? rules : [];
   const allowedTargets = new Set<string>(["same-pane", "split-pane", "external"]);
-  const allowedScopes = new Set<string>(["exact", "host", "path-prefix"]);
+  const allowedScopes = new Set<string>(["exact", "host", "path-prefix", "source-pane"]);
   const normalized: WebAppOpenRule[] = [];
 
   for (const rule of source) {
@@ -109,7 +109,7 @@ export function normalizeWebAppOpenRules(rules: unknown = []): WebAppOpenRule[] 
     const target = normalizeText(entry.target);
     const scope = normalizeText(entry.scope || "exact");
 
-    if (!pattern || !allowedTargets.has(target) || !allowedScopes.has(scope)) {
+    if (!pattern || (!allowedTargets.has(target) && !target.startsWith("pane:")) || !allowedScopes.has(scope)) {
       continue;
     }
 

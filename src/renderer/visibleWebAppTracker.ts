@@ -38,7 +38,10 @@ export function createVisibleWebAppTracker({
   }
 
   function getEntries() {
-    return visibleWebAppHosts.values();
+    return [...visibleWebAppHosts.entries()].map(([paneId, entry]) => ({
+      ...entry,
+      paneId
+    }));
   }
 
   function getWebAppByKey(key: string) {

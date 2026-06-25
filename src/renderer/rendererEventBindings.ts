@@ -4,6 +4,7 @@ import type { UnknownRecord } from "./rendererRecords.js";
 
 type RendererEventBindingsOptions = {
   addProjectButton: HTMLElement;
+  applyMatchingWebAppOpenRule: (payload: UnknownRecord) => Promise<boolean>;
   applyWebAppOpenChoice: (payload: UnknownRecord, choice: UnknownRecord) => Promise<unknown>;
   boatyard: BoatyardBridge;
   globalNav: HTMLElement;
@@ -35,6 +36,7 @@ type RendererEventBindingsOptions = {
 
 export function registerRendererEventBindings({
   addProjectButton,
+  applyMatchingWebAppOpenRule,
   applyWebAppOpenChoice,
   boatyard,
   globalNav,
@@ -114,7 +116,14 @@ export function registerRendererEventBindings({
       return;
     }
 
-    openWebAppOpenUrlDialog(payload);
+    applyMatchingWebAppOpenRule(payload).then((applied) => {
+      if (!applied) {
+        openWebAppOpenUrlDialog(payload);
+      }
+    }).catch((error) => {
+      console.error("Could not apply saved webapp URL opening rule:", error);
+      openWebAppOpenUrlDialog(payload);
+    });
   });
 
   boatyard.onTerminalData(handleTerminalData);

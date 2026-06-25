@@ -46,6 +46,7 @@ export function createProjectWebApps({
 
     if (paneNode?.transientWebApp?.url && paneNode.selectedWebAppId === paneNode.transientWebApp.id) {
       webApps.push({
+        backgroundColor: "#ffffff",
         id: paneNode.transientWebApp.id,
         label: paneNode.transientWebApp.label || "Link",
         parentLabel: paneNode.transientWebApp.parentLabel || "",

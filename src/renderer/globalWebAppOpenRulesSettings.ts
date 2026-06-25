@@ -36,7 +36,8 @@ const WEBAPP_OPEN_TARGET_LABELS = {
 const WEBAPP_OPEN_SCOPE_LABELS = {
   exact: "Exact URL",
   host: "Host",
-  "path-prefix": "Path prefix"
+  "path-prefix": "Path prefix",
+  "source-pane": "Source pane"
 };
 
 function createWebAppOpenRuleSelect(name: string, labelText: string, options: Record<string, string>, selectedValue?: string) {

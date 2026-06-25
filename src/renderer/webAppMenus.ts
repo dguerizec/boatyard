@@ -81,6 +81,7 @@ type WebAppMenuElement = HTMLDivElement & {
     getProjectWidgetPanes: (project: RendererProject) => UnknownRecord[];
     getVisibleWebAppEntryByKey: (key?: string) => VisibleWebAppEntry | null;
     getVisibleWebAppEntryByUrl: (url?: string) => VisibleWebAppEntry | null;
+    getVisibleWebAppEntries: () => Iterable<VisibleWebAppEntry>;
     getVisibleWebAppProject: () => RendererProject | null;
     getProjectPaneLayout: (project: RendererProject) => RendererPaneLayoutNode;
     getWebAppHostBounds: (host?: Element | null) => WebAppBounds | null;
@@ -125,6 +126,7 @@ export function createWebAppMenus({
     getProjectWidgetPanes,
     getVisibleWebAppEntryByKey,
     getVisibleWebAppEntryByUrl,
+    getVisibleWebAppEntries,
     getVisibleWebAppProject,
     getProjectPaneLayout,
     getWebAppHostBounds,
@@ -152,6 +154,7 @@ export function createWebAppMenus({
     isWebAppLoaded
   }: WebAppMenusOptions) {
     let openWebAppTabMenu: WebAppMenuElement | null = null;
+    let openUrlTargetHighlight: HTMLElement | null = null;
 
     function getWebAppOpenUrlLabel(url: unknown) {
       try {
@@ -165,7 +168,7 @@ export function createWebAppMenus({
     function createTransientWebApp(url: string, label = "", parentWebApp: MenuWebApp | null = null): MenuWebApp {
       return {
         id: `transient:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-        label: label || getWebAppOpenUrlLabel(url),
+        label: label || `Temp: ${getWebAppOpenUrlLabel(url)}`,
         parentLabel: String(parentWebApp?.label || ""),
         parentWebAppId: parentWebApp?.id || "",
         url
@@ -222,7 +225,7 @@ export function createWebAppMenus({
       return true;
     }
 
-    function openUrlInSplitPaneFromEntry(sourceEntry: VisibleWebAppEntry | null, url: string, label = "") {
+    function openUrlInSplitPaneFromEntry(sourceEntry: VisibleWebAppEntry | null, url: string) {
       const project = sourceEntry ? getVisibleWebAppProject() : null;
       if (!sourceEntry || !project) {
         return false;
@@ -251,7 +254,7 @@ export function createWebAppMenus({
         null
       );
       replacement.ratio = webAppOpenSplitRatio;
-      const transientWebApp = createTransientWebApp(url, label, sourceEntry.webApp);
+      const transientWebApp = createTransientWebApp(url, "", sourceEntry.webApp);
       const replacementPane = findPaneNode(replacement.second, replacement.second.id);
       if (!replacementPane) {
         return false;
@@ -269,8 +272,40 @@ export function createWebAppMenus({
       return true;
     }
 
+    function openUrlInExistingPane(
+      destinationPaneId: string,
+      sourceEntry: VisibleWebAppEntry | null,
+      url: string
+    ) {
+      const project = getVisibleWebAppProject();
+      if (!destinationPaneId || !project) {
+        return false;
+      }
+
+      const layout = getProjectPaneLayout(project);
+      const destinationPaneNode = findPaneNode(layout, destinationPaneId) as MenuPaneNode | null;
+      if (!destinationPaneNode) {
+        return false;
+      }
+
+      const transientWebApp = createTransientWebApp(url, "", sourceEntry?.webApp || null);
+      destinationPaneNode.transientWebApp = transientWebApp;
+      destinationPaneNode.selectedWebAppId = transientWebApp.id;
+      setSelectedWebAppForPane(destinationPaneNode.id, transientWebApp.id);
+      setSelectedWebAppForProject(project.id, transientWebApp.id);
+      setCurrentWebAppUrl(`${destinationPaneNode.id}:transient:${transientWebApp.id}`, url);
+
+      persistPaneLayout(project);
+      renderWorkspaceDashboard(project);
+      return true;
+    }
+
     function getWebAppOpenRulePattern(url: string, scope?: string) {
       const parsedUrl = new URL(String(url || ""));
+      if (scope === "source-pane") {
+        return "";
+      }
+
       if (scope === "host") {
         return parsedUrl.host;
       }
@@ -289,15 +324,63 @@ export function createWebAppMenus({
       ];
     }
 
+    function getSourceEntryForOpenPayload(payload: WebAppOpenPayload) {
+      return getVisibleWebAppEntryByKey(payload.sourceWebAppKey) ||
+        getVisibleWebAppEntryByUrl(payload.sourceUrl);
+    }
+
+    function getMatchingWebAppOpenRule(payload: WebAppOpenPayload) {
+      const url = normalizeAddressInput(payload.url);
+      const parsedUrl = new URL(url);
+      const sourceEntry = getSourceEntryForOpenPayload(payload);
+
+      return (getSettings().webAppOpenRules || []).find((rule) => {
+        if (rule.scope === "source-pane") {
+          return Boolean(sourceEntry?.paneId && rule.pattern === sourceEntry.paneId);
+        }
+
+        if (rule.scope === "host") {
+          return parsedUrl.host === rule.pattern || parsedUrl.hostname === rule.pattern;
+        }
+
+        if (rule.scope === "path-prefix") {
+          return url.startsWith(String(rule.pattern || ""));
+        }
+
+        return url === rule.pattern;
+      }) || null;
+    }
+
+    async function applyMatchingWebAppOpenRule(payload: WebAppOpenPayload) {
+      const rule = getMatchingWebAppOpenRule(payload);
+      if (!rule) {
+        return false;
+      }
+
+      await applyWebAppOpenChoice(payload, {
+        ...rule,
+        persist: false
+      });
+      return true;
+    }
+
     async function applyWebAppOpenChoice(payload: WebAppOpenPayload, choice: WebAppOpenChoice) {
       const url = normalizeAddressInput(payload.url);
 
       if (choice.target === "external") {
         await openExternal(url);
       } else if (choice.target === "split-pane") {
-        const sourceEntry = getVisibleWebAppEntryByKey(payload.sourceWebAppKey) ||
-          getVisibleWebAppEntryByUrl(payload.sourceUrl);
-        if (!openUrlInSplitPaneFromEntry(sourceEntry, url, choice.label || "")) {
+        const sourceEntry = getSourceEntryForOpenPayload(payload);
+        if (!openUrlInSplitPaneFromEntry(sourceEntry, url)) {
+          const opened = await invokeWebApp("navigateWebApp", payload.sourceWebAppKey, "open", url);
+          if (!opened) {
+            await openExternal(url);
+          }
+        }
+      } else if (choice.target?.startsWith("pane:")) {
+        const paneId = choice.target.slice("pane:".length);
+        const sourceEntry = getSourceEntryForOpenPayload(payload);
+        if (!openUrlInExistingPane(paneId, sourceEntry, url)) {
           const opened = await invokeWebApp("navigateWebApp", payload.sourceWebAppKey, "open", url);
           if (!opened) {
             await openExternal(url);
@@ -312,12 +395,16 @@ export function createWebAppMenus({
       }
 
       const settings = getSettings();
+      const sourceEntry = getSourceEntryForOpenPayload(payload);
       const nextRule = {
-        pattern: getWebAppOpenRulePattern(url, choice.scope),
+        pattern: choice.scope === "source-pane" ? sourceEntry?.paneId || "" : getWebAppOpenRulePattern(url, choice.scope),
         scope: choice.scope,
         target: choice.target,
         label: choice.label || ""
       };
+      if (!nextRule.pattern) {
+        throw new Error("Rule source is unavailable.");
+      }
       await updateSettings({
         webAppOpenRules: upsertWebAppOpenRule(settings.webAppOpenRules || [], nextRule)
       });
@@ -344,6 +431,10 @@ export function createWebAppMenus({
 
       label.append(input, copy);
       return { label, input };
+    }
+
+    function isPaneLayoutNode(node: unknown): node is RendererPaneLayoutNode {
+      return Boolean(node && typeof node === "object" && ["pane", "split"].includes(String((node as { type?: string }).type)));
     }
 
     async function openWebAppOpenUrlDialog(payload: WebAppOpenPayload = {}) {
@@ -393,6 +484,133 @@ export function createWebAppMenus({
       urlText.textContent = url;
       summary.append(source, urlText);
 
+      const visibleEntries = [...getVisibleWebAppEntries()];
+      const entriesByPaneId = new Map(visibleEntries.map((entry) => [entry.paneId, entry]));
+      const visibleProject = getVisibleWebAppProject();
+      const visibleLayout = visibleProject ? getProjectPaneLayout(visibleProject) : null;
+      const targetPaneIds = new Set<string>();
+
+      function clearPaneTargetHighlight() {
+        openUrlTargetHighlight?.remove();
+        openUrlTargetHighlight = null;
+      }
+
+      function highlightPaneTarget(paneId: string) {
+        clearPaneTargetHighlight();
+        if (!paneId) {
+          return;
+        }
+
+        const pane = document.querySelector<HTMLElement>(`.webapp-pane[data-pane-id="${CSS.escape(paneId)}"]`);
+        const rect = pane?.getBoundingClientRect();
+        if (!rect || rect.width <= 0 || rect.height <= 0) {
+          return;
+        }
+
+        const highlight = document.createElement("div");
+        highlight.className = "webapp-open-target-highlight";
+        highlight.style.left = `${Math.round(rect.left)}px`;
+        highlight.style.top = `${Math.round(rect.top)}px`;
+        highlight.style.width = `${Math.round(rect.width)}px`;
+        highlight.style.height = `${Math.round(rect.height)}px`;
+        document.body.append(highlight);
+        openUrlTargetHighlight = highlight;
+      }
+
+      function syncPaneTargetHighlight() {
+        const target = (panel.elements as WebAppOpenFormControls).webAppOpenTarget.value;
+        const isPaneTarget = target.startsWith("pane:");
+        highlightPaneTarget(isPaneTarget ? target.slice("pane:".length) : "");
+        if (isPaneTarget) {
+          scopeSelect.value = "source-pane";
+        }
+        if (persistInput.checked) {
+          scopeLabel.hidden = false;
+        } else {
+          scopeLabel.hidden = true;
+        }
+      }
+
+      function getPaneTargetLabel(paneId: string, fallbackIndex = 0) {
+        const entry = entriesByPaneId.get(paneId);
+        if (entry?.webApp.label || entry?.webApp.id) {
+          return String(entry.webApp.label || entry.webApp.id);
+        }
+
+        const paneNode = isPaneLayoutNode(visibleLayout) ? findPaneNode(visibleLayout, paneId) : null;
+        if (paneNode?.selectedWebAppId) {
+          return String(paneNode.selectedWebAppId);
+        }
+
+        return `Pane ${fallbackIndex + 1}`;
+      }
+
+      function selectPaneTarget(paneId: string) {
+        const input = panel.querySelector<HTMLInputElement>(`input[name="webAppOpenTarget"][value="pane:${CSS.escape(paneId)}"]`);
+        if (!input || input.disabled) {
+          return;
+        }
+
+        input.checked = true;
+        syncPaneTargetHighlight();
+      }
+
+      function createMiniPaneTarget(paneNode: RendererPaneNode, index: number) {
+        const label = document.createElement("label");
+        const isSourcePane = paneNode.id === sourceEntry?.paneId;
+        const isTargetPane = targetPaneIds.has(paneNode.id);
+        label.className = "webapp-open-mini-pane";
+        label.classList.toggle("source", isSourcePane);
+        label.classList.toggle("disabled", !isTargetPane);
+        label.dataset.paneId = paneNode.id;
+        label.title = isSourcePane ? "Current pane" : getPaneTargetLabel(paneNode.id, index);
+
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "webAppOpenTarget";
+        input.value = `pane:${paneNode.id}`;
+        input.disabled = !isTargetPane;
+
+        const name = document.createElement("span");
+        name.textContent = isSourcePane ? "Current" : getPaneTargetLabel(paneNode.id, index);
+
+        label.append(input, name);
+        label.addEventListener("pointerenter", () => {
+          if (isTargetPane) {
+            highlightPaneTarget(paneNode.id);
+          }
+        });
+        label.addEventListener("pointerleave", syncPaneTargetHighlight);
+        label.addEventListener("click", () => selectPaneTarget(paneNode.id));
+        input.addEventListener("change", syncPaneTargetHighlight);
+        input.addEventListener("focus", syncPaneTargetHighlight);
+        return label;
+      }
+
+      function createMiniLayoutNode(node: RendererPaneLayoutNode, paneIndex = { value: 0 }): HTMLElement {
+        if (node.type === "pane") {
+          if (node.id && node.id !== sourceEntry?.paneId) {
+            targetPaneIds.add(node.id);
+          }
+          const pane = createMiniPaneTarget(node, paneIndex.value);
+          paneIndex.value += 1;
+          return pane;
+        }
+
+        const split = document.createElement("div");
+        split.className = `webapp-open-mini-split ${node.direction === "horizontal" ? "horizontal" : "vertical"}`;
+        const first = createMiniLayoutNode(node.first, paneIndex);
+        const second = createMiniLayoutNode(node.second, paneIndex);
+        const ratio = Math.min(0.85, Math.max(0.15, Number(node.ratio) || 0.5));
+        if (node.direction === "horizontal") {
+          split.style.gridTemplateRows = `${ratio}fr ${(1 - ratio)}fr`;
+        } else {
+          split.style.gridTemplateColumns = `${ratio}fr ${(1 - ratio)}fr`;
+        }
+        split.append(first, second);
+        return split;
+      }
+
       const targetGroup = document.createElement("div");
       targetGroup.className = "webapp-open-options";
       const samePane = createRadioOption(
@@ -416,6 +634,24 @@ export function createWebAppMenus({
       );
       targetGroup.append(samePane.label, splitPane.label, external.label);
 
+      for (const input of [samePane.input, splitPane.input, external.input]) {
+        input.addEventListener("change", syncPaneTargetHighlight);
+        input.addEventListener("focus", syncPaneTargetHighlight);
+      }
+
+      const miniLayout = document.createElement("section");
+      miniLayout.className = "webapp-open-mini-layout";
+      const miniLayoutTitle = document.createElement("span");
+      miniLayoutTitle.className = "webapp-open-mini-title";
+      miniLayoutTitle.textContent = "Existing pane";
+      const miniLayoutSurface = document.createElement("div");
+      miniLayoutSurface.className = "webapp-open-mini-surface";
+      if (isPaneLayoutNode(visibleLayout)) {
+        miniLayoutSurface.append(createMiniLayoutNode(visibleLayout));
+      }
+      miniLayout.append(miniLayoutTitle, miniLayoutSurface);
+      miniLayout.hidden = targetPaneIds.size === 0;
+
       const persistLabel = document.createElement("label");
       persistLabel.className = "webapp-open-persist";
       const persistInput = document.createElement("input");
@@ -434,7 +670,8 @@ export function createWebAppMenus({
       for (const [value, label] of [
         ["exact", "Exact URL"],
         ["host", "This host"],
-        ["path-prefix", "This path prefix"]
+        ["path-prefix", "This path prefix"],
+        ["source-pane", "From this source pane"]
       ]) {
         const option = document.createElement("option");
         option.value = value;
@@ -445,6 +682,7 @@ export function createWebAppMenus({
       scopeLabel.hidden = true;
 
       persistInput.addEventListener("change", () => {
+        syncPaneTargetHighlight();
         scopeLabel.hidden = !persistInput.checked;
       });
 
@@ -465,7 +703,7 @@ export function createWebAppMenus({
       submitButton.textContent = "Open";
       actions.append(cancelButton, submitButton);
 
-      panel.append(header, summary, targetGroup, persistLabel, scopeLabel, error, actions);
+      panel.append(header, summary, targetGroup, miniLayout, persistLabel, scopeLabel, error, actions);
       panel.addEventListener("submit", async (event) => {
         event.preventDefault();
         error.hidden = true;
@@ -488,6 +726,7 @@ export function createWebAppMenus({
         }
       });
 
+      dialog.addEventListener("close", clearPaneTargetHighlight, { once: true });
       dialog.append(panel);
       await showOverlayDialog(dialog, {
         freeze: "overlap",
@@ -874,6 +1113,7 @@ export function createWebAppMenus({
 
     return {
       applyWebAppOpenChoice,
+      applyMatchingWebAppOpenRule,
       closeWebAppTabMenu,
       createWidgetPaneTabs,
       normalizeAddressInput,

@@ -40,6 +40,7 @@ type PaneLayoutStateApi = {
     selectedWebAppId?: string
   ): unknown;
   deleteSelectedWebAppForPane(paneId: string): unknown;
+  findPaneNode(node: unknown, paneId: string): unknown;
   getPaneAncestorPath(node: unknown, paneId: string): unknown;
   getPaneExpansionState(project: RendererProject, paneId: string): { canExpand: boolean; canShrink: boolean };
   getPaneExpansionTarget(project: RendererProject, paneId: string): unknown;
@@ -227,6 +228,11 @@ export function createPaneLayoutView({
 
     function splitPane(project: RendererProject, paneId: string, direction: string) {
       const layout = getProjectPaneLayout(project);
+      const currentPaneNode = paneLayoutState.findPaneNode(layout, paneId) as PaneNode | null;
+      if (!currentPaneNode) {
+        return;
+      }
+
       const webApps = getProjectWebApps(project, paneId).map((webApp) => webApp as PaneWebApp);
       const currentWebAppId =
         paneLayoutState.getSelectedWebAppForPane(paneId) ||
@@ -236,7 +242,7 @@ export function createPaneLayoutView({
       const replacement = paneLayoutState.createSplitNode(
         project,
         direction,
-        { type: "pane", id: paneId },
+        { ...currentPaneNode, selectedWebAppId: currentWebAppId },
         nextWebAppId
       ) as PaneLayoutNode & { first: PaneLayoutNode };
       replacement.first.selectedWebAppId = currentWebAppId;
