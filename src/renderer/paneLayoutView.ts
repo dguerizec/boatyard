@@ -238,7 +238,10 @@ export function createPaneLayoutView({
         paneLayoutState.getSelectedWebAppForPane(paneId) ||
         paneLayoutState.getSelectedWebAppForProject(project.id) ||
         webApps[0]?.id;
-      const nextWebAppId = webApps.find((webApp: PaneWebApp) => webApp.id !== currentWebAppId)?.id || currentWebAppId;
+      const nextWebAppId =
+        webApps.find((webApp: PaneWebApp) => webApp.id === "manual")?.id ||
+        webApps.find((webApp: PaneWebApp) => webApp.id !== currentWebAppId)?.id ||
+        currentWebAppId;
       const replacement = paneLayoutState.createSplitNode(
         project,
         direction,
