@@ -1035,6 +1035,10 @@ button {
   min-width: 0;
 }
 
+.plugin-settings-dialog-panel .field[hidden] {
+  display: none;
+}
+
 .plugin-settings-dialog-panel .field span {
   color: var(--muted);
   font-size: 11px;
@@ -1151,6 +1155,19 @@ button {
   line-height: 1.35;
 }
 
+.webapp-open-switch {
+  min-height: 60px;
+  background: rgba(10, 15, 21, 0.38);
+}
+
+.webapp-open-switch.disabled {
+  opacity: 0.56;
+}
+
+.webapp-open-switch input:disabled + .switch-track {
+  cursor: default;
+}
+
 .webapp-open-mini-layout {
   display: grid;
   gap: 8px;
@@ -1241,6 +1258,72 @@ button {
 .webapp-open-mini-pane.disabled:focus-within {
   border-color: rgba(52, 64, 76, 0.88);
   background: rgba(15, 23, 32, 0.76);
+}
+
+.webapp-open-rule-mini-layout {
+  gap: 6px;
+}
+
+.webapp-open-rule-mini-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.webapp-open-rule-mini-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.webapp-open-rule-mini-legend span::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+}
+
+.webapp-open-rule-mini-legend .source::before {
+  color: rgba(98, 160, 234, 0.9);
+  background: rgba(98, 160, 234, 0.2);
+}
+
+.webapp-open-rule-mini-legend .target::before {
+  color: rgba(65, 184, 131, 0.95);
+  background: rgba(65, 184, 131, 0.24);
+}
+
+.webapp-open-rule-mini-pane {
+  cursor: default;
+}
+
+.webapp-open-rule-mini-pane:hover,
+.webapp-open-rule-mini-pane:focus-within {
+  border-color: rgba(52, 64, 76, 0.88);
+  background: rgba(15, 23, 32, 0.76);
+}
+
+.webapp-open-rule-mini-pane.source {
+  border-color: rgba(98, 160, 234, 0.9);
+  background: rgba(98, 160, 234, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(98, 160, 234, 0.42);
+}
+
+.webapp-open-rule-mini-pane.target {
+  border-color: rgba(65, 184, 131, 0.95);
+  background: rgba(65, 184, 131, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(65, 184, 131, 0.52);
+}
+
+.webapp-open-rule-mini-pane.source.target {
+  border-color: rgba(238, 190, 92, 0.95);
+  background: rgba(238, 190, 92, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(238, 190, 92, 0.46);
 }
 
 .webapp-open-scope span {

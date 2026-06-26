@@ -1,5 +1,6 @@
 import { createProjectSettingsRows } from "./projectSettingsRows.js";
 import { createProjectSettingsSimpleForms } from "./projectSettingsSimpleForms.js";
+import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSettings.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type {
   CoreFieldSetOptions,
@@ -28,12 +29,15 @@ export function createProjectSettingsViews({
     getState,
     getSettings,
     getProjectGroups,
+    getProjectPaneLayout,
     getProjectWidgetPanes,
+    getSelectedWebAppForPane,
     getProjectPluginConfig,
     getGlobalPluginConfig,
     getPluginProjectSettingsSections,
     applyFormControl,
     applyFormControls,
+    showOverlayDialog,
     readPluginSettingsFieldValue,
     deriveRepoUrl,
     deriveProjectNameFromPath,
@@ -52,6 +56,10 @@ export function createProjectSettingsViews({
       createProjectDangerZone,
       createProjectTerminalSettingsForm
     } = createProjectSettingsSimpleForms({ applyFormControl, applyFormControls });
+    const webAppOpenRulesSettings = createGlobalWebAppOpenRulesSettings({
+      applyFormControl,
+      showOverlayDialog
+    });
 
     function createProjectFormView({
       title,
@@ -898,6 +906,22 @@ export function createProjectSettingsViews({
       shell.append(form);
       return shell;
     }
+
+    function createProjectWebAppOpenRulesForm({ project, onSubmit }: ProjectScopedFormOptions) {
+      return webAppOpenRulesSettings.createGlobalWebAppOpenRulesSettingsForm({
+        settings: {
+          webAppOpenRules: project.webAppOpenRules as UnknownRecord[] | undefined
+        },
+        getSelectedWebAppIdForPane: getSelectedWebAppForPane,
+        layout: getProjectPaneLayout(project) as never,
+        title: "Project URL opening",
+        description: "Manage saved URL opening rules for this project.",
+        emptyText: "No project URL opening rules.",
+        onSubmit: async (values) => {
+          await onSubmit(values.webAppOpenRules as UnknownRecord[]);
+        }
+      });
+    }
     
     return {
       createGlobalUrlsSettingsForm,
@@ -906,6 +930,7 @@ export function createProjectSettingsViews({
       createProjectTerminalSettingsForm,
       createProjectUrlsForm,
       createProjectWebAppHomeTabsForm,
+      createProjectWebAppOpenRulesForm,
       createProjectWidgetPanesForm
     };
 }

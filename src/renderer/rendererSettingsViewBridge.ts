@@ -15,8 +15,10 @@ type RendererSettingsViewBridgeOptions = {
   getPluginGlobalSettingsSections: () => unknown[];
   getPluginProjectSettingsSections: () => unknown[];
   getProjectGroups: () => string[];
+  getProjectPaneLayout: (project: UnknownRecord) => unknown;
   getProjectPluginConfig: (projectId?: string, pluginId?: string) => UnknownRecord;
   getProjectWidgetPanes: (project: UnknownRecord) => UnknownRecord[];
+  getSelectedWebAppForPane: (paneId: string) => string | undefined;
   getSettings: () => UnknownRecord;
   getState: () => RendererState;
   readPluginSettingsFieldValue: (field?: unknown, input?: unknown, options?: UnknownRecord) => string;
@@ -39,8 +41,10 @@ export function createRendererSettingsViewBridge({
   getPluginGlobalSettingsSections,
   getPluginProjectSettingsSections,
   getProjectGroups,
+  getProjectPaneLayout,
   getProjectPluginConfig,
   getProjectWidgetPanes,
+  getSelectedWebAppForPane,
   getSettings,
   getState,
   readPluginSettingsFieldValue,
@@ -55,12 +59,15 @@ export function createRendererSettingsViewBridge({
     getState,
     getSettings,
     getProjectGroups,
+    getProjectPaneLayout: getProjectPaneLayout as never,
     getProjectWidgetPanes,
+    getSelectedWebAppForPane,
     getProjectPluginConfig,
     getGlobalPluginConfig,
     getPluginProjectSettingsSections,
     applyFormControl,
     applyFormControls,
+    showOverlayDialog,
     readPluginSettingsFieldValue,
     deriveRepoUrl,
     deriveProjectNameFromPath,
@@ -96,6 +103,7 @@ export function createRendererSettingsViewBridge({
     createProjectTerminalSettingsForm: projectSettingsViews.createProjectTerminalSettingsForm,
     createProjectUrlsForm: projectSettingsViews.createProjectUrlsForm,
     createProjectWebAppHomeTabsForm: projectSettingsViews.createProjectWebAppHomeTabsForm,
+    createProjectWebAppOpenRulesForm: projectSettingsViews.createProjectWebAppOpenRulesForm,
     createProjectWidgetPanesForm: projectSettingsViews.createProjectWidgetPanesForm
   });
 }

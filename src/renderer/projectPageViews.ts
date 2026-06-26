@@ -8,6 +8,7 @@ type ProjectPageViewsOptions = {
   createProjectTerminalSettingsForm: (options: UnknownRecord) => HTMLElement;
   createProjectUrlsForm: (options: UnknownRecord) => HTMLElement;
   createProjectWebAppHomeTabsForm: (options: UnknownRecord) => HTMLElement;
+  createProjectWebAppOpenRulesForm: (options: UnknownRecord) => HTMLElement;
   createProjectWidgetPanesForm: (options: UnknownRecord) => HTMLElement;
   dashboardGrid: HTMLElement;
   hideWebApps: () => void;
@@ -34,6 +35,7 @@ export function createProjectPageViews({
   createProjectTerminalSettingsForm,
   createProjectUrlsForm,
   createProjectWebAppHomeTabsForm,
+  createProjectWebAppOpenRulesForm,
   createProjectWidgetPanesForm,
   dashboardGrid,
   hideWebApps,
@@ -153,6 +155,12 @@ export function createProjectPageViews({
       project,
       onSubmit: async (homeTabs: UnknownRecord[]) => {
         setState(await updateWebAppHomeTabs(projectId, homeTabs));
+        reloadProjectSettings(projectId);
+      }
+    }), createProjectWebAppOpenRulesForm({
+      project,
+      onSubmit: async (webAppOpenRules: UnknownRecord[]) => {
+        setState(await updateProject(projectId, { webAppOpenRules }));
         reloadProjectSettings(projectId);
       }
     }), createProjectWidgetPanesForm({

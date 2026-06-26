@@ -87,9 +87,9 @@ test("ProjectStore persists global settings", () => {
     terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never",
     webAppOpenRules: [
       {
-        pattern: "https://accounts.example.com",
+        pattern: "*://accounts.example.com/*",
         target: "external",
-        scope: "host"
+        scope: "url-pattern"
       }
     ]
   });
@@ -103,9 +103,9 @@ test("ProjectStore persists global settings", () => {
     terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never",
     webAppOpenRules: [
       {
-        pattern: "https://accounts.example.com",
+        pattern: "*://accounts.example.com/*",
         target: "external",
-        scope: "host",
+        scope: "url-pattern",
         label: ""
       }
     ]
@@ -113,6 +113,87 @@ test("ProjectStore persists global settings", () => {
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(reloaded.load().settings, state.settings);
+});
+
+test("ProjectStore persists project webapp open rules separately from global settings", () => {
+  const { filePath, store } = createTempStore();
+
+  store.load();
+  const projectId = store.addProject({
+    name: "Project",
+    sourcePath: "/workspace/example"
+  }).projects[0].id;
+  const state = store.updateProject(projectId, {
+    webAppOpenRules: [
+      {
+        pattern: "repo",
+        sourcePaneId: "pane-alpha",
+        target: "pane:pane-beta",
+        targetLabel: "Browser",
+        scope: "source-app",
+        label: "Repo"
+      }
+    ]
+  });
+
+  assert.deepEqual(state.settings.webAppOpenRules, []);
+  assert.deepEqual(state.projects[0].webAppOpenRules, [{
+    pattern: "repo",
+    sourcePaneId: "pane-alpha",
+    target: "pane:pane-beta",
+    targetLabel: "Browser",
+    scope: "source-app",
+    label: "Repo"
+  }]);
+
+  const reloaded = new ProjectStore(filePath);
+  assert.deepEqual(reloaded.load().projects[0].webAppOpenRules, state.projects[0].webAppOpenRules);
+});
+
+test("ProjectStore drops project-specific webapp open rules from global settings", () => {
+  const { filePath } = createTempStoreFile();
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    settings: {
+      webAppOpenRules: [
+        {
+          pattern: "https://global.example.test/*",
+          target: "external",
+          scope: "url-pattern",
+          label: "Global"
+        },
+        {
+          pattern: "repo",
+          projectId: "project-id",
+          sourcePaneId: "pane-alpha",
+          target: "pane:pane-beta",
+          targetLabel: "Browser",
+          scope: "source-app",
+          label: "Repo"
+        },
+        {
+          pattern: "pane-stale",
+          target: "pane:missing",
+          scope: "source-app",
+          label: "Stale"
+        }
+      ]
+    },
+    projects: [{
+      id: "project-id",
+      name: "Project",
+      sourcePath: "/workspace/example"
+    }]
+  }, null, 2)}\n`);
+
+  const state = new ProjectStore(filePath).load();
+
+  assert.deepEqual(state.settings.webAppOpenRules, [{
+    pattern: "https://global.example.test/*",
+    target: "external",
+    scope: "url-pattern",
+    label: "Global"
+  }]);
+  assert.deepEqual(state.projects[0].webAppOpenRules, []);
 });
 
 test("ProjectStore persists disabled plugins", () => {

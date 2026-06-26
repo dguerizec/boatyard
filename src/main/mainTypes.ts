@@ -7,8 +7,11 @@ export type UnknownRecord = Record<string, unknown>;
 
 export type WebAppOpenRule = {
   pattern?: string;
+  projectId?: string;
   scope?: string;
+  sourcePaneId?: string;
   target?: string;
+  targetLabel?: string;
 };
 
 export type MainProject = UnknownRecord & {

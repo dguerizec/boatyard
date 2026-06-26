@@ -161,6 +161,56 @@ function maybeSaveCredentialFrom(target: EventTarget | null): void {
   }
 }
 
+function getLinkHrefFrom(target: EventTarget | null): string {
+  const element = target instanceof Element ? target : null;
+  const link = element?.closest("a[href], area[href]") as HTMLAnchorElement | HTMLAreaElement | null;
+  return link?.href || "";
+}
+
+function sendModifiedLinkClick(url: string, source: string): void {
+  if (!url) {
+    return;
+  }
+
+  ipcRenderer.send("webapp:modified-link-click", {
+    source,
+    sourceUrl: window.location.href,
+    url
+  });
+}
+
+function installModifiedLinkClickCapture(): void {
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || (!event.ctrlKey && !event.metaKey)) {
+      return;
+    }
+
+    const href = getLinkHrefFrom(event.target);
+    if (!href) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    sendModifiedLinkClick(href, event.metaKey ? "meta-click" : "ctrl-click");
+  }, true);
+
+  document.addEventListener("auxclick", (event) => {
+    if (event.defaultPrevented || event.button !== 1) {
+      return;
+    }
+
+    const href = getLinkHrefFrom(event.target);
+    if (!href) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    sendModifiedLinkClick(href, "middle-click");
+  }, true);
+}
+
 function installSubmitCapture(): void {
   document.addEventListener("submit", (event) => {
     maybeSaveCredentialFrom(event.target);
@@ -216,6 +266,7 @@ ipcRenderer.on("webapp:autofill-enabled", (_event: IpcRendererEvent, enabled: un
 });
 
 window.addEventListener("DOMContentLoaded", () => {
+  installModifiedLinkClickCapture();
   installSubmitCapture();
   scheduleAutofill();
 

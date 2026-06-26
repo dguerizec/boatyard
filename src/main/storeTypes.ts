@@ -10,6 +10,9 @@ export type WebAppOpenRule = {
   target: string;
   scope: string;
   label: string;
+  sourcePaneId?: string;
+  targetLabel?: string;
+  projectId?: string;
 };
 
 export type SettingsState = {
@@ -123,6 +126,7 @@ export type StoredProject = {
   previewUrl: string;
   urls: ProjectUrl[];
   webAppHomeTabs: WebAppHomeTab[];
+  webAppOpenRules: WebAppOpenRule[];
   widgetPanes: ProjectWidgetPane[];
   bounds: Bounds;
   isOpen: boolean;

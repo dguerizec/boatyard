@@ -4,7 +4,8 @@ import type {
   ProjectUrl,
   ProjectWidgetPane,
   StoredProject,
-  WebAppHomeTab
+  WebAppHomeTab,
+  WebAppOpenRule
 } from "./storeTypes";
 import {
   DEFAULT_BOUNDS,
@@ -50,6 +51,46 @@ export function normalizeWebAppHomeTabList(tabs: unknown = []): WebAppHomeTab[] 
     } catch {
       // Ignore invalid saved webapp home tabs.
     }
+  }
+
+  return normalized;
+}
+
+export function normalizeWebAppOpenRules(rules: unknown = []): WebAppOpenRule[] {
+  const source = Array.isArray(rules) ? rules : [];
+  const allowedTargets = new Set<string>(["same-pane", "split-pane", "external"]);
+  const allowedScopes = new Set<string>(["url-pattern", "source-app"]);
+  const normalized: WebAppOpenRule[] = [];
+
+  for (const rule of source) {
+    const entry = toRecord(rule);
+    const target = normalizeText(entry.target);
+    const scope = normalizeText(entry.scope || "url-pattern");
+    const pattern = normalizeText(entry.pattern || entry.match);
+
+    if (!pattern || (!allowedTargets.has(target) && !target.startsWith("pane:")) || !allowedScopes.has(scope)) {
+      continue;
+    }
+
+    const normalizedRule: WebAppOpenRule = {
+      pattern,
+      target,
+      scope,
+      label: normalizeText(entry.label)
+    };
+    const sourcePaneId = normalizeText(entry.sourcePaneId);
+    if (sourcePaneId) {
+      normalizedRule.sourcePaneId = sourcePaneId;
+    }
+    const targetLabel = normalizeText(entry.targetLabel);
+    if (targetLabel) {
+      normalizedRule.targetLabel = targetLabel;
+    }
+    const projectId = normalizeText(entry.projectId);
+    if (projectId) {
+      normalizedRule.projectId = projectId;
+    }
+    normalized.push(normalizedRule);
   }
 
   return normalized;
@@ -158,6 +199,7 @@ export function normalizeProject(project: unknown, index = 0): StoredProject {
     previewUrl,
     urls: normalizeProjectUrls(source.urls),
     webAppHomeTabs: normalizeWebAppHomeTabList(source.webAppHomeTabs),
+    webAppOpenRules: normalizeWebAppOpenRules(source.webAppOpenRules),
     widgetPanes: normalizeProjectWidgetPanes(source.widgetPanes),
     bounds: normalizeBounds(source.bounds, {
       x: 48 + index * 32,

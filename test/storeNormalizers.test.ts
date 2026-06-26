@@ -64,6 +64,7 @@ test("normalizeProject derives project tool defaults", () => {
     previewUrl: "http://localhost:5173/",
     urls: [],
     webAppHomeTabs: [],
+    webAppOpenRules: [],
     widgetPanes: [{
       id: "widgets-0",
       label: "Widgets"
@@ -206,20 +207,33 @@ test("normalizeSettings keeps global settings defaults", () => {
     terminalEnv: "SSH_ASKPASS=\r\nSSH_ASKPASS_REQUIRE=never\n",
     webAppOpenRules: [
       {
-        pattern: "https://accounts.example.com",
+        pattern: "*://accounts.example.com/*",
         target: "same-pane",
-        scope: "host",
+        scope: "url-pattern",
         label: "Accounts"
       },
       {
-        pattern: "https://popup.example.com",
+        pattern: "https://popup.example.com/*",
         target: "split-pane",
-        scope: "path-prefix",
+        scope: "url-pattern",
         label: "Popup"
       },
       {
-        pattern: "https://ignored.example.com",
+        pattern: "repo",
+        projectId: "project-alpha",
+        sourcePaneId: "pane-alpha",
+        target: "pane:pane-beta",
+        scope: "source-app",
+        label: "Pane rule"
+      },
+      {
+        pattern: "https://ignored.example.com/*",
         target: "new-window",
+        scope: "url-pattern"
+      },
+      {
+        pattern: "legacy.example.com",
+        target: "same-pane",
         scope: "host"
       }
     ]
@@ -232,16 +246,24 @@ test("normalizeSettings keeps global settings defaults", () => {
     terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never",
     webAppOpenRules: [
       {
-        pattern: "https://accounts.example.com",
+        pattern: "*://accounts.example.com/*",
         target: "same-pane",
-        scope: "host",
+        scope: "url-pattern",
         label: "Accounts"
       },
       {
-        pattern: "https://popup.example.com",
+        pattern: "https://popup.example.com/*",
         target: "split-pane",
-        scope: "path-prefix",
+        scope: "url-pattern",
         label: "Popup"
+      },
+      {
+        pattern: "repo",
+        projectId: "project-alpha",
+        sourcePaneId: "pane-alpha",
+        target: "pane:pane-beta",
+        scope: "source-app",
+        label: "Pane rule"
       }
     ]
   });

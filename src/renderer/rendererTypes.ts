@@ -12,6 +12,7 @@ export type RendererProject = UnknownRecord & {
   sourcePath?: string;
   urls?: UnknownRecord[];
   webAppHomeTabs?: WebAppDefinition[];
+  webAppOpenRules?: UnknownRecord[];
   widgetPanes?: UnknownRecord[];
 };
 
@@ -124,6 +125,7 @@ export type ProjectSettingsViewsInstance = RendererModuleInstance & {
   createProjectTerminalSettingsForm(options: UnknownRecord): HTMLElement;
   createProjectUrlsForm(options: UnknownRecord): HTMLElement;
   createProjectWebAppHomeTabsForm(options: UnknownRecord): HTMLElement;
+  createProjectWebAppOpenRulesForm(options: UnknownRecord): HTMLElement;
   createProjectWidgetPanesForm(options: UnknownRecord): HTMLElement;
 };
 

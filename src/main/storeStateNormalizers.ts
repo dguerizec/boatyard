@@ -15,11 +15,10 @@ import type {
   SettingsState,
   StoredProject,
   WebAppHomeTab,
-  WebAppOpenRule,
   WebAppState,
   WindowState
 } from "./storeTypes";
-import { normalizeWebAppHomeTabList } from "./storeProjectNormalizers";
+import { normalizeWebAppHomeTabList, normalizeWebAppOpenRules } from "./storeProjectNormalizers";
 
 const MIN_WIDGET_RAIL_WIDTH = 240;
 const GLOBAL_WORKSPACE_ID = "__global__";
@@ -95,33 +94,6 @@ export function normalizeSettings(settings: unknown = {}): SettingsState {
     terminalEnv: normalizeMultilineText(source.terminalEnv),
     webAppOpenRules: normalizeWebAppOpenRules(source.webAppOpenRules)
   };
-}
-
-export function normalizeWebAppOpenRules(rules: unknown = []): WebAppOpenRule[] {
-  const source = Array.isArray(rules) ? rules : [];
-  const allowedTargets = new Set<string>(["same-pane", "split-pane", "external"]);
-  const allowedScopes = new Set<string>(["exact", "host", "path-prefix", "source-pane"]);
-  const normalized: WebAppOpenRule[] = [];
-
-  for (const rule of source) {
-    const entry = toRecord(rule);
-    const pattern = normalizeText(entry.pattern || entry.match);
-    const target = normalizeText(entry.target);
-    const scope = normalizeText(entry.scope || "exact");
-
-    if (!pattern || (!allowedTargets.has(target) && !target.startsWith("pane:")) || !allowedScopes.has(scope)) {
-      continue;
-    }
-
-    normalized.push({
-      pattern,
-      target,
-      scope,
-      label: normalizeText(entry.label)
-    });
-  }
-
-  return normalized;
 }
 
 export function normalizePasswordVault(vault: unknown = {}): Record<string, PasswordCredentialState> {

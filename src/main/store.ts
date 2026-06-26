@@ -5,7 +5,8 @@ import {
   normalizeProject,
   normalizeProjectUrls,
   normalizeProjectWidgetPanes,
-  normalizeWebAppHomeTabList
+  normalizeWebAppHomeTabList,
+  normalizeWebAppOpenRules
 } from "./storeProjectNormalizers";
 import {
   createDefaultState,
@@ -16,7 +17,6 @@ import {
   normalizeSchemaVersion,
   normalizeSettings,
   normalizeWebAppHomeTabs,
-  normalizeWebAppOpenRules,
   normalizeWebAppState,
   normalizeWindowState
 } from "./storeStateNormalizers";
@@ -46,6 +46,7 @@ import type {
   ProjectStoreState,
   ProjectWidgetLayout,
   StoredProject,
+  WebAppOpenRule,
   WebAppState,
   WidgetLayout,
   WidgetPosition,
@@ -426,6 +427,10 @@ function normalizePluginsState(plugins: unknown = {}): ProjectStoreState["plugin
   return { enabled };
 }
 
+function isProjectSpecificWebAppOpenRule(rule: WebAppOpenRule) {
+  return Boolean(rule.projectId || rule.target?.startsWith("pane:"));
+}
+
 class ProjectStore {
   filePath: string;
   state: ProjectStoreState;
@@ -446,15 +451,22 @@ class ProjectStore {
           : [];
       const normalizedProjects = projects.map((project, index) => normalizeProject(project, index));
       const legacyWebAppHomeTabs = normalizeWebAppHomeTabs(parsed.webAppHomeTabs, normalizedProjects);
+      const normalizedSettings = normalizeSettings(parsed.settings);
       const projectsWithHomeTabs = normalizedProjects.map((project) => ({
         ...project,
         webAppHomeTabs: project.webAppHomeTabs.length
           ? project.webAppHomeTabs
-          : legacyWebAppHomeTabs[project.id] || []
+          : legacyWebAppHomeTabs[project.id] || [],
+        webAppOpenRules: normalizeWebAppOpenRules(project.webAppOpenRules || [])
       }));
       this.state = {
         schemaVersion: normalizeSchemaVersion(parsed.schemaVersion),
-        settings: normalizeSettings(parsed.settings),
+        settings: {
+          ...normalizedSettings,
+          webAppOpenRules: normalizedSettings.webAppOpenRules.filter((rule) => (
+            !rule.projectId && !isProjectSpecificWebAppOpenRule(rule)
+          ))
+        },
         projects: projectsWithHomeTabs,
         window: normalizeWindowState(parsed.window),
         navigation: normalizeNavigationState(parsed.navigation),

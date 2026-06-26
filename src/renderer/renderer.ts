@@ -744,7 +744,9 @@ const settingsViewBridge = createRendererSettingsViewBridge({
   getState: () => state,
   getSettings,
   getProjectGroups,
+  getProjectPaneLayout,
   getProjectWidgetPanes,
+  getSelectedWebAppForPane: paneLayoutState.getSelectedWebAppForPane,
   getProjectPluginConfig,
   getGlobalPluginConfig,
   getPluginProjectSettingsSections,
@@ -798,6 +800,12 @@ function createProjectWebAppHomeTabsForm(options: UnknownRecord) {
   );
 }
 
+function createProjectWebAppOpenRulesForm(options: UnknownRecord) {
+  return settingsViewBridge.createProjectWebAppOpenRulesForm(
+    options as Parameters<typeof settingsViewBridge.createProjectWebAppOpenRulesForm>[0]
+  );
+}
+
 function createProjectWidgetPanesForm(options: UnknownRecord) {
   return settingsViewBridge.createProjectWidgetPanesForm(
     options as Parameters<typeof settingsViewBridge.createProjectWidgetPanesForm>[0]
@@ -811,6 +819,7 @@ const projectPageViews = createProjectPageViews({
   createProjectTerminalSettingsForm,
   createProjectUrlsForm,
   createProjectWebAppHomeTabsForm,
+  createProjectWebAppOpenRulesForm,
   createProjectWidgetPanesForm,
   dashboardGrid,
   hideWebApps: () => invokeWebApp("hideWebApp"),

@@ -108,11 +108,16 @@ export function registerRendererEventBindings({
       applyWebAppOpenChoice(payload, {
         target: payload.target,
         persist: false,
-        scope: "exact",
+        scope: "url-pattern",
         label: ""
       }).catch((error) => {
         console.error("Could not apply webapp URL opening rule:", error);
       });
+      return;
+    }
+
+    if (payload?.source === "context-menu") {
+      openWebAppOpenUrlDialog(payload);
       return;
     }
 

@@ -3,6 +3,7 @@ import type {
   ContextMenuParams,
   HandlerDetails,
   IpcMainInvokeEvent,
+  IpcMainEvent,
   Rectangle,
   WebContents as ElectronWebContents
 } from "electron";
@@ -18,8 +19,7 @@ import type {
   WebAppCapture,
   WebAppItem,
   WebAppLookup,
-  WebAppOpenOptions,
-  WebAppOpenRule
+  WebAppOpenOptions
 } from "./mainTypes.js";
 import { createWebAppContextMenu } from "./webAppContextMenu.js";
 
@@ -225,49 +225,16 @@ function sendWebAppOpenUrlRequest(sourceWebAppKey: unknown, url: unknown, source
   return true;
 }
 
-function getWebAppOpenRule(url: unknown) {
-  const parsedUrl = parseHttpUrl(url);
-  if (!parsedUrl) {
-    return null;
-  }
-
-  const rules = store?.getState()?.settings?.webAppOpenRules || [];
-  return rules.find((rule: WebAppOpenRule) => {
-    if (rule.scope === "host") {
-      return parsedUrl.host === rule.pattern || parsedUrl.hostname === rule.pattern;
-    }
-
-    if (rule.scope === "path-prefix") {
-      return typeof rule.pattern === "string" && parsedUrl.toString().startsWith(rule.pattern);
-    }
-
-    return parsedUrl.toString() === rule.pattern;
-  }) || null;
-}
-
-function applyWebAppOpenRule(webApp: WebAppItem | undefined, rule: WebAppOpenRule | null, url: string, sourceWebAppKey = "") {
-  if (!rule) {
+function sendWebAppOpenUrlRequestFromItem(key: string, webApp: WebAppItem | undefined, url: unknown, source: string, options: WebAppOpenOptions = {}) {
+  if (!key || !webApp) {
     return false;
   }
 
-  if (rule.target === "external") {
-    openExternalUrl(url);
-    return true;
-  }
-
-  if (rule.target === "same-pane") {
-    return loadWebAppUrl(webApp, url);
-  }
-
-  if (rule.target === "split-pane") {
-    return sendWebAppOpenUrlRequest(sourceWebAppKey, url, "saved-rule", {
-      target: "split-pane",
-      sourceUrl: webApp?.url || "",
-      sourceBounds: webApp?.bounds || null
-    });
-  }
-
-  return false;
+  return sendWebAppOpenUrlRequest(key, url, source, {
+    sourceBounds: webApp.bounds || null,
+    sourceUrl: webApp.url || "",
+    ...options
+  });
 }
 
 function loadWebAppUrl(webApp: WebAppItem | undefined, url: unknown) {
@@ -299,17 +266,7 @@ function handleWebAppWindowOpen(key: string, details: HandlerDetails) {
   const url = details?.url || "";
   const webApp = webAppViews.get(key);
 
-  if (details?.disposition === "background-tab") {
-    openExternalUrl(url);
-    return { action: "deny" };
-  }
-
-  const rule = getWebAppOpenRule(url);
-  if (rule) {
-    applyWebAppOpenRule(webApp, rule, url, key);
-  } else if (!sendWebAppOpenUrlRequest(key, url, "window-open", {
-    sourceBounds: webApp?.bounds || null
-  })) {
+  if (!sendWebAppOpenUrlRequestFromItem(key, webApp, url, details?.disposition || "window-open")) {
     openExternalUrl(url);
   }
   return { action: "deny" };
@@ -640,6 +597,16 @@ function destroyWebAppViews() {
 }
 
 function registerIpcHandlers() {
+  ipcMain.on("webapp:modified-link-click", (event: IpcMainEvent, payload: unknown) => {
+    const source = payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload as UnknownRecord
+      : {};
+    const webApp = getWebAppForWebContents(event.sender);
+    if (!sendWebAppOpenUrlRequestFromItem(webApp?.key || "", webApp?.item, source.url, String(source.source || "modified-click"))) {
+      openExternalUrl(source.url);
+    }
+  });
+
   ipcMain.handle("state:get", () => store.getState());
 
   ipcMain.handle("settings:update", (_event: IpcMainInvokeEvent, patch: UnknownRecord) => {
