@@ -1,6 +1,57 @@
 {
-  "generatedForVersion": "0.8.0",
+  "generatedForVersion": "0.8.1",
   "releases": [
+    {
+      "version": "0.8.1",
+      "date": "2026-06-26",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Project URL opening rules",
+          "body": "Projects can now keep their own saved URL opening rules, including rules that target an existing pane in that project."
+        },
+        {
+          "category": "Added",
+          "title": "URL pattern matching",
+          "body": "Saved link-opening rules can now use wildcard URL patterns such as `https://example.com/*`."
+        },
+        {
+          "category": "Added",
+          "title": "Modified link clicks",
+          "body": "Ctrl-click, Command-click, and middle-click links inside web apps now route through Boatyard's link-opening flow instead of bypassing it."
+        },
+        {
+          "category": "Added",
+          "title": "Rule layout previews",
+          "body": "Existing-pane rules now show a mini pane layout that highlights the source and target panes."
+        },
+        {
+          "category": "Changed",
+          "title": "Open dialog defaults",
+          "body": "When a saved rule matches a link, the open dialog now preselects that rule's target, scope, and pattern."
+        },
+        {
+          "category": "Changed",
+          "title": "Rule scopes",
+          "body": "URL opening rules now focus on URL patterns and source apps, making saved behavior easier to understand and reuse."
+        },
+        {
+          "category": "Changed",
+          "title": "Global rule control",
+          "body": "The open dialog now separates saving a rule from applying it globally, while keeping existing-pane rules tied to the current project."
+        },
+        {
+          "category": "Fixed",
+          "title": "Stale pane targets",
+          "body": "Saved rules that point to missing panes are ignored instead of applying to an unavailable destination."
+        },
+        {
+          "category": "Fixed",
+          "title": "Rule editing clarity",
+          "body": "Project-specific and existing-pane rules now preserve pane labels and show clearer source, target, and scope details while editing."
+        }
+      ]
+    },
     {
       "version": "0.8.0",
       "date": "2026-06-25",

@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.8.1] - 2026-06-26
+
+### Summary
+
+- **v0.8.1: Smarter link opening** — Boatyard refines web app link-opening rules with project-specific pane targets, editable URL patterns, and better handling for modified link clicks.
+
+### Added
+
+- **Project URL opening rules** — Projects can now keep their own saved URL opening rules, including rules that target an existing pane in that project.
+- **URL pattern matching** — Saved link-opening rules can now use wildcard URL patterns such as `https://example.com/*`.
+- **Modified link clicks** — Ctrl-click, Command-click, and middle-click links inside web apps now route through Boatyard's link-opening flow instead of bypassing it.
+- **Rule layout previews** — Existing-pane rules now show a mini pane layout that highlights the source and target panes.
+
+### Changed
+
+- **Open dialog defaults** — When a saved rule matches a link, the open dialog now preselects that rule's target, scope, and pattern.
+- **Rule scopes** — URL opening rules now focus on URL patterns and source apps, making saved behavior easier to understand and reuse.
+- **Global rule control** — The open dialog now separates saving a rule from applying it globally, while keeping existing-pane rules tied to the current project.
+
+### Fixed
+
+- **Stale pane targets** — Saved rules that point to missing panes are ignored instead of applying to an unavailable destination.
+- **Rule editing clarity** — Project-specific and existing-pane rules now preserve pane labels and show clearer source, target, and scope details while editing.
+
 ## [0.8.0] - 2026-06-25
 
 ### Summary
