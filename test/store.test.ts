@@ -299,6 +299,19 @@ test("ProjectStore tracks app version upgrades for changelog display", () => {
   });
 });
 
+test("ProjectStore compares app versions numerically for changelog display", () => {
+  const { store } = createTempStore();
+
+  store.load();
+  store.reconcileAppVersion("0.9.2");
+
+  assert.deepEqual(store.reconcileAppVersion("0.10.0"), {
+    lastSeenVersion: "0.10.0",
+    pendingChangelogFromVersion: "0.9.2",
+    dismissedChangelogVersion: ""
+  });
+});
+
 test("ProjectStore persists webapp urls", () => {
   const { filePath, store } = createTempStore();
 
