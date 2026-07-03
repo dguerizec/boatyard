@@ -335,6 +335,8 @@ const paneLayoutView = createPaneLayoutView({
   openWebAppTabMenuFromButton,
   openWebAppHomeMenu,
   openWebAppRefreshMenu,
+  freezeWebAppsForOverlay,
+  restoreWebAppsAfterOverlay,
   createTerminalSurface,
   invokeWebApp,
   isPasswordManagerEnabled,

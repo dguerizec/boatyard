@@ -38,6 +38,23 @@ type PaneAncestorPathItem = {
   side: "first" | "second";
 };
 
+type SplitAncestorPathItem = {
+  node: SplitNode;
+  side: "first" | "second";
+};
+
+type SplitRotationTarget = {
+  parent: SplitNode;
+  pivot: SplitNode;
+  side: "first" | "second";
+};
+
+type SplitRotationPreview = {
+  current: PaneLayoutNode;
+  rootSplitId: string;
+  rotated: PaneLayoutNode;
+};
+
 type RemovePaneResult = {
   node: PaneLayoutNode | null | undefined;
   removed: boolean;
@@ -58,6 +75,8 @@ type PaneLayoutStateApi = {
   getPaneExpansionState(project: PaneLayoutProject, paneId: string): { canExpand: boolean; canShrink: boolean };
   getPaneExpansionTarget(project: PaneLayoutProject, paneId: string): PaneAncestorPathItem | null;
   getPaneAncestorPath(node: PaneLayoutNode | null | undefined, paneId: string, path?: PaneAncestorPathItem[]): PaneAncestorPathItem[] | null;
+  getSplitRotationPreview(project: PaneLayoutProject, splitId: string): SplitRotationPreview | null;
+  getSplitRotationState(project: PaneLayoutProject, splitId: string): { canRotate: boolean };
   getPaneLayout(projectId?: string): PaneLayoutNode | undefined;
   getProjectPaneLayout(project: PaneLayoutProject): PaneLayoutNode;
   getSelectedWebApp(project: PaneLayoutProject, paneId: string, webApps: PaneLayoutWebApp[]): PaneLayoutWebApp;
@@ -67,6 +86,7 @@ type PaneLayoutStateApi = {
   persistPaneLayout(project: PaneLayoutProject): void;
   removePaneNode(node: PaneLayoutNode | null | undefined, paneId: string): RemovePaneResult;
   replacePaneNode(node: PaneLayoutNode, paneId: string, replacement: PaneLayoutNode): PaneLayoutNode;
+  rotateSplitWithParent(project: PaneLayoutProject, splitId: string): boolean;
   setPaneLayout(projectId: string | undefined, layout: PaneLayoutNode): void;
   setSelectedWebAppForPane(paneId: string, webAppId: string): Map<string, string>;
   setSelectedWebAppForProject(projectId: string, webAppId: string): Map<string, string>;
@@ -82,6 +102,24 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
 
     function getProjectPaneLayoutKey(project: PaneLayoutProject): string {
       return project.id || "";
+    }
+
+    function clampSplitRatio(value: number) {
+      return Math.min(0.85, Math.max(0.15, value));
+    }
+
+    function clonePaneLayoutNode(node: PaneLayoutNode): PaneLayoutNode {
+      if (node.type === "pane") {
+        return {
+          ...node
+        };
+      }
+
+      return {
+        ...node,
+        first: clonePaneLayoutNode(node.first),
+        second: clonePaneLayoutNode(node.second)
+      };
     }
 
     /**
@@ -321,6 +359,135 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       return [...path].reverse().find(({ node }) => !node.expandedChild) || null;
     }
 
+    function getSplitAncestorPath(
+      node: PaneLayoutNode | null | undefined,
+      splitId: string,
+      path: SplitAncestorPathItem[] = []
+    ): SplitAncestorPathItem[] | null {
+      if (!node || node.type === "pane") {
+        return null;
+      }
+
+      if (node.id === splitId) {
+        return path;
+      }
+
+      return getSplitAncestorPath(node.first, splitId, [
+        ...path,
+        {
+          node,
+          side: "first"
+        }
+      ]) || getSplitAncestorPath(node.second, splitId, [
+        ...path,
+        {
+          node,
+          side: "second"
+        }
+      ]);
+    }
+
+    function getSplitRotationTargetForLayout(layout: PaneLayoutNode, splitId: string): SplitRotationTarget | null {
+      const path = getSplitAncestorPath(layout, splitId) || [];
+      const parentEntry = path[path.length - 1];
+      if (!parentEntry) {
+        return null;
+      }
+
+      const parent = parentEntry.node;
+      const pivot = parent[parentEntry.side];
+      if (pivot.type !== "split" || pivot.direction !== parent.direction) {
+        return null;
+      }
+
+      return {
+        parent,
+        pivot,
+        side: parentEntry.side
+      };
+    }
+
+    function getSplitRotationTarget(project: PaneLayoutProject, splitId: string): SplitRotationTarget | null {
+      return getSplitRotationTargetForLayout(getProjectPaneLayout(project), splitId);
+    }
+
+    function getSplitRotationState(project: PaneLayoutProject, splitId: string) {
+      return {
+        canRotate: Boolean(getSplitRotationTarget(project, splitId))
+      };
+    }
+
+    function applySplitRotation(target: SplitRotationTarget) {
+      const { parent, pivot, side } = target;
+      const parentRatio = clampSplitRatio(Number(parent.ratio) || 0.5);
+      const pivotRatio = clampSplitRatio(Number(pivot.ratio) || 0.5);
+
+      if (side === "second") {
+        const first = parent.first;
+        const pivotFirst = pivot.first;
+        const pivotSecond = pivot.second;
+        const nextParentRatio = clampSplitRatio(parentRatio + ((1 - parentRatio) * pivotRatio));
+        const nextPivotRatio = clampSplitRatio(parentRatio / nextParentRatio);
+
+        parent.first = pivot;
+        parent.second = pivotSecond;
+        parent.ratio = nextParentRatio;
+        pivot.first = first;
+        pivot.second = pivotFirst;
+        pivot.ratio = nextPivotRatio;
+      } else {
+        const pivotFirst = pivot.first;
+        const pivotSecond = pivot.second;
+        const second = parent.second;
+        const nextParentRatio = clampSplitRatio(parentRatio * pivotRatio);
+        const nextPivotRatio = clampSplitRatio((parentRatio * (1 - pivotRatio)) / (1 - nextParentRatio));
+
+        parent.first = pivotFirst;
+        parent.second = pivot;
+        parent.ratio = nextParentRatio;
+        pivot.first = pivotSecond;
+        pivot.second = second;
+        pivot.ratio = nextPivotRatio;
+      }
+    }
+
+    function getSplitRotationPreview(project: PaneLayoutProject, splitId: string): SplitRotationPreview | null {
+      const layout = getProjectPaneLayout(project);
+      const target = getSplitRotationTargetForLayout(layout, splitId);
+      if (!target) {
+        return null;
+      }
+
+      const current = clonePaneLayoutNode(layout);
+      const rotated = clonePaneLayoutNode(layout);
+      if (current.type !== "split" || rotated.type !== "split") {
+        return null;
+      }
+
+      const rotatedTarget = getSplitRotationTargetForLayout(rotated, splitId);
+      if (!rotatedTarget) {
+        return null;
+      }
+
+      applySplitRotation(rotatedTarget);
+
+      return {
+        current,
+        rootSplitId: current.id,
+        rotated
+      };
+    }
+
+    function rotateSplitWithParent(project: PaneLayoutProject, splitId: string) {
+      const target = getSplitRotationTarget(project, splitId);
+      if (!target) {
+        return false;
+      }
+
+      applySplitRotation(target);
+      return true;
+    }
+
     /**
      * @param {PaneLayoutNode | null | undefined} node
      * @returns {number}
@@ -471,6 +638,8 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       getPaneExpansionState,
       getPaneExpansionTarget,
       getPaneAncestorPath,
+      getSplitRotationPreview,
+      getSplitRotationState,
       getPaneLayout,
       getProjectPaneLayout,
       getSelectedWebApp,
@@ -480,6 +649,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       persistPaneLayout,
       removePaneNode,
       replacePaneNode,
+      rotateSplitWithParent,
       setPaneLayout,
       setSelectedWebAppForPane: (paneId, webAppId) => selectedWebAppByPane.set(paneId, webAppId),
       setSelectedWebAppForProject: (projectId, webAppId) => selectedWebAppByProject.set(projectId, webAppId),
