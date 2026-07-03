@@ -102,6 +102,7 @@
     "@fortawesome/free-brands-svg-icons": "^7.2.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "lucide": "^1.23.0",
     "node-pty": "^1.1.0",
     "telegram": "^2.26.22"
   }

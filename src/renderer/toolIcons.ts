@@ -1,5 +1,20 @@
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+type IconNode = [tag: string, attrs: Record<string, string>][];
+
+// KeyRound from Lucide, kept as local icon data so the renderer never depends on a CDN.
+const LUCIDE_TOOL_ICONS: Record<string, IconNode> = {
+  key: [
+    [
+      "path",
+      {
+        d: "M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"
+      }
+    ],
+    ["circle", { cx: "16.5", cy: "7.5", r: ".5", fill: "currentColor" }]
+  ]
+};
+
 const TOOL_ICONS: Record<string, string[]> = {
   arrowLeft: [
     "M19 12H5",
@@ -23,10 +38,6 @@ const TOOL_ICONS: Record<string, string[]> = {
     "M4 11.5L12 5l8 6.5",
     "M6.5 10v9h11v-9",
     "M10 19v-5h4v5"
-  ],
-  key: [
-    "M15 7.5a4 4 0 1 1-1.18-2.82A4 4 0 0 1 15 7.5z",
-    "M10.6 10.4L4 17v3h3l1.5-1.5H11v-2.5h2.5L16 13"
   ],
   lock: [
     "M6.5 10V7.5a5.5 5.5 0 0 1 11 0V10",
@@ -75,6 +86,14 @@ export function createToolIcon(name: string) {
   icon.setAttribute("viewBox", "0 0 24 24");
   icon.setAttribute("aria-hidden", "true");
   icon.setAttribute("focusable", "false");
+
+  for (const [tag, attrs] of LUCIDE_TOOL_ICONS[name] || []) {
+    const element = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attrs)) {
+      element.setAttribute(key, value);
+    }
+    icon.append(element);
+  }
 
   for (const d of TOOL_ICONS[name] || []) {
     const path = document.createElementNS(SVG_NS, "path");
