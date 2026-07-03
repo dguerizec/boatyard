@@ -499,7 +499,7 @@ function runCodexExec(codexCommand: string, prompt: string, { verbose = false }:
     console.log("Generating CHANGELOG.md with Codex...");
     execFileSync(
       "sh",
-      ["-lc", `${codexCommand} exec --color never --output-last-message "$2" "$1"`, "codex-changelog", prompt, outputPath],
+      ["-lc", `${codexCommand} exec --ephemeral --color never --output-last-message "$2" "$1"`, "codex-changelog", prompt, outputPath],
       {
         cwd: root,
         encoding: "utf8",
