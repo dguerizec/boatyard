@@ -278,6 +278,11 @@ export function createPaneLayoutView({
       resizer.className = `webapp-split-resizer ${splitNode.direction}`;
       resizer.setAttribute("role", "separator");
       resizer.setAttribute("aria-orientation", splitNode.direction === "vertical" ? "vertical" : "horizontal");
+      resizer.addEventListener("mouseenter", () => {
+        clearPaneExpansionPreview();
+        resizer.parentElement?.classList.add("pane-expand-preview");
+      });
+      resizer.addEventListener("mouseleave", clearPaneExpansionPreview);
 
       resizer.addEventListener("pointerdown", (event) => {
         event.preventDefault();
