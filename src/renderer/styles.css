@@ -1265,6 +1265,14 @@ button {
   min-width: 0;
   max-width: calc(100vw - 24px);
   overflow: hidden auto;
+  scrollbar-gutter: stable;
+}
+
+.pane-split-context-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 89;
+  background: transparent;
 }
 
 .pane-split-layout-option {
@@ -1276,6 +1284,7 @@ button {
   border-radius: 8px;
   background: transparent;
   color: var(--text);
+  outline: none;
   text-align: left;
 }
 

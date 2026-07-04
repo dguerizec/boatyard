@@ -67,35 +67,38 @@ test("pane layout rotates a split with its parent while preserving leaf order", 
   });
   assert.deepEqual(state.getSplitRotationPreview(project, "S1"), {
     current: layout,
-    replacementSplitId: "S0",
     rootSplitId: "S0",
-    rotated: {
-      type: "split",
-      id: "S0",
-      direction: "vertical",
-      ratio: 0.75,
-      first: {
+    rotations: [{
+      highlightedSplitId: "S1",
+      steps: 1,
+      layout: {
         type: "split",
         id: "S1",
         direction: "vertical",
-        ratio: 2 / 3,
-        first: pane("A"),
-        second: pane("B")
-      },
-      second: split("S2", pane("C"), pane("D"), 0.5)
-    }
+        ratio: 0.75,
+        first: {
+          type: "split",
+          id: "S0",
+          direction: "vertical",
+          ratio: 2 / 3,
+          first: pane("A"),
+          second: pane("B")
+        },
+        second: split("S2", pane("C"), pane("D"), 0.5)
+      }
+    }]
   });
   assert.equal(layout.first.id, "A");
   assert.equal(state.rotateSplitWithParent(project, "S1"), true);
 
-  assert.deepEqual(layout, {
+  assert.deepEqual(state.getPaneLayout(project.id), {
     type: "split",
-    id: "S0",
+    id: "S1",
     direction: "vertical",
     ratio: 0.75,
     first: {
       type: "split",
-      id: "S1",
+      id: "S0",
       direction: "vertical",
       ratio: 2 / 3,
       first: pane("A"),
@@ -144,30 +147,58 @@ test("pane layout rotation preview keeps the full layout tree", () => {
 
   assert.deepEqual(state.getSplitRotationPreview(project, "S2"), {
     current: layout,
-    replacementSplitId: "S1",
     rootSplitId: "S0",
-    rotated: {
-      type: "split",
-      id: "S0",
-      direction: "vertical",
-      ratio: 0.5,
-      first: pane("A"),
-      second: {
+    rotations: [{
+      highlightedSplitId: "S2",
+      steps: 1,
+      layout: {
         type: "split",
-        id: "S1",
+        id: "S0",
         direction: "vertical",
-        ratio: 0.75,
-        first: {
+        ratio: 0.5,
+        first: pane("A"),
+        second: {
           type: "split",
           id: "S2",
           direction: "vertical",
-          ratio: 2 / 3,
-          first: pane("B"),
-          second: pane("C")
+          ratio: 0.75,
+          first: {
+            type: "split",
+            id: "S1",
+            direction: "vertical",
+            ratio: 2 / 3,
+            first: pane("B"),
+            second: pane("C")
+          },
+          second: pane("D")
+        }
+      }
+    }, {
+      highlightedSplitId: "S2",
+      steps: 2,
+      layout: {
+        type: "split",
+        id: "S2",
+        direction: "vertical",
+        ratio: 0.85,
+        first: {
+          type: "split",
+          id: "S0",
+          direction: "vertical",
+          ratio: 0.5 / 0.85,
+          first: pane("A"),
+          second: {
+            type: "split",
+            id: "S1",
+            direction: "vertical",
+            ratio: 2 / 3,
+            first: pane("B"),
+            second: pane("C")
+          }
         },
         second: pane("D")
       }
-    }
+    }]
   });
 });
 

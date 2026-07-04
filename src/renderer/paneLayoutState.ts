@@ -44,16 +44,23 @@ type SplitAncestorPathItem = {
 };
 
 type SplitRotationTarget = {
+  grandparent?: SplitNode;
+  grandparentSide?: "first" | "second";
   parent: SplitNode;
   pivot: SplitNode;
   side: "first" | "second";
 };
 
+type SplitRotationOption = {
+  highlightedSplitId: string;
+  layout: PaneLayoutNode;
+  steps: number;
+};
+
 type SplitRotationPreview = {
   current: PaneLayoutNode;
-  replacementSplitId: string;
   rootSplitId: string;
-  rotated: PaneLayoutNode;
+  rotations: SplitRotationOption[];
 };
 
 type RemovePaneResult = {
@@ -87,6 +94,7 @@ type PaneLayoutStateApi = {
   persistPaneLayout(project: PaneLayoutProject): void;
   removePaneNode(node: PaneLayoutNode | null | undefined, paneId: string): RemovePaneResult;
   replacePaneNode(node: PaneLayoutNode, paneId: string, replacement: PaneLayoutNode): PaneLayoutNode;
+  rotateSplitTowardRoot(project: PaneLayoutProject, splitId: string, steps?: number): boolean;
   rotateSplitWithParent(project: PaneLayoutProject, splitId: string): boolean;
   setPaneLayout(projectId: string | undefined, layout: PaneLayoutNode): void;
   setSelectedWebAppForPane(paneId: string, webAppId: string): Map<string, string>;
@@ -402,6 +410,8 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       }
 
       return {
+        grandparent: path[path.length - 2]?.node,
+        grandparentSide: path[path.length - 2]?.side,
         parent,
         pivot,
         side: parentEntry.side
@@ -418,8 +428,8 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       };
     }
 
-    function applySplitRotation(target: SplitRotationTarget) {
-      const { parent, pivot, side } = target;
+    function applySplitRotation(layout: PaneLayoutNode, target: SplitRotationTarget) {
+      const { grandparent, grandparentSide, parent, pivot, side } = target;
       const parentRatio = clampSplitRatio(Number(parent.ratio) || 0.5);
       const pivotRatio = clampSplitRatio(Number(pivot.ratio) || 0.5);
 
@@ -427,29 +437,40 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
         const first = parent.first;
         const pivotFirst = pivot.first;
         const pivotSecond = pivot.second;
-        const nextParentRatio = clampSplitRatio(parentRatio + ((1 - parentRatio) * pivotRatio));
-        const nextPivotRatio = clampSplitRatio(parentRatio / nextParentRatio);
+        const nextPivotRatio = clampSplitRatio(parentRatio + ((1 - parentRatio) * pivotRatio));
+        const nextParentRatio = clampSplitRatio(parentRatio / nextPivotRatio);
 
-        parent.first = pivot;
-        parent.second = pivotSecond;
+        parent.first = first;
+        parent.second = pivotFirst;
         parent.ratio = nextParentRatio;
-        pivot.first = first;
-        pivot.second = pivotFirst;
+        pivot.first = parent;
+        pivot.second = pivotSecond;
         pivot.ratio = nextPivotRatio;
       } else {
         const pivotFirst = pivot.first;
         const pivotSecond = pivot.second;
         const second = parent.second;
-        const nextParentRatio = clampSplitRatio(parentRatio * pivotRatio);
-        const nextPivotRatio = clampSplitRatio((parentRatio * (1 - pivotRatio)) / (1 - nextParentRatio));
+        const nextPivotRatio = clampSplitRatio(parentRatio * pivotRatio);
+        const nextParentRatio = clampSplitRatio((parentRatio * (1 - pivotRatio)) / (1 - nextPivotRatio));
 
-        parent.first = pivotFirst;
-        parent.second = pivot;
         parent.ratio = nextParentRatio;
-        pivot.first = pivotSecond;
-        pivot.second = second;
+        parent.first = pivotSecond;
+        parent.second = second;
         pivot.ratio = nextPivotRatio;
+        pivot.first = pivotFirst;
+        pivot.second = parent;
       }
+
+      if (grandparent && grandparentSide) {
+        grandparent[grandparentSide] = pivot;
+        return layout;
+      }
+
+      return pivot;
+    }
+
+    function getSplitRotationStepLimit(layout: PaneLayoutNode) {
+      return Math.max(1, countPaneNodes(layout) - 1);
     }
 
     function getSplitRotationPreview(project: PaneLayoutProject, splitId: string): SplitRotationPreview | null {
@@ -465,29 +486,54 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
         return null;
       }
 
-      const rotatedTarget = getSplitRotationTargetForLayout(rotated, splitId);
-      if (!rotatedTarget) {
+      const rotations: SplitRotationOption[] = [];
+      let rotatedLayout: PaneLayoutNode = rotated;
+      for (let steps = 1; steps <= getSplitRotationStepLimit(layout); steps += 1) {
+        const rotatedTarget = getSplitRotationTargetForLayout(rotatedLayout, splitId);
+        if (!rotatedTarget) {
+          break;
+        }
+
+        rotatedLayout = applySplitRotation(rotatedLayout, rotatedTarget);
+        rotations.push({
+          highlightedSplitId: splitId,
+          layout: clonePaneLayoutNode(rotatedLayout),
+          steps
+        });
+      }
+
+      if (rotations.length === 0) {
         return null;
       }
 
-      applySplitRotation(rotatedTarget);
-
       return {
         current,
-        replacementSplitId: target.parent.id,
         rootSplitId: current.id,
-        rotated
+        rotations
       };
     }
 
-    function rotateSplitWithParent(project: PaneLayoutProject, splitId: string) {
-      const target = getSplitRotationTarget(project, splitId);
-      if (!target) {
-        return false;
+    function rotateSplitTowardRoot(project: PaneLayoutProject, splitId: string, steps = 1) {
+      let layout = getProjectPaneLayout(project);
+      let didRotate = false;
+      for (let index = 0; index < Math.max(1, steps); index += 1) {
+        const target = getSplitRotationTargetForLayout(layout, splitId);
+        if (!target) {
+          break;
+        }
+
+        layout = applySplitRotation(layout, target);
+        didRotate = true;
       }
 
-      applySplitRotation(target);
-      return true;
+      if (didRotate) {
+        setPaneLayout(project.id, layout);
+      }
+      return didRotate;
+    }
+
+    function rotateSplitWithParent(project: PaneLayoutProject, splitId: string) {
+      return rotateSplitTowardRoot(project, splitId, 1);
     }
 
     /**
@@ -651,6 +697,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       persistPaneLayout,
       removePaneNode,
       replacePaneNode,
+      rotateSplitTowardRoot,
       rotateSplitWithParent,
       setPaneLayout,
       setSelectedWebAppForPane: (paneId, webAppId) => selectedWebAppByPane.set(paneId, webAppId),
