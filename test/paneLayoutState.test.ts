@@ -67,6 +67,7 @@ test("pane layout rotates a split with its parent while preserving leaf order", 
   });
   assert.deepEqual(state.getSplitRotationPreview(project, "S1"), {
     current: layout,
+    replacementSplitId: "S0",
     rootSplitId: "S0",
     rotated: {
       type: "split",
@@ -143,6 +144,7 @@ test("pane layout rotation preview keeps the full layout tree", () => {
 
   assert.deepEqual(state.getSplitRotationPreview(project, "S2"), {
     current: layout,
+    replacementSplitId: "S1",
     rootSplitId: "S0",
     rotated: {
       type: "split",

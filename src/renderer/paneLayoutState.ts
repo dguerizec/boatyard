@@ -51,6 +51,7 @@ type SplitRotationTarget = {
 
 type SplitRotationPreview = {
   current: PaneLayoutNode;
+  replacementSplitId: string;
   rootSplitId: string;
   rotated: PaneLayoutNode;
 };
@@ -473,6 +474,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
 
       return {
         current,
+        replacementSplitId: target.parent.id,
         rootSplitId: current.id,
         rotated
       };

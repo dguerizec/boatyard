@@ -50,6 +50,7 @@ type PaneLayoutStateApi = {
   getPaneExpansionTarget(project: RendererProject, paneId: string): unknown;
   getSplitRotationPreview(project: RendererProject, splitId: string): {
     current: unknown;
+    replacementSplitId: string;
     rootSplitId: string;
     rotated: unknown;
   } | null;
@@ -447,6 +448,7 @@ export function createPaneLayoutView({
 
       const rotationPreview = paneLayoutState.getSplitRotationPreview(project, splitNode.id) as {
         current: PaneLayoutNode;
+        replacementSplitId: string;
         rootSplitId: string;
         rotated: PaneLayoutNode;
       } | null;
@@ -472,7 +474,7 @@ export function createPaneLayoutView({
       });
       const rotateItem = rotationPreview
         ? createSplitLayoutMenuItem({
-            highlightedSplitId: splitNode.id,
+            highlightedSplitId: rotationPreview.replacementSplitId,
             layout: rotationPreview.rotated,
             onClick: () => {
               closePaneSplitContextMenu();
