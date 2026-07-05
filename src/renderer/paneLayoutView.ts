@@ -6,10 +6,6 @@ type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
 };
 
-type PaneSplitContextMenu = HTMLDivElement & {
-  cleanup?: () => void;
-};
-
 type PaneSplitSide = "first" | "second";
 
 type PaneNode = UnknownRecord & {
@@ -48,22 +44,10 @@ type PaneLayoutStateApi = {
   getPaneAncestorPath(node: unknown, paneId: string): unknown;
   getPaneExpansionState(project: RendererProject, paneId: string): { canExpand: boolean; canShrink: boolean };
   getPaneExpansionTarget(project: RendererProject, paneId: string): unknown;
-  getSplitRotationPreview(project: RendererProject, splitId: string): {
-    current: unknown;
-    rootSplitId: string;
-    rotations: Array<{
-      highlightedSplitId: string;
-      layout: unknown;
-      steps: number;
-    }>;
-  } | null;
-  getSplitRotationState(project: RendererProject, splitId: string): { canRotate: boolean };
   getSelectedWebAppForPane(paneId: string): string | undefined;
   getSelectedWebAppForProject(projectId?: string): string | undefined;
   removePaneNode(node: unknown, paneId: string): unknown;
   replacePaneNode(node: unknown, paneId: string, replacement: unknown): unknown;
-  rotateSplitTowardRoot(project: RendererProject, splitId: string, steps?: number): boolean;
-  rotateSplitWithParent(project: RendererProject, splitId: string): boolean;
   setPaneLayout(projectId: string | undefined, layout: unknown): unknown;
   setSelectedWebAppForPane(paneId: string, webAppId?: string): unknown;
 };
@@ -131,8 +115,6 @@ type PaneLayoutViewOptions = {
     selectedWebApp: PaneWebApp
   ) => void;
   openWebAppRefreshMenu: (event: MouseEvent, selectedWebApp: PaneWebApp) => void;
-  freezeWebAppsForOverlay: (options?: unknown) => Promise<unknown>;
-  restoreWebAppsAfterOverlay: () => void | Promise<unknown>;
   createTerminalSurface: (project: RendererProject, options: UnknownRecord) => HTMLElement;
   invokeWebApp: (action: string, ...payload: unknown[]) => Promise<unknown>;
   isPasswordManagerEnabled: () => boolean;
@@ -172,8 +154,6 @@ export function createPaneLayoutView({
     openWebAppTabMenuFromButton,
     openWebAppHomeMenu,
     openWebAppRefreshMenu,
-    freezeWebAppsForOverlay,
-    restoreWebAppsAfterOverlay,
     createTerminalSurface,
     invokeWebApp,
     isPasswordManagerEnabled,
@@ -193,27 +173,8 @@ export function createPaneLayoutView({
     renderWorkspaceDashboard,
     persistPaneLayout
   }: PaneLayoutViewOptions) {
-    let openPaneSplitMenu: PaneSplitContextMenu | null = null;
-    let didFreezePaneSplitMenu = false;
-
     function clamp(value: number, min: number, max: number) {
       return Math.min(max, Math.max(min, value));
-    }
-
-    function closePaneSplitContextMenu() {
-      if (!openPaneSplitMenu) {
-        return;
-      }
-
-      openPaneSplitMenu.cleanup?.();
-      openPaneSplitMenu.remove();
-      openPaneSplitMenu = null;
-      if (didFreezePaneSplitMenu) {
-        didFreezePaneSplitMenu = false;
-        Promise.resolve(restoreWebAppsAfterOverlay()).catch((error: unknown) => {
-          console.error("Could not restore webapps after splitter menu:", error);
-        });
-      }
     }
 
     function clearPaneExpansionPreview() {
@@ -267,242 +228,6 @@ export function createPaneLayoutView({
       delete target.node.expandedChild;
       persistPaneLayout(project);
       renderWorkspaceDashboard(project);
-    }
-
-    function rotateSplitTowardRoot(project: RendererProject, splitId: string, steps: number) {
-      if (!paneLayoutState.rotateSplitTowardRoot(project, splitId, steps)) {
-        return;
-      }
-
-      persistPaneLayout(project);
-      renderWorkspaceDashboard(project);
-    }
-
-    function createSplitLayoutMenuItem({
-      highlightedSplitId,
-      layout,
-      onClick,
-      previewSize,
-      project,
-      title
-    }: {
-      highlightedSplitId: string;
-      layout: PaneLayoutNode;
-      onClick: () => void;
-      previewSize: { height: number; width: number };
-      project: RendererProject;
-      title: string;
-    }) {
-      const item = document.createElement("button");
-      item.className = "pane-split-layout-option";
-      item.type = "button";
-      item.setAttribute("role", "menuitem");
-      item.append(createSplitTreePreview(project, layout, title, previewSize, highlightedSplitId));
-      item.addEventListener("click", onClick);
-      return item;
-    }
-
-    function getSplitPreviewSize(splitRect: DOMRect | undefined) {
-      const maxWidth = Math.max(120, Math.min(420, window.innerWidth - 48));
-      const maxHeight = Math.max(80, Math.min(220, window.innerHeight - 96));
-      const minWidth = 96;
-      const minHeight = 64;
-      if (!splitRect || splitRect.width <= 0 || splitRect.height <= 0) {
-        return { height: 96, width: 160 };
-      }
-
-      const scale = Math.min(maxWidth / splitRect.width, maxHeight / splitRect.height, 1);
-      return {
-        height: Math.round(Math.max(minHeight, splitRect.height * scale)),
-        width: Math.round(Math.max(minWidth, splitRect.width * scale))
-      };
-    }
-
-    function getRenderedSplitRect(splitId: string) {
-      return [...document.querySelectorAll<HTMLElement>(".webapp-split")]
-        .find((candidate) => candidate.dataset.splitId === splitId)
-        ?.getBoundingClientRect();
-    }
-
-    function createSplitTreePreview(
-      _project: RendererProject,
-      layout: PaneLayoutNode,
-      title: string,
-      previewSize: { height: number; width: number },
-      highlightedSplitId: string
-    ) {
-      const preview = document.createElement("section");
-      preview.className = "pane-split-tree-preview";
-
-      const titleElement = document.createElement("span");
-      titleElement.className = "pane-split-tree-title";
-      titleElement.textContent = title;
-
-      const surface = document.createElement("div");
-      surface.className = "pane-split-tree-surface";
-      surface.style.width = `${previewSize.width}px`;
-      surface.style.height = `${previewSize.height}px`;
-
-      function applyBounds(
-        element: HTMLElement,
-        bounds: { height: number; left: number; top: number; width: number },
-        inset = 0
-      ) {
-        element.style.left = inset === 0 ? `${bounds.left}%` : `calc(${bounds.left}% + ${inset}px)`;
-        element.style.top = inset === 0 ? `${bounds.top}%` : `calc(${bounds.top}% + ${inset}px)`;
-        element.style.width = inset === 0 ? `${bounds.width}%` : `calc(${bounds.width}% - ${inset * 2}px)`;
-        element.style.height = inset === 0 ? `${bounds.height}%` : `calc(${bounds.height}% - ${inset * 2}px)`;
-      }
-
-      function createNode(
-        node: PaneLayoutNode,
-        bounds = { height: 100, left: 0, top: 0, width: 100 },
-        inset = 0
-      ): HTMLElement {
-        if (node.type === "pane") {
-          const pane = document.createElement("div");
-          pane.className = "pane-split-tree-pane";
-          applyBounds(pane, bounds, inset);
-          return pane;
-        }
-
-        const split = document.createElement("div");
-        split.className = `pane-split-tree-node ${node.direction === "horizontal" ? "horizontal" : "vertical"}`;
-        split.classList.toggle("target", node.id === highlightedSplitId);
-        applyBounds(split, bounds, inset);
-        const ratio = clamp(Number(node.ratio) || 0.5, 0.15, 0.85);
-        const childInset = 2;
-        if (node.direction === "horizontal") {
-          split.append(
-            createNode(node.first, { height: ratio * 100, left: 0, top: 0, width: 100 }, childInset),
-            createNode(node.second, { height: (1 - ratio) * 100, left: 0, top: ratio * 100, width: 100 }, childInset)
-          );
-        } else {
-          split.append(
-            createNode(node.first, { height: 100, left: 0, top: 0, width: ratio * 100 }, childInset),
-            createNode(node.second, { height: 100, left: ratio * 100, top: 0, width: (1 - ratio) * 100 }, childInset)
-          );
-        }
-
-        const frame = document.createElement("div");
-        frame.className = "pane-split-tree-frame";
-        split.append(frame);
-        if (node.id === highlightedSplitId) {
-          const splitter = document.createElement("div");
-          splitter.className = `pane-split-tree-splitter ${node.direction === "horizontal" ? "horizontal" : "vertical"}`;
-          if (node.direction === "horizontal") {
-            splitter.style.top = `${ratio * 100}%`;
-          } else {
-            splitter.style.left = `${ratio * 100}%`;
-          }
-          split.append(splitter);
-        }
-        return split;
-      }
-
-      surface.append(createNode(layout));
-      preview.append(titleElement, surface);
-      return preview;
-    }
-
-    async function openPaneSplitContextMenu(event: MouseEvent, project: RendererProject, splitNode: SplitNode) {
-      event.preventDefault();
-      event.stopPropagation();
-      const sourceElement = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
-      const splitRect = sourceElement?.parentElement?.getBoundingClientRect();
-      closePaneSplitContextMenu();
-      closeWebAppTabMenu();
-
-      didFreezePaneSplitMenu = true;
-      await freezeWebAppsForOverlay();
-
-      const menu = document.createElement("div") as PaneSplitContextMenu;
-      menu.className = "webapp-tab-menu pane-split-context-menu";
-      menu.setAttribute("role", "menu");
-      const backdrop = document.createElement("div");
-      backdrop.className = "pane-split-context-backdrop";
-      backdrop.addEventListener("pointerdown", (pointerEvent) => {
-        pointerEvent.preventDefault();
-        pointerEvent.stopPropagation();
-        closePaneSplitContextMenu();
-      });
-      backdrop.addEventListener("contextmenu", (contextEvent) => {
-        contextEvent.preventDefault();
-        contextEvent.stopPropagation();
-        closePaneSplitContextMenu();
-      });
-
-      const rotationPreview = paneLayoutState.getSplitRotationPreview(project, splitNode.id) as {
-        current: PaneLayoutNode;
-        rootSplitId: string;
-        rotations: Array<{
-          highlightedSplitId: string;
-          layout: PaneLayoutNode;
-          steps: number;
-        }>;
-      } | null;
-      const currentLayout = (rotationPreview?.current || getProjectPaneLayout(project)) as PaneLayoutNode;
-      const rootSplitId = rotationPreview?.rootSplitId || (currentLayout.type === "split" ? currentLayout.id : splitNode.id);
-      const previewRect = getRenderedSplitRect(rootSplitId) || splitRect;
-      const previewSize = getSplitPreviewSize(previewRect);
-      const menuChromeWidth = 50;
-      const menuWidth = Math.min(window.innerWidth - 24, previewSize.width + menuChromeWidth);
-      const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
-      const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 48));
-      menu.style.width = `${Math.round(menuWidth)}px`;
-      menu.style.inlineSize = `${Math.round(menuWidth)}px`;
-      menu.style.left = `${Math.round(left)}px`;
-      menu.style.top = `${Math.round(top)}px`;
-
-      const currentItem = createSplitLayoutMenuItem({
-        highlightedSplitId: splitNode.id,
-        layout: currentLayout,
-        onClick: closePaneSplitContextMenu,
-        previewSize,
-        project,
-        title: "Current layout"
-      });
-      const rotateItems = (rotationPreview?.rotations || []).map((rotation) =>
-        createSplitLayoutMenuItem({
-          highlightedSplitId: rotation.highlightedSplitId,
-          layout: rotation.layout,
-          onClick: () => {
-            closePaneSplitContextMenu();
-            rotateSplitTowardRoot(project, splitNode.id, rotation.steps);
-          },
-          previewSize,
-          project,
-          title: rotation.steps === 1 ? "Move up 1 level" : `Move up ${rotation.steps} levels`
-        })
-      );
-
-      menu.append(currentItem, ...rotateItems);
-      document.body.append(backdrop, menu);
-      openPaneSplitMenu = menu;
-
-      function onPointerDown(pointerEvent: PointerEvent) {
-        if (pointerEvent.target instanceof Node && !menu.contains(pointerEvent.target)) {
-          closePaneSplitContextMenu();
-        }
-      }
-
-      function onKeyDown(keyEvent: KeyboardEvent) {
-        if (keyEvent.key === "Escape") {
-          closePaneSplitContextMenu();
-        }
-      }
-
-      menu.cleanup = () => {
-        backdrop.remove();
-        document.removeEventListener("pointerdown", onPointerDown);
-        document.removeEventListener("keydown", onKeyDown);
-      };
-
-      setTimeout(() => {
-        document.addEventListener("pointerdown", onPointerDown);
-        document.addEventListener("keydown", onKeyDown);
-      }, 0);
-
     }
 
     function splitPane(project: RendererProject, paneId: string, direction: string) {
@@ -652,16 +377,6 @@ export function createPaneLayoutView({
       resizer.className = `webapp-split-resizer ${splitNode.direction}`;
       resizer.setAttribute("role", "separator");
       resizer.setAttribute("aria-orientation", splitNode.direction === "vertical" ? "vertical" : "horizontal");
-      resizer.addEventListener("mouseenter", () => {
-        clearPaneExpansionPreview();
-        resizer.parentElement?.classList.add("pane-expand-preview");
-      });
-      resizer.addEventListener("mouseleave", clearPaneExpansionPreview);
-      resizer.addEventListener("contextmenu", (event) => {
-        openPaneSplitContextMenu(event, project, splitNode).catch((error: unknown) => {
-          console.error("Could not open splitter context menu:", error);
-        });
-      });
 
       resizer.addEventListener("pointerdown", (event) => {
         event.preventDefault();
