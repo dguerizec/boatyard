@@ -132,6 +132,7 @@ type PaneLayoutViewOptions = {
   getAllProjectPluginConfig: (project: RendererProject) => UnknownRecord;
   openProjectWebApp: (projectId: string | undefined, webAppId: string, url: string) => unknown;
   setVisibleWebAppHost: (paneId: string, entry: VisiblePaneWebAppEntry) => void;
+  resetVisibleWebAppHosts: () => void;
   queueWebAppSync: () => void;
   renderWorkspaceDashboard: (project: RendererProject) => void;
   persistPaneLayout: (project: RendererProject) => void;
@@ -171,6 +172,7 @@ export function createPaneLayoutView({
     getAllProjectPluginConfig,
     openProjectWebApp,
     setVisibleWebAppHost,
+    resetVisibleWebAppHosts,
     queueWebAppSync,
     renderWorkspaceDashboard,
     persistPaneLayout
@@ -448,6 +450,7 @@ export function createPaneLayoutView({
 
     function renderPaneLayoutPreservingPanes(project: RendererProject) {
       const reusablePanes = collectReusablePaneElements();
+      resetVisibleWebAppHosts();
       const paneLayoutElement = createPaneLayout(project, getProjectPaneLayout(project) as PaneLayoutNode, reusablePanes);
       const currentPaneLayoutElement = dashboardGrid.lastElementChild;
       if (!currentPaneLayoutElement) {
@@ -835,6 +838,7 @@ export function createPaneLayoutView({
     }
 
     return {
-      createPaneLayout
+      createPaneLayout,
+      renderPaneLayoutPreservingPanes
     };
 }

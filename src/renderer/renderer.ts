@@ -356,6 +356,9 @@ const paneLayoutView = createPaneLayoutView({
   setVisibleWebAppHost: (paneId: string, entry: unknown) => {
     visibleWebApps.set(paneId, entry as Parameters<typeof visibleWebApps.set>[1]);
   },
+  resetVisibleWebAppHosts: () => {
+    visibleWebApps.reset();
+  },
   queueWebAppSync,
   renderWorkspaceDashboard,
   persistPaneLayout
@@ -363,6 +366,10 @@ const paneLayoutView = createPaneLayoutView({
 
 function createPaneLayout(project: RendererProject, node: RendererPaneLayoutNode) {
   return paneLayoutView.createPaneLayout(project, node as Parameters<typeof paneLayoutView.createPaneLayout>[1]);
+}
+
+function renderPaneLayoutPreservingPanes(project: RendererProject) {
+  paneLayoutView.renderPaneLayoutPreservingPanes(project);
 }
 
 function persistPaneLayout(project: RendererProject) {
@@ -506,6 +513,7 @@ const webAppMenus = createWebAppMenus({
   },
   persistPaneLayout,
   renderWorkspaceDashboard,
+  renderPaneLayoutPreservingPanes,
   updateWebAppHomeTab: async (projectId: string, tab: UnknownRecord) => {
     state = await boatyardWindow.boatyard.updateWebAppHomeTab(projectId, tab);
     return state;

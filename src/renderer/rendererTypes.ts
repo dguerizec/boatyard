@@ -94,6 +94,7 @@ export type PaneLayoutStateInstance = RendererModuleInstance & {
 
 export type PaneLayoutViewInstance = RendererModuleInstance & {
   createPaneLayout(project: RendererProject, node: RendererPaneLayoutNode): HTMLElement;
+  renderPaneLayoutPreservingPanes(project: RendererProject): void;
 };
 
 export type WidgetSurfacesInstance = RendererModuleInstance & {

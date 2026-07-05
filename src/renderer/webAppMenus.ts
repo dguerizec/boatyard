@@ -109,6 +109,7 @@ type WebAppMenuElement = HTMLDivElement & {
     setCurrentWebAppUrl: (key: string, url: string) => void;
     persistPaneLayout: (project: RendererProject) => void;
     renderWorkspaceDashboard: (project: RendererProject) => void;
+    renderPaneLayoutPreservingPanes: (project: RendererProject) => void;
     updateWebAppHomeTab: (projectId: string, tab: UnknownRecord) => Promise<unknown>;
     updateSettings: (values: UnknownRecord) => Promise<unknown>;
     updateProject: (projectId: string, values: UnknownRecord) => Promise<unknown>;
@@ -149,6 +150,7 @@ export function createWebAppMenus({
     setCurrentWebAppUrl,
     persistPaneLayout,
     renderWorkspaceDashboard,
+    renderPaneLayoutPreservingPanes,
     updateWebAppHomeTab,
     updateSettings,
     updateProject,
@@ -890,7 +892,7 @@ export function createWebAppMenus({
       paneNode.selectedWebAppId = webApp.id;
       setSelectedWebAppForProject(project.id, webApp.id);
       persistPaneLayout(project);
-      renderWorkspaceDashboard(project);
+      renderPaneLayoutPreservingPanes(project);
     }
 
     async function renameWidgetPane(
