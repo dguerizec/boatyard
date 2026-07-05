@@ -74,6 +74,8 @@ type VisiblePaneWebAppEntry = {
   };
 };
 
+type PaneElementReuseMap = Map<string, HTMLElement>;
+
 type PaneLayoutViewOptions = {
   minWidgetRailWidth: number;
   webAppSplitResizerSize: number;
@@ -396,6 +398,66 @@ export function createPaneLayoutView({
       return didNormalize;
     }
 
+    function collectReusablePaneElements() {
+      const panes = new Map<string, HTMLElement>();
+      dashboardGrid.querySelectorAll<HTMLElement>(".webapp-pane[data-pane-id]").forEach((pane) => {
+        if (pane.dataset.paneId) {
+          panes.set(pane.dataset.paneId, pane);
+        }
+      });
+      return panes;
+    }
+
+    function getDirectPaneHost(pane: HTMLElement) {
+      return Array.from(pane.children)
+        .find((child): child is HTMLElement => child instanceof HTMLElement && child.classList.contains("webapp-host")) || null;
+    }
+
+    function reuseWebAppPane(project: RendererProject, paneNode: PaneNode, reusablePanes?: PaneElementReuseMap) {
+      if (!reusablePanes) {
+        return null;
+      }
+
+      const pane = reusablePanes.get(paneNode.id);
+      if (!pane) {
+        return null;
+      }
+
+      const webApps = getProjectWebApps(project, paneNode.id).map((webApp) => webApp as PaneWebApp);
+      const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps) as PaneWebApp;
+      if (
+        pane.dataset.webAppId !== selectedWebApp.id ||
+        pane.dataset.webAppKind !== selectedWebApp.kind
+      ) {
+        return null;
+      }
+
+      reusablePanes.delete(paneNode.id);
+      if (!["dom", "terminal", "widgets"].includes(selectedWebApp.kind || "")) {
+        const host = getDirectPaneHost(pane);
+        if (host) {
+          setVisibleWebAppHost(paneNode.id, {
+            webApp: selectedWebApp,
+            host
+          } as VisiblePaneWebAppEntry);
+        }
+      }
+      queueWebAppSync();
+      return pane;
+    }
+
+    function renderPaneLayoutPreservingPanes(project: RendererProject) {
+      const reusablePanes = collectReusablePaneElements();
+      const paneLayoutElement = createPaneLayout(project, getProjectPaneLayout(project) as PaneLayoutNode, reusablePanes);
+      const currentPaneLayoutElement = dashboardGrid.lastElementChild;
+      if (!currentPaneLayoutElement) {
+        dashboardGrid.append(paneLayoutElement);
+        return;
+      }
+
+      currentPaneLayoutElement.replaceWith(paneLayoutElement);
+    }
+
     function createSplitResizer(project: RendererProject, splitNode: SplitNode) {
       const resizer = document.createElement("div");
       resizer.className = `webapp-split-resizer ${splitNode.direction}`;
@@ -421,7 +483,7 @@ export function createPaneLayoutView({
             return true;
           }
 
-          renderWorkspaceDashboard(project);
+          renderPaneLayoutPreservingPanes(project);
           const normalizedSplitElement = document.querySelector<HTMLElement>(
             `.webapp-split[data-split-id="${CSS.escape(splitNode.id)}"]`
           );
@@ -751,13 +813,13 @@ export function createPaneLayoutView({
       return pane;
     }
 
-    function createPaneLayout(project: RendererProject, node: PaneLayoutNode): HTMLElement {
+    function createPaneLayout(project: RendererProject, node: PaneLayoutNode, reusablePanes?: PaneElementReuseMap): HTMLElement {
       if (node.type === "pane") {
-        return createWebAppPane(project, node);
+        return reuseWebAppPane(project, node, reusablePanes) || createWebAppPane(project, node);
       }
 
       if (node.expandedChild === "first" || node.expandedChild === "second") {
-        return createPaneLayout(project, node[node.expandedChild]);
+        return createPaneLayout(project, node[node.expandedChild], reusablePanes);
       }
 
       const split = document.createElement("div");
@@ -765,9 +827,9 @@ export function createPaneLayoutView({
       split.dataset.splitId = node.id;
       applySplitRatio(split, node);
       split.append(
-        createPaneLayout(project, node.first),
+        createPaneLayout(project, node.first, reusablePanes),
         createSplitResizer(project, node),
-        createPaneLayout(project, node.second)
+        createPaneLayout(project, node.second, reusablePanes)
       );
       return split;
     }
