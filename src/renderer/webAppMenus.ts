@@ -233,7 +233,7 @@ export function createWebAppMenus({
 
       const updatedProject = getProjectById(project.id) || project;
       persistPaneLayout(updatedProject);
-      renderWorkspaceDashboard(updatedProject);
+      renderPaneLayoutPreservingPanes(updatedProject);
       return true;
     }
 
@@ -280,7 +280,7 @@ export function createWebAppMenus({
       setSelectedWebAppForPane(replacementPane.id, replacementPane.selectedWebAppId);
 
       persistPaneLayout(project);
-      renderWorkspaceDashboard(project);
+      renderPaneLayoutPreservingPanes(project);
       return true;
     }
 
@@ -308,7 +308,7 @@ export function createWebAppMenus({
       setCurrentWebAppUrl(`${destinationPaneNode.id}:transient:${transientWebApp.id}`, url);
 
       persistPaneLayout(project);
-      renderWorkspaceDashboard(project);
+      renderPaneLayoutPreservingPanes(project);
       return true;
     }
 

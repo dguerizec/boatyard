@@ -134,7 +134,6 @@ type PaneLayoutViewOptions = {
   setVisibleWebAppHost: (paneId: string, entry: VisiblePaneWebAppEntry) => void;
   resetVisibleWebAppHosts: () => void;
   queueWebAppSync: () => void;
-  renderWorkspaceDashboard: (project: RendererProject) => void;
   persistPaneLayout: (project: RendererProject) => void;
 };
 
@@ -174,7 +173,6 @@ export function createPaneLayoutView({
     setVisibleWebAppHost,
     resetVisibleWebAppHosts,
     queueWebAppSync,
-    renderWorkspaceDashboard,
     persistPaneLayout
   }: PaneLayoutViewOptions) {
     function clamp(value: number, min: number, max: number) {
@@ -215,7 +213,7 @@ export function createPaneLayoutView({
 
       target.node.expandedChild = target.side;
       persistPaneLayout(project);
-      renderWorkspaceDashboard(project);
+      renderPaneLayoutPreservingPanes(project);
     }
 
     function shrinkPane(project: RendererProject, paneId: string) {
@@ -231,7 +229,7 @@ export function createPaneLayoutView({
 
       delete target.node.expandedChild;
       persistPaneLayout(project);
-      renderWorkspaceDashboard(project);
+      renderPaneLayoutPreservingPanes(project);
     }
 
     function splitPane(project: RendererProject, paneId: string, direction: string) {
@@ -260,7 +258,7 @@ export function createPaneLayoutView({
       paneLayoutState.setPaneLayout(project.id, paneLayoutState.replacePaneNode(layout, paneId, replacement));
       paneLayoutState.setSelectedWebAppForPane(paneId, currentWebAppId);
       persistPaneLayout(project);
-      renderWorkspaceDashboard(project);
+      renderPaneLayoutPreservingPanes(project);
     }
 
     function closePane(project: RendererProject, paneId: string) {
@@ -278,7 +276,7 @@ export function createPaneLayoutView({
       paneLayoutState.deleteSelectedWebAppForPane(paneId);
       paneLayoutState.setPaneLayout(project.id, result.node);
       persistPaneLayout(project);
-      renderWorkspaceDashboard(project);
+      renderPaneLayoutPreservingPanes(project);
     }
 
     function findSplitParent(

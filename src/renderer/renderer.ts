@@ -360,7 +360,6 @@ const paneLayoutView = createPaneLayoutView({
     visibleWebApps.reset();
   },
   queueWebAppSync,
-  renderWorkspaceDashboard,
   persistPaneLayout
 });
 
