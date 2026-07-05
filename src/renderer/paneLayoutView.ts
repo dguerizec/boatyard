@@ -552,6 +552,101 @@ export function createPaneLayoutView({
       renderWorkspaceDashboard(project);
     }
 
+    function findSplitParent(
+      node: PaneLayoutNode,
+      splitId: string
+    ): { node: SplitNode; side: PaneSplitSide } | null {
+      if (node.type === "pane") {
+        return null;
+      }
+
+      if (node.first.type === "split" && node.first.id === splitId) {
+        return { node, side: "first" };
+      }
+
+      if (node.second.type === "split" && node.second.id === splitId) {
+        return { node, side: "second" };
+      }
+
+      return findSplitParent(node.first, splitId) || findSplitParent(node.second, splitId);
+    }
+
+    function demoteSplitThroughFirstChild(splitNode: SplitNode) {
+      const pivot = splitNode.first;
+      if (pivot.type !== "split" || pivot.direction !== splitNode.direction || pivot.expandedChild) {
+        return null;
+      }
+
+      const pivotFirst = pivot.first;
+      const pivotSecond = pivot.second;
+      const second = splitNode.second;
+      const splitRatio = clamp(Number(splitNode.ratio) || 0.5, 0.15, 0.85);
+      const pivotRatio = clamp(Number(pivot.ratio) || 0.5, 0.15, 0.85);
+      const nextPivotRatio = clamp(splitRatio * pivotRatio, 0.15, 0.85);
+      const nextSplitRatio = clamp((splitRatio * (1 - pivotRatio)) / (1 - nextPivotRatio), 0.15, 0.85);
+
+      splitNode.first = pivotSecond;
+      splitNode.second = second;
+      splitNode.ratio = nextSplitRatio;
+      pivot.first = pivotFirst;
+      pivot.second = splitNode;
+      pivot.ratio = nextPivotRatio;
+      return pivot;
+    }
+
+    function demoteSplitThroughSecondChild(splitNode: SplitNode) {
+      const pivot = splitNode.second;
+      if (pivot.type !== "split" || pivot.direction !== splitNode.direction || pivot.expandedChild) {
+        return null;
+      }
+
+      const first = splitNode.first;
+      const pivotFirst = pivot.first;
+      const pivotSecond = pivot.second;
+      const splitRatio = clamp(Number(splitNode.ratio) || 0.5, 0.15, 0.85);
+      const pivotRatio = clamp(Number(pivot.ratio) || 0.5, 0.15, 0.85);
+      const nextPivotRatio = clamp(splitRatio + ((1 - splitRatio) * pivotRatio), 0.15, 0.85);
+      const nextSplitRatio = clamp(splitRatio / nextPivotRatio, 0.15, 0.85);
+
+      splitNode.first = first;
+      splitNode.second = pivotFirst;
+      splitNode.ratio = nextSplitRatio;
+      pivot.first = splitNode;
+      pivot.second = pivotSecond;
+      pivot.ratio = nextPivotRatio;
+      return pivot;
+    }
+
+    function normalizeSplitForResize(project: RendererProject, splitNode: SplitNode) {
+      let layout = getProjectPaneLayout(project) as PaneLayoutNode;
+      let didNormalize = false;
+      const maxRotations = Math.max(1, paneLayoutState.countPaneNodes(layout) - 1);
+
+      for (let index = 0; index < maxRotations; index += 1) {
+        const parent = layout.type === "split" && layout.id === splitNode.id
+          ? null
+          : findSplitParent(layout, splitNode.id);
+        const replacement =
+          demoteSplitThroughFirstChild(splitNode) ||
+          demoteSplitThroughSecondChild(splitNode);
+        if (!replacement) {
+          break;
+        }
+
+        if (parent) {
+          parent.node[parent.side] = replacement;
+        } else {
+          layout = replacement;
+        }
+        didNormalize = true;
+      }
+
+      if (didNormalize) {
+        paneLayoutState.setPaneLayout(project.id, layout);
+      }
+      return didNormalize;
+    }
+
     function createSplitResizer(project: RendererProject, splitNode: SplitNode) {
       const resizer = document.createElement("div");
       resizer.className = `webapp-split-resizer ${splitNode.direction}`;
@@ -574,7 +669,17 @@ export function createPaneLayoutView({
         if (!splitElement) {
           return;
         }
-        const parentSplitElement = splitElement;
+        let parentSplitElement = splitElement;
+        if (normalizeSplitForResize(project, splitNode)) {
+          renderWorkspaceDashboard(project);
+          const normalizedSplitElement = document.querySelector<HTMLElement>(
+            `.webapp-split[data-split-id="${CSS.escape(splitNode.id)}"]`
+          );
+          if (!normalizedSplitElement) {
+            return;
+          }
+          parentSplitElement = normalizedSplitElement;
+        }
         const rect = parentSplitElement.getBoundingClientRect();
         const isVertical = splitNode.direction === "vertical";
 
@@ -582,7 +687,7 @@ export function createPaneLayoutView({
           const rawRatio = isVertical
             ? (moveEvent.clientX - rect.left) / rect.width
             : (moveEvent.clientY - rect.top) / rect.height;
-          splitNode.ratio = Math.min(0.85, Math.max(0.15, rawRatio));
+          splitNode.ratio = clamp(rawRatio, 0.15, 0.85);
           applySplitRatio(parentSplitElement, splitNode);
           queueWebAppSync();
         }
