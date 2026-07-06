@@ -15,6 +15,7 @@ export const rendererDomElements = Object.freeze({
   globalSettingsButton: requireElement<HTMLButtonElement>("#global-settings"),
   globalViewButton: requireElement<HTMLButtonElement>("#global-view"),
   manualTourButton: requireElement<HTMLButtonElement>("#manual-tour"),
+  pinnedProjects: requireElement<HTMLElement>("#pinned-projects"),
   projectCount: requireElement<HTMLElement>("#project-count"),
   projectList: requireElement<HTMLElement>("#project-list"),
   projectSearchInput: requireElement<HTMLInputElement>("#project-search"),

@@ -15,6 +15,7 @@ export type ProjectSidebarElements = {
   globalNav: HTMLElement;
   globalNavRow: HTMLElement;
   globalViewButton: HTMLButtonElement;
+  pinnedProjects: HTMLElement;
   projectCount: HTMLElement;
   projectList: HTMLElement;
   projectSearchInput: HTMLInputElement;
@@ -37,6 +38,7 @@ export type ProjectSidebarOptions = {
   elements: ProjectSidebarElements;
   ensureOnboardingDemoProject: () => Promise<unknown> | unknown;
   getCollapsedProjectGroups: () => Set<string>;
+  getPinnedProjectIds: () => string[];
   getProjectGroups: () => string[];
   getProjectGroupsByName: (projects?: RendererProject[]) => Map<string, RendererProject[]>;
   getProjects: () => RendererProject[];

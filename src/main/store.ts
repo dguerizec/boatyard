@@ -898,8 +898,14 @@ class ProjectStore {
     delete this.state.terminalSelections[projectId];
     delete this.state.terminalTabOrders[projectId];
     delete this.state.pluginConfig.projects[projectId];
+    const pinnedProjectIds = this.state.navigation.pinnedProjectIds.filter((pinnedProjectId) => pinnedProjectId !== projectId);
     if (this.state.navigation.projectId === projectId) {
-      this.state.navigation = normalizeNavigationState({ view: "global" });
+      this.state.navigation = normalizeNavigationState({ view: "global", pinnedProjectIds });
+    } else if (pinnedProjectIds.length !== this.state.navigation.pinnedProjectIds.length) {
+      this.state.navigation = normalizeNavigationState({
+        ...this.state.navigation,
+        pinnedProjectIds
+      });
     }
 
     for (const key of Object.keys(this.state.webApps)) {

@@ -16,6 +16,7 @@ export function createProjectSidebar({
     getProjectGroups,
     getProjectGroupsByName,
     getCollapsedProjectGroups,
+    getPinnedProjectIds,
     normalizeProjectSearchText,
     projectMatchesSearch,
     renderSidebarUpdateNotice,
@@ -37,6 +38,7 @@ export function createProjectSidebar({
       globalNav,
       globalNavRow,
       globalViewButton,
+      pinnedProjects,
       projectCount,
       projectList,
       projectSearchInput
@@ -76,6 +78,8 @@ export function createProjectSidebar({
       clamp,
       createProjectGroupForProject,
       explodeProjectGroup,
+      isProjectPinned,
+      setProjectPinned,
       showOverlayDialog,
       updateProjectGroupName
     });
@@ -232,6 +236,66 @@ export function createProjectSidebar({
       row.append(settingsButton);
 
       return row;
+    }
+
+    function isProjectPinned(projectId: string) {
+      return getPinnedProjectIds().includes(projectId);
+    }
+
+    async function setProjectPinned(projectId: string, pinned: boolean) {
+      const currentPinnedProjectIds = getPinnedProjectIds();
+      const pinnedProjectIds = pinned
+        ? [...currentPinnedProjectIds.filter((id) => id !== projectId), projectId]
+        : currentPinnedProjectIds.filter((id) => id !== projectId);
+
+      await updateNavigation({
+        view: getViewState().currentView,
+        projectId: getViewState().currentProjectId,
+        collapsedProjectGroups: [...getCollapsedProjectGroups()],
+        pinnedProjectIds
+      });
+      renderPinnedProjects();
+      renderProjectList();
+    }
+
+    function createPinnedProjectShortcut(project: RendererProject) {
+      const projectId = project.id || "";
+      const isActiveProject =
+        (getViewState().currentView === "project" || getViewState().currentView === "project-edit") && projectId === getViewState().currentProjectId;
+      const button = document.createElement("button");
+      button.className = "pinned-project-button";
+      button.classList.toggle("active", isActiveProject);
+      button.type = "button";
+      button.title = project.name || "Project";
+      button.addEventListener("click", () => {
+        if (projectId) {
+          selectProject(projectId);
+        }
+      });
+      button.addEventListener("contextmenu", (event) => {
+        openProjectContextMenu(event, project);
+      });
+
+      const name = document.createElement("span");
+      name.className = "pinned-project-name";
+      name.textContent = project.name || project.slug || "Project";
+      button.append(name);
+      renderProjectNavBadges(project, button, { isActiveProject });
+      return button;
+    }
+
+    function renderPinnedProjects() {
+      const projectById = new Map(getProjects().map((project) => [project.id, project]));
+      const pinned = getPinnedProjectIds()
+        .map((projectId) => projectById.get(projectId))
+        .filter((project): project is RendererProject => Boolean(project));
+
+      pinnedProjects.replaceChildren();
+      pinnedProjects.hidden = pinned.length === 0;
+
+      for (const project of pinned) {
+        pinnedProjects.append(createPinnedProjectShortcut(project));
+      }
     }
 
     function getProjectListBlocks() {
@@ -728,6 +792,7 @@ export function createProjectSidebar({
 
     function renderProjectList() {
       renderSidebarUpdateNotice();
+      renderPinnedProjects();
 
       const projects = getProjects();
       const query = normalizeProjectSearchText(projectSearchQuery);
@@ -861,6 +926,7 @@ export function createProjectSidebar({
 
     return {
       closeProjectGroupMenu,
+      renderPinnedProjects,
       renderProjectList
     };
 }

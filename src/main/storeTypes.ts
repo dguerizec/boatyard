@@ -29,6 +29,7 @@ export type NavigationState = {
   view: string;
   projectId: string | null;
   collapsedProjectGroups: string[];
+  pinnedProjectIds: string[];
 };
 
 export type AppState = {

@@ -53,7 +53,7 @@ registerPluginRegistry(window);
 registerPluginSettingsFields(window);
 
 const {
-  addProjectButton, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, globalViewButton, manualTourButton,
+  addProjectButton, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, globalViewButton, manualTourButton, pinnedProjects,
   projectCount, projectList, projectSearchInput, sidebarUpdateNotice, workspace, workspaceKicker, workspaceSummary, workspaceTitle
 } = rendererDomElements;
 
@@ -70,6 +70,7 @@ const {
   getGlobalPluginConfig,
   getGlobalWorkspace,
   getManual,
+  getPinnedProjectIds,
   getPluginEnabledState,
   getProjectById,
   getProjectGroups,
@@ -696,6 +697,7 @@ const projectSidebar = createProjectSidebar({
     globalNav,
     globalNavRow,
     globalViewButton,
+    pinnedProjects,
     projectCount,
     projectList,
     projectSearchInput
@@ -708,6 +710,7 @@ const projectSidebar = createProjectSidebar({
   getProjectGroups,
   getProjectGroupsByName,
   getCollapsedProjectGroups,
+  getPinnedProjectIds,
   normalizeProjectSearchText,
   projectMatchesSearch,
   renderSidebarUpdateNotice,
@@ -720,7 +723,10 @@ const projectSidebar = createProjectSidebar({
   isOnboardingDemoProjectVisible,
   ensureOnboardingDemoProject,
   updateNavigation: async (values: UnknownRecord) => {
-    const navigation = await boatyardWindow.boatyard.updateNavigation(values);
+    const navigation = await boatyardWindow.boatyard.updateNavigation({
+      ...(state.navigation || {}),
+      ...values
+    });
     state = {
       ...state,
       navigation

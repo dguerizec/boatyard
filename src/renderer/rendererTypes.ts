@@ -20,6 +20,7 @@ export type RendererState = UnknownRecord & {
   globalUrls?: UnknownRecord[];
   navigation?: {
     collapsedProjectGroups?: string[];
+    pinnedProjectIds?: string[];
     projectId?: string | null;
     view?: string;
   };

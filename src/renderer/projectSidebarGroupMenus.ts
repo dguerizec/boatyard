@@ -12,6 +12,8 @@ type ProjectSidebarGroupMenusOptions = {
   clamp: (value: number, min: number, max: number) => number;
   createProjectGroupForProject: (project: SidebarGroupProject, groupName: string) => Promise<void>;
   explodeProjectGroup: (groupName: string) => Promise<void>;
+  isProjectPinned: (projectId: string) => boolean;
+  setProjectPinned: (projectId: string, pinned: boolean) => Promise<void>;
   showOverlayDialog: (dialog: HTMLDialogElement, options: Record<string, unknown>) => Promise<boolean>;
   updateProjectGroupName: (groupName: string, nextGroupName: string) => Promise<void>;
 };
@@ -82,6 +84,8 @@ export function createProjectSidebarGroupMenus({
   clamp,
   createProjectGroupForProject,
   explodeProjectGroup,
+  isProjectPinned,
+  setProjectPinned,
   showOverlayDialog,
   updateProjectGroupName
 }: ProjectSidebarGroupMenusOptions) {
@@ -310,6 +314,22 @@ export function createProjectSidebarGroupMenus({
 
   function openProjectContextMenu(event: MouseEvent, project: SidebarGroupProject) {
     const menu = createProjectGroupMenu(event, 52);
+    const projectId = project.id || "";
+
+    const pinItem = document.createElement("button");
+    pinItem.className = "webapp-tab-menu-item";
+    pinItem.type = "button";
+    pinItem.setAttribute("role", "menuitem");
+    pinItem.textContent = isProjectPinned(projectId) ? "Unpin" : "Pin";
+    pinItem.disabled = !projectId;
+    pinItem.addEventListener("click", () => {
+      closeProjectGroupMenu();
+      if (projectId) {
+        setProjectPinned(projectId, !isProjectPinned(projectId)).catch((error) => {
+          console.error("Could not update pinned project:", error);
+        });
+      }
+    });
 
     const createGroupItem = document.createElement("button");
     createGroupItem.className = "webapp-tab-menu-item";
@@ -321,7 +341,7 @@ export function createProjectSidebarGroupMenus({
       openProjectCreateGroupDialog(project);
     });
 
-    menu.append(createGroupItem);
+    menu.append(pinItem, createGroupItem);
     menu.querySelector("button")?.focus();
   }
 

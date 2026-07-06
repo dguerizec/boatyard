@@ -34,6 +34,13 @@ export function createRendererStateSelectors({
       : []);
   }
 
+  function getPinnedProjectIds() {
+    const state = getState();
+    return Array.isArray(state.navigation?.pinnedProjectIds)
+      ? state.navigation.pinnedProjectIds
+      : [];
+  }
+
   function getProjectGroupsByName(projects = getProjects()) {
     const groups = new Map<string, RendererProject[]>();
 
@@ -124,6 +131,7 @@ export function createRendererStateSelectors({
     getGlobalWorkspace,
     getManual,
     getPluginEnabledState,
+    getPinnedProjectIds,
     getProjectById,
     getProjectGroups,
     getProjectGroupsByName,

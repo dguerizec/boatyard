@@ -108,8 +108,51 @@ button {
   font-size: 12px;
 }
 
+.pinned-projects {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pinned-projects[hidden] {
+  display: none;
+}
+
+.pinned-project-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  max-width: 190px;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(23, 29, 36, 0.8);
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.pinned-project-button:hover,
+.pinned-project-button.active {
+  border-color: rgba(65, 184, 131, 0.65);
+  background: rgba(65, 184, 131, 0.12);
+}
+
+.pinned-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .topbar-actions {
   gap: 10px;
+  flex: 0 0 auto;
 }
 
 .primary-button,
