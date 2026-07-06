@@ -413,6 +413,32 @@ export function createPaneLayoutView({
         .find((child): child is HTMLElement => child instanceof HTMLElement && child.classList.contains("webapp-host")) || null;
     }
 
+    function getPaneActionButton(pane: HTMLElement, action: string, label: string) {
+      return pane.querySelector<HTMLButtonElement>(
+        `button[data-pane-action="${action}"], button[aria-label="${label}"]`
+      );
+    }
+
+    function syncReusedPaneActions(project: RendererProject, paneNode: PaneNode, pane: HTMLElement) {
+      const expansionState = paneLayoutState.getPaneExpansionState(project, paneNode.id);
+      const expandPaneButton = getPaneActionButton(pane, "expand", "Expand pane");
+      const shrinkPaneButton = getPaneActionButton(pane, "shrink", "Shrink pane");
+      const closePaneButton = getPaneActionButton(pane, "close", "Close pane");
+
+      if (expandPaneButton) {
+        expandPaneButton.disabled = !expansionState.canExpand;
+      }
+
+      if (shrinkPaneButton) {
+        shrinkPaneButton.disabled = !expansionState.canShrink;
+        shrinkPaneButton.classList.toggle("active", expansionState.canShrink);
+      }
+
+      if (closePaneButton) {
+        closePaneButton.disabled = paneLayoutState.countPaneNodes(getProjectPaneLayout(project)) <= 1;
+      }
+    }
+
     function reuseWebAppPane(project: RendererProject, paneNode: PaneNode, reusablePanes?: PaneElementReuseMap) {
       if (!reusablePanes) {
         return null;
@@ -433,6 +459,7 @@ export function createPaneLayoutView({
       }
 
       reusablePanes.delete(paneNode.id);
+      syncReusedPaneActions(project, paneNode, pane);
       if (!["dom", "terminal", "widgets"].includes(selectedWebApp.kind || "")) {
         const host = getDirectPaneHost(pane);
         if (host) {
@@ -719,6 +746,7 @@ export function createPaneLayoutView({
       const expandPaneButton = document.createElement("button");
       expandPaneButton.className = "webapp-tool-button";
       expandPaneButton.type = "button";
+      expandPaneButton.dataset.paneAction = "expand";
       expandPaneButton.title = "Expand pane";
       expandPaneButton.setAttribute("aria-label", "Expand pane");
       expandPaneButton.append(createToolIcon("expandPane"));
@@ -732,6 +760,7 @@ export function createPaneLayoutView({
       const shrinkPaneButton = document.createElement("button");
       shrinkPaneButton.className = "webapp-tool-button";
       shrinkPaneButton.type = "button";
+      shrinkPaneButton.dataset.paneAction = "shrink";
       shrinkPaneButton.title = "Shrink pane";
       shrinkPaneButton.setAttribute("aria-label", "Shrink pane");
       shrinkPaneButton.append(createToolIcon("shrinkPane"));
@@ -758,6 +787,7 @@ export function createPaneLayoutView({
       const closePaneButton = document.createElement("button");
       closePaneButton.className = "webapp-tool-button danger";
       closePaneButton.type = "button";
+      closePaneButton.dataset.paneAction = "close";
       closePaneButton.title = "Close pane";
       closePaneButton.setAttribute("aria-label", "Close pane");
       closePaneButton.append(createToolIcon("close"));
