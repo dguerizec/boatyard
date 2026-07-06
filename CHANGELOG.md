@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.8.2] - 2026-07-06
+
+### Summary
+
+- **v0.8.2: Smoother pane workspaces** — Boatyard improves split-pane resizing, keeps panes stable across layout changes, and adds mobile viewport tools for development apps.
+
+### Added
+
+- **Mobile viewport mode** — Development web apps can now switch panes into mobile viewport presets for checking smaller layouts.
+- **Viewport bookmarks** — Mobile viewport sizes can be saved and reused from pane controls.
+
+### Changed
+
+- **Pane reuse** — Layout-only changes and web app switches now preserve existing panes more often instead of rebuilding them.
+- **Splitter feedback** — Split resizers now highlight on hover, making draggable pane dividers easier to spot.
+- **Password autofill icon** — Password autofill now uses a clearer key icon.
+
+### Fixed
+
+- **Pane resizing stability** — Split panes now resize more reliably after layout changes and splitter rotation.
+- **Narrow pane layouts** — Split panes can shrink further, reducing unwanted layout pressure in tight spaces.
+- **Pane action buttons** — Reused panes now keep their action buttons in sync after layout updates.
+
+### Internal
+
+- **Changelog session handling** — Changelog generation no longer persists Codex changelog sessions.
+- **Update comparison coverage** — Added regression coverage for version comparison behavior.
+
 ## [0.8.1] - 2026-06-26
 
 ### Summary

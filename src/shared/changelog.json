@@ -1,6 +1,52 @@
 {
-  "generatedForVersion": "0.8.1",
+  "generatedForVersion": "0.8.2",
   "releases": [
+    {
+      "version": "0.8.2",
+      "date": "2026-07-06",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Mobile viewport mode",
+          "body": "Development web apps can now switch panes into mobile viewport presets for checking smaller layouts."
+        },
+        {
+          "category": "Added",
+          "title": "Viewport bookmarks",
+          "body": "Mobile viewport sizes can be saved and reused from pane controls."
+        },
+        {
+          "category": "Changed",
+          "title": "Pane reuse",
+          "body": "Layout-only changes and web app switches now preserve existing panes more often instead of rebuilding them."
+        },
+        {
+          "category": "Changed",
+          "title": "Splitter feedback",
+          "body": "Split resizers now highlight on hover, making draggable pane dividers easier to spot."
+        },
+        {
+          "category": "Changed",
+          "title": "Password autofill icon",
+          "body": "Password autofill now uses a clearer key icon."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pane resizing stability",
+          "body": "Split panes now resize more reliably after layout changes and splitter rotation."
+        },
+        {
+          "category": "Fixed",
+          "title": "Narrow pane layouts",
+          "body": "Split panes can shrink further, reducing unwanted layout pressure in tight spaces."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pane action buttons",
+          "body": "Reused panes now keep their action buttons in sync after layout updates."
+        }
+      ]
+    },
     {
       "version": "0.8.1",
       "date": "2026-06-26",
