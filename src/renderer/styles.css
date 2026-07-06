@@ -2531,6 +2531,7 @@ button {
 
 .webapp-host.mobile-dev-host {
   align-items: flex-start;
+  gap: 8px;
   overflow: auto;
   padding: 10px;
   background:
@@ -2553,6 +2554,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   overflow: hidden;
   border-color: rgba(83, 101, 119, 0.82);
   background-color: rgba(22, 29, 36, 0.96);
@@ -2561,6 +2563,53 @@ button {
   font-weight: 700;
   line-height: 1;
   user-select: none;
+}
+
+.webapp-mobile-dev-bookmarks {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(83, 101, 119, 0.82);
+  border-radius: 5px;
+  background: rgba(22, 29, 36, 0.96);
+  padding: 4px;
+}
+
+.webapp-mobile-dev-bookmark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  height: 20px;
+  min-width: 22px;
+  max-width: 76px;
+  border: 1px solid rgba(83, 101, 119, 0.78);
+  border-radius: 5px;
+  background: rgba(9, 14, 19, 0.78);
+  color: var(--muted);
+  padding: 0 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.webapp-mobile-dev-bookmark:hover,
+.webapp-mobile-dev-bookmark.active {
+  border-color: rgba(65, 184, 131, 0.88);
+  background: rgba(65, 184, 131, 0.15);
+  color: var(--text);
+}
+
+.webapp-mobile-dev-bookmark.add {
+  width: 22px;
+  padding: 0;
 }
 
 .webapp-mobile-dev-ruler.top {

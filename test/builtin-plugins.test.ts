@@ -634,6 +634,7 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
         key: "v1",
         label: "Pier: v1",
         url: "http://v1.sshadow.test",
+        mobileDev: true,
         restoreUrl: false
       }
     ]

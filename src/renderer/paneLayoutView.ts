@@ -77,7 +77,13 @@ type VisiblePaneWebAppEntry = {
 
 type PaneElementReuseMap = Map<string, HTMLElement>;
 
+type MobileDevViewportBookmark = {
+  height: number;
+  width: number;
+};
+
 type MobileDevViewportState = {
+  bookmarks: MobileDevViewportBookmark[];
   enabled: boolean;
   height: number;
   width: number;
@@ -183,13 +189,74 @@ export function createPaneLayoutView({
     persistPaneLayout
   }: PaneLayoutViewOptions) {
     const mobileDevViewports = new Map<string, MobileDevViewportState>();
+    const mobileDevStoragePrefix = "boatyard.mobile-dev-viewport:";
+    const mobileDevRulerWidth = 32;
+    const mobileDevRulerHeight = 24;
+    const mobileDevHostPadding = 20;
 
     function clamp(value: number, min: number, max: number) {
       return Math.min(max, Math.max(min, value));
     }
 
     function getMobileDevViewportKey(webApp: PaneWebApp) {
-      return webApp.key || webApp.id || "";
+      return webApp.id || webApp.key || "";
+    }
+
+    function normalizeMobileDevBookmark(value: unknown): MobileDevViewportBookmark | null {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return null;
+      }
+
+      const record = value as UnknownRecord;
+      const width = Math.round(Number(record.width));
+      const height = Math.round(Number(record.height));
+      if (!Number.isFinite(width) || !Number.isFinite(height) || width < 160 || height < 160) {
+        return null;
+      }
+
+      return { width, height };
+    }
+
+    function readPersistedMobileDevViewportState(key: string): Partial<MobileDevViewportState> {
+      try {
+        const raw = window.localStorage?.getItem(`${mobileDevStoragePrefix}${key}`);
+        if (!raw) {
+          return {};
+        }
+
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          return {};
+        }
+
+        const record = parsed as UnknownRecord;
+        const bookmarks = Array.isArray(record.bookmarks)
+          ? record.bookmarks.map(normalizeMobileDevBookmark).filter((bookmark): bookmark is MobileDevViewportBookmark => Boolean(bookmark))
+          : [];
+        const width = Math.round(Number(record.width));
+        const height = Math.round(Number(record.height));
+        return {
+          bookmarks,
+          enabled: record.enabled === true,
+          ...(Number.isFinite(width) && width >= 160 ? { width } : {}),
+          ...(Number.isFinite(height) && height >= 160 ? { height } : {})
+        };
+      } catch {
+        return {};
+      }
+    }
+
+    function persistMobileDevViewportState(key: string, state: MobileDevViewportState) {
+      try {
+        window.localStorage?.setItem(`${mobileDevStoragePrefix}${key}`, JSON.stringify({
+          bookmarks: state.bookmarks,
+          enabled: state.enabled,
+          height: state.height,
+          width: state.width
+        }));
+      } catch {
+        // Viewport bookmarks are a convenience and can stay in memory if storage is unavailable.
+      }
     }
 
     function getMobileDevViewportState(webApp: PaneWebApp) {
@@ -199,10 +266,12 @@ export function createPaneLayoutView({
         return existing;
       }
 
+      const persisted = readPersistedMobileDevViewportState(key);
       const state = {
-        enabled: false,
-        height: 844,
-        width: 390
+        bookmarks: persisted.bookmarks || [],
+        enabled: persisted.enabled === true,
+        height: persisted.height || 844,
+        width: persisted.width || 390
       };
       mobileDevViewports.set(key, state);
       return state;
@@ -612,8 +681,8 @@ export function createPaneLayoutView({
       if (rect.width <= 0 || rect.height <= 0) {
         return;
       }
-      const maxWidth = Math.max(160, Math.floor(rect.width - 44));
-      const maxHeight = Math.max(160, Math.floor(rect.height - 36));
+      const maxWidth = Math.max(160, Math.floor(rect.width - mobileDevHostPadding - mobileDevRulerWidth - 2));
+      const maxHeight = Math.max(160, Math.floor(rect.height - mobileDevHostPadding - mobileDevRulerHeight - 2));
       state.width = clamp(state.width, 160, maxWidth);
       state.height = clamp(state.height, 160, maxHeight);
     }
@@ -630,8 +699,66 @@ export function createPaneLayoutView({
       heightLabel.textContent = `${state.height}px`;
     }
 
+    function isMobileDevBookmarkActive(state: MobileDevViewportState, bookmark: MobileDevViewportBookmark) {
+      return bookmark.width === state.width && bookmark.height === state.height;
+    }
+
+    function renderMobileDevBookmarks(
+      key: string,
+      state: MobileDevViewportState,
+      bookmarkList: HTMLElement,
+      viewport: HTMLElement,
+      widthLabel: HTMLElement,
+      heightLabel: HTMLElement
+    ) {
+      bookmarkList.replaceChildren();
+
+      for (const bookmark of state.bookmarks) {
+        const button = document.createElement("button");
+        button.className = "webapp-mobile-dev-bookmark";
+        button.type = "button";
+        button.textContent = `${bookmark.width}x${bookmark.height}`;
+        button.classList.toggle("active", isMobileDevBookmarkActive(state, bookmark));
+        button.title = `Use ${bookmark.width}x${bookmark.height}`;
+        button.addEventListener("click", () => {
+          state.width = bookmark.width;
+          state.height = bookmark.height;
+          updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
+          persistMobileDevViewportState(key, state);
+          renderMobileDevBookmarks(key, state, bookmarkList, viewport, widthLabel, heightLabel);
+          queueWebAppSync();
+        });
+        button.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          state.bookmarks = state.bookmarks.filter((candidate) => (
+            candidate.width !== bookmark.width || candidate.height !== bookmark.height
+          ));
+          persistMobileDevViewportState(key, state);
+          renderMobileDevBookmarks(key, state, bookmarkList, viewport, widthLabel, heightLabel);
+        });
+        bookmarkList.append(button);
+      }
+
+      const addButton = document.createElement("button");
+      addButton.className = "webapp-mobile-dev-bookmark add";
+      addButton.type = "button";
+      addButton.title = "Bookmark current size";
+      addButton.setAttribute("aria-label", "Bookmark current size");
+      addButton.append(createToolIcon("plus"));
+      addButton.addEventListener("click", () => {
+        const exists = state.bookmarks.some((bookmark) => isMobileDevBookmarkActive(state, bookmark));
+        if (!exists) {
+          state.bookmarks = [...state.bookmarks, { width: state.width, height: state.height }].slice(-8);
+          persistMobileDevViewportState(key, state);
+          renderMobileDevBookmarks(key, state, bookmarkList, viewport, widthLabel, heightLabel);
+        }
+      });
+      bookmarkList.append(addButton);
+    }
+
     function attachMobileDevResizeHandle(
       handle: HTMLElement,
+      key: string,
       axis: "x" | "y",
       host: HTMLElement,
       state: MobileDevViewportState,
@@ -640,6 +767,10 @@ export function createPaneLayoutView({
       heightLabel: HTMLElement
     ) {
       handle.addEventListener("pointerdown", (event) => {
+        if (event.target instanceof Element && event.target.closest("button")) {
+          return;
+        }
+
         event.preventDefault();
         handle.setPointerCapture(event.pointerId);
         const startX = event.clientX;
@@ -649,8 +780,8 @@ export function createPaneLayoutView({
 
         function onPointerMove(moveEvent: PointerEvent) {
           const rect = host.getBoundingClientRect();
-          const maxWidth = Math.max(160, Math.floor(rect.width - 44));
-          const maxHeight = Math.max(160, Math.floor(rect.height - 36));
+          const maxWidth = Math.max(160, Math.floor(rect.width - mobileDevHostPadding - mobileDevRulerWidth - 2));
+          const maxHeight = Math.max(160, Math.floor(rect.height - mobileDevHostPadding - mobileDevRulerHeight - 2));
           if (axis === "x") {
             state.width = clamp(Math.round(startWidth + moveEvent.clientX - startX), 160, maxWidth);
           } else {
@@ -664,6 +795,7 @@ export function createPaneLayoutView({
           handle.releasePointerCapture(upEvent.pointerId);
           document.removeEventListener("pointermove", onPointerMove);
           document.removeEventListener("pointerup", onPointerUp);
+          persistMobileDevViewportState(key, state);
           queueWebAppSync();
         }
 
@@ -673,10 +805,14 @@ export function createPaneLayoutView({
     }
 
     function createMobileDevViewport(host: HTMLElement, selectedWebApp: PaneWebApp) {
+      const key = getMobileDevViewportKey(selectedWebApp);
       const state = getMobileDevViewportState(selectedWebApp);
       fitMobileDevViewportToHost(host, state);
 
       host.classList.add("mobile-dev-host");
+      const bookmarkList = document.createElement("div");
+      bookmarkList.className = "webapp-mobile-dev-bookmarks";
+
       const shell = document.createElement("div");
       shell.className = "webapp-mobile-dev-shell";
 
@@ -705,15 +841,18 @@ export function createPaneLayoutView({
 
       viewport.append(rightHandle, bottomHandle);
       shell.append(topRuler, leftRuler, viewport);
-      host.append(shell);
+      host.append(bookmarkList, shell);
       updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
-      attachMobileDevResizeHandle(topRuler, "x", host, state, viewport, widthLabel, heightLabel);
-      attachMobileDevResizeHandle(leftRuler, "y", host, state, viewport, widthLabel, heightLabel);
-      attachMobileDevResizeHandle(rightHandle, "x", host, state, viewport, widthLabel, heightLabel);
-      attachMobileDevResizeHandle(bottomHandle, "y", host, state, viewport, widthLabel, heightLabel);
+      renderMobileDevBookmarks(key, state, bookmarkList, viewport, widthLabel, heightLabel);
+      attachMobileDevResizeHandle(topRuler, key, "x", host, state, viewport, widthLabel, heightLabel);
+      attachMobileDevResizeHandle(leftRuler, key, "y", host, state, viewport, widthLabel, heightLabel);
+      attachMobileDevResizeHandle(rightHandle, key, "x", host, state, viewport, widthLabel, heightLabel);
+      attachMobileDevResizeHandle(bottomHandle, key, "y", host, state, viewport, widthLabel, heightLabel);
       window.requestAnimationFrame(() => {
         fitMobileDevViewportToHost(host, state);
         updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
+        persistMobileDevViewportState(key, state);
+        renderMobileDevBookmarks(key, state, bookmarkList, viewport, widthLabel, heightLabel);
         queueWebAppSync();
       });
 
@@ -865,6 +1004,7 @@ export function createPaneLayoutView({
           mobileDevButton.addEventListener("click", () => {
             const state = getMobileDevViewportState(selectedWebApp);
             state.enabled = !state.enabled;
+            persistMobileDevViewportState(getMobileDevViewportKey(selectedWebApp), state);
             renderPaneLayoutPreservingPanes(project);
           });
         }
