@@ -204,6 +204,7 @@ declare global {
     id?: unknown;
     key?: unknown;
     kind?: unknown;
+    mobileDev?: unknown;
     name?: unknown;
     scope?: unknown;
     title?: unknown;

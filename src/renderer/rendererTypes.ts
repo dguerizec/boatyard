@@ -44,6 +44,7 @@ export type WebAppDefinition = UnknownRecord & {
   id?: string;
   key?: string;
   label?: unknown;
+  mobileDev?: boolean;
   parentLabel?: string;
   parentWebAppId?: string;
   restoreUrl?: boolean;

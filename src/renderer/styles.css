@@ -2529,6 +2529,116 @@ button {
   overflow: hidden;
 }
 
+.webapp-host.mobile-dev-host {
+  align-items: flex-start;
+  overflow: auto;
+  padding: 10px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    #070b0f;
+  background-size: 24px 24px;
+}
+
+.webapp-mobile-dev-shell {
+  display: grid;
+  grid-template-columns: 32px auto;
+  grid-template-rows: 24px auto;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.webapp-mobile-dev-ruler {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-color: rgba(83, 101, 119, 0.82);
+  background-color: rgba(22, 29, 36, 0.96);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+
+.webapp-mobile-dev-ruler.top {
+  grid-column: 2;
+  grid-row: 1;
+  border-width: 1px 1px 0;
+  border-style: solid;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 9px,
+      rgba(154, 168, 180, 0.32) 10px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 49px,
+      rgba(238, 243, 247, 0.52) 50px
+    );
+  cursor: ew-resize;
+}
+
+.webapp-mobile-dev-ruler.left {
+  grid-column: 1;
+  grid-row: 2;
+  border-width: 1px 0 1px 1px;
+  border-style: solid;
+  background-image:
+    repeating-linear-gradient(
+      180deg,
+      transparent 0,
+      transparent 9px,
+      rgba(154, 168, 180, 0.32) 10px
+    ),
+    repeating-linear-gradient(
+      180deg,
+      transparent 0,
+      transparent 49px,
+      rgba(238, 243, 247, 0.52) 50px
+    );
+  cursor: ns-resize;
+}
+
+.webapp-mobile-dev-ruler.left span {
+  writing-mode: vertical-rl;
+}
+
+.webapp-mobile-dev-viewport {
+  position: relative;
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 160px;
+  min-height: 160px;
+  overflow: hidden;
+  border: 1px solid rgba(65, 184, 131, 0.82);
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(6, 12, 16, 0.9), 0 14px 36px rgba(0, 0, 0, 0.32);
+}
+
+.webapp-mobile-dev-boundary {
+  position: absolute;
+  z-index: 2;
+  background: rgba(65, 184, 131, 0.82);
+}
+
+.webapp-mobile-dev-boundary.right {
+  inset: 0 -4px 0 auto;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.webapp-mobile-dev-boundary.bottom {
+  inset: auto 0 -4px 0;
+  height: 8px;
+  cursor: ns-resize;
+}
+
 .webapp-host .project-widget-rail {
   height: 100%;
 }

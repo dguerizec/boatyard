@@ -8,6 +8,7 @@ import type { UnknownRecord } from "./rendererRecords.js";
 
 type PluginPaneDefinition = UnknownRecord & {
   key?: string;
+  mobileDev?: boolean;
   pluginId?: string;
   resolveUrl?: (context: UnknownRecord) => string;
   resolveWebApps?: (context: UnknownRecord) => WebAppDefinition[];
@@ -116,6 +117,7 @@ export function createProjectWebApps({
             label: webApp.label || pluginPane.title,
             key: `${paneId}:${pluginPane.key}:${webApp.key || webApp.id || webApp.url}`,
             url: webApp.url,
+            mobileDev: Boolean(webApp.mobileDev ?? pluginPane.mobileDev),
             restoreUrl: webApp.restoreUrl
           });
         }
@@ -131,7 +133,8 @@ export function createProjectWebApps({
         id: pluginPane.webAppId,
         label: pluginPane.title,
         key: `${paneId}:${pluginPane.key}`,
-        url
+        url,
+        mobileDev: Boolean(pluginPane.mobileDev)
       });
     }
 
@@ -152,7 +155,8 @@ export function createProjectWebApps({
         id: `url:${projectUrl.id}`,
         label: isGlobalWorkspace(project) ? label : `URL: ${label}`,
         key: `${paneId}:url:${projectUrl.id}`,
-        url
+        url,
+        mobileDev: true
       });
     }
 

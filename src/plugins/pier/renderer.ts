@@ -246,6 +246,7 @@
         key: entry.slug,
         label: `Pier: ${entry.slug}`,
         url: entry.url,
+        mobileDev: true,
         restoreUrl: false
       }));
   }

@@ -57,6 +57,7 @@ type PaneWebApp = UnknownRecord & {
   key?: string;
   kind?: string;
   label?: string;
+  mobileDev?: boolean;
   pluginPane?: {
     pluginId: string;
     render(host: HTMLElement, props: UnknownRecord): unknown;
@@ -75,6 +76,12 @@ type VisiblePaneWebAppEntry = {
 };
 
 type PaneElementReuseMap = Map<string, HTMLElement>;
+
+type MobileDevViewportState = {
+  enabled: boolean;
+  height: number;
+  width: number;
+};
 
 type PaneLayoutViewOptions = {
   minWidgetRailWidth: number;
@@ -175,8 +182,34 @@ export function createPaneLayoutView({
     queueWebAppSync,
     persistPaneLayout
   }: PaneLayoutViewOptions) {
+    const mobileDevViewports = new Map<string, MobileDevViewportState>();
+
     function clamp(value: number, min: number, max: number) {
       return Math.min(max, Math.max(min, value));
+    }
+
+    function getMobileDevViewportKey(webApp: PaneWebApp) {
+      return webApp.key || webApp.id || "";
+    }
+
+    function getMobileDevViewportState(webApp: PaneWebApp) {
+      const key = getMobileDevViewportKey(webApp);
+      const existing = mobileDevViewports.get(key);
+      if (existing) {
+        return existing;
+      }
+
+      const state = {
+        enabled: false,
+        height: 844,
+        width: 390
+      };
+      mobileDevViewports.set(key, state);
+      return state;
+    }
+
+    function isMobileDevViewportEnabled(webApp: PaneWebApp) {
+      return webApp.mobileDev === true && getMobileDevViewportState(webApp).enabled;
     }
 
     function clearPaneExpansionPreview() {
@@ -413,6 +446,19 @@ export function createPaneLayoutView({
         .find((child): child is HTMLElement => child instanceof HTMLElement && child.classList.contains("webapp-host")) || null;
     }
 
+    function getVisiblePaneHost(pane: HTMLElement, selectedWebApp: PaneWebApp) {
+      const directHost = getDirectPaneHost(pane);
+      if (!directHost) {
+        return null;
+      }
+
+      if (!isMobileDevViewportEnabled(selectedWebApp)) {
+        return directHost;
+      }
+
+      return directHost.querySelector<HTMLElement>(".webapp-mobile-dev-viewport") || directHost;
+    }
+
     function getPaneActionButton(pane: HTMLElement, action: string, label: string) {
       return pane.querySelector<HTMLButtonElement>(
         `button[data-pane-action="${action}"], button[aria-label="${label}"]`
@@ -453,7 +499,8 @@ export function createPaneLayoutView({
       const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps) as PaneWebApp;
       if (
         pane.dataset.webAppId !== selectedWebApp.id ||
-        pane.dataset.webAppKind !== selectedWebApp.kind
+        pane.dataset.webAppKind !== selectedWebApp.kind ||
+        pane.dataset.mobileDev !== String(isMobileDevViewportEnabled(selectedWebApp))
       ) {
         return null;
       }
@@ -461,7 +508,7 @@ export function createPaneLayoutView({
       reusablePanes.delete(paneNode.id);
       syncReusedPaneActions(project, paneNode, pane);
       if (!["dom", "terminal", "widgets"].includes(selectedWebApp.kind || "")) {
-        const host = getDirectPaneHost(pane);
+        const host = getVisiblePaneHost(pane, selectedWebApp);
         if (host) {
           setVisibleWebAppHost(paneNode.id, {
             webApp: selectedWebApp,
@@ -560,6 +607,119 @@ export function createPaneLayoutView({
       return resizer;
     }
 
+    function fitMobileDevViewportToHost(host: HTMLElement, state: MobileDevViewportState) {
+      const rect = host.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) {
+        return;
+      }
+      const maxWidth = Math.max(160, Math.floor(rect.width - 44));
+      const maxHeight = Math.max(160, Math.floor(rect.height - 36));
+      state.width = clamp(state.width, 160, maxWidth);
+      state.height = clamp(state.height, 160, maxHeight);
+    }
+
+    function updateMobileDevViewportSize(
+      state: MobileDevViewportState,
+      viewport: HTMLElement,
+      widthLabel: HTMLElement,
+      heightLabel: HTMLElement
+    ) {
+      viewport.style.width = `${state.width}px`;
+      viewport.style.height = `${state.height}px`;
+      widthLabel.textContent = `${state.width}px`;
+      heightLabel.textContent = `${state.height}px`;
+    }
+
+    function attachMobileDevResizeHandle(
+      handle: HTMLElement,
+      axis: "x" | "y",
+      host: HTMLElement,
+      state: MobileDevViewportState,
+      viewport: HTMLElement,
+      widthLabel: HTMLElement,
+      heightLabel: HTMLElement
+    ) {
+      handle.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        handle.setPointerCapture(event.pointerId);
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const startWidth = state.width;
+        const startHeight = state.height;
+
+        function onPointerMove(moveEvent: PointerEvent) {
+          const rect = host.getBoundingClientRect();
+          const maxWidth = Math.max(160, Math.floor(rect.width - 44));
+          const maxHeight = Math.max(160, Math.floor(rect.height - 36));
+          if (axis === "x") {
+            state.width = clamp(Math.round(startWidth + moveEvent.clientX - startX), 160, maxWidth);
+          } else {
+            state.height = clamp(Math.round(startHeight + moveEvent.clientY - startY), 160, maxHeight);
+          }
+          updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
+          queueWebAppSync();
+        }
+
+        function onPointerUp(upEvent: PointerEvent) {
+          handle.releasePointerCapture(upEvent.pointerId);
+          document.removeEventListener("pointermove", onPointerMove);
+          document.removeEventListener("pointerup", onPointerUp);
+          queueWebAppSync();
+        }
+
+        document.addEventListener("pointermove", onPointerMove);
+        document.addEventListener("pointerup", onPointerUp);
+      });
+    }
+
+    function createMobileDevViewport(host: HTMLElement, selectedWebApp: PaneWebApp) {
+      const state = getMobileDevViewportState(selectedWebApp);
+      fitMobileDevViewportToHost(host, state);
+
+      host.classList.add("mobile-dev-host");
+      const shell = document.createElement("div");
+      shell.className = "webapp-mobile-dev-shell";
+
+      const topRuler = document.createElement("div");
+      topRuler.className = "webapp-mobile-dev-ruler top";
+      const widthLabel = document.createElement("span");
+      topRuler.append(widthLabel);
+
+      const leftRuler = document.createElement("div");
+      leftRuler.className = "webapp-mobile-dev-ruler left";
+      const heightLabel = document.createElement("span");
+      leftRuler.append(heightLabel);
+
+      const viewport = document.createElement("div");
+      viewport.className = "webapp-mobile-dev-viewport";
+
+      const rightHandle = document.createElement("div");
+      rightHandle.className = "webapp-mobile-dev-boundary right";
+      rightHandle.setAttribute("role", "separator");
+      rightHandle.setAttribute("aria-orientation", "vertical");
+
+      const bottomHandle = document.createElement("div");
+      bottomHandle.className = "webapp-mobile-dev-boundary bottom";
+      bottomHandle.setAttribute("role", "separator");
+      bottomHandle.setAttribute("aria-orientation", "horizontal");
+
+      viewport.append(rightHandle, bottomHandle);
+      shell.append(topRuler, leftRuler, viewport);
+      host.append(shell);
+      updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
+      attachMobileDevResizeHandle(topRuler, "x", host, state, viewport, widthLabel, heightLabel);
+      attachMobileDevResizeHandle(leftRuler, "y", host, state, viewport, widthLabel, heightLabel);
+      attachMobileDevResizeHandle(rightHandle, "x", host, state, viewport, widthLabel, heightLabel);
+      attachMobileDevResizeHandle(bottomHandle, "y", host, state, viewport, widthLabel, heightLabel);
+      window.requestAnimationFrame(() => {
+        fitMobileDevViewportToHost(host, state);
+        updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
+        queueWebAppSync();
+      });
+
+      return viewport;
+    }
+
     function applySplitRatio(splitElement: HTMLElement, splitNode: PaneLayoutNode) {
       const ratio = Number(splitNode.ratio) || 0.5;
       const firstRatio = ratio * 100;
@@ -602,6 +762,7 @@ export function createPaneLayoutView({
       if (selectedWebApp.kind) {
         pane.dataset.webAppKind = selectedWebApp.kind;
       }
+      pane.dataset.mobileDev = String(isMobileDevViewportEnabled(selectedWebApp));
 
       const header = document.createElement("div");
       header.className = "webapp-pane-header";
@@ -693,6 +854,21 @@ export function createPaneLayoutView({
           });
         }
 
+        const mobileDevButton = selectedWebApp.mobileDev === true ? document.createElement("button") : null;
+        if (mobileDevButton) {
+          mobileDevButton.className = "webapp-tool-button";
+          mobileDevButton.type = "button";
+          mobileDevButton.title = "Toggle mobile viewport";
+          mobileDevButton.setAttribute("aria-label", "Toggle mobile viewport");
+          mobileDevButton.classList.toggle("active", isMobileDevViewportEnabled(selectedWebApp));
+          mobileDevButton.append(createToolIcon("smartphone"));
+          mobileDevButton.addEventListener("click", () => {
+            const state = getMobileDevViewportState(selectedWebApp);
+            state.enabled = !state.enabled;
+            renderPaneLayoutPreservingPanes(project);
+          });
+        }
+
         const activeUrl = document.createElement("input");
         activeUrl.className = "webapp-url";
         activeUrl.type = "text";
@@ -725,6 +901,7 @@ export function createPaneLayoutView({
           forwardButton,
           refreshButton,
           ...(autofillButton ? [autofillButton] : []),
+          ...(mobileDevButton ? [mobileDevButton] : []),
           activeUrl
         );
       }
@@ -834,9 +1011,12 @@ export function createPaneLayoutView({
           host.boatyardCleanup = cleanup as () => void;
         }
       } else {
+        const visibleHost = isMobileDevViewportEnabled(selectedWebApp)
+          ? createMobileDevViewport(host, selectedWebApp)
+          : host;
         setVisibleWebAppHost(paneNode.id, {
           webApp: selectedWebApp,
-          host
+          host: visibleHost
         } as VisiblePaneWebAppEntry);
       }
 
