@@ -392,7 +392,8 @@ function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, restor
   );
   activeWebAppKey = String(key);
 
-  if (webApp.url !== parsedUrl.toString()) {
+  const currentUrl = webApp.view.webContents.getURL();
+  if (webApp.url !== parsedUrl.toString() && currentUrl !== parsedUrl.toString()) {
     loadWebAppUrl(webApp, parsedUrl.toString());
   } else if (!webApp.view.webContents.isLoadingMainFrame()) {
     sendWebAppLoaded(key, webApp.view.webContents.getURL());
