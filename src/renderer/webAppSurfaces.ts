@@ -23,7 +23,13 @@ type WebAppBounds = {
 
   type WebAppSurfaceBridge = {
     freezeWebApps(options?: unknown): Promise<unknown>;
-    restoreWebApps(): Promise<unknown>;
+    restoreWebApps(token?: unknown): Promise<unknown>;
+  };
+
+  type WebAppFreezeScope = {
+    freeze(options?: unknown): Promise<void>;
+    freezeForRect(rect: WebAppBounds | DOMRectReadOnly, options?: { margin?: number }): Promise<void>;
+    restore(): Promise<void>;
   };
 
   type WebAppSurfacesOptions = {
@@ -53,8 +59,6 @@ export function createWebAppSurfaces({
     markWebAppLoaded
   }: WebAppSurfacesOptions) {
     let webAppBoundsFrame: number | null = null;
-    let frozenWebAppLayer: HTMLElement | null = null;
-    let freezeLayerGeneration = 0;
 
     function getWebAppHostBounds(host: Element | null | undefined): WebAppBounds | null {
       if (!host) {
@@ -190,16 +194,9 @@ export function createWebAppSurfaces({
       await syncWebAppView();
     }
 
-    function clearFrozenWebAppLayer() {
-      frozenWebAppLayer?.remove();
-      frozenWebAppLayer = null;
-    }
-
-    function renderFrozenWebApps(captures: unknown) {
-      clearFrozenWebAppLayer();
-
+    function renderFrozenWebApps(captures: unknown): HTMLElement | null {
       if (!Array.isArray(captures) || captures.length === 0) {
-        return;
+        return null;
       }
 
       const layer = document.createElement("div");
@@ -224,52 +221,78 @@ export function createWebAppSurfaces({
       }
 
       getFreezeLayerHost().append(layer);
-      frozenWebAppLayer = layer;
+      return layer;
     }
 
-    async function freezeWebAppsForOverlay(options: unknown = undefined) {
-      const generation = freezeLayerGeneration;
-      try {
-        const captures = await boatyard.freezeWebApps(options);
-        if (generation !== freezeLayerGeneration) {
+    function createFreezeScope(): WebAppFreezeScope {
+      let token: number | null = null;
+      let layer: HTMLElement | null = null;
+      let generation = 0;
+
+      function clearLayer() {
+        layer?.remove();
+        layer = null;
+      }
+
+      async function releaseToken(staleToken: number) {
+        try {
+          await boatyard.restoreWebApps(staleToken);
+        } catch (error) {
+          console.error("Could not restore webapps:", error);
+        }
+      }
+
+      async function freeze(options: unknown = undefined) {
+        const requestGeneration = ++generation;
+        let result: unknown;
+        try {
+          result = await boatyard.freezeWebApps(options);
+        } catch (error) {
+          console.error("Could not freeze webapps:", error);
           return;
         }
-        renderFrozenWebApps(Array.isArray(captures) ? captures : []);
-      } catch (error) {
-        console.error("Could not freeze webapps:", error);
+
+        const payload = result as { captures?: unknown; token?: unknown } | null;
+        const nextToken = Number(payload?.token);
+        const captures = Array.isArray(payload?.captures) ? payload.captures : [];
+
+        if (requestGeneration !== generation) {
+          if (Number.isFinite(nextToken)) {
+            void releaseToken(nextToken);
+          }
+          return;
+        }
+
+        const previousToken = token;
+        token = Number.isFinite(nextToken) ? nextToken : null;
+        clearLayer();
+        layer = renderFrozenWebApps(captures);
+        if (previousToken !== null) {
+          void releaseToken(previousToken);
+        }
       }
-    }
 
-    async function freezeWebAppsForKeys(keys: unknown[]) {
-      const uniqueKeys = [...new Set(keys.map(String).filter(Boolean))];
-      await freezeWebAppsForOverlay({ keys: uniqueKeys });
-    }
-
-    async function hideWebAppsForKeys(keys: unknown[]) {
-      const uniqueKeys = [...new Set(keys.map(String).filter(Boolean))];
-      if (uniqueKeys.length === 0) {
-        return;
+      async function freezeForRect(
+        rect: WebAppBounds | DOMRectReadOnly,
+        { margin = 0 }: { margin?: number } = {}
+      ) {
+        await flushWebAppSync();
+        const keys = getVisibleWebAppKeysIntersectingRect(rect, { margin });
+        await freeze({ keys: [...new Set(keys)], rect: inflateRect(rect, margin) });
       }
 
-      await boatyard.freezeWebApps({ keys: uniqueKeys });
-    }
+      async function restore() {
+        generation += 1;
+        clearLayer();
+        const previousToken = token;
+        token = null;
+        if (previousToken !== null) {
+          await releaseToken(previousToken);
+        }
+        queueWebAppSync();
+      }
 
-    async function freezeWebAppsForRect(
-      rect: WebAppBounds | DOMRectReadOnly,
-      { margin = 0 }: { margin?: number } = {}
-    ) {
-      await flushWebAppSync();
-      const keys = getVisibleWebAppKeysIntersectingRect(rect, { margin });
-      await freezeWebAppsForKeys(keys);
-    }
-
-    async function hideWebAppsForRect(
-      rect: WebAppBounds | DOMRectReadOnly,
-      { margin = 0 }: { margin?: number } = {}
-    ) {
-      await flushWebAppSync();
-      const keys = getVisibleWebAppKeysIntersectingRect(rect, { margin });
-      await hideWebAppsForKeys(keys);
+      return { freeze, freezeForRect, restore };
     }
 
     function getOverlayDialogFreezeRect(dialog: HTMLDialogElement) {
@@ -281,25 +304,13 @@ export function createWebAppSurfaces({
       return dialog.getBoundingClientRect();
     }
 
-    async function restoreWebAppsAfterOverlay() {
-      freezeLayerGeneration += 1;
-      clearFrozenWebAppLayer();
-
-      try {
-        await boatyard.restoreWebApps();
-      } catch (error) {
-        console.error("Could not restore webapps:", error);
-      }
-
-      queueWebAppSync();
-    }
-
     async function showOverlayDialog(dialog: HTMLDialogElement, {
       freeze = "overlap",
       freezeMargin = 16,
       onClose = null,
       removeOnClose = false
     }: OverlayDialogOptions = {}) {
+      const freezeScope = createFreezeScope();
       let closed = false;
       let didFreeze = false;
 
@@ -311,7 +322,7 @@ export function createWebAppSurfaces({
       dialog.addEventListener("close", () => {
         closed = true;
         if (didFreeze) {
-          restoreWebAppsAfterOverlay();
+          void freezeScope.restore();
         }
         if (removeOnClose) {
           dialog.remove();
@@ -331,11 +342,11 @@ export function createWebAppSurfaces({
 
       if (freeze === "all") {
         didFreeze = true;
-        await freezeWebAppsForOverlay();
+        await freezeScope.freeze();
       } else if (freeze === "overlap") {
         didFreeze = true;
         const freezeRect = getOverlayDialogFreezeRect(dialog);
-        await freezeWebAppsForRect(freezeRect, {
+        await freezeScope.freezeForRect(freezeRect, {
           margin: freezeMargin
         });
       }
@@ -349,13 +360,10 @@ export function createWebAppSurfaces({
     }
 
     return {
-      freezeWebAppsForOverlay,
-      freezeWebAppsForRect,
+      createFreezeScope,
       getWebAppHostBounds,
-      hideWebAppsForRect,
       normalizePayloadBounds,
       queueWebAppSync,
-      restoreWebAppsAfterOverlay,
       showOverlayDialog,
       syncWebAppView
     };

@@ -53,8 +53,9 @@ let updateManager: UpdateManagerInstance;
 const webAppViews = new Map<string, WebAppItem>();
 let activeWebAppKey: string | null = null;
 let visibleWebAppKeys = new Set<string>();
-let allWebAppsFrozen = false;
-let frozenWebAppKeys = new Set<string>();
+type WebAppFreeze = { all: boolean; keys: Set<string>; rect: Rectangle | null };
+const webAppFreezes = new Map<number, WebAppFreeze>();
+let nextWebAppFreezeToken = 1;
 const captureRunner = createCaptureRunner({
   getMainWindow: () => mainWindow,
   quitApp: () => app.quit()
@@ -387,8 +388,7 @@ function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, restor
   webApp.view.setBounds(webApp.bounds);
   webApp.view.setVisible(
     visibleWebAppKeys.has(String(key)) &&
-    !allWebAppsFrozen &&
-    !frozenWebAppKeys.has(String(key))
+    !isWebAppKeyFrozen(String(key))
   );
   activeWebAppKey = String(key);
 
@@ -483,7 +483,7 @@ function setVisibleWebApps(keys: unknown) {
   visibleWebAppKeys = new Set(Array.isArray(keys) ? keys.map(String) : []);
 
   for (const [key, item] of webAppViews) {
-    item.view.setVisible(visibleWebAppKeys.has(key) && !allWebAppsFrozen && !frozenWebAppKeys.has(key));
+    item.view.setVisible(visibleWebAppKeys.has(key) && !isWebAppKeyFrozen(key));
   }
 
   activeWebAppKey = visibleWebAppKeys.size > 0 ? [...visibleWebAppKeys].at(-1) || null : null;
@@ -492,8 +492,7 @@ function setVisibleWebApps(keys: unknown) {
 function hideWebApp() {
   activeWebAppKey = null;
   visibleWebAppKeys = new Set();
-  allWebAppsFrozen = false;
-  frozenWebAppKeys = new Set();
+  webAppFreezes.clear();
 
   for (const item of webAppViews.values()) {
     item.view.setVisible(false);
@@ -555,26 +554,58 @@ function getWebAppFreezeKeys(options: UnknownRecord = {}) {
   return requestedKeys.filter((key) => visibleWebAppKeys.has(key));
 }
 
+function webAppRectsIntersect(left: Rectangle, right: Rectangle) {
+  return left.x < right.x + right.width &&
+    left.x + left.width > right.x &&
+    left.y < right.y + right.height &&
+    left.y + left.height > right.y;
+}
+
+function isWebAppKeyFrozen(key: string) {
+  const bounds = webAppViews.get(key)?.bounds || null;
+
+  for (const freeze of webAppFreezes.values()) {
+    if (freeze.all || freeze.keys.has(key)) {
+      return true;
+    }
+
+    if (freeze.rect && bounds && webAppRectsIntersect(freeze.rect, bounds)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 async function freezeWebApps(options: UnknownRecord = {}) {
   const hasKeyFilter = Object.prototype.hasOwnProperty.call(options || {}, "keys");
   const freezeKeys = getWebAppFreezeKeys(options);
-  allWebAppsFrozen = !hasKeyFilter;
-  frozenWebAppKeys = new Set([...frozenWebAppKeys, ...freezeKeys]);
+  const hasRect = Boolean(options?.rect && typeof options.rect === "object");
+  const token = nextWebAppFreezeToken;
+  nextWebAppFreezeToken += 1;
+  webAppFreezes.set(token, {
+    all: !hasKeyFilter,
+    keys: new Set(freezeKeys),
+    rect: hasRect ? normalizeWebAppBounds(options.rect) : null
+  });
   const captures = (await Promise.all(freezeKeys.map(captureWebAppForFreeze))).filter(Boolean);
 
   for (const key of freezeKeys) {
     webAppViews.get(key)?.view.setVisible(false);
   }
 
-  return captures;
+  return { token, captures };
 }
 
-function restoreWebApps() {
-  allWebAppsFrozen = false;
-  frozenWebAppKeys = new Set();
+function restoreWebApps(token: unknown = undefined) {
+  if (token === undefined || token === null) {
+    webAppFreezes.clear();
+  } else if (Number.isFinite(Number(token))) {
+    webAppFreezes.delete(Number(token));
+  }
 
   for (const [key, item] of webAppViews) {
-    item.view.setVisible(visibleWebAppKeys.has(key));
+    item.view.setVisible(visibleWebAppKeys.has(key) && !isWebAppKeyFrozen(key));
   }
 }
 
@@ -593,8 +624,7 @@ function destroyWebAppViews() {
   webAppViews.clear();
   activeWebAppKey = null;
   visibleWebAppKeys = new Set();
-  allWebAppsFrozen = false;
-  frozenWebAppKeys = new Set();
+  webAppFreezes.clear();
 }
 
 function registerIpcHandlers() {
@@ -835,8 +865,8 @@ function registerIpcHandlers() {
     return freezeWebApps(options);
   });
 
-  ipcMain.handle("webapp:restore", () => {
-    restoreWebApps();
+  ipcMain.handle("webapp:restore", (_event: IpcMainInvokeEvent, token: unknown) => {
+    restoreWebApps(token);
   });
 
   ipcMain.handle("clipboard:write-text", (_event: IpcMainInvokeEvent, text: unknown) => {

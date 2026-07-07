@@ -540,8 +540,8 @@ const webAppMenus = createWebAppMenus({
   openExternal: (url: string) => boatyardWindow.boatyard.openExternal(url),
   showOverlayDialog,
   normalizePayloadBounds,
-  freezeWebAppsForOverlay,
-  restoreWebAppsAfterOverlay,
+  freezeWebAppsForOverlay: (options?: unknown) => webAppMenuFreezeScope.freeze(options),
+  restoreWebAppsAfterOverlay: () => webAppMenuFreezeScope.restore(),
   closeTerminalTabMenu,
   clamp,
   isGlobalWorkspace,
@@ -673,8 +673,8 @@ const onboardingTour = createOnboardingTour({
   openWebAppTabMenuFromButton,
   waitForWebAppLoad: (key, expectedUrl) => key ? waitForWebAppLoad(key, expectedUrl) : Promise.resolve(false),
   syncWebAppView,
-  freezeWebAppsForOverlay,
-  restoreWebAppsAfterOverlay,
+  freezeWebAppsForOverlay: () => onboardingFreezeScope.freeze(),
+  restoreWebAppsAfterOverlay: () => onboardingFreezeScope.restore(),
   nextAnimationFrame,
   updateOnboarding: async (values: UnknownRecord) => {
     state.onboarding = await boatyardWindow.boatyard.updateOnboarding(values);
@@ -724,9 +724,11 @@ const projectSidebar = createProjectSidebar({
   getCollapsedProjectGroups,
   getPinnedProjectIds,
   isSidebarCollapsed,
-  freezeWebAppsForRect,
+  freezeWebAppsForRect: (rect: DOMRectReadOnly, options?: { margin?: number }) => (
+    sidebarFreezeScope.freezeForRect(rect, options)
+  ),
   queueWebAppSync,
-  restoreWebAppsAfterOverlay,
+  restoreWebAppsAfterOverlay: () => sidebarFreezeScope.restore(),
   normalizeProjectSearchText,
   projectMatchesSearch,
   renderSidebarUpdateNotice,
@@ -894,6 +896,10 @@ const webAppSurfaces = createWebAppSurfaces({
   }
 });
 
+const webAppMenuFreezeScope = webAppSurfaces.createFreezeScope();
+const onboardingFreezeScope = webAppSurfaces.createFreezeScope();
+const sidebarFreezeScope = webAppSurfaces.createFreezeScope();
+
 function getWebAppHostBounds(host: Element | null | undefined) {
   return webAppSurfaces.getWebAppHostBounds(host);
 }
@@ -908,18 +914,6 @@ function syncWebAppView() {
 
 function queueWebAppSync() {
   webAppSurfaces.queueWebAppSync();
-}
-
-function freezeWebAppsForOverlay(options: unknown = undefined) {
-  return webAppSurfaces.freezeWebAppsForOverlay(options);
-}
-
-function freezeWebAppsForRect(rect: DOMRectReadOnly, options: { margin?: number } = {}) {
-  return webAppSurfaces.freezeWebAppsForRect(rect, options);
-}
-
-function restoreWebAppsAfterOverlay() {
-  return webAppSurfaces.restoreWebAppsAfterOverlay();
 }
 
 function showOverlayDialog(dialog: HTMLDialogElement, options: UnknownRecord = {}) {

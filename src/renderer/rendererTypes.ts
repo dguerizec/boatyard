@@ -153,7 +153,7 @@ export type BoatyardBridge = {
   prepareUpdate?: () => Promise<unknown>;
   removeProject(projectId: string): Promise<RendererState>;
   reorderProjects(projectIds: string[]): Promise<RendererState>;
-  restoreWebApps(): Promise<unknown>;
+  restoreWebApps(token?: unknown): Promise<unknown>;
   restartToUpdate(update: UnknownRecord): Promise<unknown>;
   setVisibleWebApps(...payload: unknown[]): Promise<unknown>;
   showWebApp(...payload: unknown[]): Promise<unknown>;

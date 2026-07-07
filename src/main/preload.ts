@@ -86,7 +86,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   setVisibleWebApps: (keys: unknown) => ipcRenderer.invoke("webapp:set-visible", keys),
   hideWebApp: () => ipcRenderer.invoke("webapp:hide"),
   freezeWebApps: (options: unknown) => ipcRenderer.invoke("webapp:freeze", options),
-  restoreWebApps: () => ipcRenderer.invoke("webapp:restore"),
+  restoreWebApps: (token: unknown) => ipcRenderer.invoke("webapp:restore", token),
   /**
    * @param {BridgeCallback} callback
    * @returns {Unsubscribe}
