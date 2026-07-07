@@ -1,6 +1,17 @@
 {
-  "generatedForVersion": "0.8.3",
+  "generatedForVersion": "0.8.4",
   "releases": [
+    {
+      "version": "0.8.4",
+      "date": "2026-07-07",
+      "features": [
+        {
+          "category": "Fixed",
+          "title": "Web app URL sync",
+          "body": "Web apps now keep their URL state aligned without reloading when the active page already matches the requested address."
+        }
+      ]
+    },
     {
       "version": "0.8.3",
       "date": "2026-07-07",

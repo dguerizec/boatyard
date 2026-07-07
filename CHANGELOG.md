@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.8.4] - 2026-07-07
+
+### Summary
+
+- **v0.8.4: Smoother web app reopening** — Boatyard avoids unnecessary reloads when restoring or showing a web app that is already on the requested page.
+
+### Fixed
+
+- **Web app URL sync** — Web apps now keep their URL state aligned without reloading when the active page already matches the requested address.
+
 ## [0.8.3] - 2026-07-07
 
 ### Summary
