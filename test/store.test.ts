@@ -227,14 +227,16 @@ test("ProjectStore persists navigation and clears removed active projects", () =
     view: "project",
     projectId,
     collapsedProjectGroups: ["Raven", "Raven", "  Tools  ", ""],
-    pinnedProjectIds: [projectId, projectId, " missing-project "]
+    pinnedProjectIds: [projectId, projectId, " missing-project "],
+    sidebarCollapsed: true
   });
 
   assert.deepEqual(navigation, {
     view: "project",
     projectId,
     collapsedProjectGroups: ["Raven", "Tools"],
-    pinnedProjectIds: [projectId, "missing-project"]
+    pinnedProjectIds: [projectId, "missing-project"],
+    sidebarCollapsed: true
   });
 
   const reloaded = new ProjectStore(filePath);
@@ -245,7 +247,8 @@ test("ProjectStore persists navigation and clears removed active projects", () =
     view: "global",
     projectId: null,
     collapsedProjectGroups: [],
-    pinnedProjectIds: ["missing-project"]
+    pinnedProjectIds: ["missing-project"],
+    sidebarCollapsed: true
   });
 });
 

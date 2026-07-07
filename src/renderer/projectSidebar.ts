@@ -17,6 +17,10 @@ export function createProjectSidebar({
     getProjectGroupsByName,
     getCollapsedProjectGroups,
     getPinnedProjectIds,
+    isSidebarCollapsed,
+    freezeWebAppsForRect,
+    queueWebAppSync,
+    restoreWebAppsAfterOverlay,
     normalizeProjectSearchText,
     projectMatchesSearch,
     renderSidebarUpdateNotice,
@@ -41,7 +45,9 @@ export function createProjectSidebar({
       pinnedProjects,
       projectCount,
       projectList,
-      projectSearchInput
+      projectSearchInput,
+      sidebarRail,
+      sidebarToggleButton
     } = elements;
 
     let projectSearchQuery = "";
@@ -56,6 +62,10 @@ export function createProjectSidebar({
     let pendingProjectGroupExpandName = "";
     let pendingProjectGroupCollapseTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingProjectGroupCollapseName = "";
+    let sidebarOverlayCloseTimer: ReturnType<typeof setTimeout> | null = null;
+    let sidebarOverlayFreezeRequest = 0;
+    let sidebarOverlayOpening = false;
+    let sidebarOverlayPointer: { x: number; y: number } | null = null;
     const autoExpandedProjectGroups = new Set<string>();
     const {
       moveProjectBeforeProject,
@@ -97,6 +107,129 @@ export function createProjectSidebar({
 
     function isProjectListElement(element: Element): element is HTMLElement {
       return element instanceof HTMLElement;
+    }
+
+    function getNavigationUpdateBase() {
+      return {
+        view: getViewState().currentView,
+        projectId: getViewState().currentProjectId,
+        collapsedProjectGroups: [...getCollapsedProjectGroups()],
+        pinnedProjectIds: getPinnedProjectIds(),
+        sidebarCollapsed: isSidebarCollapsed()
+      };
+    }
+
+    function applySidebarCollapsedState() {
+      const collapsed = isSidebarCollapsed();
+      document.body.classList.toggle("sidebar-collapsed", collapsed);
+      sidebarToggleButton.classList.toggle("active", collapsed);
+      sidebarToggleButton.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+      sidebarToggleButton.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+      queueWebAppSync();
+      if (!collapsed) {
+        closeSidebarOverlay();
+      }
+    }
+
+    async function setSidebarCollapsed(collapsed: boolean) {
+      await updateNavigation({
+        ...getNavigationUpdateBase(),
+        sidebarCollapsed: collapsed
+      });
+      applySidebarCollapsedState();
+    }
+
+    function cancelSidebarOverlayClose() {
+      if (sidebarOverlayCloseTimer) {
+        clearTimeout(sidebarOverlayCloseTimer);
+      }
+      sidebarOverlayCloseTimer = null;
+    }
+
+    function getSidebarOverlayFreezeRect() {
+      const sidebar = document.querySelector<HTMLElement>(".sidebar");
+      const top = document.querySelector<HTMLElement>(".topbar")?.getBoundingClientRect().bottom || 0;
+      const width = sidebar?.offsetWidth || 280;
+
+      return new DOMRect(0, top, width, Math.max(0, window.innerHeight - top));
+    }
+
+    function updateSidebarOverlayPointer(event: MouseEvent) {
+      sidebarOverlayPointer = {
+        x: event.clientX,
+        y: event.clientY
+      };
+    }
+
+    function isPointInsideRect(point: { x: number; y: number } | null, rect: DOMRectReadOnly) {
+      if (!point) {
+        return false;
+      }
+
+      return point.x >= rect.left
+        && point.x <= rect.right
+        && point.y >= rect.top
+        && point.y <= rect.bottom;
+    }
+
+    function isSidebarOverlayPointerInside() {
+      return isPointInsideRect(sidebarOverlayPointer, getSidebarOverlayFreezeRect());
+    }
+
+    async function openSidebarOverlay() {
+      if (!isSidebarCollapsed()) {
+        return;
+      }
+
+      cancelSidebarOverlayClose();
+      if (sidebarOverlayOpening || document.body.classList.contains("sidebar-overlay-open")) {
+        return;
+      }
+
+      const freezeRequest = ++sidebarOverlayFreezeRequest;
+      sidebarOverlayOpening = true;
+      try {
+        await freezeWebAppsForRect(getSidebarOverlayFreezeRect(), {
+          margin: 0
+        });
+        if (freezeRequest !== sidebarOverlayFreezeRequest || !isSidebarCollapsed()) {
+          return;
+        }
+        document.body.classList.add("sidebar-overlay-open");
+      } catch (error) {
+        console.error("Could not freeze webapps for sidebar overlay:", error);
+      } finally {
+        if (freezeRequest === sidebarOverlayFreezeRequest) {
+          sidebarOverlayOpening = false;
+        }
+      }
+    }
+
+    function closeSidebarOverlay() {
+      cancelSidebarOverlayClose();
+      const shouldRestoreWebApps = sidebarOverlayOpening || document.body.classList.contains("sidebar-overlay-open");
+      sidebarOverlayFreezeRequest += 1;
+      sidebarOverlayOpening = false;
+      if (document.body.classList.contains("sidebar-overlay-open")) {
+        document.body.classList.remove("sidebar-overlay-open");
+      }
+      if (shouldRestoreWebApps) {
+        restoreWebAppsAfterOverlay().catch((error) => {
+          console.error("Could not restore webapps after sidebar overlay:", error);
+        });
+      }
+    }
+
+    function scheduleSidebarOverlayClose() {
+      cancelSidebarOverlayClose();
+      sidebarOverlayCloseTimer = setTimeout(() => {
+        if (
+          !isSidebarOverlayPointerInside()
+          && !document.querySelector(".sidebar:hover, .sidebar:focus-within, .sidebar-rail:hover, .sidebar-rail:focus")
+        ) {
+          closeSidebarOverlay();
+        }
+      }, 180);
     }
 
     function createProjectNavRow(project: RendererProject, options: ProjectNavRowOptions = {}) {
@@ -218,6 +351,7 @@ export function createProjectSidebar({
       button.addEventListener("click", () => {
         if (projectId) {
           selectProject(projectId);
+          closeSidebarOverlay();
         }
       });
       row.append(button);
@@ -249,9 +383,7 @@ export function createProjectSidebar({
         : currentPinnedProjectIds.filter((id) => id !== projectId);
 
       await updateNavigation({
-        view: getViewState().currentView,
-        projectId: getViewState().currentProjectId,
-        collapsedProjectGroups: [...getCollapsedProjectGroups()],
+        ...getNavigationUpdateBase(),
         pinnedProjectIds
       });
       renderPinnedProjects();
@@ -270,6 +402,7 @@ export function createProjectSidebar({
       button.addEventListener("click", () => {
         if (projectId) {
           selectProject(projectId);
+          closeSidebarOverlay();
         }
       });
       button.addEventListener("contextmenu", (event) => {
@@ -454,8 +587,7 @@ export function createProjectSidebar({
       }
 
       await updateNavigation({
-        view: getViewState().currentView,
-        projectId: getViewState().currentProjectId,
+        ...getNavigationUpdateBase(),
         collapsedProjectGroups: [...collapsedGroups]
       });
       renderProjectList();
@@ -555,8 +687,7 @@ export function createProjectSidebar({
       if (collapsedGroups.delete(currentGroup)) {
         collapsedGroups.add(nextGroup);
         await updateNavigation({
-          view: getViewState().currentView,
-          projectId: getViewState().currentProjectId,
+          ...getNavigationUpdateBase(),
           collapsedProjectGroups: [...collapsedGroups]
         });
       }
@@ -583,8 +714,7 @@ export function createProjectSidebar({
       const collapsedGroups = getCollapsedProjectGroups();
       if (collapsedGroups.delete(currentGroup)) {
         await updateNavigation({
-          view: getViewState().currentView,
-          projectId: getViewState().currentProjectId,
+          ...getNavigationUpdateBase(),
           collapsedProjectGroups: [...collapsedGroups]
         });
       }
@@ -793,6 +923,7 @@ export function createProjectSidebar({
     function renderProjectList() {
       renderSidebarUpdateNotice();
       renderPinnedProjects();
+      applySidebarCollapsedState();
 
       const projects = getProjects();
       const query = normalizeProjectSearchText(projectSearchQuery);
@@ -919,6 +1050,53 @@ export function createProjectSidebar({
         projectSearchInput.value = "";
         projectSearchQuery = "";
         renderProjectList();
+      });
+
+      sidebarToggleButton.addEventListener("click", () => {
+        setSidebarCollapsed(!isSidebarCollapsed()).catch((error) => {
+          console.error("Could not update sidebar collapse state:", error);
+        });
+      });
+
+      sidebarRail.addEventListener("mouseenter", (event) => {
+        updateSidebarOverlayPointer(event);
+        openSidebarOverlay().catch((error) => {
+          console.error("Could not open sidebar overlay:", error);
+        });
+      });
+      sidebarRail.addEventListener("mousemove", updateSidebarOverlayPointer);
+      sidebarRail.addEventListener("focus", () => {
+        openSidebarOverlay().catch((error) => {
+          console.error("Could not open sidebar overlay:", error);
+        });
+      });
+      sidebarRail.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+      });
+      sidebarRail.addEventListener("click", () => {
+        openSidebarOverlay().catch((error) => {
+          console.error("Could not open sidebar overlay:", error);
+        });
+      });
+      sidebarRail.addEventListener("mouseleave", scheduleSidebarOverlayClose);
+      sidebarRail.addEventListener("blur", scheduleSidebarOverlayClose);
+
+      const sidebar = document.querySelector<HTMLElement>(".sidebar");
+      sidebar?.addEventListener("mouseenter", (event) => {
+        updateSidebarOverlayPointer(event);
+        cancelSidebarOverlayClose();
+      });
+      sidebar?.addEventListener("mousemove", updateSidebarOverlayPointer);
+      sidebar?.addEventListener("mouseleave", (event) => {
+        updateSidebarOverlayPointer(event);
+        scheduleSidebarOverlayClose();
+      });
+      sidebar?.addEventListener("focusin", cancelSidebarOverlayClose);
+      sidebar?.addEventListener("focusout", scheduleSidebarOverlayClose);
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          closeSidebarOverlay();
+        }
       });
     }
 

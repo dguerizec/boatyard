@@ -53,8 +53,8 @@ registerPluginRegistry(window);
 registerPluginSettingsFields(window);
 
 const {
-  addProjectButton, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, globalViewButton, manualTourButton, pinnedProjects,
-  projectCount, projectList, projectSearchInput, sidebarUpdateNotice, workspace, workspaceKicker, workspaceSummary, workspaceTitle
+  addProjectButton, appShell, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, globalViewButton, manualTourButton, pinnedProjects,
+  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, workspace, workspaceKicker, workspaceSummary, workspaceTitle
 } = rendererDomElements;
 
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
@@ -79,6 +79,7 @@ const {
   getProjects,
   getProjectSummaryTarget,
   getSettings,
+  isSidebarCollapsed,
   isGlobalWorkspace
 } = createRendererStateSelectors({
   defaultWidgetPaneId: DEFAULT_WIDGET_PANE_ID,
@@ -92,9 +93,18 @@ navigationController = createRendererNavigationController({
   closeProjectGroupMenu,
   closeTerminalTabMenu,
   getCollapsedProjectGroups,
+  getPinnedProjectIds,
   hasProject: (projectId) => Boolean(projectId && getProjects().some((project) => project.id === projectId)),
+  isSidebarCollapsed,
   render,
-  updateNavigation: (values: UnknownRecord) => boatyardWindow.boatyard.updateNavigation(values)
+  updateNavigation: async (values: UnknownRecord) => {
+    const navigation = await boatyardWindow.boatyard.updateNavigation(values);
+    state = {
+      ...state,
+      navigation
+    };
+    return navigation;
+  }
 });
 
 const {
@@ -700,7 +710,9 @@ const projectSidebar = createProjectSidebar({
     pinnedProjects,
     projectCount,
     projectList,
-    projectSearchInput
+    projectSearchInput,
+    sidebarRail,
+    sidebarToggleButton
   },
   getViewState: () => ({
     currentProjectId: navigationController.getCurrentProjectId(),
@@ -711,6 +723,10 @@ const projectSidebar = createProjectSidebar({
   getProjectGroupsByName,
   getCollapsedProjectGroups,
   getPinnedProjectIds,
+  isSidebarCollapsed,
+  freezeWebAppsForRect,
+  queueWebAppSync,
+  restoreWebAppsAfterOverlay,
   normalizeProjectSearchText,
   projectMatchesSearch,
   renderSidebarUpdateNotice,
@@ -868,6 +884,7 @@ function renderEditProjectPage(project: RendererProject) {
 
 const webAppSurfaces = createWebAppSurfaces({
   boatyard: boatyardWindow.boatyard,
+  getFreezeLayerHost: () => appShell,
   getSettings,
   getVisibleWebAppEntries: () => visibleWebApps.getEntries(),
   invokeWebApp,
@@ -895,6 +912,10 @@ function queueWebAppSync() {
 
 function freezeWebAppsForOverlay(options: unknown = undefined) {
   return webAppSurfaces.freezeWebAppsForOverlay(options);
+}
+
+function freezeWebAppsForRect(rect: DOMRectReadOnly, options: { margin?: number } = {}) {
+  return webAppSurfaces.freezeWebAppsForRect(rect, options);
 }
 
 function restoreWebAppsAfterOverlay() {

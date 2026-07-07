@@ -30,6 +30,7 @@ export type NavigationState = {
   projectId: string | null;
   collapsedProjectGroups: string[];
   pinnedProjectIds: string[];
+  sidebarCollapsed: boolean;
 };
 
 export type AppState = {

@@ -45,7 +45,8 @@ export function createDefaultState(): ProjectStoreState {
       view: "global",
       projectId: null,
       collapsedProjectGroups: [],
-      pinnedProjectIds: []
+      pinnedProjectIds: [],
+      sidebarCollapsed: false
     },
     webApps: {},
     passwordVault: {},
@@ -143,7 +144,8 @@ export function normalizeNavigationState(navigation: unknown = {}): NavigationSt
     view: projectId || !isProjectView ? view : "global",
     projectId: isProjectView ? projectId : null,
     collapsedProjectGroups,
-    pinnedProjectIds
+    pinnedProjectIds,
+    sidebarCollapsed: source.sidebarCollapsed === true
   };
 }
 

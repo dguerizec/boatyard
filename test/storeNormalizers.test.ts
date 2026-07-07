@@ -319,18 +319,21 @@ test("normalizeNavigationState keeps restorable app pages", () => {
     view: "global",
     projectId: null,
     collapsedProjectGroups: [],
-    pinnedProjectIds: []
+    pinnedProjectIds: [],
+    sidebarCollapsed: false
   });
   assert.deepEqual(normalizeNavigationState({
     view: "project",
     projectId: " project-id ",
     collapsedProjectGroups: ["Raven"],
-    pinnedProjectIds: [" project-id ", "project-id", ""]
+    pinnedProjectIds: [" project-id ", "project-id", ""],
+    sidebarCollapsed: true
   }), {
     view: "project",
     projectId: "project-id",
     collapsedProjectGroups: ["Raven"],
-    pinnedProjectIds: ["project-id"]
+    pinnedProjectIds: ["project-id"],
+    sidebarCollapsed: true
   });
   assert.deepEqual(normalizeNavigationState({
     view: "project-create",
@@ -339,7 +342,8 @@ test("normalizeNavigationState keeps restorable app pages", () => {
     view: "global",
     projectId: null,
     collapsedProjectGroups: [],
-    pinnedProjectIds: []
+    pinnedProjectIds: [],
+    sidebarCollapsed: false
   });
   assert.deepEqual(normalizeNavigationState({
     view: "project-edit"
@@ -347,7 +351,8 @@ test("normalizeNavigationState keeps restorable app pages", () => {
     view: "global",
     projectId: null,
     collapsedProjectGroups: [],
-    pinnedProjectIds: []
+    pinnedProjectIds: [],
+    sidebarCollapsed: false
   });
 });
 

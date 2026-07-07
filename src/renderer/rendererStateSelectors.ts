@@ -41,6 +41,10 @@ export function createRendererStateSelectors({
       : [];
   }
 
+  function isSidebarCollapsed() {
+    return getState().navigation?.sidebarCollapsed === true;
+  }
+
   function getProjectGroupsByName(projects = getProjects()) {
     const groups = new Map<string, RendererProject[]>();
 
@@ -139,6 +143,7 @@ export function createRendererStateSelectors({
     getProjects,
     getProjectSummaryTarget,
     getSettings,
+    isSidebarCollapsed,
     isGlobalWorkspace
   });
 }

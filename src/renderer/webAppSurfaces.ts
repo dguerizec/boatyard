@@ -28,6 +28,7 @@ type WebAppBounds = {
 
   type WebAppSurfacesOptions = {
     boatyard: WebAppSurfaceBridge;
+    getFreezeLayerHost(): HTMLElement;
     getSettings(): WebAppSurfaceSettings;
     getVisibleWebAppEntries(): Iterable<VisibleWebAppEntry>;
     invokeWebApp(action: string, payload?: unknown): Promise<unknown>;
@@ -44,6 +45,7 @@ type WebAppBounds = {
 
 export function createWebAppSurfaces({
     boatyard,
+    getFreezeLayerHost,
     getSettings,
     getVisibleWebAppEntries,
     invokeWebApp,
@@ -52,6 +54,7 @@ export function createWebAppSurfaces({
   }: WebAppSurfacesOptions) {
     let webAppBoundsFrame: number | null = null;
     let frozenWebAppLayer: HTMLElement | null = null;
+    let freezeLayerGeneration = 0;
 
     function getWebAppHostBounds(host: Element | null | undefined): WebAppBounds | null {
       if (!host) {
@@ -220,13 +223,17 @@ export function createWebAppSurfaces({
         layer.append(image);
       }
 
-      document.body.append(layer);
+      getFreezeLayerHost().append(layer);
       frozenWebAppLayer = layer;
     }
 
     async function freezeWebAppsForOverlay(options: unknown = undefined) {
+      const generation = freezeLayerGeneration;
       try {
         const captures = await boatyard.freezeWebApps(options);
+        if (generation !== freezeLayerGeneration) {
+          return;
+        }
         renderFrozenWebApps(Array.isArray(captures) ? captures : []);
       } catch (error) {
         console.error("Could not freeze webapps:", error);
@@ -238,12 +245,31 @@ export function createWebAppSurfaces({
       await freezeWebAppsForOverlay({ keys: uniqueKeys });
     }
 
+    async function hideWebAppsForKeys(keys: unknown[]) {
+      const uniqueKeys = [...new Set(keys.map(String).filter(Boolean))];
+      if (uniqueKeys.length === 0) {
+        return;
+      }
+
+      await boatyard.freezeWebApps({ keys: uniqueKeys });
+    }
+
     async function freezeWebAppsForRect(
       rect: WebAppBounds | DOMRectReadOnly,
       { margin = 0 }: { margin?: number } = {}
     ) {
+      await flushWebAppSync();
       const keys = getVisibleWebAppKeysIntersectingRect(rect, { margin });
       await freezeWebAppsForKeys(keys);
+    }
+
+    async function hideWebAppsForRect(
+      rect: WebAppBounds | DOMRectReadOnly,
+      { margin = 0 }: { margin?: number } = {}
+    ) {
+      await flushWebAppSync();
+      const keys = getVisibleWebAppKeysIntersectingRect(rect, { margin });
+      await hideWebAppsForKeys(keys);
     }
 
     function getOverlayDialogFreezeRect(dialog: HTMLDialogElement) {
@@ -256,6 +282,7 @@ export function createWebAppSurfaces({
     }
 
     async function restoreWebAppsAfterOverlay() {
+      freezeLayerGeneration += 1;
       clearFrozenWebAppLayer();
 
       try {
@@ -323,7 +350,9 @@ export function createWebAppSurfaces({
 
     return {
       freezeWebAppsForOverlay,
+      freezeWebAppsForRect,
       getWebAppHostBounds,
+      hideWebAppsForRect,
       normalizePayloadBounds,
       queueWebAppSync,
       restoreWebAppsAfterOverlay,

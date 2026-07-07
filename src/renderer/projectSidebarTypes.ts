@@ -19,6 +19,8 @@ export type ProjectSidebarElements = {
   projectCount: HTMLElement;
   projectList: HTMLElement;
   projectSearchInput: HTMLInputElement;
+  sidebarRail: HTMLButtonElement;
+  sidebarToggleButton: HTMLButtonElement;
 };
 
 export type ProjectSidebarViewState = {
@@ -44,6 +46,10 @@ export type ProjectSidebarOptions = {
   getProjects: () => RendererProject[];
   getViewState: () => ProjectSidebarViewState;
   isOnboardingDemoProjectVisible: () => boolean;
+  isSidebarCollapsed: () => boolean;
+  freezeWebAppsForRect: (rect: DOMRectReadOnly, options?: { margin?: number }) => Promise<unknown>;
+  queueWebAppSync: () => void;
+  restoreWebAppsAfterOverlay: () => Promise<unknown>;
   normalizeProjectSearchText: (value: unknown) => string;
   projectMatchesSearch: (project: RendererProject, query: string) => boolean;
   renderApp: () => void;

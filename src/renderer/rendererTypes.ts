@@ -22,6 +22,7 @@ export type RendererState = UnknownRecord & {
     collapsedProjectGroups?: string[];
     pinnedProjectIds?: string[];
     projectId?: string | null;
+    sidebarCollapsed?: boolean;
     view?: string;
   };
   onboarding?: {

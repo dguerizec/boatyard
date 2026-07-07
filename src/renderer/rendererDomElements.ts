@@ -9,6 +9,7 @@ function requireElement<T extends HTMLElement>(selector: string) {
 
 export const rendererDomElements = Object.freeze({
   addProjectButton: requireElement<HTMLButtonElement>("#add-project"),
+  appShell: requireElement<HTMLElement>(".app-shell"),
   dashboardGrid: requireElement<HTMLElement>("#dashboard-grid"),
   globalNav: requireElement<HTMLElement>("#global-nav"),
   globalNavRow: requireElement<HTMLElement>("#global-nav-row"),
@@ -19,6 +20,8 @@ export const rendererDomElements = Object.freeze({
   projectCount: requireElement<HTMLElement>("#project-count"),
   projectList: requireElement<HTMLElement>("#project-list"),
   projectSearchInput: requireElement<HTMLInputElement>("#project-search"),
+  sidebarRail: requireElement<HTMLButtonElement>("#sidebar-rail"),
+  sidebarToggleButton: requireElement<HTMLButtonElement>("#sidebar-toggle"),
   sidebarUpdateNotice: requireElement<HTMLElement>("#sidebar-update-notice"),
   workspace: requireElement<HTMLElement>(".workspace"),
   workspaceKicker: requireElement<HTMLElement>("#workspace-kicker"),

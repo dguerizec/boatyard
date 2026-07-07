@@ -7,11 +7,15 @@ type RendererNavigationControllerOptions = {
   closeProjectGroupMenu: () => void;
   closeTerminalTabMenu: () => void;
   getCollapsedProjectGroups: () => Set<string>;
+  getPinnedProjectIds: () => string[];
   hasProject: (projectId?: string | null) => boolean;
+  isSidebarCollapsed: () => boolean;
   render: () => void;
   updateNavigation: (values: {
     collapsedProjectGroups: string[];
+    pinnedProjectIds: string[];
     projectId: string | null;
+    sidebarCollapsed: boolean;
     view: string;
   }) => Promise<unknown>;
 };
@@ -24,7 +28,9 @@ export function createRendererNavigationController({
   closeProjectGroupMenu,
   closeTerminalTabMenu,
   getCollapsedProjectGroups,
+  getPinnedProjectIds,
   hasProject,
+  isSidebarCollapsed,
   render,
   updateNavigation
 }: RendererNavigationControllerOptions) {
@@ -40,7 +46,9 @@ export function createRendererNavigationController({
     updateNavigation({
       view: currentView,
       projectId: currentProjectId,
-      collapsedProjectGroups: [...getCollapsedProjectGroups()]
+      collapsedProjectGroups: [...getCollapsedProjectGroups()],
+      pinnedProjectIds: getPinnedProjectIds(),
+      sidebarCollapsed: isSidebarCollapsed()
     }).catch((error) => {
       console.error("Could not persist navigation:", error);
     });
