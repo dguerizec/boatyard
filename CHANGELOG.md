@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.8.5] - 2026-07-08
+
+### Summary
+
+- **v0.8.5: Reliable overlays** — Boatyard keeps dialogs and overlays usable when web apps are active behind them.
+
+### Fixed
+
+- **Overlay dialogs over web apps** — Changelog and other dialogs no longer become hidden behind live web app views while the backdrop blocks the interface.
+- **Sidebar hover overlay behavior** — Closing the sidebar hover overlay no longer re-enables web app views that are still covered by another open dialog or tour step.
+- **Startup web app visibility** — Web apps that appear while an overlay is already open now stay hidden until the overlay is dismissed.
+
 ## [0.8.4] - 2026-07-07
 
 ### Summary

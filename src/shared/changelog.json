@@ -1,6 +1,27 @@
 {
-  "generatedForVersion": "0.8.4",
+  "generatedForVersion": "0.8.5",
   "releases": [
+    {
+      "version": "0.8.5",
+      "date": "2026-07-08",
+      "features": [
+        {
+          "category": "Fixed",
+          "title": "Overlay dialogs over web apps",
+          "body": "Changelog and other dialogs no longer become hidden behind live web app views while the backdrop blocks the interface."
+        },
+        {
+          "category": "Fixed",
+          "title": "Sidebar hover overlay behavior",
+          "body": "Closing the sidebar hover overlay no longer re-enables web app views that are still covered by another open dialog or tour step."
+        },
+        {
+          "category": "Fixed",
+          "title": "Startup web app visibility",
+          "body": "Web apps that appear while an overlay is already open now stay hidden until the overlay is dismissed."
+        }
+      ]
+    },
     {
       "version": "0.8.4",
       "date": "2026-07-07",
