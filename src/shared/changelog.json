@@ -1,6 +1,37 @@
 {
-  "generatedForVersion": "0.8.2",
+  "generatedForVersion": "0.8.3",
   "releases": [
+    {
+      "version": "0.8.3",
+      "date": "2026-07-07",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Pinned projects",
+          "body": "Projects can now be pinned from their context menu and opened from shortcut buttons in the top bar."
+        },
+        {
+          "category": "Added",
+          "title": "Collapsible sidebar",
+          "body": "The project sidebar can now collapse into a narrow rail and reopen temporarily on hover, focus, or click."
+        },
+        {
+          "category": "Added",
+          "title": "Remembered sidebar layout",
+          "body": "Boatyard now restores pinned projects and the sidebar collapsed state across launches."
+        },
+        {
+          "category": "Fixed",
+          "title": "Removed project cleanup",
+          "body": "Deleted projects are now also removed from pinned shortcuts."
+        },
+        {
+          "category": "Fixed",
+          "title": "Sidebar overlay behavior",
+          "body": "Temporary sidebar overlays now avoid interfering with visible web app panes and close after project selection or Escape."
+        }
+      ]
+    },
     {
       "version": "0.8.2",
       "date": "2026-07-06",
