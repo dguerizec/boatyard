@@ -9,6 +9,7 @@
     twiccApiToken?: string;
     twiccBaseUrl?: string;
     twiccProjectUrl?: string;
+    twiccTopbarUsageDisplay?: string;
   };
 
   type TwiccPluginOptions = {
@@ -107,6 +108,12 @@
     done: "Done"
   };
   const TWICC_USAGE_REFRESH_MS = 60000;
+  const TWICC_TOPBAR_USAGE_DISPLAY_DEFAULT = "chartsWithValues";
+  const TWICC_TOPBAR_USAGE_DISPLAY_OPTIONS = [
+    { value: "numbers", label: "Numeric values" },
+    { value: "charts", label: "Charts only" },
+    { value: "chartsWithValues", label: "Charts with values" }
+  ];
   let projectProcessStatuses: Record<string, TwiccProjectStatus> = {};
   const retainedDoneProjectStatuses = new Map<string, TwiccProjectStatus>();
   let projectStatusRefreshTimer: number | null = null;
@@ -392,6 +399,13 @@
     return "";
   }
 
+  function getTopbarUsageDisplayMode(globalPluginConfig: TwiccConfig = {}) {
+    const value = String(globalPluginConfig.twiccTopbarUsageDisplay || "").trim();
+    return TWICC_TOPBAR_USAGE_DISPLAY_OPTIONS.some((option) => option.value === value)
+      ? value
+      : TWICC_TOPBAR_USAGE_DISPLAY_DEFAULT;
+  }
+
   function createProviderIcon(provider: unknown) {
     const iconClass = getProviderIconClass(provider);
     const icon = document.createElement("span");
@@ -471,14 +485,16 @@
     return "ok";
   }
 
-  function createUsageGauge(label: string, percentValue: unknown, detail: string) {
+  function createUsageGauge(label: string, percentValue: unknown, detail: string, options: { compact?: boolean; values?: boolean } = {}) {
     const gauge = document.createElement("div");
     gauge.className = `twicc-usage-gauge ${getUsageTone(percentValue)}`;
+    gauge.classList.toggle("compact", options.compact === true);
+    gauge.classList.toggle("charts-only", options.values === false);
     gauge.style.setProperty("--twicc-usage-percent", `${getGaugePercent(percentValue)}%`);
 
     const ring = document.createElement("span");
     ring.className = "twicc-usage-ring";
-    ring.textContent = formatPercent(percentValue);
+    ring.textContent = options.values === false ? "" : formatPercent(percentValue);
 
     const copy = document.createElement("span");
     copy.className = "twicc-usage-gauge-copy";
@@ -493,10 +509,12 @@
     return gauge;
   }
 
-  function createBurnRateGauge(label: string, value: unknown) {
+  function createBurnRateGauge(label: string, value: unknown, options: { compact?: boolean; values?: boolean } = {}) {
     const arcs = getBurnRateArcSegments(value);
     const gauge = document.createElement("div");
     gauge.className = `twicc-usage-burn-gauge ${getBurnRateTone(value)}`;
+    gauge.classList.toggle("compact", options.compact === true);
+    gauge.classList.toggle("charts-only", options.values === false);
     gauge.style.setProperty("--twicc-burn-safe-arc", `${arcs.safe}%`);
     gauge.style.setProperty("--twicc-burn-danger-arc", `${arcs.danger}%`);
 
@@ -673,41 +691,139 @@
   function createCompactUsageWidget(_project: TwiccProject, props: TwiccPluginOptions = {}) {
     const chip = document.createElement("span");
     chip.className = "twicc-usage-compact";
+    chip.setAttribute("aria-label", "TwiCC usage");
+
+    let currentUsageEntries: [string, TwiccUsageProvider][] = [];
+
+    function getDisplayMode() {
+      return getTopbarUsageDisplayMode(props.globalPluginConfig || {});
+    }
 
     function renderCompactProvider(providerKey: string, provider: TwiccUsageProvider) {
       const entry = document.createElement("span");
       entry.className = "twicc-usage-compact-provider";
       entry.append(createProviderIcon(providerKey));
+      const mode = getDisplayMode();
 
-      for (const [label, value] of [
-        ["5h", provider.five_hour_utilization],
-        ["7d", provider.seven_day_utilization]
-      ] as const) {
-        const metric = document.createElement("span");
-        metric.className = `twicc-usage-compact-metric ${getUsageTone(value)}`;
-        metric.title = `${providerKey} ${label} utilization`;
-        metric.textContent = `${label} ${formatPercent(value)}`;
-        entry.append(metric);
+      if (mode === "numbers") {
+        for (const [label, value, title] of [
+          ["5h", provider.five_hour_utilization, "utilization"],
+          ["5h Burn", getFiveHourBurnRate(provider), "burn rate"],
+          ["7d", provider.seven_day_utilization, "utilization"],
+          ["7d Burn", getSevenDayBurnRate(provider), "burn rate"]
+        ] as const) {
+          const metric = document.createElement("span");
+          const tone = String(label).includes("Burn") ? getBurnRateTone(value) : getUsageTone(value);
+          metric.className = `twicc-usage-compact-metric ${tone}`;
+          metric.title = `${providerKey} ${label} ${title}`;
+          metric.textContent = `${label} ${String(label).includes("Burn") ? formatBurnRate(value) : formatPercent(value)}`;
+          entry.append(metric);
+        }
+      } else {
+        const showValues = mode === "chartsWithValues";
+        entry.append(
+          createUsageGauge("5h", provider.five_hour_utilization, formatResetRelative(provider.five_hour_resets_at), {
+            compact: true,
+            values: showValues
+          }),
+          createBurnRateGauge("5h Burn", getFiveHourBurnRate(provider), {
+            compact: true,
+            values: showValues
+          }),
+          createUsageGauge("7d", provider.seven_day_utilization, formatResetRelative(provider.seven_day_resets_at), {
+            compact: true,
+            values: showValues
+          }),
+          createBurnRateGauge("7d Burn", getSevenDayBurnRate(provider), {
+            compact: true,
+            values: showValues
+          })
+        );
       }
 
       return entry;
     }
 
+    function renderCompactEntries() {
+      chip.replaceChildren();
+      chip.dataset.displayMode = getDisplayMode();
+      chip.title = "TwiCC usage";
+
+      if (!currentUsageEntries.length) {
+        chip.textContent = "TwiCC --";
+        return;
+      }
+
+      currentUsageEntries.forEach(([providerKey, usage]) => chip.append(renderCompactProvider(providerKey, usage)));
+    }
+
+    function closeMenu(menu: (HTMLElement & { cleanup?: () => void }) | null) {
+      menu?.cleanup?.();
+      menu?.remove();
+    }
+
+    function openDisplayMenu(event: MouseEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      closeMenu(document.querySelector(".twicc-usage-display-menu"));
+
+      const menu = document.createElement("div") as HTMLElement & { cleanup?: () => void };
+      menu.className = "webapp-tab-menu twicc-usage-display-menu";
+      menu.setAttribute("role", "menu");
+
+      const menuWidth = 190;
+      menu.style.left = `${Math.round(Math.max(12, Math.min(event.clientX, window.innerWidth - menuWidth - 12)))}px`;
+      menu.style.top = `${Math.round(Math.max(12, Math.min(event.clientY, window.innerHeight - 126)))}px`;
+
+      const currentMode = getDisplayMode();
+      for (const option of TWICC_TOPBAR_USAGE_DISPLAY_OPTIONS) {
+        const item = document.createElement("button");
+        item.type = "button";
+        item.className = "webapp-tab-menu-item";
+        item.setAttribute("role", "menuitemradio");
+        item.setAttribute("aria-checked", String(option.value === currentMode));
+        item.textContent = option.label;
+        item.addEventListener("click", async () => {
+          props.globalPluginConfig = {
+            ...(props.globalPluginConfig || {}),
+            twiccTopbarUsageDisplay: option.value
+          };
+          closeMenu(menu);
+          renderCompactEntries();
+          try {
+            await globalScope.boatyard?.updateGlobalPluginConfig?.("boatyard.twicc", {
+              twiccTopbarUsageDisplay: option.value
+            });
+          } catch (error) {
+            console.error("Could not update Twicc usage display mode:", error);
+          }
+        });
+        menu.append(item);
+      }
+
+      const handlePointerDown = (pointerEvent: PointerEvent) => {
+        if (pointerEvent.target instanceof Node && !menu.contains(pointerEvent.target)) {
+          closeMenu(menu);
+        }
+      };
+      document.addEventListener("pointerdown", handlePointerDown, true);
+      menu.cleanup = () => {
+        document.removeEventListener("pointerdown", handlePointerDown, true);
+      };
+      document.body.append(menu);
+      menu.querySelector("button")?.focus();
+    }
+
+    chip.addEventListener("contextmenu", openDisplayMenu);
+
     async function load() {
       try {
         const result = await fetchUsage(props.globalPluginConfig || {});
-        const entries = Object.entries(result || {});
-        chip.replaceChildren();
-        chip.title = "TwiCC usage";
+        currentUsageEntries = Object.entries(result || {})
+          .sort(([left], [right]) => left.localeCompare(right));
 
-        if (!entries.length) {
-          chip.textContent = "TwiCC —";
-          return;
-        }
-
-        entries
-          .sort(([left], [right]) => left.localeCompare(right))
-          .forEach(([providerKey, usage]) => chip.append(renderCompactProvider(providerKey, usage)));
+        renderCompactEntries();
       } catch (error) {
         chip.replaceChildren();
         chip.textContent = "TwiCC ?";
@@ -825,6 +941,15 @@
               type: "password",
               valueType: "text",
               placeholder: "Optional Bearer token"
+            },
+            {
+              key: "twiccTopbarUsageDisplay",
+              label: "Top bar usage display",
+              type: "select",
+              valueType: "text",
+              defaultValue: TWICC_TOPBAR_USAGE_DISPLAY_DEFAULT,
+              options: TWICC_TOPBAR_USAGE_DISPLAY_OPTIONS,
+              description: "Choose how the Twicc usage widget renders in the top bar."
             }
           ]
         });

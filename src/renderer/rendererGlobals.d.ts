@@ -28,8 +28,10 @@ type WidgetRegistryWindow = Window & {
 
 type PluginSettingsField = {
   defaultValue?: unknown | ((context: Record<string, unknown>) => unknown);
+  options?: Array<{ label?: string; value?: unknown }>;
   required?: boolean;
   label?: string;
+  type?: string;
   valueType?: string;
 };
 
@@ -154,6 +156,7 @@ type BoatyardPluginRendererBridge = {
   invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<unknown>;
   onPluginEvent?: (pluginId: string, eventName: string, callback: (payload: unknown) => void) => () => void;
   openExternal?: (url: string) => unknown;
+  updateGlobalPluginConfig?: (pluginId: string, config: Record<string, unknown>) => Promise<unknown>;
   updateProjectPluginConfig?: (projectId: string, pluginId: string, config: Record<string, unknown>) => Promise<unknown>;
   writeClipboardText?: (value: string) => Promise<unknown>;
 };

@@ -97,6 +97,11 @@
   gap: 4px;
 }
 
+.twicc-usage-gauge.compact {
+  min-width: auto;
+  gap: 3px;
+}
+
 .twicc-usage-gauge.warn {
   --twicc-usage-color: #facc15;
 }
@@ -120,10 +125,41 @@
   font-weight: 900;
 }
 
+.twicc-usage-gauge.compact .twicc-usage-ring {
+  width: 22px;
+  height: 22px;
+  font-size: 7px;
+}
+
+.twicc-usage-gauge.charts-only .twicc-usage-ring {
+  width: 18px;
+  height: 18px;
+}
+
 .twicc-usage-gauge-copy {
   min-width: 0;
   display: grid;
   gap: 1px;
+}
+
+.twicc-usage-gauge.compact .twicc-usage-gauge-copy,
+.twicc-usage-burn-gauge.compact .twicc-usage-gauge-copy {
+  gap: 0;
+}
+
+.twicc-usage-gauge.compact .twicc-usage-gauge-copy small,
+.twicc-usage-burn-gauge.compact .twicc-usage-gauge-copy small {
+  display: none;
+}
+
+.twicc-usage-gauge.charts-only .twicc-usage-gauge-copy,
+.twicc-usage-burn-gauge.charts-only .twicc-usage-gauge-copy {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .twicc-usage-gauge-copy strong {
@@ -147,12 +183,27 @@
   gap: 4px;
 }
 
+.twicc-usage-burn-gauge.compact {
+  min-width: auto;
+  gap: 3px;
+}
+
 .twicc-usage-burn-dial {
   position: relative;
   width: 28px;
   height: 15px;
   flex: 0 0 auto;
   overflow: hidden;
+}
+
+.twicc-usage-burn-gauge.charts-only .twicc-usage-burn-dial {
+  width: 24px;
+  height: 13px;
+}
+
+.twicc-usage-burn-gauge.charts-only .twicc-usage-burn-dial::before {
+  width: 24px;
+  height: 24px;
 }
 
 .twicc-usage-burn-dial::before {
@@ -178,14 +229,24 @@
 .twicc-usage-compact {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-size: 11px;
 }
 
 .twicc-usage-compact-provider {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+}
+
+.twicc-usage-compact[data-display-mode="charts"],
+.twicc-usage-compact[data-display-mode="chartsWithValues"] {
+  gap: 9px;
+}
+
+.twicc-usage-compact[data-display-mode="charts"] .twicc-usage-compact-provider,
+.twicc-usage-compact[data-display-mode="chartsWithValues"] .twicc-usage-compact-provider {
+  gap: 4px;
 }
 
 .twicc-usage-compact-provider .twicc-usage-provider-icon {

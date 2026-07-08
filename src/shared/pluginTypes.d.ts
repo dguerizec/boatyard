@@ -173,6 +173,7 @@ declare global {
   type PluginSettingsFieldDefinition = PluginRegistryRecord & {
     key: string;
     label: string;
+    options?: Array<{ label?: string; value?: unknown }>;
     type: string;
     valueType: string;
     placeholder: string;

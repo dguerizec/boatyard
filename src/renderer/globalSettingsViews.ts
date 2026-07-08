@@ -27,7 +27,7 @@ import type { UnknownRecord } from "./rendererRecords.js";
     getInstalledWidgets: () => unknown[];
     getPluginGlobalSettingsSections: () => unknown[];
     getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
-    readPluginSettingsFieldValue: (field: PluginGlobalSettingsField, input: HTMLInputElement) => unknown;
+    readPluginSettingsFieldValue: (field: PluginGlobalSettingsField, input: HTMLInputElement | HTMLSelectElement) => unknown;
     showOverlayDialog: (dialog: HTMLDialogElement, options?: UnknownRecord) => Promise<boolean>;
     renderGlobalSettingsPage: () => void;
     updatePluginEnabled: (pluginId: string, enabled: boolean) => Promise<unknown>;
@@ -56,7 +56,7 @@ import type { UnknownRecord } from "./rendererRecords.js";
       message: HTMLSpanElement;
     } | null;
     field: PluginGlobalSettingsField;
-    input: HTMLInputElement;
+    input: HTMLInputElement | HTMLSelectElement;
   };
 
   type PluginFieldApi = {
@@ -653,14 +653,30 @@ export function createGlobalSettingsViews({
         const label = document.createElement("label");
         label.textContent = field.label;
 
-        const input = document.createElement("input");
+        const input = field.type === "select"
+          ? document.createElement("select")
+          : document.createElement("input");
         input.name = field.key;
-        input.type = field.type || "text";
+        if (input instanceof HTMLInputElement) {
+          input.type = field.type || "text";
+        }
         input.autocomplete = "off";
-        input.placeholder = field.placeholder || "";
-        input.readOnly = field.readOnly === true;
+        if ("placeholder" in input) {
+          input.placeholder = field.placeholder || "";
+        }
+        if ("readOnly" in input) {
+          input.readOnly = field.readOnly === true;
+        }
         const defaultValue = globalScope.BoatyardPluginSettingsFields.resolveFieldDefault(field);
         input.dataset.defaultValue = String(defaultValue || "");
+        if (input instanceof HTMLSelectElement) {
+          for (const optionDefinition of field.options || []) {
+            const option = document.createElement("option");
+            option.value = String(optionDefinition.value || "");
+            option.textContent = optionDefinition.label || option.value;
+            input.append(option);
+          }
+        }
         input.value = String(pluginConfig[field.key] || input.dataset.defaultValue);
         label.append(input);
         if (field.description) {
@@ -796,7 +812,9 @@ export function createGlobalSettingsViews({
 
           const nextValue = String(value || "");
           input.dataset.defaultValue = nextValue;
-          input.placeholder = nextValue || inputs.get(key)?.field.placeholder || "";
+          if ("placeholder" in input) {
+            input.placeholder = nextValue || inputs.get(key)?.field.placeholder || "";
+          }
           return true;
         },
         setActionVisible(key: string, visible: boolean) {
