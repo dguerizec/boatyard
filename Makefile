@@ -29,6 +29,7 @@ check: deps typecheck app-build
 changelog:
 	@npm run build:scripts --silent
 	@node build-scripts/scripts/update-changelog.js --agent --codex "$(CODEX)" --verbose "$(VERBOSE)"
+	@git diff
 
 build: check
 	npm run package
