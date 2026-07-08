@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.8.6] - 2026-07-08
+
+### Summary
+
+- **v0.8.6: Git remote refresh** — Project settings can re-check a project directory and fill in repository links after a remote is added.
+
+### Added
+
+- **Git URL refresh** — Project settings now include a Refresh button that re-detects the Git remote and updates the Git URL and Repo URL fields.
+
+### Fixed
+
+- **Projects created before first push** — The Repo tab can become available after adding a Git remote, without recreating the project.
+
+### Internal
+
+- **Agent update changelog diff** — Release workflow now shows the changelog diff after updating the agent.
+
 ## [0.8.5] - 2026-07-08
 
 ### Summary

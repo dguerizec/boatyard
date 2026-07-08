@@ -1,6 +1,22 @@
 {
-  "generatedForVersion": "0.8.5",
+  "generatedForVersion": "0.8.6",
   "releases": [
+    {
+      "version": "0.8.6",
+      "date": "2026-07-08",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Git URL refresh",
+          "body": "Project settings now include a Refresh button that re-detects the Git remote and updates the Git URL and Repo URL fields."
+        },
+        {
+          "category": "Fixed",
+          "title": "Projects created before first push",
+          "body": "The Repo tab can become available after adding a Git remote, without recreating the project."
+        }
+      ]
+    },
     {
       "version": "0.8.5",
       "date": "2026-07-08",
