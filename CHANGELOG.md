@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.8.7] - 2026-07-09
+
+### Summary
+
+- **v0.8.7: Top bar usage widgets** — TwiCC usage is now easier to monitor from a compact top bar chip with a configurable widget menu.
+
+### Added
+
+- **Top bar widgets** — Supported widgets can now appear in the top bar between pinned projects and app actions.
+- **TwiCC usage chip** — TwiCC usage now has a compact top bar view showing per-provider 5h and 7d usage.
+- **Widget toggles** — Right-click the top bar to choose which available top bar widgets are shown.
+
+### Changed
+
+- **Cleaner project dashboards** — App-wide TwiCC usage no longer needs to appear as a repeated widget on every project dashboard.
+
+### Documentation
+
+- **Plugin widget API** — Plugin documentation now covers the top bar widget scope and compact renderer support.
+
 ## [0.8.6] - 2026-07-08
 
 ### Summary

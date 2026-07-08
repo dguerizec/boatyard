@@ -1,6 +1,32 @@
 {
-  "generatedForVersion": "0.8.6",
+  "generatedForVersion": "0.8.7",
   "releases": [
+    {
+      "version": "0.8.7",
+      "date": "2026-07-09",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Top bar widgets",
+          "body": "Supported widgets can now appear in the top bar between pinned projects and app actions."
+        },
+        {
+          "category": "Added",
+          "title": "TwiCC usage chip",
+          "body": "TwiCC usage now has a compact top bar view showing per-provider 5h and 7d usage."
+        },
+        {
+          "category": "Added",
+          "title": "Widget toggles",
+          "body": "Right-click the top bar to choose which available top bar widgets are shown."
+        },
+        {
+          "category": "Changed",
+          "title": "Cleaner project dashboards",
+          "body": "App-wide TwiCC usage no longer needs to appear as a repeated widget on every project dashboard."
+        }
+      ]
+    },
     {
       "version": "0.8.6",
       "date": "2026-07-08",
