@@ -38,6 +38,7 @@ import { createToolIcon } from "./toolIcons.js";
 import { createUpdateViews } from "./updateViews.js";
 import { createWebAppMenus } from "./webAppMenus.js";
 import { createWebAppLoadTracker } from "./webAppLoadTracker.js";
+import { createTopbarWidgets } from "./topbarWidgets.js";
 import { createWebAppSurfaces } from "./webAppSurfaces.js";
 import { createVisibleWebAppTracker } from "./visibleWebAppTracker.js";
 import { registerWidgetRegistry } from "./widgetRegistry.js";
@@ -900,6 +901,19 @@ const webAppMenuFreezeScope = webAppSurfaces.createFreezeScope();
 const onboardingFreezeScope = webAppSurfaces.createFreezeScope();
 const sidebarFreezeScope = webAppSurfaces.createFreezeScope();
 
+const topbarWidgets = createTopbarWidgets({
+  container: document.getElementById("topbar-widgets") as HTMLElement,
+  topbar: document.querySelector(".topbar") as HTMLElement,
+  getWidgetRegistry: () => boatyardWindow.BoatyardWidgetRegistry || null,
+  getTopbarWidgetOrder: () => state.topbarWidgets?.order || [],
+  getGlobalPluginConfig,
+  updateTopbarWidgets: (order) => boatyardWindow.boatyard.updateTopbarWidgets({ order }),
+  onOrderPersisted: (order) => {
+    state.topbarWidgets = { order };
+  },
+  createFreezeScope: () => webAppSurfaces.createFreezeScope()
+});
+
 function getWebAppHostBounds(host: Element | null | undefined) {
   return webAppSurfaces.getWebAppHostBounds(host);
 }
@@ -962,6 +976,7 @@ async function loadState() {
   hydrateTerminalTabOrders();
   restoreNavigation(state.navigation || {});
   render();
+  topbarWidgets.render();
   void loadPreparedUpdateNotice();
   startUpdatePolling();
   if (!(await maybeOpenPendingChangelog())) {

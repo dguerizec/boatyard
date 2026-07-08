@@ -46,6 +46,7 @@ import type {
   ProjectStoreState,
   ProjectWidgetLayout,
   StoredProject,
+  TopbarWidgetsState,
   WebAppOpenRule,
   WebAppState,
   WidgetLayout,
@@ -295,6 +296,15 @@ function normalizeWidgetLayout(layout: unknown = {}): WidgetLayout {
   };
 }
 
+function normalizeTopbarWidgetsState(topbarWidgets: unknown = {}): TopbarWidgetsState {
+  const source = toRecord(topbarWidgets);
+  const order = (Array.isArray(source.order) ? source.order : [])
+    .map((id) => String(id || "").trim())
+    .filter((id, index, values) => id && values.indexOf(id) === index);
+
+  return { order };
+}
+
 function normalizeWidgetLayouts(widgetLayouts: unknown = {}): Record<string, ProjectWidgetLayout> {
   if (!widgetLayouts || typeof widgetLayouts !== "object" || Array.isArray(widgetLayouts)) {
     return {};
@@ -479,6 +489,7 @@ class ProjectStore {
         widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
         terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, projectsWithHomeTabs),
         terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, projectsWithHomeTabs),
+        topbarWidgets: normalizeTopbarWidgetsState(parsed.topbarWidgets),
         onboarding: normalizeOnboardingState(parsed.onboarding),
         app: normalizeAppState(parsed.app)
       };
@@ -697,6 +708,16 @@ class ProjectStore {
     this.state.widgetLayouts[String(projectId)] = normalizeProjectWidgetLayout(layout);
     this.save();
     return this.getWidgetLayout(projectId);
+  }
+
+  getTopbarWidgets(): TopbarWidgetsState {
+    return structuredClone(this.state.topbarWidgets);
+  }
+
+  updateTopbarWidgets(topbarWidgets: unknown): TopbarWidgetsState {
+    this.state.topbarWidgets = normalizeTopbarWidgetsState(topbarWidgets);
+    this.save();
+    return this.getTopbarWidgets();
   }
 
   updateTerminalSelection(projectId: unknown, surfaceKey: unknown, windowId: unknown): Record<string, string> {

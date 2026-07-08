@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateProjectPluginConfig: (projectId: string, pluginId: string, patch: unknown) => ipcRenderer.invoke("project-plugin-config:update", projectId, pluginId, patch),
   updatePaneLayout: (projectId: string | null | undefined, layout: unknown) => ipcRenderer.invoke("pane-layout:update", projectId, layout),
   updateWidgetLayout: (projectId: string | null | undefined, layout: unknown) => ipcRenderer.invoke("widget-layout:update", projectId, layout),
+  updateTopbarWidgets: (topbarWidgets: unknown) => ipcRenderer.invoke("topbar-widgets:update", topbarWidgets),
   listTerminalTabs: (projectId: string) => ipcRenderer.invoke("terminal:tabs", projectId),
   createTerminalTab: (projectId: string, name: string) => ipcRenderer.invoke("terminal:create-tab", projectId, name),
   renameTerminalTab: (projectId: string, windowId: string, name: string) => ipcRenderer.invoke("terminal:rename-tab", projectId, windowId, name),

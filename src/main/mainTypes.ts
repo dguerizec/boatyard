@@ -54,6 +54,7 @@ export type ProjectStoreInstance = {
   updateWebAppHomeTab(projectId: string, tab: unknown): unknown;
   updateWebAppHomeTabs(projectId: string, tabs: unknown): unknown;
   updateWebAppState(key: string, state: UnknownRecord): unknown;
+  updateTopbarWidgets(topbarWidgets: unknown): unknown;
   updateWidgetLayout(projectId: string | null | undefined, layout: unknown): unknown;
   updateWindowState(state: { bounds: Rectangle; isMaximized: boolean }): unknown;
 };

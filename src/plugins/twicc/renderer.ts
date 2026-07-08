@@ -670,12 +670,70 @@
     return card;
   }
 
+  function createCompactUsageWidget(_project: TwiccProject, props: TwiccPluginOptions = {}) {
+    const chip = document.createElement("span");
+    chip.className = "twicc-usage-compact";
+
+    function renderCompactProvider(providerKey: string, provider: TwiccUsageProvider) {
+      const entry = document.createElement("span");
+      entry.className = "twicc-usage-compact-provider";
+      entry.append(createProviderIcon(providerKey));
+
+      for (const [label, value] of [
+        ["5h", provider.five_hour_utilization],
+        ["7d", provider.seven_day_utilization]
+      ] as const) {
+        const metric = document.createElement("span");
+        metric.className = `twicc-usage-compact-metric ${getUsageTone(value)}`;
+        metric.title = `${providerKey} ${label} utilization`;
+        metric.textContent = `${label} ${formatPercent(value)}`;
+        entry.append(metric);
+      }
+
+      return entry;
+    }
+
+    async function load() {
+      try {
+        const result = await fetchUsage(props.globalPluginConfig || {});
+        const entries = Object.entries(result || {});
+        chip.replaceChildren();
+        chip.title = "TwiCC usage";
+
+        if (!entries.length) {
+          chip.textContent = "TwiCC —";
+          return;
+        }
+
+        entries
+          .sort(([left], [right]) => left.localeCompare(right))
+          .forEach(([providerKey, usage]) => chip.append(renderCompactProvider(providerKey, usage)));
+      } catch (error) {
+        chip.replaceChildren();
+        chip.textContent = "TwiCC ?";
+        chip.title = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    load();
+    const refreshInterval = globalScope.setInterval?.(() => {
+      if (!chip.isConnected) {
+        globalScope.clearInterval?.(refreshInterval);
+        return;
+      }
+
+      load();
+    }, TWICC_USAGE_REFRESH_MS);
+
+    return chip;
+  }
+
   function registerUsageWidget(ctx: TwiccPluginContext) {
     ctx.widgets.register({
       id: "boatyard.twicc.usage",
       name: "TwiCC Usage",
       title: "TwiCC Usage",
-      scopes: ["global", "project"],
+      scopes: ["global", "project", "topbar"],
       category: "Usage",
       status: "experimental",
       defaultVisible: false,
@@ -684,7 +742,8 @@
         default: { columns: 3, rows: 1 },
         min: { columns: 3, rows: 1 }
       },
-      createElement: createUsageWidget
+      createElement: createUsageWidget,
+      createCompact: createCompactUsageWidget
     });
     ctx.widgets.registerAlias("boatyard.twicc.projectUsage", "boatyard.twicc.usage");
   }

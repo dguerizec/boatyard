@@ -38,6 +38,9 @@ export type RendererState = UnknownRecord & {
   };
   projects: RendererProject[];
   settings?: UnknownRecord;
+  topbarWidgets?: {
+    order?: string[];
+  };
   webApps?: Record<string, { url?: string }>;
 };
 
@@ -162,6 +165,7 @@ export type BoatyardBridge = {
   updateNavigation(values: UnknownRecord): Promise<UnknownRecord>;
   updateOnboarding(values: UnknownRecord): Promise<RendererState["onboarding"]>;
   updatePaneLayout(projectId: string | null | undefined, layout: unknown): Promise<RendererState>;
+  updateTopbarWidgets(topbarWidgets: unknown): Promise<{ order: string[] }>;
   updatePluginEnabled(pluginId: string, enabled: boolean): Promise<RendererState>;
   updateProject(projectId: string, values: UnknownRecord): Promise<RendererState>;
   updateProjectPluginConfig(projectId: string, pluginId: string, config: UnknownRecord): Promise<RendererState>;

@@ -101,6 +101,10 @@ export type ProjectWidgetLayout = {
   panes: Record<string, WidgetLayout>;
 };
 
+export type TopbarWidgetsState = {
+  order: string[];
+};
+
 export type PluginConfigValue = string | number | boolean;
 export type PluginConfigObject = Record<string, PluginConfigValue>;
 
@@ -153,6 +157,7 @@ export type ProjectStoreState = {
   settings: SettingsState;
   terminalSelections: Record<string, Record<string, string>>;
   terminalTabOrders: Record<string, string[]>;
+  topbarWidgets: TopbarWidgetsState;
   webApps: Record<string, WebAppState>;
   widgetLayouts: Record<string, ProjectWidgetLayout>;
   window: WindowState;

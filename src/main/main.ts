@@ -767,6 +767,10 @@ function registerIpcHandlers() {
     return store.updateWidgetLayout(projectId, layout);
   });
 
+  ipcMain.handle("topbar-widgets:update", (_event: IpcMainInvokeEvent, topbarWidgets: unknown) => {
+    return store.updateTopbarWidgets(topbarWidgets);
+  });
+
   ipcMain.handle("terminal:tabs", (_event: IpcMainInvokeEvent, projectId: string) => {
     return terminalService.listTabs(projectId);
   });

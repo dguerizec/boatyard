@@ -62,6 +62,9 @@ export function createDefaultState(): ProjectStoreState {
     widgetLayouts: {},
     terminalSelections: {},
     terminalTabOrders: {},
+    topbarWidgets: {
+      order: []
+    },
     onboarding: {
       completedVersion: 0,
       completedAt: ""

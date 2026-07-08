@@ -174,3 +174,45 @@
   -webkit-mask: radial-gradient(circle at center, transparent 0 53%, #000 55%);
   mask: radial-gradient(circle at center, transparent 0 53%, #000 55%);
 }
+
+.twicc-usage-compact {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.twicc-usage-compact-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.twicc-usage-compact-provider .twicc-usage-provider-icon {
+  width: 16px;
+  height: 16px;
+  font-size: 8px;
+}
+
+.twicc-usage-compact-provider .twicc-usage-provider-icon.claude,
+.twicc-usage-compact-provider .twicc-usage-provider-icon.openai {
+  -webkit-mask-size: 14px 14px;
+  mask-size: 14px 14px;
+}
+
+.twicc-usage-compact-metric {
+  font-weight: 700;
+  color: #41b883;
+}
+
+.twicc-usage-compact-metric.warn {
+  color: #facc15;
+}
+
+.twicc-usage-compact-metric.danger {
+  color: #f87171;
+}
+
+.twicc-usage-compact-metric.unknown {
+  color: var(--muted);
+}

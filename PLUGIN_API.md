@@ -402,6 +402,31 @@ Widget `props` SHOULD include:
 Widget renderers MUST return a disposable or cleanup callback when they attach
 listeners, timers, or external resources.
 
+### Top bar widgets
+
+Widgets whose data is app-global MAY also opt into the top bar surface by
+including `"topbar"` in `scopes` and providing a `createCompact` renderer:
+
+```js
+ctx.widgets.register({
+  id: "boatyard.twicc.usage",
+  title: "TwiCC Usage",
+  scopes: ["global", "project", "topbar"],
+  createElement(project, props) {
+    return createUsageWidget(project, props);
+  },
+  createCompact(project, props) {
+    return createCompactUsageWidget(project, props);
+  }
+});
+```
+
+`createCompact(null, props)` MUST return a small inline element that fits the
+top bar (roughly one text line). Clicking the chip opens a popover rendered
+with the widget's regular `createElement`/`create`, so the full widget MUST
+tolerate a `null` project. Users enable top bar widgets from the top bar
+context menu; the selection is persisted globally.
+
 ## Project Navigation Badges
 
 Plugins MAY contribute compact badges for the project sidebar. Badges are
