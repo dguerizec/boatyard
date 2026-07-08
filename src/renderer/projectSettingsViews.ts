@@ -179,7 +179,43 @@ export function createProjectSettingsViews({
       gitUrlInput.autocomplete = "off";
       gitUrlInput.placeholder = "git@github.com:owner/repo.git";
       gitUrlInput.value = String(initialValues.gitUrl || "");
-      gitUrlLabel.append(gitUrlInput);
+
+      const gitUrlControl = document.createElement("div");
+      gitUrlControl.className = "path-picker";
+
+      const gitUrlRefreshButton = document.createElement("button");
+      gitUrlRefreshButton.className = "secondary-button";
+      gitUrlRefreshButton.type = "button";
+      gitUrlRefreshButton.textContent = "Refresh";
+      gitUrlRefreshButton.title = "Re-detect the git remote from the source path";
+      gitUrlRefreshButton.addEventListener("click", async () => {
+        error.textContent = "";
+        error.hidden = true;
+
+        const sourcePath = sourcePathInput.value.trim();
+        if (!sourcePath) {
+          error.textContent = "Set the source path before detecting the git remote.";
+          error.hidden = false;
+          return;
+        }
+
+        gitUrlRefreshButton.disabled = true;
+        try {
+          const detected = await applySourcePathInspection(sourcePath);
+          if (!detected) {
+            error.textContent = `No git remote found at ${sourcePath}.`;
+            error.hidden = false;
+          }
+        } catch (inspectionError) {
+          error.textContent = asErrorMessage(inspectionError);
+          error.hidden = false;
+        } finally {
+          gitUrlRefreshButton.disabled = false;
+        }
+      });
+
+      gitUrlControl.append(gitUrlInput, gitUrlRefreshButton);
+      gitUrlLabel.append(gitUrlControl);
     
       const repoUrlLabel = document.createElement("label");
       repoUrlLabel.textContent = "Repo URL";
@@ -346,25 +382,27 @@ export function createProjectSettingsViews({
     
       async function applySourcePathInspection(sourcePath: string) {
         applySourcePathIdentity(sourcePath);
-    
+
         const inspected = typeof boatyard.inspectSourcePath === "function"
           ? await boatyard.inspectSourcePath(sourcePath)
           : {};
-    
+
         if (inspected?.gitUrl) {
           setCoreFieldValue("gitUrl", inspected.gitUrl, { source: "inspection" });
         }
-    
+
         if (inspected?.repoUrl) {
           setCoreFieldValue("repoUrl", inspected.repoUrl, { source: "inspection" });
         } else if (inspected?.gitUrl && !repoUrlInput.dataset.edited) {
           setCoreFieldValue("repoUrl", deriveRepoUrl(inspected.gitUrl), { ifUnedited: true, source: "inspection" });
         }
-    
+
         emitProjectFormEvent("boatyard.projectForm.sourcePathInspected", {
           sourcePath,
           inspected
         });
+
+        return Boolean(inspected?.gitUrl || inspected?.repoUrl);
       }
     
       function emitProjectFormEvent(eventName: string, payload: UnknownRecord) {
