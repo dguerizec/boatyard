@@ -37,7 +37,7 @@ function createPluginFixture() {
     module.exports.activate = (ctx) => {
       ctx.actions.handle("echo", ({ value } = {}) => ({ value, userData: ctx.paths.userData }));
       ctx.actions.handle("emit", () => ctx.events.emit("updated", { ok: true }));
-      ctx.projectInspectors.register(({ sourcePath } = {}) => ({ sourcePath, inspected: true }));
+      ctx.projectInspectors.register(({ sourcePath, globalConfig } = {}) => ({ sourcePath, globalConfig, inspected: true }));
       ctx.stateMigrations.register(({ state }) => ({
         projectPluginConfig: (state.projects || [])
           .filter((project) => project.previewUrl)
@@ -51,7 +51,16 @@ function createPluginFixture() {
 test("PluginHost discovers runtime plugins and routes actions", async () => {
   const pluginRoot = createPluginFixture();
   const store = {
-    getState: () => ({ plugins: { enabled: {} } })
+    getState: () => ({
+      pluginConfig: {
+        global: {
+          "vendor.example": {
+            apiUrl: "https://example.test"
+          }
+        }
+      },
+      plugins: { enabled: {} }
+    })
   };
   const sentEvents: RendererEvent[] = [];
   const host = new PluginHost({
@@ -82,6 +91,9 @@ test("PluginHost discovers runtime plugins and routes actions", async () => {
   assert.deepEqual(await host.inspectSourcePath({ sourcePath: "/workspace/example/project" }), {
     "vendor.example": {
       sourcePath: "/workspace/example/project",
+      globalConfig: {
+        apiUrl: "https://example.test"
+      },
       inspected: true
     }
   });

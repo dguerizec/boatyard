@@ -16,7 +16,12 @@ const path = require("node:path");
 type UnknownRecord = Record<string, unknown>;
 
 type PluginHostStore = {
-  getState(): { plugins?: { enabled?: Record<string, boolean | undefined> } } | undefined;
+  getState(): {
+    pluginConfig?: {
+      global?: Record<string, UnknownRecord>;
+    };
+    plugins?: { enabled?: Record<string, boolean | undefined> };
+  } | undefined;
   updateGlobalPluginConfig?(pluginId: string, config: UnknownRecord): unknown;
   updateProjectPluginConfig?(projectId: string, pluginId: string, config: UnknownRecord): unknown;
 };
@@ -363,7 +368,12 @@ class PluginHost {
         continue;
       }
 
-      const result = await inspector.handler(input);
+      const source = isRecord(input) ? input : {};
+      const globalConfig = this.store?.getState?.()?.pluginConfig?.global?.[inspector.pluginId] || {};
+      const result = await inspector.handler({
+        ...source,
+        globalConfig
+      });
       if (isRecord(result)) {
         plugins[inspector.pluginId] = result;
       }

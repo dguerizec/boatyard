@@ -16,7 +16,7 @@ export interface PluginEvents {
 }
 
 export interface PluginProjectInspectors<TResult = unknown> {
-  register(handler: (payload?: { sourcePath?: unknown }) => TResult | Promise<TResult>): void;
+  register(handler: (payload?: { globalConfig?: Record<string, unknown>; sourcePath?: unknown }) => TResult | Promise<TResult>): void;
 }
 
 export interface PluginStateMigrations<TState = unknown, TResult = unknown> {

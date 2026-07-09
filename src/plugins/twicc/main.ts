@@ -14,6 +14,7 @@ const {
 
 type BoatyardProject = { id: string; sourcePath?: string };
 type TwiccState = { projects?: BoatyardProject[] };
+type GlobalConfigPayload = { globalConfig?: Record<string, unknown> };
 type SourcePathPayload = { sourcePath?: unknown };
 type TwiccPluginContext = {
   actions: PluginActions;
@@ -25,17 +26,24 @@ type TwiccPluginContext = {
 function activate(ctx: TwiccPluginContext) {
   const projectCache = createTwiccProjectCache();
 
-  ctx.actions.handle<SourcePathPayload>("createProject", async ({ sourcePath } = {}) => {
-    const project = await createTwiccProject(sourcePath, { execFileAsync: ctx.execFileAsync });
+  ctx.actions.handle<SourcePathPayload & GlobalConfigPayload>("createProject", async ({ sourcePath, globalConfig } = {}) => {
+    const project = await createTwiccProject(sourcePath, {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    });
     projectCache.invalidate();
     return project;
   });
 
-  ctx.actions.handle("projectProcessStatuses", async () => {
-    const processes = await loadTwiccProcesses({ execFileAsync: ctx.execFileAsync });
+  ctx.actions.handle<GlobalConfigPayload>("projectProcessStatuses", async ({ globalConfig } = {}) => {
+    const options = {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    };
+    const processes = await loadTwiccProcesses(options);
     const statuses = getTwiccProjectProcessStatuses(processes);
     const twiccProjects = await projectCache.get(
-      { execFileAsync: ctx.execFileAsync },
+      options,
       { projectIds: Object.keys(statuses) }
     );
     return aliasTwiccProjectProcessStatuses(
@@ -45,11 +53,16 @@ function activate(ctx: TwiccPluginContext) {
     );
   });
 
-  ctx.projectInspectors.register(async ({ sourcePath }: SourcePathPayload = {}) => {
+  ctx.projectInspectors.register(async ({ sourcePath, globalConfig }: SourcePathPayload & GlobalConfigPayload = {}) => {
+    const options = {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    };
     const project = inspectTwiccProjectFromProjects(
       sourcePath,
-      await projectCache.get({ execFileAsync: ctx.execFileAsync }, { force: true })
-    ) || await inspectTwiccProject(sourcePath, { execFileAsync: ctx.execFileAsync });
+      await projectCache.get(options, { force: true }),
+      globalConfig?.twiccBaseUrl
+    ) || await inspectTwiccProject(sourcePath, options);
     return {
       matchType: project?.matchType || "",
       projectUrl: project?.url || ""

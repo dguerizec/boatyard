@@ -10,8 +10,10 @@ const {
   findTwiccProjectForPath,
   findTwiccProjectMatchForPath,
   getTwiccProjectProcessStatuses,
+  loadTwiccProcessesFromRpc,
   loadTwiccProcesses,
   loadTwiccProjectProcessStatuses,
+  loadTwiccProjectsFromRpc,
   loadTwiccProjects
 } = require(`${process.cwd()}/build/plugins/twicc/service`);
 
@@ -19,6 +21,16 @@ type ExecCall = {
   args: string[];
   command: string;
 };
+
+function createRpcFetch(assertCall: (url: string, init: Record<string, unknown>) => unknown) {
+  return async (url: string, init: Record<string, unknown>) => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return assertCall(url, init);
+    }
+  });
+}
 
 test("findTwiccProjectForPath matches exact directories first", () => {
   const projects = [
@@ -106,6 +118,34 @@ test("loadTwiccProjects returns JSON projects from the CLI", async () => {
   assert.deepEqual(projects, [{ id: "project", directory: "/workspace/project" }]);
 });
 
+test("loadTwiccProjectsFromRpc returns JSON projects from configured Twicc URL", async () => {
+  const projects = await loadTwiccProjectsFromRpc({
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example/base/",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/base/rpc/projects");
+      assert.equal(init.method, "POST");
+      assert.deepEqual(init.headers, {
+        "Content-Type": "application/json",
+        Authorization: "Bearer secret-token"
+      });
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        limit: 1000,
+        include_archived: true
+      });
+      return {
+        exit_code: 0,
+        result: [{ id: "remote-project", directory: "/workspace/project" }],
+        error: null
+      };
+    })
+  });
+
+  assert.deepEqual(projects, [{ id: "remote-project", directory: "/workspace/project" }]);
+});
+
 test("createTwiccProjectCache reuses projects until the TTL expires", async () => {
   let currentTime = 1000;
   const calls: number[] = [];
@@ -167,6 +207,29 @@ test("loadTwiccProcesses returns JSON processes from the CLI", async () => {
         stdout: JSON.stringify([{ project_id: "project", state: "assistant_turn" }])
       };
     }
+  });
+
+  assert.deepEqual(processes, [{ project_id: "project", state: "assistant_turn" }]);
+});
+
+test("loadTwiccProcessesFromRpc returns JSON processes from configured Twicc URL", async () => {
+  const processes = await loadTwiccProcessesFromRpc({
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/rpc/processes");
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        limit: 1000,
+        include_hidden: true
+      });
+      return {
+        exit_code: 0,
+        result: [{ project_id: "project", state: "assistant_turn" }],
+        error: null
+      };
+    })
   });
 
   assert.deepEqual(processes, [{ project_id: "project", state: "assistant_turn" }]);
@@ -345,6 +408,52 @@ test("createTwiccProject registers the source path and returns the exact project
   ]);
   assert.equal(result.matchType, "exact");
   assert.equal(result.url, "http://localhost:3500/project/-workspace-projects-app");
+});
+
+test("createTwiccProject can use Twicc RPC without the local CLI", async () => {
+  const calls: Array<{ body: Record<string, unknown>; url: string }> = [];
+  const result = await createTwiccProject("/workspace/projects/app", {
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example/root",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      const body = JSON.parse(String(init.body));
+      calls.push({ url, body });
+      if (url.endsWith("/rpc/create-project")) {
+        return {
+          exit_code: 0,
+          result: null,
+          error: null
+        };
+      }
+      return {
+        exit_code: 0,
+        result: [{
+          id: "-workspace-projects-app",
+          directory: "/workspace/projects/app",
+          git_root: "/workspace/projects/app"
+        }],
+        error: null
+      };
+    })
+  });
+
+  assert.deepEqual(calls, [
+    {
+      url: "https://twicc.example/root/rpc/create-project",
+      body: { directory: "/workspace/projects/app" }
+    },
+    {
+      url: "https://twicc.example/root/rpc/projects",
+      body: {
+        limit: 1000,
+        include_archived: true
+      }
+    }
+  ]);
+  assert.equal(result.matchType, "exact");
+  assert.equal(result.url, "https://twicc.example/project/-workspace-projects-app");
 });
 
 export {};

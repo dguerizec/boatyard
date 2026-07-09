@@ -37,7 +37,21 @@ type TwiccProjectProcessStatus = {
   state: TwiccNormalizedProcessState;
 };
 type TwiccProjectProcessStatuses = Record<string, TwiccProjectProcessStatus>;
-type TwiccCommandOptions = { execFileAsync?: ExecFileAsync };
+type TwiccGlobalConfig = {
+  twiccApiToken?: unknown;
+  twiccBaseUrl?: unknown;
+};
+type TwiccFetchResponse = {
+  json(): Promise<unknown>;
+  ok?: boolean;
+  status?: number;
+};
+type TwiccFetch = (url: string, init?: Record<string, unknown>) => Promise<TwiccFetchResponse>;
+type TwiccCommandOptions = {
+  execFileAsync?: ExecFileAsync;
+  fetch?: TwiccFetch;
+  globalConfig?: TwiccGlobalConfig;
+};
 type TwiccProjectMatch = { project?: TwiccProject; matchType: "exact" | "parent" };
 type TwiccProjectCacheOptions = {
   loadProjects?: (options?: TwiccCommandOptions) => Promise<TwiccProject[]>;
@@ -130,7 +144,83 @@ function buildTwiccProjectUrl(projectId: unknown, baseUrl = DEFAULT_TWICC_BASE_U
   }
 }
 
-async function loadTwiccProjects({ execFileAsync }: TwiccCommandOptions = {}): Promise<TwiccProject[]> {
+function normalizeBaseUrl(value: unknown): string {
+  return String(value || DEFAULT_TWICC_BASE_URL).replace(/\/+$/g, "");
+}
+
+function getFetch(fetchOverride?: TwiccFetch): TwiccFetch | null {
+  if (typeof fetchOverride === "function") {
+    return fetchOverride;
+  }
+
+  const globalFetch = globalThis.fetch;
+  return typeof globalFetch === "function"
+    ? (globalFetch.bind(globalThis) as TwiccFetch)
+    : null;
+}
+
+function shouldUseRpc({ fetch: fetchOverride, globalConfig = {} }: TwiccCommandOptions = {}): boolean {
+  return typeof fetchOverride === "function" || String(globalConfig.twiccBaseUrl || "").trim() !== "";
+}
+
+async function rpcCommand(
+  commandPath: string,
+  body: Record<string, unknown>,
+  { fetch: fetchOverride, globalConfig = {} }: TwiccCommandOptions = {}
+): Promise<unknown> {
+  const request = getFetch(fetchOverride);
+  if (!request) {
+    throw new Error("Fetch is unavailable.");
+  }
+
+  const token = String(globalConfig.twiccApiToken || "").trim();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await request(`${normalizeBaseUrl(globalConfig.twiccBaseUrl)}/rpc/${commandPath.replace(/^\/+/g, "")}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body)
+  });
+  if (!response?.ok) {
+    throw new Error(`TwiCC RPC ${commandPath} failed with HTTP ${response?.status || "error"}.`);
+  }
+
+  const payload = await response.json();
+  if (!isRecord(payload)) {
+    throw new Error(`TwiCC RPC ${commandPath} returned an invalid response.`);
+  }
+  if (payload.exit_code && payload.exit_code !== 0) {
+    throw new Error(String(payload.error || `TwiCC RPC ${commandPath} failed.`));
+  }
+  if (payload.error) {
+    throw new Error(String(payload.error));
+  }
+
+  return payload.result;
+}
+
+async function loadTwiccProjectsFromRpc(options: TwiccCommandOptions = {}): Promise<TwiccProject[]> {
+  const projects = await rpcCommand("projects", {
+    limit: 1000,
+    include_archived: true
+  }, options);
+  return Array.isArray(projects) ? projects.filter(isTwiccProject) : [];
+}
+
+async function loadTwiccProjects({ execFileAsync, ...options }: TwiccCommandOptions = {}): Promise<TwiccProject[]> {
+  if (shouldUseRpc(options)) {
+    try {
+      return await loadTwiccProjectsFromRpc(options);
+    } catch {
+      // Fall back for older/local setups where only the CLI is available.
+    }
+  }
+
   if (typeof execFileAsync !== "function") {
     return [];
   }
@@ -184,7 +274,23 @@ function createTwiccProjectCache({
   });
 }
 
-async function loadTwiccProcesses({ execFileAsync }: TwiccCommandOptions = {}): Promise<TwiccProcess[]> {
+async function loadTwiccProcessesFromRpc(options: TwiccCommandOptions = {}): Promise<TwiccProcess[]> {
+  const processes = await rpcCommand("processes", {
+    limit: 1000,
+    include_hidden: true
+  }, options);
+  return Array.isArray(processes) ? processes.filter(isTwiccProcess) : [];
+}
+
+async function loadTwiccProcesses({ execFileAsync, ...options }: TwiccCommandOptions = {}): Promise<TwiccProcess[]> {
+  if (shouldUseRpc(options)) {
+    try {
+      return await loadTwiccProcessesFromRpc(options);
+    } catch {
+      // Fall back for older/local setups where only the CLI is available.
+    }
+  }
+
   if (typeof execFileAsync !== "function") {
     return [];
   }
@@ -343,24 +449,44 @@ async function loadTwiccProjectProcessStatuses(options: TwiccCommandOptions): Pr
 
 async function inspectTwiccProject(sourcePath: unknown, options: TwiccCommandOptions): Promise<TwiccProjectInspection | null> {
   const projects = await loadTwiccProjects(options);
-  return inspectTwiccProjectFromProjects(sourcePath, projects);
+  return inspectTwiccProjectFromProjects(sourcePath, projects, options.globalConfig?.twiccBaseUrl);
 }
 
-function inspectTwiccProjectFromProjects(sourcePath: unknown, projects: unknown): TwiccProjectInspection | null {
+function inspectTwiccProjectFromProjects(
+  sourcePath: unknown,
+  projects: unknown,
+  baseUrl: unknown = DEFAULT_TWICC_BASE_URL
+): TwiccProjectInspection | null {
   const match = findTwiccProjectMatchForPath(projects, sourcePath);
   return match?.project?.id
     ? {
         id: match.project.id,
         matchType: match.matchType,
-        url: buildTwiccProjectUrl(match.project.id)
+        url: buildTwiccProjectUrl(match.project.id, normalizeBaseUrl(baseUrl))
       }
     : null;
 }
 
-async function createTwiccProject(sourcePath: unknown, { execFileAsync }: TwiccCommandOptions): Promise<TwiccProjectInspection | null> {
+async function createTwiccProjectFromRpc(sourcePath: string, options: TwiccCommandOptions): Promise<TwiccProjectInspection | null> {
+  await rpcCommand("create-project", {
+    directory: sourcePath
+  }, options);
+  const projects = await loadTwiccProjectsFromRpc(options);
+  return inspectTwiccProjectFromProjects(sourcePath, projects, options.globalConfig?.twiccBaseUrl);
+}
+
+async function createTwiccProject(sourcePath: unknown, { execFileAsync, ...options }: TwiccCommandOptions): Promise<TwiccProjectInspection | null> {
   const normalizedSourcePath = normalizePathForMatch(sourcePath);
   if (!normalizedSourcePath) {
     throw new Error("Source path is required to create a TwiCC project.");
+  }
+
+  if (shouldUseRpc(options)) {
+    try {
+      return await createTwiccProjectFromRpc(normalizedSourcePath, options);
+    } catch {
+      // Fall back for older/local setups where only the CLI is available.
+    }
   }
 
   if (typeof execFileAsync !== "function") {
@@ -372,7 +498,7 @@ async function createTwiccProject(sourcePath: unknown, { execFileAsync }: TwiccC
     windowsHide: true
   });
 
-  return inspectTwiccProject(normalizedSourcePath, { execFileAsync });
+  return inspectTwiccProject(normalizedSourcePath, { execFileAsync, ...options });
 }
 
 export {
@@ -385,8 +511,10 @@ export {
   getTwiccProjectProcessStatuses,
   inspectTwiccProjectFromProjects,
   inspectTwiccProject,
+  loadTwiccProcessesFromRpc,
   loadTwiccProcesses,
   loadTwiccProjectProcessStatuses,
+  loadTwiccProjectsFromRpc,
   loadTwiccProjects,
   TWICC_PROJECT_CACHE_TTL_MS
 };

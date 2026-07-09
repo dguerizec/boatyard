@@ -63,6 +63,7 @@
       sourcePath?: unknown;
     };
     fields: TwiccSettingsFields;
+    globalConfig?: TwiccConfig;
   };
   type TwiccSourcePathInspectedEvent = {
     fields?: TwiccSettingsFields;
@@ -119,6 +120,7 @@
   let projectProcessStatuses: Record<string, TwiccProjectStatus> = {};
   const retainedDoneProjectStatuses = new Map<string, TwiccProjectStatus>();
   let projectStatusRefreshTimer: number | null = null;
+  let latestGlobalConfig: TwiccConfig = {};
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
@@ -232,7 +234,9 @@
     }
 
     try {
-      const nextStatuses = asProjectProcessStatuses(await invokePlugin("projectProcessStatuses"));
+      const nextStatuses = asProjectProcessStatuses(await invokePlugin("projectProcessStatuses", {
+        globalConfig: latestGlobalConfig
+      }));
       if (JSON.stringify(projectProcessStatuses) !== JSON.stringify(nextStatuses)) {
         projectProcessStatuses = nextStatuses;
       }
@@ -954,13 +958,16 @@
                 label: "Create",
                 pendingLabel: "Creating...",
                 message: "TwiCC project not found. Create it?",
-                async run({ coreFields, fields }: TwiccProjectFieldContext) {
+                async run({ coreFields, fields, globalConfig }: TwiccProjectFieldContext) {
                   const sourcePath = String(coreFields.sourcePath || "").trim();
                   if (!sourcePath) {
                     throw new Error("Source path is required to create a TwiCC project.");
                   }
 
-                  const created = asCreatedProject(await invokePlugin("createProject", { sourcePath }));
+                  const created = asCreatedProject(await invokePlugin("createProject", {
+                    globalConfig: globalConfig || latestGlobalConfig,
+                    sourcePath
+                  }));
                   if (!created?.url) {
                     throw new Error("TwiCC project was created but no URL was returned.");
                   }
@@ -987,7 +994,8 @@
 
         ctx.projectNavBadges.register({
           id: "boatyard.twicc.projectStatus",
-          render({ project, projectConfig, isActiveProject }: PluginProjectNavBadgeRenderContext) {
+          render({ project, projectConfig, globalConfig, isActiveProject }: PluginProjectNavBadgeRenderContext) {
+            latestGlobalConfig = globalConfig || {};
             return createProjectStatusBadge(project || {}, projectConfig, { isActiveProject });
           }
         });
