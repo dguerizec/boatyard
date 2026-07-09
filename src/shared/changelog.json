@@ -1,6 +1,17 @@
 {
-  "generatedForVersion": "0.8.7",
+  "generatedForVersion": "0.8.8",
   "releases": [
+    {
+      "version": "0.8.8",
+      "date": "2026-07-09",
+      "features": [
+        {
+          "category": "Fixed",
+          "title": "Stable TwiCC usage menu",
+          "body": "Right-clicking the TwiCC top bar usage chip now positions its display menu within the window and keeps the surrounding top bar layout steady."
+        }
+      ]
+    },
     {
       "version": "0.8.7",
       "date": "2026-07-09",
