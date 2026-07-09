@@ -19,7 +19,7 @@ type TopbarWidgetRegistry = {
 };
 
 type TopbarFreezeScope = {
-  freezeForRect(rect: DOMRectReadOnly, options?: { margin?: number }): Promise<void>;
+  freezeForMainRect(rect: DOMRectReadOnly, options?: { margin?: number }): Promise<void>;
   restore(): Promise<void>;
 };
 
@@ -65,6 +65,7 @@ export function createTopbarWidgets({
       closeContextMenu: closeOverlay,
       openContextMenu: (menu: HTMLElement, event: MouseEvent) => {
         event.preventDefault();
+        menu.classList.add("topbar-widget-overlay");
         openOverlayElement(menu, chip, "menu", (element) => {
           const margin = 12;
           const rect = element.getBoundingClientRect();
@@ -148,8 +149,20 @@ export function createTopbarWidgets({
 
       position(element);
       element.style.visibility = "";
-      void freezeScope.freezeForRect(element.getBoundingClientRect(), { margin: 8 });
+      void freezeScope.freezeForMainRect(getTopbarOverlayFreezeRect(element), { margin: 8 });
     });
+  }
+
+  function getTopbarOverlayFreezeRect(element: HTMLElement): DOMRect {
+    const elementRect = element.getBoundingClientRect();
+    const topbarRect = topbar.getBoundingClientRect();
+    const top = Math.min(elementRect.top, topbarRect.bottom);
+    return new DOMRect(
+      elementRect.left,
+      top,
+      elementRect.width,
+      Math.max(1, window.innerHeight - top)
+    );
   }
 
   function positionOverlay(element: HTMLElement, anchor: HTMLElement | null) {

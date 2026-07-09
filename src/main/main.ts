@@ -541,17 +541,25 @@ async function captureWebAppForFreeze(key: string): Promise<WebAppCapture | null
   }
 }
 
-function getWebAppFreezeKeys(options: UnknownRecord = {}) {
+function getWebAppFreezeKeys(options: UnknownRecord = {}, rect: Rectangle | null = null) {
   const hasKeyFilter = Object.prototype.hasOwnProperty.call(options || {}, "keys");
   const requestedKeys = Array.isArray(options?.keys)
     ? options.keys.map(String).filter(Boolean)
     : [];
 
-  if (!hasKeyFilter) {
+  if (hasKeyFilter) {
+    return requestedKeys.filter((key) => visibleWebAppKeys.has(key));
+  }
+
+  const selectByRect = options?.selectByRect === true && rect;
+  if (!selectByRect) {
     return [...visibleWebAppKeys];
   }
 
-  return requestedKeys.filter((key) => visibleWebAppKeys.has(key));
+  return [...visibleWebAppKeys].filter((key) => {
+    const bounds = webAppViews.get(key)?.bounds || null;
+    return bounds ? webAppRectsIntersect(rect, bounds) : false;
+  });
 }
 
 function webAppRectsIntersect(left: Rectangle, right: Rectangle) {
@@ -579,14 +587,16 @@ function isWebAppKeyFrozen(key: string) {
 
 async function freezeWebApps(options: UnknownRecord = {}) {
   const hasKeyFilter = Object.prototype.hasOwnProperty.call(options || {}, "keys");
-  const freezeKeys = getWebAppFreezeKeys(options);
   const hasRect = Boolean(options?.rect && typeof options.rect === "object");
+  const rect = hasRect ? normalizeWebAppBounds(options.rect) : null;
+  const selectByRect = options?.selectByRect === true && rect !== null;
+  const freezeKeys = getWebAppFreezeKeys(options, rect);
   const token = nextWebAppFreezeToken;
   nextWebAppFreezeToken += 1;
   webAppFreezes.set(token, {
-    all: !hasKeyFilter,
+    all: !hasKeyFilter && !selectByRect,
     keys: new Set(freezeKeys),
-    rect: hasRect ? normalizeWebAppBounds(options.rect) : null
+    rect
   });
   const captures = (await Promise.all(freezeKeys.map(captureWebAppForFreeze))).filter(Boolean);
 

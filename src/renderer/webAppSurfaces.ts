@@ -29,6 +29,7 @@ type WebAppBounds = {
   type WebAppFreezeScope = {
     freeze(options?: unknown): Promise<void>;
     freezeForRect(rect: WebAppBounds | DOMRectReadOnly, options?: { margin?: number }): Promise<void>;
+    freezeForMainRect(rect: WebAppBounds | DOMRectReadOnly, options?: { margin?: number }): Promise<void>;
     restore(): Promise<void>;
   };
 
@@ -281,6 +282,14 @@ export function createWebAppSurfaces({
         await freeze({ keys: [...new Set(keys)], rect: inflateRect(rect, margin) });
       }
 
+      async function freezeForMainRect(
+        rect: WebAppBounds | DOMRectReadOnly,
+        { margin = 0 }: { margin?: number } = {}
+      ) {
+        await flushWebAppSync();
+        await freeze({ rect: inflateRect(rect, margin), selectByRect: true });
+      }
+
       async function restore() {
         generation += 1;
         clearLayer();
@@ -292,7 +301,7 @@ export function createWebAppSurfaces({
         queueWebAppSync();
       }
 
-      return { freeze, freezeForRect, restore };
+      return { freeze, freezeForMainRect, freezeForRect, restore };
     }
 
     function getOverlayDialogFreezeRect(dialog: HTMLDialogElement) {
