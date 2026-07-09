@@ -54,7 +54,7 @@ export function createTopbarWidgets({
 }: TopbarWidgetsOptions) {
   let openOverlay: TopbarOverlay | null = null;
 
-  function createWidgetProps(definition: TopbarWidgetDefinition): UnknownRecord {
+  function createWidgetProps(definition: TopbarWidgetDefinition, chip: HTMLElement | null = null): UnknownRecord {
     return {
       projectId: "",
       project: null,
@@ -62,6 +62,20 @@ export function createTopbarWidgets({
       pluginConfig: {},
       allProjectPluginConfig: {},
       globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {},
+      closeContextMenu: closeOverlay,
+      openContextMenu: (menu: HTMLElement, event: MouseEvent) => {
+        event.preventDefault();
+        openOverlayElement(menu, chip, "menu", (element) => {
+          const margin = 12;
+          const rect = element.getBoundingClientRect();
+          element.style.top = `${Math.round(
+            Math.max(margin, Math.min(event.clientY, window.innerHeight - rect.height - margin))
+          )}px`;
+          element.style.left = `${Math.round(
+            Math.max(margin, Math.min(event.clientX, window.innerWidth - rect.width - margin))
+          )}px`;
+        });
+      },
       openProjectWebApp: () => undefined
     };
   }
@@ -162,7 +176,7 @@ export function createTopbarWidgets({
     popover.dataset.widgetId = definition.id;
 
     try {
-      const props = createWidgetProps(definition);
+      const props = createWidgetProps(definition, chip);
       let content: HTMLElement | null = null;
       if (typeof definition.createElement === "function") {
         content = (definition.createElement as TopbarWidgetFactory)(null, props);
@@ -286,7 +300,7 @@ export function createTopbarWidgets({
         chip.title = definition.title || definition.name;
 
         try {
-          chip.append((definition.createCompact as TopbarWidgetFactory)(null, createWidgetProps(definition)));
+          chip.append((definition.createCompact as TopbarWidgetFactory)(null, createWidgetProps(definition, chip)));
         } catch (error) {
           console.error(`Could not render topbar widget ${definition.id}:`, error);
           continue;

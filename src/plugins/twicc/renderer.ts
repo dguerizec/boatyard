@@ -13,8 +13,10 @@
   };
 
   type TwiccPluginOptions = {
+    closeContextMenu?: () => void;
     globalPluginConfig?: TwiccConfig;
     isActiveProject?: boolean;
+    openContextMenu?: (menu: HTMLElement, event: MouseEvent) => void;
     pluginConfig?: TwiccConfig;
   };
 
@@ -757,24 +759,13 @@
       currentUsageEntries.forEach(([providerKey, usage]) => chip.append(renderCompactProvider(providerKey, usage)));
     }
 
-    function closeMenu(menu: (HTMLElement & { cleanup?: () => void }) | null) {
-      menu?.cleanup?.();
-      menu?.remove();
-    }
-
     function openDisplayMenu(event: MouseEvent) {
       event.preventDefault();
       event.stopPropagation();
 
-      closeMenu(document.querySelector(".twicc-usage-display-menu"));
-
-      const menu = document.createElement("div") as HTMLElement & { cleanup?: () => void };
+      const menu = document.createElement("div");
       menu.className = "webapp-tab-menu twicc-usage-display-menu";
       menu.setAttribute("role", "menu");
-
-      const menuWidth = 190;
-      menu.style.left = `${Math.round(Math.max(12, Math.min(event.clientX, window.innerWidth - menuWidth - 12)))}px`;
-      menu.style.top = `${Math.round(Math.max(12, Math.min(event.clientY, window.innerHeight - 126)))}px`;
 
       const currentMode = getDisplayMode();
       for (const option of TWICC_TOPBAR_USAGE_DISPLAY_OPTIONS) {
@@ -789,7 +780,7 @@
             ...(props.globalPluginConfig || {}),
             twiccTopbarUsageDisplay: option.value
           };
-          closeMenu(menu);
+          props.closeContextMenu?.();
           renderCompactEntries();
           try {
             await globalScope.boatyard?.updateGlobalPluginConfig?.("boatyard.twicc", {
@@ -802,16 +793,11 @@
         menu.append(item);
       }
 
-      const handlePointerDown = (pointerEvent: PointerEvent) => {
-        if (pointerEvent.target instanceof Node && !menu.contains(pointerEvent.target)) {
-          closeMenu(menu);
-        }
-      };
-      document.addEventListener("pointerdown", handlePointerDown, true);
-      menu.cleanup = () => {
-        document.removeEventListener("pointerdown", handlePointerDown, true);
-      };
-      document.body.append(menu);
+      if (typeof props.openContextMenu === "function") {
+        props.openContextMenu(menu, event);
+      } else {
+        document.body.append(menu);
+      }
       menu.querySelector("button")?.focus();
     }
 
