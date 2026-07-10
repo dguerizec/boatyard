@@ -83,6 +83,17 @@ type WebAppMenuElement = HTMLDivElement & {
     webApp: MenuWebApp;
   };
 
+  type WebAppNavigationEntry = {
+    index?: unknown;
+    title?: unknown;
+    url?: unknown;
+  };
+
+  type WebAppNavigationHistory = {
+    activeIndex?: unknown;
+    entries?: unknown;
+  };
+
   type WebAppMenusOptions = {
     webAppOpenSplitRatio: number;
     getCurrentWebAppUrl: (webApp: MenuWebApp) => string | undefined;
@@ -113,6 +124,7 @@ type WebAppMenuElement = HTMLDivElement & {
     updateWebAppHomeTab: (projectId: string, tab: UnknownRecord) => Promise<unknown>;
     updateSettings: (values: UnknownRecord) => Promise<unknown>;
     updateProject: (projectId: string, values: UnknownRecord) => Promise<unknown>;
+    getWebAppNavigationHistory: (key?: string) => Promise<unknown>;
     invokeWebApp: (action: string, ...payload: unknown[]) => Promise<unknown>;
     openExternal: (url: string) => unknown | Promise<unknown>;
     showOverlayDialog: (dialog: HTMLDialogElement, options?: UnknownRecord) => Promise<boolean>;
@@ -154,6 +166,7 @@ export function createWebAppMenus({
     updateWebAppHomeTab,
     updateSettings,
     updateProject,
+    getWebAppNavigationHistory,
     invokeWebApp,
     openExternal,
     showOverlayDialog,
@@ -1126,6 +1139,122 @@ export function createWebAppMenus({
       menu.querySelector("button")?.focus();
     }
 
+    function normalizeNavigationHistory(history: unknown) {
+      const source = history && typeof history === "object" ? history as WebAppNavigationHistory : {};
+      const activeIndex = Number(source.activeIndex);
+      const entries = Array.isArray(source.entries) ? source.entries : [];
+      return {
+        activeIndex: Number.isInteger(activeIndex) ? activeIndex : -1,
+        entries: entries
+          .map((entry) => {
+            const candidate = entry && typeof entry === "object" ? entry as WebAppNavigationEntry : {};
+            const index = Number(candidate.index);
+            return {
+              index: Number.isInteger(index) ? index : -1,
+              title: String(candidate.title || "").trim(),
+              url: String(candidate.url || "").trim()
+            };
+          })
+          .filter((entry) => entry.index >= 0 && entry.url)
+      };
+    }
+
+    function getNavigationEntryLabel(entry: { title: string; url: string }) {
+      if (entry.title) {
+        return entry.title;
+      }
+
+      try {
+        const parsedUrl = new URL(entry.url);
+        return parsedUrl.hostname || entry.url;
+      } catch {
+        return entry.url;
+      }
+    }
+
+    async function openWebAppNavigationHistoryMenu(
+      event: MouseEvent,
+      selectedWebApp: MenuWebApp,
+      direction: "back" | "forward"
+    ) {
+      event.preventDefault();
+      const sourceButton = event.currentTarget;
+      closeWebAppTabMenu();
+      closeTerminalTabMenu();
+      await freezeWebAppsForOverlay({
+        keys: selectedWebApp?.key ? [selectedWebApp.key] : []
+      });
+
+      const history = normalizeNavigationHistory(await getWebAppNavigationHistory(selectedWebApp.key));
+      const entries = direction === "back"
+        ? history.entries.filter((entry) => entry.index < history.activeIndex).reverse()
+        : history.entries.filter((entry) => entry.index > history.activeIndex);
+
+      const menu = document.createElement("div") as WebAppMenuElement;
+      menu.className = "webapp-tab-menu";
+      menu.setAttribute("role", "menu");
+
+      const menuWidth = 320;
+      const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
+      const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 48));
+      menu.style.width = `${menuWidth}px`;
+      menu.style.left = `${Math.round(left)}px`;
+      menu.style.top = `${Math.round(top)}px`;
+
+      if (!entries.length) {
+        const item = document.createElement("button");
+        item.className = "webapp-tab-menu-item";
+        item.type = "button";
+        item.disabled = true;
+        item.setAttribute("role", "menuitem");
+        item.textContent = direction === "back" ? "No back history" : "No forward history";
+        menu.append(item);
+      }
+
+      for (const entry of entries) {
+        const item = document.createElement("button");
+        item.className = "webapp-tab-menu-item";
+        item.type = "button";
+        item.title = entry.url;
+        item.setAttribute("role", "menuitem");
+        item.textContent = getNavigationEntryLabel(entry);
+        item.addEventListener("click", () => {
+          closeWebAppTabMenu();
+          invokeWebApp("navigateWebApp", selectedWebApp.key, "history-index", String(entry.index)).catch((error: unknown) => {
+            console.error("Could not navigate to webapp history entry:", error);
+          });
+        });
+        menu.append(item);
+      }
+
+      document.body.append(menu);
+      openWebAppTabMenu = menu;
+
+      function onPointerDown(pointerEvent: PointerEvent) {
+        if (!menu.contains(pointerEvent.target as Node | null) && pointerEvent.target !== sourceButton) {
+          closeWebAppTabMenu();
+        }
+      }
+
+      function onKeyDown(keyEvent: KeyboardEvent) {
+        if (keyEvent.key === "Escape") {
+          closeWebAppTabMenu();
+        }
+      }
+
+      menu.cleanup = () => {
+        document.removeEventListener("pointerdown", onPointerDown);
+        document.removeEventListener("keydown", onKeyDown);
+      };
+
+      setTimeout(() => {
+        document.addEventListener("pointerdown", onPointerDown);
+        document.addEventListener("keydown", onKeyDown);
+      }, 0);
+
+      menu.querySelector("button")?.focus();
+    }
+
     async function openWebAppHomeMenu(
       event: MouseEvent,
       project: RendererProject,
@@ -1258,6 +1387,7 @@ export function createWebAppMenus({
       createWidgetPaneTabs,
       normalizeAddressInput,
       openWebAppHomeMenu,
+      openWebAppNavigationHistoryMenu,
       openWebAppOpenUrlDialog,
       openWebAppRefreshMenu,
       openWebAppTabMenuFromButton,

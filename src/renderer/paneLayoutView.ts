@@ -129,6 +129,7 @@ type PaneLayoutViewOptions = {
     paneNode: RendererPaneNode,
     selectedWebApp: PaneWebApp
   ) => void;
+  openWebAppNavigationHistoryMenu: (event: MouseEvent, selectedWebApp: PaneWebApp, direction: "back" | "forward") => void;
   openWebAppRefreshMenu: (event: MouseEvent, selectedWebApp: PaneWebApp) => void;
   createTerminalSurface: (project: RendererProject, options: UnknownRecord) => HTMLElement;
   invokeWebApp: (action: string, ...payload: unknown[]) => Promise<unknown>;
@@ -168,6 +169,7 @@ export function createPaneLayoutView({
     closeWebAppTabMenu,
     openWebAppTabMenuFromButton,
     openWebAppHomeMenu,
+    openWebAppNavigationHistoryMenu,
     openWebAppRefreshMenu,
     createTerminalSurface,
     invokeWebApp,
@@ -957,6 +959,9 @@ export function createPaneLayoutView({
         backButton.setAttribute("aria-label", "Go back");
         backButton.append(createToolIcon("arrowLeft"));
         backButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "back"));
+        backButton.addEventListener("contextmenu", (event) => {
+          openWebAppNavigationHistoryMenu(event, selectedWebApp, "back");
+        });
 
         const forwardButton = document.createElement("button");
         forwardButton.className = "webapp-tool-button";
@@ -965,6 +970,9 @@ export function createPaneLayoutView({
         forwardButton.setAttribute("aria-label", "Go forward");
         forwardButton.append(createToolIcon("arrowRight"));
         forwardButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "forward"));
+        forwardButton.addEventListener("contextmenu", (event) => {
+          openWebAppNavigationHistoryMenu(event, selectedWebApp, "forward");
+        });
 
         const refreshButton = document.createElement("button");
         refreshButton.className = "webapp-tool-button";

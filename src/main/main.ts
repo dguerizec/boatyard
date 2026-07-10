@@ -413,6 +413,26 @@ function setWebAppBounds(bounds: unknown) {
   webApp?.view.setBounds(normalizeWebAppBounds(bounds));
 }
 
+function getWebAppNavigationHistory(key: unknown) {
+  const webApp = webAppViews.get(String(key || ""));
+  if (!webApp || webApp.view.webContents.isDestroyed()) {
+    return {
+      activeIndex: -1,
+      entries: []
+    };
+  }
+
+  const history = webApp.view.webContents.navigationHistory;
+  return {
+    activeIndex: history.getActiveIndex(),
+    entries: history.getAllEntries().map((entry, index) => ({
+      index,
+      title: entry.title || "",
+      url: entry.url || ""
+    }))
+  };
+}
+
 async function navigateWebApp(key: unknown, action: string, url: string) {
   const webApp = webAppViews.get(String(key || ""));
 
@@ -434,6 +454,16 @@ async function navigateWebApp(key: unknown, action: string, url: string) {
     }
 
     return loadWebAppUrl(webApp, parsedUrl.toString());
+  }
+
+  if (action === "history-index") {
+    const index = Number(url);
+    const history = webApp.view.webContents.navigationHistory;
+    if (Number.isInteger(index) && index >= 0 && index < history.length() && index !== history.getActiveIndex()) {
+      history.goToIndex(index);
+      return true;
+    }
+    return false;
   }
 
   if (action === "back") {
@@ -860,6 +890,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("webapp:navigate", (_event: IpcMainInvokeEvent, key: unknown, action: string, url: string) => {
     return navigateWebApp(key, action, url);
+  });
+
+  ipcMain.handle("webapp:navigation-history", (_event: IpcMainInvokeEvent, key: unknown) => {
+    return getWebAppNavigationHistory(key);
   });
 
   ipcMain.handle("webapp:autofill:update", (_event: IpcMainInvokeEvent, key: unknown, enabled: unknown) => {

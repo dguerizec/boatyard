@@ -347,6 +347,7 @@ const paneLayoutView = createPaneLayoutView({
   openWebAppTabMenuFromButton,
   openWebAppHomeMenu,
   openWebAppRefreshMenu,
+  openWebAppNavigationHistoryMenu,
   createTerminalSurface,
   invokeWebApp,
   isPasswordManagerEnabled,
@@ -537,6 +538,7 @@ const webAppMenus = createWebAppMenus({
     state = await boatyardWindow.boatyard.updateProject(projectId, values);
     return state;
   },
+  getWebAppNavigationHistory: (key?: string) => boatyardWindow.boatyard.getWebAppNavigationHistory?.(key) || Promise.resolve(null),
   invokeWebApp,
   openExternal: (url: string) => boatyardWindow.boatyard.openExternal(url),
   showOverlayDialog,
@@ -590,6 +592,10 @@ function openWebAppOpenUrlDialog(payload = {}) {
 
 function openWebAppRefreshMenu(event: MouseEvent, selectedWebApp: UnknownRecord) {
   return webAppMenus.openWebAppRefreshMenu(event, selectedWebApp);
+}
+
+function openWebAppNavigationHistoryMenu(event: MouseEvent, selectedWebApp: UnknownRecord, direction: "back" | "forward") {
+  return webAppMenus.openWebAppNavigationHistoryMenu(event, selectedWebApp, direction);
 }
 
 function openWebAppTabMenuFromButton(

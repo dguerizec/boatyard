@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   showWebApp: (webApp: unknown) => ipcRenderer.invoke("webapp:show", webApp),
   setWebAppBounds: (bounds: unknown) => ipcRenderer.invoke("webapp:set-bounds", bounds),
   navigateWebApp: (key: unknown, action: string, url: string) => ipcRenderer.invoke("webapp:navigate", key, action, url),
+  getWebAppNavigationHistory: (key: unknown) => ipcRenderer.invoke("webapp:navigation-history", key),
   updateWebAppAutofill: (key: unknown, enabled: unknown) => ipcRenderer.invoke("webapp:autofill:update", key, enabled),
   setVisibleWebApps: (keys: unknown) => ipcRenderer.invoke("webapp:set-visible", keys),
   hideWebApp: () => ipcRenderer.invoke("webapp:hide"),

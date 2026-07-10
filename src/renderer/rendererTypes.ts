@@ -142,6 +142,7 @@ export type BoatyardBridge = {
   freezeWebApps(options?: unknown): Promise<unknown>;
   getChangelogHistory?: () => Promise<unknown>;
   getPendingChangelog?: () => Promise<unknown>;
+  getWebAppNavigationHistory?: (key: unknown) => Promise<unknown>;
   getState(): Promise<RendererState>;
   getUpdateInfo?: () => Promise<unknown>;
   hideWebApp(): Promise<unknown>;
