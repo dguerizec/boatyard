@@ -295,12 +295,16 @@ function ensureWebAppView(key: string): WebAppItem {
   view.setBackgroundColor(DEFAULT_WEBAPP_BACKGROUND_COLOR);
   view.webContents.setWindowOpenHandler((details: HandlerDetails) => handleWebAppWindowOpen(key, details));
   view.webContents.on("context-menu", (_event: Event, params: ContextMenuParams) => {
-    createWebAppContextMenu(view.webContents, params, {
+    void createWebAppContextMenu(view.webContents, params, {
       getSourceKey: (webContents) => getWebAppForWebContents(webContents)?.key || "",
       openExternalUrl,
       sendOpenUrlRequest: sendWebAppOpenUrlRequest
-    }).popup({
-      window: mainWindow || undefined
+    }).then((menu) => {
+      if (!view.webContents.isDestroyed()) {
+        menu.popup({
+          window: mainWindow || undefined
+        });
+      }
     });
   });
   view.webContents.on("did-navigate", (_event: Event, url: string) => {
