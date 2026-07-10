@@ -1,6 +1,32 @@
 {
-  "generatedForVersion": "0.8.8",
+  "generatedForVersion": "0.8.9",
   "releases": [
+    {
+      "version": "0.8.9",
+      "date": "2026-07-10",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Navigation history menus",
+          "body": "Right-click the back or forward button in a web app pane to jump directly to a previous or next page."
+        },
+        {
+          "category": "Added",
+          "title": "Image context actions",
+          "body": "Web app right-click menus now include options to open, copy, or copy the address of images, including detected background images."
+        },
+        {
+          "category": "Changed",
+          "title": "TwiCC remote support",
+          "body": "When a TwiCC URL is configured, Boatyard uses TwiCC RPC for project lookup, process status, and project creation, while still falling back to the CLI when needed."
+        },
+        {
+          "category": "Fixed",
+          "title": "Top bar overlay stability",
+          "body": "Top bar widget menus now stay visually above web app panes and avoid interference from embedded web content."
+        }
+      ]
+    },
     {
       "version": "0.8.8",
       "date": "2026-07-09",

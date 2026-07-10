@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.8.9] - 2026-07-10
+
+### Summary
+
+- **v0.8.9: Web app menu polish** — Web app panes gain richer navigation and image menus, with more reliable overlays and TwiCC remote integration.
+
+### Added
+
+- **Navigation history menus** — Right-click the back or forward button in a web app pane to jump directly to a previous or next page.
+- **Image context actions** — Web app right-click menus now include options to open, copy, or copy the address of images, including detected background images.
+
+### Changed
+
+- **TwiCC remote support** — When a TwiCC URL is configured, Boatyard uses TwiCC RPC for project lookup, process status, and project creation, while still falling back to the CLI when needed.
+
+### Fixed
+
+- **Top bar overlay stability** — Top bar widget menus now stay visually above web app panes and avoid interference from embedded web content.
+
 ## [0.8.8] - 2026-07-09
 
 ### Summary
