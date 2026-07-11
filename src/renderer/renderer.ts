@@ -612,9 +612,23 @@ function isWebAppTabMenuOpen() {
   return webAppMenus.isWebAppTabMenuOpen();
 }
 
+function setSidebarUpdateReady(updateReady: boolean) {
+  sidebarRail.classList.toggle("update-ready", updateReady);
+  sidebarRail.title = updateReady
+    ? "Expand project sidebar - update available"
+    : "Expand project sidebar";
+  sidebarRail.setAttribute(
+    "aria-label",
+    updateReady
+      ? "Expand project sidebar, update available"
+      : "Expand project sidebar"
+  );
+}
+
 const updateViews = createUpdateViews({
   boatyard: boatyardWindow.boatyard as Parameters<typeof createUpdateViews>[0]["boatyard"],
   createToolIcon,
+  onSidebarUpdateNoticeChange: setSidebarUpdateReady,
   showOverlayDialog,
   sidebarUpdateNotice,
   updatePollIntervalMs: UPDATE_POLL_INTERVAL_MS

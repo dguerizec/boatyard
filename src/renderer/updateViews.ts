@@ -54,6 +54,7 @@ type UpdateViewsRestartResult = {
   type UpdateViewsOptions = {
     boatyard: UpdateViewsBoatyardBridge;
     createToolIcon: (name: string) => Node;
+    onSidebarUpdateNoticeChange?: (visible: boolean) => void;
     showOverlayDialog: (dialog: HTMLDialogElement, options?: UpdateViewsOverlayOptions) => unknown;
     sidebarUpdateNotice: HTMLElement;
     updatePollIntervalMs: number;
@@ -72,6 +73,7 @@ type UpdateViewsRestartResult = {
 export function createUpdateViews({
     boatyard,
     createToolIcon,
+    onSidebarUpdateNoticeChange,
     showOverlayDialog,
     sidebarUpdateNotice,
     updatePollIntervalMs
@@ -99,10 +101,12 @@ export function createUpdateViews({
 
       if (!preparedUpdate) {
         sidebarUpdateNotice.hidden = true;
-        return;
+        onSidebarUpdateNoticeChange?.(false);
+        return false;
       }
 
       sidebarUpdateNotice.hidden = false;
+      onSidebarUpdateNoticeChange?.(true);
 
       const title = document.createElement("h2");
       title.textContent = "Update available";
@@ -143,6 +147,7 @@ export function createUpdateViews({
       });
 
       sidebarUpdateNotice.append(title, version, status, restartButton);
+      return true;
     }
 
     function createGlobalUpdateCard() {
