@@ -63,6 +63,10 @@ type WebAppMenuElement = HTMLDivElement & {
     webAppOpenUrlPattern?: HTMLInputElement;
   };
 
+  type WebAppBookmarkFormControls = HTMLFormControlsCollection & {
+    webAppBookmarkAlias: HTMLInputElement;
+  };
+
   type WebAppOpenRule = {
     label?: string;
     pattern?: string;
@@ -139,6 +143,24 @@ type WebAppMenuElement = HTMLDivElement & {
 
   function asErrorMessage(error: unknown) {
     return error instanceof Error ? error.message : String(error);
+  }
+
+  function toProjectUrlEntry(entry: unknown) {
+    const source = entry && typeof entry === "object" ? entry as UnknownRecord : {};
+    return {
+      id: String(source.id || "").trim(),
+      label: String(source.label || "").trim(),
+      url: String(source.url || "").trim()
+    };
+  }
+
+  function getBookmarkAliasPlaceholder(url: string) {
+    try {
+      const parsedUrl = new URL(url);
+      return parsedUrl.hostname.replace(/^www\./i, "") || url;
+    } catch {
+      return "Alias";
+    }
   }
 
 export function createWebAppMenus({
@@ -1380,6 +1402,244 @@ export function createWebAppMenus({
       item.focus();
     }
 
+    function findProjectUrlByNormalizedUrl(project: RendererProject, normalizedUrl: string) {
+      const urls = Array.isArray(project.urls) ? project.urls.map(toProjectUrlEntry) : [];
+      return urls.find((entry) => {
+        try {
+          return normalizeAddressInput(entry.url) === normalizedUrl;
+        } catch {
+          return false;
+        }
+      }) || null;
+    }
+
+    async function bookmarkWebAppUrl(project: RendererProject, url: string, alias: string, paneId = "") {
+      const normalizedUrl = normalizeAddressInput(url);
+      const label = alias.trim();
+      if (!label) {
+        throw new Error("Alias is required.");
+      }
+
+      const urls = Array.isArray(project.urls) ? project.urls.map(toProjectUrlEntry) : [];
+      if (findProjectUrlByNormalizedUrl(project, normalizedUrl)) {
+        return;
+      }
+
+      await updateProject(project.id || "", {
+        urls: [
+          ...urls,
+          {
+            label,
+            url: normalizedUrl
+          }
+        ]
+      });
+
+      const updatedProject = getProjectById(project.id) || project;
+      const bookmarkedUrl = findProjectUrlByNormalizedUrl(updatedProject, normalizedUrl);
+      if (paneId && bookmarkedUrl?.id) {
+        const webAppId = `url:${bookmarkedUrl.id}`;
+        setSelectedWebAppForPane(paneId, webAppId);
+        setSelectedWebAppForProject(updatedProject.id, webAppId);
+        persistPaneLayout(updatedProject);
+      }
+      renderPaneLayoutPreservingPanes(updatedProject);
+    }
+
+    async function openWebAppBookmarkDialog(project: RendererProject, url: string, paneId = "") {
+      const normalizedUrl = normalizeAddressInput(url);
+      const dialog = document.createElement("dialog");
+      dialog.className = "plugin-settings-dialog webapp-open-dialog";
+
+      const panel = document.createElement("form");
+      panel.className = "plugin-settings-dialog-panel webapp-open-dialog-panel";
+
+      const header = document.createElement("header");
+      header.className = "plugin-settings-dialog-header";
+
+      const title = document.createElement("h3");
+      title.textContent = "Bookmark URL";
+
+      const closeButton = document.createElement("button");
+      closeButton.className = "icon-button";
+      closeButton.type = "button";
+      closeButton.title = "Close";
+      closeButton.setAttribute("aria-label", "Close");
+      closeButton.textContent = "X";
+      closeButton.addEventListener("click", () => dialog.close());
+      header.append(title, closeButton);
+
+      const summary = document.createElement("div");
+      summary.className = "webapp-open-summary";
+      const urlText = document.createElement("code");
+      urlText.textContent = normalizedUrl;
+      summary.append(urlText);
+
+      const aliasLabel = document.createElement("label");
+      aliasLabel.className = "webapp-open-scope";
+      const aliasText = document.createElement("span");
+      aliasText.textContent = "Alias";
+      const aliasInput = document.createElement("input");
+      aliasInput.name = "webAppBookmarkAlias";
+      aliasInput.type = "text";
+      aliasInput.autocomplete = "off";
+      aliasInput.placeholder = getBookmarkAliasPlaceholder(normalizedUrl);
+      aliasInput.required = true;
+      aliasLabel.append(aliasText, aliasInput);
+
+      const error = document.createElement("p");
+      error.className = "form-error";
+      error.hidden = true;
+
+      const actions = document.createElement("div");
+      actions.className = "form-actions";
+      const cancelButton = document.createElement("button");
+      cancelButton.className = "secondary-button";
+      cancelButton.type = "button";
+      cancelButton.textContent = "Cancel";
+      cancelButton.addEventListener("click", () => dialog.close());
+      const submitButton = document.createElement("button");
+      submitButton.className = "primary-button";
+      submitButton.type = "submit";
+      submitButton.textContent = "Bookmark";
+      actions.append(cancelButton, submitButton);
+
+      panel.append(header, summary, aliasLabel, error, actions);
+      panel.addEventListener("submit", async (submitEvent) => {
+        submitEvent.preventDefault();
+        error.hidden = true;
+        submitButton.disabled = true;
+
+        try {
+          const elements = panel.elements as WebAppBookmarkFormControls;
+          await bookmarkWebAppUrl(project, normalizedUrl, elements.webAppBookmarkAlias.value, paneId);
+          dialog.close();
+        } catch (submitError) {
+          error.textContent = asErrorMessage(submitError);
+          error.hidden = false;
+        } finally {
+          submitButton.disabled = false;
+        }
+      });
+
+      dialog.append(panel);
+      await showOverlayDialog(dialog, {
+        freeze: "overlap",
+        removeOnClose: true,
+        freezeMargin: 16
+      });
+      aliasInput.focus();
+    }
+
+    async function openWebAppUrlFieldMenu(
+      event: MouseEvent,
+      project: RendererProject,
+      selectedWebApp: MenuWebApp,
+      url: string
+    ) {
+      event.preventDefault();
+      const sourceInput = event.currentTarget;
+      const sourceElement = sourceInput instanceof Element ? sourceInput : null;
+      const sourcePaneId = sourceElement?.closest<HTMLElement>(".webapp-pane")?.dataset.paneId
+        || getVisibleWebAppEntryByKey(selectedWebApp.key)?.paneId
+        || "";
+      closeWebAppTabMenu();
+      closeTerminalTabMenu();
+      await freezeWebAppsForOverlay({
+        keys: selectedWebApp?.key ? [selectedWebApp.key] : []
+      });
+
+      let normalizedUrl = "";
+      try {
+        normalizedUrl = normalizeAddressInput(url);
+      } catch {
+        normalizedUrl = getCurrentWebAppUrl(selectedWebApp) || selectedWebApp.url || "";
+      }
+
+      const menu = document.createElement("div") as WebAppMenuElement;
+      menu.className = "webapp-tab-menu";
+      menu.setAttribute("role", "menu");
+
+      const menuWidth = 240;
+      const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
+      const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 48));
+      menu.style.width = `${menuWidth}px`;
+      menu.style.left = `${Math.round(left)}px`;
+      menu.style.top = `${Math.round(top)}px`;
+
+      const openItem = document.createElement("button");
+      openItem.className = "webapp-tab-menu-item";
+      openItem.type = "button";
+      openItem.disabled = !normalizedUrl;
+      openItem.setAttribute("role", "menuitem");
+      openItem.textContent = "Open in external browser";
+      openItem.addEventListener("click", () => {
+        closeWebAppTabMenu();
+        if (normalizedUrl) {
+          Promise.resolve()
+            .then(() => openExternal(normalizedUrl))
+            .catch((error: unknown) => {
+              console.error("Could not open URL externally:", error);
+            });
+        }
+      });
+      menu.append(openItem);
+
+      const bookmarkItem = document.createElement("button");
+      const existingUrls = Array.isArray(project.urls) ? project.urls.map(toProjectUrlEntry) : [];
+      const alreadyBookmarked = Boolean(normalizedUrl)
+        && existingUrls.some((entry) => {
+          try {
+            return normalizeAddressInput(entry.url) === normalizedUrl;
+          } catch {
+            return false;
+          }
+        });
+      bookmarkItem.className = "webapp-tab-menu-item";
+      bookmarkItem.type = "button";
+      bookmarkItem.disabled = !normalizedUrl || isGlobalWorkspace(project) || alreadyBookmarked;
+      bookmarkItem.setAttribute("role", "menuitem");
+      bookmarkItem.textContent = alreadyBookmarked ? "URL already bookmarked" : "Bookmark URL";
+      bookmarkItem.addEventListener("click", () => {
+        closeWebAppTabMenu();
+        if (!normalizedUrl || isGlobalWorkspace(project)) {
+          return;
+        }
+
+        openWebAppBookmarkDialog(project, normalizedUrl, sourcePaneId).catch((error: unknown) => {
+          console.error("Could not open bookmark dialog:", error);
+        });
+      });
+      menu.append(bookmarkItem);
+
+      document.body.append(menu);
+      openWebAppTabMenu = menu;
+
+      function onPointerDown(pointerEvent: PointerEvent) {
+        if (!menu.contains(pointerEvent.target as Node | null) && pointerEvent.target !== sourceInput) {
+          closeWebAppTabMenu();
+        }
+      }
+
+      function onKeyDown(keyEvent: KeyboardEvent) {
+        if (keyEvent.key === "Escape") {
+          closeWebAppTabMenu();
+        }
+      }
+
+      menu.cleanup = () => {
+        document.removeEventListener("pointerdown", onPointerDown);
+        document.removeEventListener("keydown", onKeyDown);
+      };
+
+      setTimeout(() => {
+        document.addEventListener("pointerdown", onPointerDown);
+        document.addEventListener("keydown", onKeyDown);
+      }, 0);
+
+      menu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+    }
+
     return {
       applyWebAppOpenChoice,
       applyMatchingWebAppOpenRule,
@@ -1390,6 +1650,7 @@ export function createWebAppMenus({
       openWebAppNavigationHistoryMenu,
       openWebAppOpenUrlDialog,
       openWebAppRefreshMenu,
+      openWebAppUrlFieldMenu,
       openWebAppTabMenuFromButton,
       isWebAppTabMenuOpen: () => Boolean(openWebAppTabMenu)
     };

@@ -348,6 +348,7 @@ const paneLayoutView = createPaneLayoutView({
   openWebAppHomeMenu,
   openWebAppRefreshMenu,
   openWebAppNavigationHistoryMenu,
+  openWebAppUrlFieldMenu,
   createTerminalSurface,
   invokeWebApp,
   isPasswordManagerEnabled,
@@ -596,6 +597,15 @@ function openWebAppRefreshMenu(event: MouseEvent, selectedWebApp: UnknownRecord)
 
 function openWebAppNavigationHistoryMenu(event: MouseEvent, selectedWebApp: UnknownRecord, direction: "back" | "forward") {
   return webAppMenus.openWebAppNavigationHistoryMenu(event, selectedWebApp, direction);
+}
+
+function openWebAppUrlFieldMenu(
+  event: MouseEvent,
+  project: RendererProject,
+  selectedWebApp: UnknownRecord,
+  url: string
+) {
+  return webAppMenus.openWebAppUrlFieldMenu(event, project, selectedWebApp, url);
 }
 
 function openWebAppTabMenuFromButton(

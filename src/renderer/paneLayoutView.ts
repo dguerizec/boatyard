@@ -131,6 +131,12 @@ type PaneLayoutViewOptions = {
   ) => void;
   openWebAppNavigationHistoryMenu: (event: MouseEvent, selectedWebApp: PaneWebApp, direction: "back" | "forward") => void;
   openWebAppRefreshMenu: (event: MouseEvent, selectedWebApp: PaneWebApp) => void;
+  openWebAppUrlFieldMenu: (
+    event: MouseEvent,
+    project: RendererProject,
+    selectedWebApp: PaneWebApp,
+    url: string
+  ) => void;
   createTerminalSurface: (project: RendererProject, options: UnknownRecord) => HTMLElement;
   invokeWebApp: (action: string, ...payload: unknown[]) => Promise<unknown>;
   isPasswordManagerEnabled: () => boolean;
@@ -171,6 +177,7 @@ export function createPaneLayoutView({
     openWebAppHomeMenu,
     openWebAppNavigationHistoryMenu,
     openWebAppRefreshMenu,
+    openWebAppUrlFieldMenu,
     createTerminalSurface,
     invokeWebApp,
     isPasswordManagerEnabled,
@@ -530,6 +537,16 @@ export function createPaneLayoutView({
       return directHost.querySelector<HTMLElement>(".webapp-mobile-dev-viewport") || directHost;
     }
 
+    function getWebAppMenuSignature(webApps: PaneWebApp[]) {
+      return JSON.stringify(webApps.map((webApp) => ({
+        id: webApp.id || "",
+        kind: webApp.kind || "",
+        label: String(webApp.label || ""),
+        parentWebAppId: webApp.parentWebAppId || "",
+        url: webApp.url || ""
+      })));
+    }
+
     function getPaneActionButton(pane: HTMLElement, action: string, label: string) {
       return pane.querySelector<HTMLButtonElement>(
         `button[data-pane-action="${action}"], button[aria-label="${label}"]`
@@ -571,7 +588,8 @@ export function createPaneLayoutView({
       if (
         pane.dataset.webAppId !== selectedWebApp.id ||
         pane.dataset.webAppKind !== selectedWebApp.kind ||
-        pane.dataset.mobileDev !== String(isMobileDevViewportEnabled(selectedWebApp))
+        pane.dataset.mobileDev !== String(isMobileDevViewportEnabled(selectedWebApp)) ||
+        pane.dataset.webAppMenuSignature !== getWebAppMenuSignature(webApps)
       ) {
         return null;
       }
@@ -904,6 +922,7 @@ export function createPaneLayoutView({
         pane.dataset.webAppKind = selectedWebApp.kind;
       }
       pane.dataset.mobileDev = String(isMobileDevViewportEnabled(selectedWebApp));
+      pane.dataset.webAppMenuSignature = getWebAppMenuSignature(webApps);
 
       const header = document.createElement("div");
       header.className = "webapp-pane-header";
@@ -1041,6 +1060,9 @@ export function createPaneLayoutView({
             activeUrl.value = getCurrentWebAppUrl(selectedWebApp) || "";
             activeUrl.blur();
           }
+        });
+        activeUrl.addEventListener("contextmenu", (event) => {
+          openWebAppUrlFieldMenu(event, project, selectedWebApp, activeUrl.value);
         });
 
         tabs.append(
