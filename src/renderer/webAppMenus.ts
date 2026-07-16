@@ -34,6 +34,7 @@ type WebAppMenuElement = HTMLDivElement & {
     key?: string;
     kind?: string;
     label?: unknown;
+    menuOnly?: boolean;
     parentLabel?: unknown;
     parentWebAppId?: string;
     url?: string;
@@ -82,8 +83,14 @@ type WebAppMenuElement = HTMLDivElement & {
     persist?: boolean;
   };
 
-  type OrderedWebAppMenuItem = {
-    depth: number;
+  type WebAppTabMenuChild = {
+    label: string;
+    webApp: MenuWebApp;
+  };
+
+  type WebAppTabMenuGroup = {
+    children: WebAppTabMenuChild[];
+    label: string;
     webApp: MenuWebApp;
   };
 
@@ -1075,61 +1082,183 @@ export function createWebAppMenus({
       menu.style.top = `${Math.round(rect.bottom + 6)}px`;
       menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 220))}px`;
 
-      const rootWebApps = webApps.filter((webApp: MenuWebApp) => !webApp.parentWebAppId);
-      const childWebAppsByParentId = new Map<string, MenuWebApp[]>();
-      for (const webApp of webApps.filter((candidate: MenuWebApp) => candidate.parentWebAppId)) {
-        const parentWebAppId = webApp.parentWebAppId;
-        if (!parentWebAppId) {
-          continue;
-        }
-        const children = childWebAppsByParentId.get(parentWebAppId) || [];
-        children.push(webApp);
-        childWebAppsByParentId.set(parentWebAppId, children);
-      }
-      const orderedWebApps: OrderedWebAppMenuItem[] = [];
-      for (const webApp of rootWebApps) {
-        orderedWebApps.push({
-          webApp,
-          depth: 0
-        });
-        const webAppId = webApp.id;
-        for (const childWebApp of webAppId ? childWebAppsByParentId.get(webAppId) || [] : []) {
-          orderedWebApps.push({
-            webApp: childWebApp,
-            depth: 1
-          });
-        }
-      }
-      for (const [parentId, children] of childWebAppsByParentId) {
-        if (rootWebApps.some((webApp) => webApp.id === parentId)) {
-          continue;
-        }
-        for (const webApp of children) {
-          orderedWebApps.push({
-            webApp,
-            depth: 0
-          });
-        }
+      function getMenuLabel(webApp: MenuWebApp) {
+        return String(webApp.label || webApp.id || "");
       }
 
-      for (const { webApp, depth } of orderedWebApps) {
+      function parseGroupedWebAppLabel(webApp: MenuWebApp) {
+        const match = getMenuLabel(webApp).match(/^([^:]{2,40}):\s*(.+)$/);
+        if (!match) {
+          return null;
+        }
+
+        return {
+          group: match[1].trim(),
+          label: match[2].trim()
+        };
+      }
+
+      function getChildLabel(parentLabel: string, child: MenuWebApp) {
+        const label = getMenuLabel(child);
+        const parsed = parseGroupedWebAppLabel(child);
+        return parsed?.group === parentLabel ? parsed.label : label;
+      }
+
+      function buildWebAppTabMenuGroups() {
+        const rootWebApps = webApps.filter((webApp: MenuWebApp) => !webApp.parentWebAppId);
+        const rootByLabel = new Map(rootWebApps.map((webApp) => [getMenuLabel(webApp), webApp]));
+        const childrenByParentId = new Map<string, WebAppTabMenuChild[]>();
+        const groupedRootWebApps = new WeakSet<MenuWebApp>();
+        const prefixChildrenByParentId = new Map<string, WebAppTabMenuChild[]>();
+        const virtualPrefixChildren = new Map<string, WebAppTabMenuChild[]>();
+        const virtualPrefixByWebApp = new WeakMap<MenuWebApp, string>();
+
+        for (const webApp of webApps.filter((candidate: MenuWebApp) => candidate.parentWebAppId)) {
+          const parentWebAppId = webApp.parentWebAppId;
+          if (!parentWebAppId) {
+            continue;
+          }
+
+          const children = childrenByParentId.get(parentWebAppId) || [];
+          children.push({
+            label: getMenuLabel(webApp),
+            webApp
+          });
+          childrenByParentId.set(parentWebAppId, children);
+        }
+
+        for (const webApp of rootWebApps) {
+          const parsed = parseGroupedWebAppLabel(webApp);
+          if (!parsed) {
+            continue;
+          }
+
+          const parentWebApp = rootByLabel.get(parsed.group);
+          if (parentWebApp && parentWebApp !== webApp && parentWebApp.id) {
+            const children = prefixChildrenByParentId.get(parentWebApp.id) || [];
+            children.push({
+              label: parsed.label,
+              webApp
+            });
+            prefixChildrenByParentId.set(parentWebApp.id, children);
+            groupedRootWebApps.add(webApp);
+            continue;
+          }
+
+          if (parsed.group === "URL") {
+            const children = virtualPrefixChildren.get(parsed.group) || [];
+            children.push({
+              label: parsed.label,
+              webApp
+            });
+            virtualPrefixChildren.set(parsed.group, children);
+            virtualPrefixByWebApp.set(webApp, parsed.group);
+            groupedRootWebApps.add(webApp);
+          }
+        }
+
+        const groups: WebAppTabMenuGroup[] = [];
+        const emittedVirtualPrefixes = new Set<string>();
+
+        for (const webApp of rootWebApps) {
+          if (groupedRootWebApps.has(webApp)) {
+            const virtualPrefix = virtualPrefixByWebApp.get(webApp);
+            if (virtualPrefix && !emittedVirtualPrefixes.has(virtualPrefix)) {
+              groups.push({
+                label: virtualPrefix,
+                webApp: {
+                  id: `menu:${virtualPrefix.toLowerCase()}`,
+                  label: virtualPrefix,
+                  menuOnly: true
+                },
+                children: virtualPrefixChildren.get(virtualPrefix) || []
+              });
+              emittedVirtualPrefixes.add(virtualPrefix);
+            }
+            continue;
+          }
+
+          const label = getMenuLabel(webApp);
+          const webAppId = webApp.id || "";
+          groups.push({
+            label,
+            webApp,
+            children: [
+              ...(webAppId ? childrenByParentId.get(webAppId) || [] : []).map((child) => ({
+                ...child,
+                label: getChildLabel(label, child.webApp)
+              })),
+              ...(webAppId ? prefixChildrenByParentId.get(webAppId) || [] : [])
+            ]
+          });
+        }
+
+        const rootIds = new Set(rootWebApps.map((webApp) => webApp.id).filter(Boolean));
+        for (const [parentId, children] of childrenByParentId) {
+          if (rootIds.has(parentId)) {
+            continue;
+          }
+
+          groups.push(...children.map((child) => ({
+            label: child.label,
+            webApp: child.webApp,
+            children: []
+          })));
+        }
+
+        return groups;
+      }
+
+      function createWebAppTabMenuItem(
+        webApp: MenuWebApp,
+        label: string,
+        options: { child?: boolean; hasSubmenu?: boolean } = {}
+      ) {
         const item = document.createElement("button");
         item.className = "webapp-tab-menu-item";
-        item.classList.toggle("child", depth > 0);
-        item.classList.toggle("loaded", isWebAppLoaded(webApp.key));
+        item.classList.toggle("child", options.child === true);
+        item.classList.toggle("has-submenu", options.hasSubmenu === true);
+        item.classList.toggle("loaded", !webApp.menuOnly && isWebAppLoaded(webApp.key));
+        item.classList.toggle("group-label", webApp.menuOnly === true);
         item.type = "button";
+        item.disabled = webApp.menuOnly === true;
         item.dataset.webAppId = webApp.id || "";
         item.setAttribute("role", "menuitem");
         item.setAttribute("aria-current", String(webApp.id === selectedWebApp.id));
-        item.setAttribute("data-load-state", isWebAppLoaded(webApp.key) ? "Loaded" : "Not loaded");
-        item.textContent = depth > 0 && webApp.parentLabel
-          ? `${webApp.parentLabel} -> ${webApp.label}`
-          : String(webApp.label || "");
+        item.setAttribute("data-load-state", !webApp.menuOnly && isWebAppLoaded(webApp.key) ? "Loaded" : "Not loaded");
+        item.textContent = label;
         item.addEventListener("click", () => {
+          if (webApp.menuOnly) {
+            return;
+          }
+
           closeWebAppTabMenu();
           selectWebApp(project, paneNode, webApp);
         });
-        menu.append(item);
+        return item;
+      }
+
+      for (const group of buildWebAppTabMenuGroups()) {
+        if (!group.children.length) {
+          menu.append(createWebAppTabMenuItem(group.webApp, group.label));
+          continue;
+        }
+
+        const groupElement = document.createElement("div");
+        groupElement.className = "webapp-tab-menu-group";
+        groupElement.classList.toggle(
+          "contains-current",
+          group.children.some((child) => child.webApp.id === selectedWebApp.id)
+        );
+        groupElement.append(createWebAppTabMenuItem(group.webApp, group.label, { hasSubmenu: true }));
+
+        const childList = document.createElement("div");
+        childList.className = "webapp-tab-submenu";
+        for (const child of group.children) {
+          childList.append(createWebAppTabMenuItem(child.webApp, child.label, { child: true }));
+        }
+        groupElement.append(childList);
+        menu.append(groupElement);
       }
 
       document.body.append(menu);

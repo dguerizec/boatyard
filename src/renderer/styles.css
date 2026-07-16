@@ -2608,6 +2608,19 @@ body.sidebar-collapsed .workspace {
   font-weight: 700;
 }
 
+.webapp-tab-menu-group {
+  display: grid;
+  gap: 2px;
+}
+
+.webapp-tab-submenu {
+  display: grid;
+  gap: 2px;
+  margin: -2px 0 4px 16px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(96, 112, 128, 0.28);
+}
+
 .webapp-tab-menu-item::before {
   content: "○";
   display: inline-block;
@@ -2625,12 +2638,31 @@ body.sidebar-collapsed .workspace {
 }
 
 .webapp-tab-menu-item.child {
-  padding-left: 24px;
+  min-height: 30px;
+  padding-left: 8px;
   font-size: 12px;
 }
 
 .webapp-tab-menu-item.child::before {
-  content: "↳";
+  content: "";
+  width: 8px;
+}
+
+.webapp-tab-menu-item.group-label::before {
+  content: "▸";
+}
+
+.webapp-tab-menu-item.has-submenu::after {
+  content: "v";
+  float: right;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.9;
+}
+
+.webapp-tab-menu-group.contains-current > .webapp-tab-menu-item:first-child,
+.webapp-tab-menu-item.group-label {
+  color: #a7b4c0;
 }
 
 .webapp-tab-menu-item:hover,
@@ -2646,10 +2678,18 @@ body.sidebar-collapsed .workspace {
   opacity: 0.45;
 }
 
+.webapp-tab-menu-item.group-label:disabled {
+  opacity: 1;
+}
+
 .webapp-tab-menu-item:disabled:hover {
   color: #6f7e8c;
   background: transparent;
   border-color: transparent;
+}
+
+.webapp-tab-menu-item.group-label:disabled:hover {
+  color: #a7b4c0;
 }
 
 .webapp-tab-menu-item.danger {
