@@ -146,6 +146,20 @@ button {
   background: rgba(65, 184, 131, 0.12);
 }
 
+.pinned-project-button.dragging {
+  opacity: 0.45;
+}
+
+.pinned-project-insertion-placeholder {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 1px dashed rgba(65, 184, 131, 0.82);
+  border-radius: 6px;
+  background: rgba(65, 184, 131, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(65, 184, 131, 0.14), 0 0 14px rgba(65, 184, 131, 0.16);
+}
+
 .pinned-project-name {
   min-width: 0;
   overflow: hidden;

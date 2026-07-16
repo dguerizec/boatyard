@@ -52,12 +52,16 @@ export function createProjectSidebar({
 
     let projectSearchQuery = "";
     let draggedProjectId: string | null = null;
+    let draggedPinnedProjectId: string | null = null;
+    let draggedPinnedProjectWidth = 0;
     let draggedProjectGroupName: string | null = null;
     let draggedProjectListPointerOffsetY = 0;
     let draggedProjectListGhostHeight = 0;
     let draggedProjectListDragImage: HTMLElement | null = null;
     let projectListInsertionTarget: ProjectListInsertionTarget | null = null;
     let projectListInsertionPlaceholder: HTMLElement | null = null;
+    let pinnedProjectInsertionTarget: string | null = null;
+    let pinnedProjectInsertionPlaceholder: HTMLElement | null = null;
     let pendingProjectGroupExpandTimer: ReturnType<typeof setTimeout> | null = null;
     let pendingProjectGroupExpandName = "";
     let pendingProjectGroupCollapseTimer: ReturnType<typeof setTimeout> | null = null;
@@ -376,6 +380,107 @@ export function createProjectSidebar({
       return getPinnedProjectIds().includes(projectId);
     }
 
+    function clearPinnedProjectInsertionPlaceholder() {
+      pinnedProjectInsertionTarget = null;
+      pinnedProjectInsertionPlaceholder?.remove();
+      pinnedProjectInsertionPlaceholder = null;
+    }
+
+    function ensurePinnedProjectInsertionPlaceholder() {
+      if (pinnedProjectInsertionPlaceholder) {
+        return pinnedProjectInsertionPlaceholder;
+      }
+
+      const placeholder = document.createElement("div");
+      placeholder.className = "pinned-project-insertion-placeholder";
+      placeholder.setAttribute("aria-hidden", "true");
+      placeholder.addEventListener("dragover", (event) => {
+        if (!draggedPinnedProjectId) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
+      });
+      placeholder.addEventListener("drop", async (event) => {
+        if (!draggedPinnedProjectId) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const sourceId = draggedPinnedProjectId;
+        const targetId = pinnedProjectInsertionTarget;
+        clearPinnedProjectDrag();
+        await movePinnedProject(sourceId, targetId);
+      });
+      pinnedProjectInsertionPlaceholder = placeholder;
+      return placeholder;
+    }
+
+    function updatePinnedProjectInsertionPlaceholder(beforeNode: Element | null) {
+      if (!draggedPinnedProjectId) {
+        clearPinnedProjectInsertionPlaceholder();
+        return;
+      }
+
+      const placeholder = ensurePinnedProjectInsertionPlaceholder();
+      placeholder.style.width = `${Math.max(0, Math.round(draggedPinnedProjectWidth))}px`;
+      pinnedProjectInsertionTarget = beforeNode?.getAttribute("data-project-id") || null;
+      pinnedProjects.insertBefore(placeholder, beforeNode);
+    }
+
+    function getPinnedProjectInsertionBeforeNode(button: HTMLButtonElement, placeAfter: boolean) {
+      if (!placeAfter) {
+        return button;
+      }
+
+      let nextNode = button.nextElementSibling;
+      while (
+        nextNode && (
+          nextNode === pinnedProjectInsertionPlaceholder ||
+          nextNode.getAttribute("data-project-id") === draggedPinnedProjectId
+        )
+      ) {
+        nextNode = nextNode.nextElementSibling;
+      }
+      return nextNode;
+    }
+
+    function clearPinnedProjectDrag() {
+      draggedPinnedProjectId = null;
+      draggedPinnedProjectWidth = 0;
+      clearPinnedProjectInsertionPlaceholder();
+      for (const button of pinnedProjects.querySelectorAll(".pinned-project-button")) {
+        button.classList.remove("dragging");
+      }
+    }
+
+    async function movePinnedProject(sourceId: string, targetId: string | null) {
+      const pinnedProjectIds = getPinnedProjectIds();
+      if (!pinnedProjectIds.includes(sourceId)) {
+        return;
+      }
+
+      const reordered = pinnedProjectIds.filter((projectId) => projectId !== sourceId);
+      const targetIndex = targetId ? reordered.indexOf(targetId) : -1;
+      const insertionIndex = targetIndex === -1 ? reordered.length : targetIndex;
+      reordered.splice(insertionIndex, 0, sourceId);
+
+      if (reordered.every((projectId, index) => projectId === pinnedProjectIds[index])) {
+        return;
+      }
+
+      await updateNavigation({
+        ...getNavigationUpdateBase(),
+        pinnedProjectIds: reordered
+      });
+      renderPinnedProjects();
+    }
+
     async function setProjectPinned(projectId: string, pinned: boolean) {
       const currentPinnedProjectIds = getPinnedProjectIds();
       const pinnedProjectIds = pinned
@@ -398,6 +503,8 @@ export function createProjectSidebar({
       button.className = "pinned-project-button";
       button.classList.toggle("active", isActiveProject);
       button.type = "button";
+      button.draggable = Boolean(projectId);
+      button.dataset.projectId = projectId;
       button.title = project.name || "Project";
       button.addEventListener("click", () => {
         if (projectId) {
@@ -407,6 +514,46 @@ export function createProjectSidebar({
       });
       button.addEventListener("contextmenu", (event) => {
         openProjectContextMenu(event, project);
+      });
+      button.addEventListener("dragstart", (event) => {
+        const dataTransfer = event.dataTransfer;
+        if (!projectId || !dataTransfer) {
+          event.preventDefault();
+          return;
+        }
+
+        draggedPinnedProjectId = projectId;
+        draggedPinnedProjectWidth = button.getBoundingClientRect().width;
+        button.classList.add("dragging");
+        dataTransfer.effectAllowed = "move";
+        dataTransfer.setData("text/plain", projectId);
+      });
+      button.addEventListener("dragend", clearPinnedProjectDrag);
+      button.addEventListener("dragover", (event) => {
+        if (!draggedPinnedProjectId || draggedPinnedProjectId === projectId) {
+          clearPinnedProjectInsertionPlaceholder();
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = "move";
+        }
+        const placeAfter = event.clientX >= button.getBoundingClientRect().left + (button.offsetWidth / 2);
+        updatePinnedProjectInsertionPlaceholder(getPinnedProjectInsertionBeforeNode(button, placeAfter));
+      });
+      button.addEventListener("drop", async (event) => {
+        if (!draggedPinnedProjectId || draggedPinnedProjectId === projectId) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        const sourceId = draggedPinnedProjectId;
+        const targetId = pinnedProjectInsertionTarget;
+        clearPinnedProjectDrag();
+        await movePinnedProject(sourceId, targetId);
       });
 
       const name = document.createElement("span");
@@ -430,6 +577,28 @@ export function createProjectSidebar({
         pinnedProjects.append(createPinnedProjectShortcut(project));
       }
     }
+
+    pinnedProjects.addEventListener("dragover", (event) => {
+      if (!draggedPinnedProjectId || event.target !== pinnedProjects) {
+        return;
+      }
+
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "move";
+      }
+      updatePinnedProjectInsertionPlaceholder(null);
+    });
+    pinnedProjects.addEventListener("drop", async (event) => {
+      if (!draggedPinnedProjectId || event.target !== pinnedProjects) {
+        return;
+      }
+
+      event.preventDefault();
+      const sourceId = draggedPinnedProjectId;
+      clearPinnedProjectDrag();
+      await movePinnedProject(sourceId, null);
+    });
 
     function getProjectListBlocks() {
       return [...projectList.children].filter(isProjectListElement).filter((element) =>
