@@ -3,6 +3,7 @@ const path = require("node:path");
 const { EventEmitter } = require("node:events");
 const { safeStorage } = require("electron");
 const { Api, TelegramClient, utils } = require("telegram");
+const { CustomFile } = require("telegram/client/uploads");
 const { NewMessage } = require("telegram/events");
 const { StringSession } = require("telegram/sessions");
 
@@ -12,6 +13,11 @@ const CLIENT_OPTIONS = {
 const LOGIN_WAIT_TIMEOUT_MS = 30000;
 const MESSAGE_LIMIT = 50;
 const TOPIC_HISTORY_SCAN_LIMIT = 500;
+const MAX_PASTED_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_MESSAGE_IMAGE_BYTES = 20 * 1024 * 1024;
+const MAX_MESSAGE_IMAGE_PREVIEW_BYTES = 2 * 1024 * 1024;
+const MESSAGE_IMAGE_PREVIEW_CONCURRENCY = 4;
+const MESSAGE_IMAGE_PREVIEW_THUMB_INDICES = [2, 1, 0];
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -32,6 +38,8 @@ type TelegramTarget = {
 type TelegramMappedMessage = {
   hasMedia: boolean;
   id: unknown;
+  imagePreviewDataUrl?: string;
+  isImage: boolean;
   outgoing: boolean;
   senderName: string;
   sentAt: string;
@@ -54,9 +62,11 @@ type TelegramRuntimeClient = {
   getInputEntity(peer: unknown): Promise<unknown>;
   getMe(): Promise<UnknownRecord>;
   getMessages(peer: unknown, options: UnknownRecord): Promise<UnknownRecord[]>;
+  downloadMedia(message: unknown, options?: UnknownRecord): Promise<Buffer | string | undefined>;
   invoke(request: unknown): Promise<UnknownRecord>;
   removeEventHandler(handler: TelegramEventHandler, builder: unknown): void;
   sendMessage(peer: unknown, options: UnknownRecord): Promise<UnknownRecord>;
+  sendFile(peer: unknown, options: UnknownRecord): Promise<UnknownRecord>;
   session: {
     save(): string;
   };
@@ -69,6 +79,11 @@ type TelegramRuntimeClient = {
       phoneNumber: string;
     }
   ): Promise<unknown>;
+};
+
+type TelegramImageUpload = {
+  buffer: Buffer;
+  name: string;
 };
 
 type TelegramPendingLogin = {
@@ -95,6 +110,50 @@ function getErrorCode(error: unknown): string {
 
 function normalizeText(value: unknown): string {
   return String(value || "").trim();
+}
+
+function getImageExtension(mimeType: string): string {
+  return {
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp"
+  }[mimeType] || "png";
+}
+
+function normalizeImageName(value: unknown, mimeType: string): string {
+  const name = normalizeText(value)
+    .replace(/[\\/:*?"<>|\x00-\x1f]+/g, "-")
+    .replace(/^\.+/, "")
+    .slice(0, 120);
+  const extension = getImageExtension(mimeType);
+  return name && new RegExp(`\\.${extension}$`, "i").test(name) ? name : `pasted-image.${extension}`;
+}
+
+function parsePastedImage(value: unknown): TelegramImageUpload | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const dataUrl = normalizeText(value.dataUrl);
+  const match = /^data:(image\/(?:gif|jpeg|png|webp));base64,([a-z0-9+/]+={0,2})$/i.exec(dataUrl);
+  if (!match) {
+    throw new Error("The pasted image format is not supported.");
+  }
+
+  const mimeType = match[1].toLowerCase();
+  const buffer = Buffer.from(match[2], "base64");
+  if (!buffer.length) {
+    throw new Error("The pasted image is empty.");
+  }
+  if (buffer.length > MAX_PASTED_IMAGE_BYTES) {
+    throw new Error("The pasted image exceeds the 20 MB limit.");
+  }
+
+  return {
+    buffer,
+    name: normalizeImageName(value.name, mimeType)
+  };
 }
 
 function normalizeTarget(target: unknown = {}): TelegramTarget {
@@ -141,6 +200,24 @@ function getMessageTopicIds(message: unknown = {}): number[] {
 function getMessageChatId(message: unknown = {}): string {
   const source = getRecord(message);
   return source.peerId ? utils.getPeerId(source.peerId) : "";
+}
+
+function getTelegramImageMimeType(message: unknown = {}): string {
+  const media = getRecord(getRecord(message).media);
+  if (media.photo) {
+    return "image/jpeg";
+  }
+
+  const mimeType = normalizeText(getRecord(media.document).mimeType).toLowerCase();
+  return /^image\/(gif|jpeg|png|webp)$/.test(mimeType) ? mimeType : "";
+}
+
+function getImageDataUrl(value: unknown, mimeType: string, maxBytes: number): string {
+  if (!Buffer.isBuffer(value) || !value.length || value.length > maxBytes) {
+    return "";
+  }
+
+  return `data:${mimeType};base64,${value.toString("base64")}`;
 }
 
 function normalizeTopicTitle(value: unknown): string {
@@ -199,14 +276,53 @@ function getSenderName(message: unknown = {}): string {
 
 function mapMessage(message: unknown = {}): TelegramMappedMessage {
   const source = getRecord(message);
+  const isImage = Boolean(getTelegramImageMimeType(source));
   return {
     id: source.id,
     text: normalizeText(source.message),
     outgoing: source.out === true,
     senderName: getSenderName(source),
     sentAt: formatMessageDate(source.date),
-    hasMedia: Boolean(source.media)
+    hasMedia: Boolean(source.media),
+    isImage
   };
+}
+
+async function mapMessageWithImagePreview(client: TelegramRuntimeClient, message: unknown = {}): Promise<TelegramMappedMessage> {
+  const mapped = mapMessage(message);
+  const mimeType = getTelegramImageMimeType(message);
+  if (!mimeType) {
+    return mapped;
+  }
+
+  for (const thumb of MESSAGE_IMAGE_PREVIEW_THUMB_INDICES) {
+    try {
+      const preview = await client.downloadMedia(message, { thumb });
+      const imagePreviewDataUrl = getImageDataUrl(preview, "image/jpeg", MAX_MESSAGE_IMAGE_PREVIEW_BYTES);
+      if (imagePreviewDataUrl) {
+        return { ...mapped, imagePreviewDataUrl };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return mapped;
+}
+
+async function mapMessagesWithImagePreviews(client: TelegramRuntimeClient, messages: unknown[]): Promise<TelegramMappedMessage[]> {
+  const mapped = new Array<TelegramMappedMessage>(messages.length);
+  let nextIndex = 0;
+  const worker = async () => {
+    while (nextIndex < messages.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      mapped[index] = await mapMessageWithImagePreview(client, messages[index]);
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(MESSAGE_IMAGE_PREVIEW_CONCURRENCY, messages.length) }, worker));
+  return mapped;
 }
 
 class TelegramService extends EventEmitter {
@@ -727,7 +843,7 @@ class TelegramService extends EventEmitter {
           summary: "Telegram messages synced."
         },
         target: resolvedTarget,
-        messages: [...messages].reverse().map(mapMessage)
+        messages: await mapMessagesWithImagePreviews(client, [...messages].reverse())
       };
     } catch (error) {
       return {
@@ -741,20 +857,27 @@ class TelegramService extends EventEmitter {
     }
   }
 
-  async sendMessage(target: unknown = {}, text: unknown = "", globalConfig: unknown = {}) {
+  async sendMessage(target: unknown = {}, text: unknown = "", globalConfig: unknown = {}, image: unknown = null) {
     const message = normalizeText(text);
-    if (!message) {
-      throw new Error("Message is required.");
+    const pastedImage = parsePastedImage(image);
+    if (!message && !pastedImage) {
+      throw new Error("Message or image is required.");
     }
 
     const normalizedTarget = normalizeTarget(target);
     const client = await this.getAuthorizedClient(globalConfig);
     const resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
-    const messageWithMetadata = addTopicMetadataPrefix(message, resolvedTarget);
-    const sentMessage = await client.sendMessage(this.getPeerValue(resolvedTarget), {
-      message: messageWithMetadata,
-      ...this.getMessageOptions(resolvedTarget)
-    });
+    const messageWithMetadata = message ? addTopicMetadataPrefix(message, resolvedTarget) : "";
+    const sentMessage = pastedImage
+      ? await client.sendFile(this.getPeerValue(resolvedTarget), {
+        file: new CustomFile(pastedImage.name, pastedImage.buffer.length, "", pastedImage.buffer),
+        caption: messageWithMetadata,
+        ...this.getMessageOptions(resolvedTarget)
+      })
+      : await client.sendMessage(this.getPeerValue(resolvedTarget), {
+        message: messageWithMetadata,
+        ...this.getMessageOptions(resolvedTarget)
+      });
 
     return {
       sent: true,
@@ -762,11 +885,44 @@ class TelegramService extends EventEmitter {
       target: resolvedTarget
     };
   }
+
+  async getMessageImage(target: unknown = {}, messageId: unknown, globalConfig: unknown = {}) {
+    const id = Number(normalizeText(messageId));
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new Error("Telegram message id is invalid.");
+    }
+
+    const normalizedTarget = normalizeTarget(target);
+    const client = await this.getAuthorizedClient(globalConfig);
+    const resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
+    const [message] = await client.getMessages(this.getPeerValue(resolvedTarget), { ids: id });
+    if (!message || !getTelegramImageMimeType(message)) {
+      throw new Error("Telegram message does not contain a supported image.");
+    }
+
+    const topicIds = new Set([
+      normalizeThreadId(resolvedTarget.threadId),
+      normalizeThreadId(resolvedTarget.topicTopMessageId)
+    ].filter((value): value is number => value !== null));
+    if (topicIds.size && !getMessageTopicIds(message).some((topicId) => topicIds.has(topicId))) {
+      throw new Error("Telegram image does not belong to this project topic.");
+    }
+
+    const image = await client.downloadMedia(message);
+    const dataUrl = getImageDataUrl(image, getTelegramImageMimeType(message), MAX_MESSAGE_IMAGE_BYTES);
+    if (!dataUrl) {
+      throw new Error("Telegram image is unavailable or exceeds the 20 MB limit.");
+    }
+
+    return { dataUrl };
+  }
 }
 
 export {
   TelegramService,
   addTopicMetadataPrefix,
   getTopicMetadataPrefix,
-  normalizeTarget
+  getTelegramImageMimeType,
+  normalizeTarget,
+  parsePastedImage
 };

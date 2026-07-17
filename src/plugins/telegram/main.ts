@@ -8,7 +8,8 @@ const path = require("node:path");
 
 type TelegramStatusPayload = { globalConfig?: Record<string, unknown> };
 type TelegramMessagesPayload = { target?: Record<string, unknown>; globalConfig?: Record<string, unknown> };
-type TelegramSendMessagePayload = { target?: Record<string, unknown>; text?: unknown; globalConfig?: Record<string, unknown> };
+type TelegramSendMessagePayload = { target?: Record<string, unknown>; text?: unknown; image?: unknown; globalConfig?: Record<string, unknown> };
+type TelegramMessageImagePayload = { target?: Record<string, unknown>; messageId?: unknown; globalConfig?: Record<string, unknown> };
 type TelegramStartLoginPayload = { globalConfig?: Record<string, unknown>; phoneNumber?: unknown };
 type TelegramCodePayload = { code?: unknown };
 type TelegramPasswordPayload = { password?: unknown };
@@ -41,8 +42,12 @@ function activate(ctx: TelegramPluginContext) {
     return service.listMessages(target, globalConfig);
   });
 
-  ctx.actions.handle<TelegramSendMessagePayload>("sendMessage", ({ target = {}, text = "", globalConfig = {} } = {}) => {
-    return service.sendMessage(target, text, globalConfig);
+  ctx.actions.handle<TelegramSendMessagePayload>("sendMessage", ({ target = {}, text = "", image, globalConfig = {} } = {}) => {
+    return service.sendMessage(target, text, globalConfig, image);
+  });
+
+  ctx.actions.handle<TelegramMessageImagePayload>("messageImage", ({ target = {}, messageId, globalConfig = {} } = {}) => {
+    return service.getMessageImage(target, messageId, globalConfig);
   });
 
   ctx.actions.handle<TelegramStartLoginPayload>("startLogin", ({ globalConfig = {}, phoneNumber = "" } = {}) => {

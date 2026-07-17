@@ -33,10 +33,20 @@
   };
 
   type TelegramMessage = {
+    hasMedia?: boolean;
+    id?: string | number;
+    imagePreviewDataUrl?: string;
+    isImage?: boolean;
     outgoing?: boolean;
     senderName?: string;
     sentAt?: string;
     text?: string;
+  };
+
+  type TelegramImageAttachment = {
+    dataUrl: string;
+    mimeType: string;
+    name: string;
   };
 
   type TelegramUpdate = {
@@ -68,11 +78,12 @@
       status?: TelegramStatus;
       target?: Partial<TelegramTarget>;
     }>;
+    getMessageImage(project: TelegramProject, messageId: string | number, options?: TelegramConversationProps): Promise<{ dataUrl?: string }>;
     getStatus(options?: TelegramConversationProps): Promise<TelegramStatus>;
     getTarget(project?: TelegramProject, projectConfig?: TelegramConfig, globalConfig?: TelegramConfig): TelegramTarget;
     logout(): Promise<TelegramStatus>;
     onMessage(callback: (update: TelegramUpdate) => void): () => void;
-    sendMessage(project: TelegramProject, text: string, options?: TelegramConversationProps): Promise<unknown>;
+    sendMessage(project: TelegramProject, text: string, image: TelegramImageAttachment | null, options?: TelegramConversationProps): Promise<unknown>;
     startLogin(globalConfig: TelegramConfig | undefined, phoneNumber: string): Promise<TelegramStatus>;
   };
   type TelegramSettingsFields = {
@@ -224,9 +235,17 @@
         }
         return await invokePlugin("messages", { target, globalConfig: options.globalPluginConfig || {} }) as Awaited<ReturnType<TelegramRendererService["getMessages"]>>;
       },
-      async sendMessage(project: TelegramProject, text: string, options: TelegramConversationProps = {}) {
+      async getMessageImage(project: TelegramProject, messageId: string | number, options: TelegramConversationProps = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
-        return invokePlugin("sendMessage", { target, text, globalConfig: options.globalPluginConfig || {} });
+        return await invokePlugin("messageImage", {
+          target,
+          messageId,
+          globalConfig: options.globalPluginConfig || {}
+        }) as { dataUrl?: string };
+      },
+      async sendMessage(project: TelegramProject, text: string, image: TelegramImageAttachment | null, options: TelegramConversationProps = {}) {
+        const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
+        return invokePlugin("sendMessage", { target, text, image, globalConfig: options.globalPluginConfig || {} });
       },
       async startLogin(globalConfig: TelegramConfig | undefined, phoneNumber: string) {
         return await invokePlugin("startLogin", { globalConfig: globalConfig || {}, phoneNumber }) as TelegramStatus;
@@ -259,7 +278,7 @@
     element.setAttribute("aria-label", summary);
   }
 
-  function renderMessages(list: HTMLElement, messages: TelegramMessage[] = []) {
+  function renderMessages(list: HTMLElement, messages: TelegramMessage[] = [], openImage?: (message: TelegramMessage) => void) {
     list.replaceChildren();
     if (!messages.length) {
       const empty = document.createElement("p");
@@ -276,10 +295,36 @@
       const meta = document.createElement("div");
       meta.className = "telegram-message-meta";
       meta.textContent = [message.senderName, message.sentAt].map(normalizeText).filter(Boolean).join(" - ");
+      row.append(meta);
+
+      if (message.isImage && message.id !== undefined) {
+        const imageButton = document.createElement("button");
+        imageButton.type = "button";
+        imageButton.className = "telegram-message-image";
+        imageButton.title = "View image";
+        imageButton.setAttribute("aria-label", "View image");
+        if (message.imagePreviewDataUrl) {
+          const image = document.createElement("img");
+          image.src = message.imagePreviewDataUrl;
+          image.alt = "Telegram image";
+          imageButton.append(image);
+        } else {
+          imageButton.textContent = "Image";
+        }
+        imageButton.addEventListener("click", () => openImage?.(message));
+        row.append(imageButton);
+      } else if (message.hasMedia) {
+        const media = document.createElement("div");
+        media.className = "telegram-message-media";
+        media.textContent = message.isImage ? "Image" : "Attachment";
+        row.append(media);
+      }
 
       const body = document.createElement("p");
       body.textContent = stripTopicMetadataPrefix(message.text);
-      row.append(meta, body);
+      if (body.textContent) {
+        row.append(body);
+      }
       list.append(row);
     }
   }
@@ -357,6 +402,36 @@
     const nextHeight = Math.min(input.scrollHeight + verticalBorder, maxHeight);
     input.style.height = `${nextHeight}px`;
     input.style.overflowY = input.scrollHeight + verticalBorder > maxHeight ? "auto" : "hidden";
+  }
+
+  function getImageFileExtension(mimeType: string) {
+    return {
+      "image/gif": "gif",
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp"
+    }[mimeType] || "png";
+  }
+
+  function readImageAttachment(file: File, mimeType: string): Promise<TelegramImageAttachment> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("error", () => reject(reader.error || new Error("Could not read the pasted image.")));
+      reader.addEventListener("load", () => {
+        const dataUrl = typeof reader.result === "string" ? reader.result : "";
+        if (!dataUrl.startsWith("data:image/")) {
+          reject(new Error("The pasted clipboard item is not an image."));
+          return;
+        }
+
+        resolve({
+          dataUrl,
+          mimeType,
+          name: file.name || `pasted-image.${getImageFileExtension(mimeType)}`
+        });
+      });
+      reader.readAsDataURL(file);
+    });
   }
 
   function createTelegramConversation(container: HTMLElement, props: TelegramConversationProps = {}, service: TelegramRendererService, options: TelegramConversationOptions = {}) {
@@ -441,14 +516,41 @@
 
     const form = document.createElement("form");
     form.className = "telegram-composer";
+    const composerInput = document.createElement("div");
+    composerInput.className = "telegram-composer-input";
+    const attachmentPreview = document.createElement("div");
+    attachmentPreview.className = "telegram-composer-attachment";
+    attachmentPreview.hidden = true;
+    const attachmentImage = document.createElement("img");
+    attachmentImage.alt = "Pasted image";
+    const removeAttachmentButton = document.createElement("button");
+    removeAttachmentButton.type = "button";
+    removeAttachmentButton.className = "telegram-composer-remove-attachment";
+    removeAttachmentButton.textContent = "Remove image";
+    removeAttachmentButton.title = "Remove pasted image";
+    attachmentPreview.append(attachmentImage, removeAttachmentButton);
     const input = document.createElement("textarea");
     input.rows = 1;
     input.placeholder = `Message ${target.botUsername ? `@${target.botUsername.replace(/^@/, "")}` : "TARS"}`;
     const sendButton = document.createElement("button");
     sendButton.type = "submit";
     sendButton.textContent = "Send";
-    form.append(input, sendButton);
+    composerInput.append(attachmentPreview, input);
+    form.append(composerInput, sendButton);
     resizeComposerInput(input);
+    let pastedImage: TelegramImageAttachment | null = null;
+
+    function clearPastedImage() {
+      pastedImage = null;
+      attachmentImage.removeAttribute("src");
+      attachmentPreview.hidden = true;
+    }
+
+    function showPastedImage(image: TelegramImageAttachment) {
+      pastedImage = image;
+      attachmentImage.src = image.dataUrl;
+      attachmentPreview.hidden = false;
+    }
 
     function updateAuthState(state: TelegramStatus) {
       const phase = state?.state || "";
@@ -461,6 +563,75 @@
       codeRow.hidden = phase !== "codeRequired";
       passwordRow.hidden = phase !== "passwordRequired";
       form.hidden = phase !== "ready";
+    }
+
+    function showImagePreview(message: TelegramMessage) {
+      if (message.id === undefined) {
+        return;
+      }
+
+      function openDialog(dataUrl: string) {
+        const dialog = document.createElement("dialog");
+        dialog.className = "telegram-image-dialog";
+        const panel = document.createElement("div");
+        panel.className = "telegram-image-dialog-panel";
+        const image = document.createElement("img");
+        image.src = dataUrl;
+        image.alt = "Telegram image";
+        const closeButton = document.createElement("button");
+        closeButton.type = "button";
+        closeButton.className = "secondary-button";
+        closeButton.textContent = "Close";
+        closeButton.addEventListener("click", () => dialog.close());
+        dialog.addEventListener("cancel", (event) => {
+          event.preventDefault();
+          dialog.close();
+        });
+        panel.append(image, closeButton);
+        dialog.append(panel);
+
+        if (typeof globalScope.BoatyardOverlayDialog?.show === "function") {
+          void globalScope.BoatyardOverlayDialog.show(dialog, {
+            freeze: "overlap",
+            freezeMargin: 16,
+            removeOnClose: true
+          });
+        } else {
+          document.body.append(dialog);
+          dialog.showModal();
+        }
+
+        return { dialog, image };
+      }
+
+      if (!message.imagePreviewDataUrl) {
+        void service.getMessageImage(project, message.id, props).then((result) => {
+          const dataUrl = normalizeText(result?.dataUrl);
+          if (dataUrl) {
+            openDialog(dataUrl);
+          }
+        }).catch((error) => {
+          setStatusText(status, {
+            state: "error",
+            summary: (error as Error).message
+          });
+        });
+        return;
+      }
+
+      const { dialog, image } = openDialog(message.imagePreviewDataUrl);
+
+      void service.getMessageImage(project, message.id, props).then((result) => {
+        const dataUrl = normalizeText(result?.dataUrl);
+        if (dataUrl && dialog.open) {
+          image.src = dataUrl;
+        }
+      }).catch((error) => {
+        setStatusText(status, {
+          state: "error",
+          summary: (error as Error).message
+        });
+      });
     }
 
     function isScrolledToBottom(element: HTMLElement) {
@@ -476,7 +647,7 @@
         await persistResolvedTarget(props, data.target);
         setStatusText(status, data.status || {});
         updateAuthState(data.status || {});
-        renderMessages(list, data.messages);
+        renderMessages(list, data.messages, showImagePreview);
         list.scrollTop = shouldScrollToBottom ? list.scrollHeight : previousScrollTop;
       } catch (error) {
         setStatusText(status, {
@@ -553,17 +724,39 @@
       }
     });
     input.addEventListener("input", () => resizeComposerInput(input));
+    input.addEventListener("paste", async (event) => {
+      const clipboardItems = [...(event.clipboardData?.items || [])];
+      const imageItem = clipboardItems.find((item) => /^image\/(gif|jpeg|png|webp)$/i.test(item.type));
+      const imageFile = imageItem?.getAsFile();
+      if (!imageItem || !imageFile) {
+        return;
+      }
+
+      event.preventDefault();
+      try {
+        showPastedImage(await readImageAttachment(imageFile, imageItem.type.toLowerCase()));
+      } catch (error) {
+        setStatusText(status, {
+          state: "error",
+          summary: (error as Error).message
+        });
+      }
+    });
+    removeAttachmentButton.addEventListener("click", clearPastedImage);
     form.addEventListener("submit", async (event: SubmitEvent) => {
       event.preventDefault();
       const text = normalizeText(input.value);
-      if (!text) {
+      const image = pastedImage;
+      if (!text && !image) {
         return;
       }
 
       sendButton.disabled = true;
+      removeAttachmentButton.disabled = true;
       try {
-        await service.sendMessage(project, text, props);
+        await service.sendMessage(project, text, image, props);
         input.value = "";
+        clearPastedImage();
         resizeComposerInput(input);
         await load({ scrollToBottom: true });
       } catch (error) {
@@ -573,6 +766,7 @@
         });
       } finally {
         sendButton.disabled = false;
+        removeAttachmentButton.disabled = false;
       }
     });
 
