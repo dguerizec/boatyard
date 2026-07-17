@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.8.10] - 2026-07-17
+
+### Summary
+
+- **v0.8.10: Image messages and faster web app navigation** — Telegram conversations gain image support while web app menus, URL bookmarking, pinned projects, and update notices become easier to use.
+
+### Added
+
+- **Telegram image messages** — Paste supported images into Telegram conversations, send them with optional captions, and preview received images in the message list.
+- **Telegram image viewer** — Open Telegram image messages in a larger overlay without leaving the conversation.
+- **URL field actions** — Right-click a web app URL field to open the page externally or bookmark it to the current project.
+- **Pinned project reordering** — Drag pinned projects in the top bar to choose their order.
+
+### Changed
+
+- **Web app tab menus** — Related web app entries are grouped under clearer menu sections, including URL-based entries.
+
+### Fixed
+
+- **Collapsed sidebar updates** — Available updates are now visible even when the project sidebar is collapsed.
+
 ## [0.8.9] - 2026-07-10
 
 ### Summary

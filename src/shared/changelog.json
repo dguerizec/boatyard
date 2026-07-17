@@ -1,6 +1,42 @@
 {
-  "generatedForVersion": "0.8.9",
+  "generatedForVersion": "0.8.10",
   "releases": [
+    {
+      "version": "0.8.10",
+      "date": "2026-07-17",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Telegram image messages",
+          "body": "Paste supported images into Telegram conversations, send them with optional captions, and preview received images in the message list."
+        },
+        {
+          "category": "Added",
+          "title": "Telegram image viewer",
+          "body": "Open Telegram image messages in a larger overlay without leaving the conversation."
+        },
+        {
+          "category": "Added",
+          "title": "URL field actions",
+          "body": "Right-click a web app URL field to open the page externally or bookmark it to the current project."
+        },
+        {
+          "category": "Added",
+          "title": "Pinned project reordering",
+          "body": "Drag pinned projects in the top bar to choose their order."
+        },
+        {
+          "category": "Changed",
+          "title": "Web app tab menus",
+          "body": "Related web app entries are grouped under clearer menu sections, including URL-based entries."
+        },
+        {
+          "category": "Fixed",
+          "title": "Collapsed sidebar updates",
+          "body": "Available updates are now visible even when the project sidebar is collapsed."
+        }
+      ]
+    },
     {
       "version": "0.8.9",
       "date": "2026-07-10",
