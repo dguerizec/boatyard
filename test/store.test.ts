@@ -114,12 +114,23 @@ test("ProjectStore keeps window layouts independent while synchronizing project 
 
   store.ensureWorkspaceWindow("window-a", "group-a");
   store.ensureWorkspaceWindow("window-b", "group-a", "window-a");
+  store.updateWorkspaceNavigation("window-b", {
+    view: "global",
+    projectId: null,
+    collapsedProjectGroups: ["Operations"],
+    pinnedProjectIds: [projectA],
+    sidebarCollapsed: true
+  });
   store.updateWorkspacePaneLayout("window-a", projectA, { type: "pane", id: "a-pane", selectedWebAppId: "twicc" });
   store.updateWorkspacePaneLayout("window-b", projectA, { type: "pane", id: "b-pane", selectedWebAppId: "preview" });
   const synchronized = store.updateWorkspaceNavigation("window-a", { view: "project", projectId: projectB });
 
   assert.equal(synchronized["window-a"].projectId, projectB);
+  assert.equal(synchronized["window-a"].sidebarCollapsed, false);
   assert.equal(synchronized["window-b"].projectId, projectB);
+  assert.equal(synchronized["window-b"].sidebarCollapsed, true);
+  assert.deepEqual(synchronized["window-b"].collapsedProjectGroups, ["Operations"]);
+  assert.deepEqual(synchronized["window-b"].pinnedProjectIds, [projectA]);
   assert.equal(store.getStateForWorkspaceWindow("window-a").paneLayouts[projectA].id, "a-pane");
   assert.equal(store.getStateForWorkspaceWindow("window-b").paneLayouts[projectA].id, "b-pane");
 

@@ -775,12 +775,13 @@ class ProjectStore {
       if (entry.syncGroupId !== workspaceWindow.syncGroupId) {
         continue;
       }
-      entry.navigation = normalizeNavigationState({
-        ...entry.navigation,
-        ...nextNavigation,
-        view: "project",
-        projectId
-      });
+      entry.navigation = entry.id === workspaceWindow.id
+        ? nextNavigation
+        : normalizeNavigationState({
+          ...entry.navigation,
+          view: "project",
+          projectId
+        });
       updated[entry.id] = structuredClone(entry.navigation);
     }
     this.save();
