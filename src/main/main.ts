@@ -22,6 +22,7 @@ import type {
   WebAppOpenOptions
 } from "./mainTypes.js";
 import { createWebAppContextMenu } from "./webAppContextMenu.js";
+import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
 
 const { execFile } = require("node:child_process");
 const path = require("node:path");
@@ -48,8 +49,14 @@ let store: ProjectStoreInstance;
 let terminalService: TerminalServiceInstance;
 let passwordManager: PasswordManagerInstance;
 let pluginHost: PluginHostInstance;
-let saveWindowStateTimer: ReturnType<typeof setTimeout> | null = null;
 let updateManager: UpdateManagerInstance;
+type WorkspaceWindowRecord = {
+  id: string;
+  runtime: WorkspaceWindowRuntime;
+  saveStateTimer: ReturnType<typeof setTimeout> | null;
+  window: ElectronBrowserWindow;
+};
+const workspaceWindows = new Map<string, WorkspaceWindowRecord>();
 const webAppViews = new Map<string, WebAppItem>();
 let activeWebAppKey: string | null = null;
 let visibleWebAppKeys = new Set<string>();
@@ -57,7 +64,7 @@ type WebAppFreeze = { all: boolean; keys: Set<string>; rect: Rectangle | null };
 const webAppFreezes = new Map<number, WebAppFreeze>();
 let nextWebAppFreezeToken = 1;
 const captureRunner = createCaptureRunner({
-  getMainWindow: () => mainWindow,
+  getMainWindow: () => getPrimaryWorkspaceWindow()?.window || null,
   quitApp: () => app.quit()
 });
 
@@ -79,6 +86,18 @@ function getLegacyStorePath() {
   return process.env.BOATYARD_STATE_PATH || path.join(app.getPath("userData"), "boatyard-state.json");
 }
 
+function getPrimaryWorkspaceWindow() {
+  return workspaceWindows.values().next().value as WorkspaceWindowRecord | undefined;
+}
+
+function getWorkspaceWindowForWebContents(webContents: ElectronWebContents) {
+  return [...workspaceWindows.values()].find((workspaceWindow) => workspaceWindow.window.webContents.id === webContents.id) || null;
+}
+
+function getWorkspaceWindowForWebAppContents(webContents: ElectronWebContents) {
+  return [...workspaceWindows.values()].find((workspaceWindow) => workspaceWindow.runtime.getWebAppForWebContents(webContents)) || null;
+}
+
 function createMainWindow() {
   const windowState = store.getWindowState();
 
@@ -97,6 +116,19 @@ function createMainWindow() {
     }
   });
   mainWindow = window;
+  const workspaceWindowId = crypto.randomUUID();
+  const workspaceWindow: WorkspaceWindowRecord = {
+    id: workspaceWindowId,
+    window,
+    runtime: new WorkspaceWindowRuntime({
+      id: workspaceWindowId,
+      window,
+      store,
+      openExternalUrl
+    }),
+    saveStateTimer: null
+  };
+  workspaceWindows.set(workspaceWindow.id, workspaceWindow);
 
   if (windowState.isMaximized) {
     window.maximize();
@@ -128,36 +160,37 @@ function createMainWindow() {
     }
   });
   window.on("closed", () => {
+    workspaceWindows.delete(workspaceWindow.id);
     mainWindow = null;
   });
 
-  window.on("move", scheduleWindowStateSave);
-  window.on("resize", scheduleWindowStateSave);
-  window.on("maximize", saveWindowState);
-  window.on("unmaximize", saveWindowState);
+  window.on("move", () => scheduleWindowStateSave(workspaceWindow));
+  window.on("resize", () => scheduleWindowStateSave(workspaceWindow));
+  window.on("maximize", () => saveWindowState(workspaceWindow));
+  window.on("unmaximize", () => saveWindowState(workspaceWindow));
   window.on("close", () => {
-    saveWindowState();
+    saveWindowState(workspaceWindow);
     terminalService?.detachAll();
-    destroyWebAppViews();
+    workspaceWindow.runtime.destroy();
   });
 }
 
-function saveWindowState() {
-  if (!mainWindow || mainWindow.isMinimized()) {
+function saveWindowState(workspaceWindow: WorkspaceWindowRecord) {
+  if (workspaceWindow.window.isMinimized()) {
     return;
   }
 
   store.updateWindowState({
-    bounds: mainWindow.getNormalBounds(),
-    isMaximized: mainWindow.isMaximized()
+    bounds: workspaceWindow.window.getNormalBounds(),
+    isMaximized: workspaceWindow.window.isMaximized()
   });
 }
 
-function scheduleWindowStateSave() {
-  if (saveWindowStateTimer) {
-    clearTimeout(saveWindowStateTimer);
+function scheduleWindowStateSave(workspaceWindow: WorkspaceWindowRecord) {
+  if (workspaceWindow.saveStateTimer) {
+    clearTimeout(workspaceWindow.saveStateTimer);
   }
-  saveWindowStateTimer = setTimeout(saveWindowState, 250);
+  workspaceWindow.saveStateTimer = setTimeout(() => saveWindowState(workspaceWindow), 250);
 }
 
 function normalizeWebAppBounds(bounds: unknown): Rectangle {
@@ -677,15 +710,36 @@ function destroyWebAppViews() {
   webAppFreezes.clear();
 }
 
+void [
+  showWebApp,
+  setWebAppBounds,
+  getWebAppNavigationHistory,
+  navigateWebApp,
+  updateWebAppAutofill,
+  setVisibleWebApps,
+  hideWebApp,
+  freezeWebApps,
+  restoreWebApps,
+  destroyWebAppViews
+];
+
 function registerIpcHandlers() {
   ipcMain.on("webapp:modified-link-click", (event: IpcMainEvent, payload: unknown) => {
     const source = payload && typeof payload === "object" && !Array.isArray(payload)
       ? payload as UnknownRecord
       : {};
-    const webApp = getWebAppForWebContents(event.sender);
-    if (!sendWebAppOpenUrlRequestFromItem(webApp?.key || "", webApp?.item, source.url, String(source.source || "modified-click"))) {
+    const workspaceWindow = getWorkspaceWindowForWebAppContents(event.sender);
+    const webApp = workspaceWindow?.runtime.getWebAppForWebContents(event.sender);
+    if (!workspaceWindow || !webApp) {
       openExternalUrl(source.url);
+      return;
     }
+
+    workspaceWindow.runtime.handleModifiedLinkClick({
+      webContents: event.sender,
+      url: source.url,
+      source: String(source.source || "modified-click")
+    });
   });
 
   ipcMain.handle("state:get", () => store.getState());
@@ -712,7 +766,7 @@ function registerIpcHandlers() {
     return store.updateOnboarding(onboarding);
   });
 
-  ipcMain.handle("settings:select-projects-base-path", async (_event: IpcMainInvokeEvent, currentPath: unknown) => {
+  ipcMain.handle("settings:select-projects-base-path", async (event: IpcMainInvokeEvent, currentPath: unknown) => {
     const dialogOptions: UnknownRecord = {
       title: "Select projects base path",
       properties: ["openDirectory", "createDirectory"]
@@ -722,7 +776,7 @@ function registerIpcHandlers() {
       dialogOptions.defaultPath = currentPath.trim();
     }
 
-    const result = await dialog.showOpenDialog(mainWindow, dialogOptions);
+    const result = await dialog.showOpenDialog(getWorkspaceWindowForWebContents(event.sender)?.window || mainWindow, dialogOptions);
     return result.canceled ? null : result.filePaths[0];
   });
 
@@ -874,7 +928,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("password-manager:get-credential", (event: IpcMainInvokeEvent, url: string) => {
-    const webApp = getWebAppForWebContents(event.sender);
+    const webApp = getWorkspaceWindowForWebAppContents(event.sender)?.runtime.getWebAppForWebContents(event.sender);
     if (webApp?.item.autofillEnabled === false) {
       return null;
     }
@@ -886,45 +940,50 @@ function registerIpcHandlers() {
     return passwordManager.saveCredential(credential);
   });
 
-  ipcMain.handle("webapp:show", (_event: IpcMainInvokeEvent, webApp: ShowWebAppPayload) => {
-    showWebApp(webApp);
+  ipcMain.handle("webapp:show", (event: IpcMainInvokeEvent, webApp: ShowWebAppPayload) => {
+    const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    if (!workspaceWindow) {
+      throw new Error("Workspace window is not available.");
+    }
+    workspaceWindow.runtime.showWebApp(webApp);
   });
 
-  ipcMain.handle("webapp:set-bounds", (_event: IpcMainInvokeEvent, bounds: unknown) => {
-    setWebAppBounds(bounds);
+  ipcMain.handle("webapp:set-bounds", (event: IpcMainInvokeEvent, bounds: unknown) => {
+    getWorkspaceWindowForWebContents(event.sender)?.runtime.setWebAppBounds(bounds);
   });
 
-  ipcMain.handle("webapp:navigate", (_event: IpcMainInvokeEvent, key: unknown, action: string, url: string) => {
-    return navigateWebApp(key, action, url);
+  ipcMain.handle("webapp:navigate", (event: IpcMainInvokeEvent, key: unknown, action: string, url: string) => {
+    return getWorkspaceWindowForWebContents(event.sender)?.runtime.navigateWebApp(key, action, url) || false;
   });
 
-  ipcMain.handle("webapp:navigation-history", (_event: IpcMainInvokeEvent, key: unknown) => {
-    return getWebAppNavigationHistory(key);
+  ipcMain.handle("webapp:navigation-history", (event: IpcMainInvokeEvent, key: unknown) => {
+    return getWorkspaceWindowForWebContents(event.sender)?.runtime.getWebAppNavigationHistory(key) || { activeIndex: -1, entries: [] };
   });
 
-  ipcMain.handle("webapp:autofill:update", (_event: IpcMainInvokeEvent, key: unknown, enabled: unknown) => {
-    return updateWebAppAutofill(key, enabled);
+  ipcMain.handle("webapp:autofill:update", (event: IpcMainInvokeEvent, key: unknown, enabled: unknown) => {
+    return getWorkspaceWindowForWebContents(event.sender)?.runtime.updateWebAppAutofill(key, enabled) || false;
   });
 
   ipcMain.handle("webapp:autofill-consumed", (event: IpcMainInvokeEvent) => {
-    const webApp = getWebAppForWebContents(event.sender);
-    return webApp ? updateWebAppAutofill(webApp.key, false) : false;
+    const workspaceWindow = getWorkspaceWindowForWebAppContents(event.sender);
+    const webApp = workspaceWindow?.runtime.getWebAppForWebContents(event.sender);
+    return webApp ? workspaceWindow?.runtime.updateWebAppAutofill(webApp.key, false) : false;
   });
 
-  ipcMain.handle("webapp:set-visible", (_event: IpcMainInvokeEvent, keys: unknown) => {
-    setVisibleWebApps(keys);
+  ipcMain.handle("webapp:set-visible", (event: IpcMainInvokeEvent, keys: unknown) => {
+    getWorkspaceWindowForWebContents(event.sender)?.runtime.setVisibleWebApps(keys);
   });
 
-  ipcMain.handle("webapp:hide", () => {
-    hideWebApp();
+  ipcMain.handle("webapp:hide", (event: IpcMainInvokeEvent) => {
+    getWorkspaceWindowForWebContents(event.sender)?.runtime.hideWebApps();
   });
 
-  ipcMain.handle("webapp:freeze", (_event: IpcMainInvokeEvent, options: UnknownRecord) => {
-    return freezeWebApps(options);
+  ipcMain.handle("webapp:freeze", (event: IpcMainInvokeEvent, options: UnknownRecord) => {
+    return getWorkspaceWindowForWebContents(event.sender)?.runtime.freezeWebApps(options) || { token: 0, captures: [] };
   });
 
-  ipcMain.handle("webapp:restore", (_event: IpcMainInvokeEvent, token: unknown) => {
-    restoreWebApps(token);
+  ipcMain.handle("webapp:restore", (event: IpcMainInvokeEvent, token: unknown) => {
+    getWorkspaceWindowForWebContents(event.sender)?.runtime.restoreWebApps(token);
   });
 
   ipcMain.handle("clipboard:write-text", (_event: IpcMainInvokeEvent, text: unknown) => {
