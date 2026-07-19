@@ -1247,7 +1247,10 @@ export function createProjectSidebar({
           console.error("Could not open sidebar overlay:", error);
         });
       });
-      sidebarRail.addEventListener("mouseleave", scheduleSidebarOverlayClose);
+      sidebarRail.addEventListener("mouseleave", () => {
+        sidebarOverlayPointer = null;
+        scheduleSidebarOverlayClose();
+      });
       sidebarRail.addEventListener("blur", scheduleSidebarOverlayClose);
 
       const sidebar = document.querySelector<HTMLElement>(".sidebar");
@@ -1256,8 +1259,8 @@ export function createProjectSidebar({
         cancelSidebarOverlayClose();
       });
       sidebar?.addEventListener("mousemove", updateSidebarOverlayPointer);
-      sidebar?.addEventListener("mouseleave", (event) => {
-        updateSidebarOverlayPointer(event);
+      sidebar?.addEventListener("mouseleave", () => {
+        sidebarOverlayPointer = null;
         scheduleSidebarOverlayClose();
       });
       sidebar?.addEventListener("focusin", cancelSidebarOverlayClose);

@@ -1176,8 +1176,10 @@ app.whenReady().then(async () => {
     },
     getSettings: () => store.getState().settings,
     sendToRenderer: (channel: string, payload: unknown) => {
-      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send(channel, payload);
+      for (const workspaceWindow of workspaceWindows.values()) {
+        if (!workspaceWindow.window.webContents.isDestroyed()) {
+          workspaceWindow.window.webContents.send(channel, payload);
+        }
       }
     },
     suppressResizeWarnings: captureRunner.isCaptureMode()
