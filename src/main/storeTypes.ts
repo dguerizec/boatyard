@@ -2,7 +2,30 @@ import type { Bounds } from "./storeUtils";
 
 export type WindowState = {
   bounds: Bounds;
+  isFullScreen: boolean;
   isMaximized: boolean;
+};
+
+export type WorkspaceWindowState = {
+  id: string;
+  navigation: NavigationState;
+  syncGroupId: string;
+  webApps: Record<string, WebAppState>;
+  paneLayouts: Record<string, PaneLayoutNode>;
+  widgetLayouts: Record<string, ProjectWidgetLayout>;
+  terminalSelections: Record<string, Record<string, string>>;
+  terminalTabOrders: Record<string, string[]>;
+  window: WindowState;
+};
+
+export type WorkspaceSyncGroup = {
+  id: string;
+  activeProjectId: string | null;
+};
+
+export type WorkspaceSessionState = {
+  groups: Record<string, WorkspaceSyncGroup>;
+  windows: Record<string, WorkspaceWindowState>;
 };
 
 export type WebAppOpenRule = {
@@ -161,4 +184,5 @@ export type ProjectStoreState = {
   webApps: Record<string, WebAppState>;
   widgetLayouts: Record<string, ProjectWidgetLayout>;
   window: WindowState;
+  workspaceSession: WorkspaceSessionState;
 };

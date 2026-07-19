@@ -54,9 +54,12 @@ type WorkspaceWindowRecord = {
   id: string;
   runtime: WorkspaceWindowRuntime;
   saveStateTimer: ReturnType<typeof setTimeout> | null;
+  syncGroupId: string;
   window: ElectronBrowserWindow;
 };
 const workspaceWindows = new Map<string, WorkspaceWindowRecord>();
+const individuallyClosingWindowIds = new Set<string>();
+let isQuitting = false;
 const webAppViews = new Map<string, WebAppItem>();
 let activeWebAppKey: string | null = null;
 let visibleWebAppKeys = new Set<string>();
@@ -98,8 +101,19 @@ function getWorkspaceWindowForWebAppContents(webContents: ElectronWebContents) {
   return [...workspaceWindows.values()].find((workspaceWindow) => workspaceWindow.runtime.getWebAppForWebContents(webContents)) || null;
 }
 
-function createMainWindow() {
-  const windowState = store.getWindowState();
+type CreateWorkspaceWindowOptions = {
+  id?: string;
+  sourceWindowId?: string | null;
+  syncGroupId?: string;
+};
+
+function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
+  const workspaceWindowId = options.id || crypto.randomUUID();
+  const syncGroupId = options.syncGroupId || crypto.randomUUID();
+  const persistedWorkspaceWindow = store.ensureWorkspaceWindow(workspaceWindowId, syncGroupId, options.sourceWindowId) as {
+    window: { bounds: Partial<Rectangle>; isFullScreen?: boolean; isMaximized?: boolean };
+  };
+  const windowState = persistedWorkspaceWindow.window;
 
   const window = new BrowserWindow({
     ...windowState.bounds,
@@ -116,9 +130,9 @@ function createMainWindow() {
     }
   });
   mainWindow = window;
-  const workspaceWindowId = crypto.randomUUID();
   const workspaceWindow: WorkspaceWindowRecord = {
     id: workspaceWindowId,
+    syncGroupId,
     window,
     runtime: new WorkspaceWindowRuntime({
       id: workspaceWindowId,
@@ -132,6 +146,9 @@ function createMainWindow() {
 
   if (windowState.isMaximized) {
     window.maximize();
+  }
+  if (windowState.isFullScreen) {
+    window.setFullScreen(true);
   }
 
   window.loadFile(path.join(__dirname, "../renderer/index.html"));
@@ -168,9 +185,36 @@ function createMainWindow() {
   window.on("resize", () => scheduleWindowStateSave(workspaceWindow));
   window.on("maximize", () => saveWindowState(workspaceWindow));
   window.on("unmaximize", () => saveWindowState(workspaceWindow));
-  window.on("close", () => {
+  window.on("enter-full-screen", () => saveWindowState(workspaceWindow));
+  window.on("leave-full-screen", () => saveWindowState(workspaceWindow));
+  window.on("close", (event: Event) => {
+    if (!isQuitting && !individuallyClosingWindowIds.has(workspaceWindow.id)) {
+      event.preventDefault();
+      void dialog.showMessageBox(window, {
+        type: "question",
+        title: "Close Boatyard",
+        message: "What would you like to close?",
+        buttons: ["Close this window", "Quit Boatyard", "Cancel"],
+        defaultId: 0,
+        cancelId: 2
+      }).then((result: { response: number }) => {
+        if (result.response === 0) {
+          individuallyClosingWindowIds.add(workspaceWindow.id);
+          window.close();
+        } else if (result.response === 1) {
+          isQuitting = true;
+          app.quit();
+        }
+      });
+      return;
+    }
     saveWindowState(workspaceWindow);
-    terminalService?.detachAll();
+    if (individuallyClosingWindowIds.delete(workspaceWindow.id)) {
+      store.removeWorkspaceWindow(workspaceWindow.id);
+    }
+    if (isQuitting) {
+      terminalService?.detachAll();
+    }
     workspaceWindow.runtime.destroy();
   });
 }
@@ -180,9 +224,10 @@ function saveWindowState(workspaceWindow: WorkspaceWindowRecord) {
     return;
   }
 
-  store.updateWindowState({
+  store.updateWorkspaceWindowState(workspaceWindow.id, {
     bounds: workspaceWindow.window.getNormalBounds(),
-    isMaximized: workspaceWindow.window.isMaximized()
+    isMaximized: workspaceWindow.window.isMaximized(),
+    isFullScreen: workspaceWindow.window.isFullScreen()
   });
 }
 
@@ -191,6 +236,14 @@ function scheduleWindowStateSave(workspaceWindow: WorkspaceWindowRecord) {
     clearTimeout(workspaceWindow.saveStateTimer);
   }
   workspaceWindow.saveStateTimer = setTimeout(() => saveWindowState(workspaceWindow), 250);
+}
+
+function sendWorkspaceNavigation(windowId: string, navigation: unknown) {
+  const workspaceWindow = workspaceWindows.get(windowId);
+  if (!workspaceWindow || workspaceWindow.window.webContents.isDestroyed()) {
+    return;
+  }
+  workspaceWindow.window.webContents.send("workspace:navigation-changed", navigation);
 }
 
 function normalizeWebAppBounds(bounds: unknown): Rectangle {
@@ -742,7 +795,10 @@ function registerIpcHandlers() {
     });
   });
 
-  ipcMain.handle("state:get", () => store.getState());
+  ipcMain.handle("state:get", (event: IpcMainInvokeEvent) => {
+    const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    return workspaceWindow ? store.getStateForWorkspaceWindow(workspaceWindow.id) : store.getState();
+  });
 
   ipcMain.handle("settings:update", (_event: IpcMainInvokeEvent, patch: UnknownRecord) => {
     if (
@@ -758,12 +814,43 @@ function registerIpcHandlers() {
     return store.updateSettings(patch);
   });
 
-  ipcMain.handle("navigation:update", (_event: IpcMainInvokeEvent, navigation: unknown) => {
-    return store.updateNavigation(navigation);
+  ipcMain.handle("navigation:update", (event: IpcMainInvokeEvent, navigation: unknown) => {
+    const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    if (!workspaceWindow) {
+      return store.updateNavigation(navigation);
+    }
+    const updated = store.updateWorkspaceNavigation(workspaceWindow.id, navigation);
+    for (const [windowId, nextNavigation] of Object.entries(updated)) {
+      sendWorkspaceNavigation(windowId, nextNavigation);
+    }
+    return updated[workspaceWindow.id] || store.getStateForWorkspaceWindow(workspaceWindow.id).navigation;
   });
 
   ipcMain.handle("onboarding:update", (_event: IpcMainInvokeEvent, onboarding: unknown) => {
     return store.updateOnboarding(onboarding);
+  });
+
+  ipcMain.handle("workspace:create-window", async (event: IpcMainInvokeEvent) => {
+    const sourceWorkspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    if (!sourceWorkspaceWindow) {
+      throw new Error("Source workspace window is not available.");
+    }
+    const result = await dialog.showMessageBox(sourceWorkspaceWindow.window, {
+      type: "question",
+      title: "Split screen",
+      message: "Should the new window synchronize project switching with this window?",
+      buttons: ["Synchronize workspace", "Independent workspace", "Cancel"],
+      defaultId: 0,
+      cancelId: 2
+    });
+    if (result.response === 2) {
+      return false;
+    }
+    createMainWindow({
+      sourceWindowId: sourceWorkspaceWindow.id,
+      syncGroupId: result.response === 0 ? sourceWorkspaceWindow.syncGroupId : crypto.randomUUID()
+    });
+    return true;
   });
 
   ipcMain.handle("settings:select-projects-base-path", async (event: IpcMainInvokeEvent, currentPath: unknown) => {
@@ -863,12 +950,18 @@ function registerIpcHandlers() {
     return store.updateProjectPluginConfig(projectId, pluginId, patch);
   });
 
-  ipcMain.handle("pane-layout:update", (_event: IpcMainInvokeEvent, projectId: string | null | undefined, layout: unknown) => {
-    return store.updatePaneLayout(projectId, layout);
+  ipcMain.handle("pane-layout:update", (event: IpcMainInvokeEvent, projectId: string | null | undefined, layout: unknown) => {
+    const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    return workspaceWindow
+      ? store.updateWorkspacePaneLayout(workspaceWindow.id, projectId, layout)
+      : store.updatePaneLayout(projectId, layout);
   });
 
-  ipcMain.handle("widget-layout:update", (_event: IpcMainInvokeEvent, projectId: string | null | undefined, layout: unknown) => {
-    return store.updateWidgetLayout(projectId, layout);
+  ipcMain.handle("widget-layout:update", (event: IpcMainInvokeEvent, projectId: string | null | undefined, layout: unknown) => {
+    const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    return workspaceWindow
+      ? store.updateWorkspaceWidgetLayout(workspaceWindow.id, projectId, layout)
+      : store.updateWidgetLayout(projectId, layout);
   });
 
   ipcMain.handle("topbar-widgets:update", (_event: IpcMainInvokeEvent, topbarWidgets: unknown) => {
@@ -1063,11 +1156,19 @@ app.whenReady().then(async () => {
     suppressResizeWarnings: captureRunner.isCaptureMode()
   });
   registerIpcHandlers();
-  createMainWindow();
+  const restoredWindows = store.getWorkspaceWindowStates() as Array<{ id: string; syncGroupId: string }>;
+  if (restoredWindows.length) {
+    for (const restoredWindow of restoredWindows) {
+      createMainWindow({ id: restoredWindow.id, syncGroupId: restoredWindow.syncGroupId });
+    }
+  } else {
+    createMainWindow();
+  }
 });
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
+    isQuitting = true;
     app.quit();
   }
 });

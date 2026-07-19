@@ -69,6 +69,7 @@ test("ProjectStore migrates a legacy file into the .boatyard configuration direc
   assert.equal(state.projects[0].id, "project-id");
   assert.deepEqual(state.window, {
     bounds: { x: 20, y: 30, width: 1200, height: 800 },
+    isFullScreen: false,
     isMaximized: true
   });
 
@@ -97,11 +98,35 @@ test("ProjectStore persists window state", () => {
       width: 1360,
       height: 860
     },
+    isFullScreen: false,
     isMaximized: true
   });
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(reloaded.load().window, state);
+});
+
+test("ProjectStore keeps window layouts independent while synchronizing project switching by group", () => {
+  const { filePath, store } = createTempStore();
+  store.load();
+  const projectA = store.addProject({ name: "A", sourcePath: "/workspace/a" }).projects[0].id;
+  const projectB = store.addProject({ name: "B", sourcePath: "/workspace/b" }).projects[1].id;
+
+  store.ensureWorkspaceWindow("window-a", "group-a");
+  store.ensureWorkspaceWindow("window-b", "group-a", "window-a");
+  store.updateWorkspacePaneLayout("window-a", projectA, { type: "pane", id: "a-pane", selectedWebAppId: "twicc" });
+  store.updateWorkspacePaneLayout("window-b", projectA, { type: "pane", id: "b-pane", selectedWebAppId: "preview" });
+  const synchronized = store.updateWorkspaceNavigation("window-a", { view: "project", projectId: projectB });
+
+  assert.equal(synchronized["window-a"].projectId, projectB);
+  assert.equal(synchronized["window-b"].projectId, projectB);
+  assert.equal(store.getStateForWorkspaceWindow("window-a").paneLayouts[projectA].id, "a-pane");
+  assert.equal(store.getStateForWorkspaceWindow("window-b").paneLayouts[projectA].id, "b-pane");
+
+  const reloaded = new ProjectStore(filePath);
+  reloaded.load();
+  assert.equal(reloaded.getStateForWorkspaceWindow("window-a").navigation.projectId, projectB);
+  assert.equal(reloaded.getStateForWorkspaceWindow("window-b").paneLayouts[projectA].id, "b-pane");
 });
 
 test("ProjectStore persists global settings", () => {

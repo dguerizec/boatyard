@@ -240,7 +240,7 @@ export class WorkspaceWindowRuntime {
 
   private persistWebAppUrl(key: string, url: string) {
     try {
-      this.store.updateWebAppState(key, { url });
+      this.store.updateWorkspaceWebAppState(this.id, key, { url });
       this.sendToRenderer("webapp:url-changed", { key: String(key), url });
     } catch (error) {
       console.warn(`Could not persist webapp ${key}: ${(error as Error).message}`);
@@ -252,7 +252,7 @@ export class WorkspaceWindowRuntime {
       throw new Error("Webapp key is required.");
     }
 
-    const restoredUrl = this.store.getWebAppUrl(String(key));
+    const restoredUrl = this.store.getWorkspaceWebAppUrl(this.id, String(key));
     const nextUrl = restoreUrl === false ? url : (restoredUrl || url);
     if (!nextUrl) {
       throw new Error("Webapp URL is required.");
