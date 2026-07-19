@@ -215,7 +215,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   window.on("enter-full-screen", () => saveWindowState(workspaceWindow));
   window.on("leave-full-screen", () => saveWindowState(workspaceWindow));
   window.on("close", (event: Event) => {
-    if (!isQuitting && !individuallyClosingWindowIds.has(workspaceWindow.id)) {
+    if (!isQuitting && workspaceWindows.size > 1 && !individuallyClosingWindowIds.has(workspaceWindow.id)) {
       event.preventDefault();
       void dialog.showMessageBox(window, {
         type: "question",
