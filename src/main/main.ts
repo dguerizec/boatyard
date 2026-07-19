@@ -65,12 +65,18 @@ function finiteNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function getStorePath() {
-  if (process.env.BOATYARD_STATE_PATH) {
-    return process.env.BOATYARD_STATE_PATH;
+function getConfigDirectory() {
+  if (process.env.BOATYARD_CONFIG_PATH) {
+    return process.env.BOATYARD_CONFIG_PATH;
   }
 
-  return path.join(app.getPath("userData"), "boatyard-state.json");
+  return app.isPackaged
+    ? path.join(app.getPath("home"), ".boatyard")
+    : path.join(process.cwd(), ".boatyard");
+}
+
+function getLegacyStorePath() {
+  return process.env.BOATYARD_STATE_PATH || path.join(app.getPath("userData"), "boatyard-state.json");
 }
 
 function createMainWindow() {
@@ -931,7 +937,10 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(async () => {
-  store = new ProjectStore(getStorePath());
+  store = new ProjectStore({
+    configDirectory: getConfigDirectory(),
+    legacyFilePath: getLegacyStorePath()
+  });
   store.load();
   store.reconcileAppVersion(app.getVersion());
   updateManager = createUpdateManager({

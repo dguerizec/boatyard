@@ -5,6 +5,7 @@ build-test/
 dist/
 *.log
 .boatyard-state.json*
+.boatyard/
 .env
 .env.*
 *.local

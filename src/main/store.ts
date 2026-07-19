@@ -57,6 +57,7 @@ import type {
 
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
+type UnknownRecord = Record<string, unknown>;
 
 function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()): PaneLayoutNode | null {
   if (!isRecord(node)) {
@@ -442,57 +443,32 @@ function isProjectSpecificWebAppOpenRule(rule: WebAppOpenRule) {
 }
 
 class ProjectStore {
-  filePath: string;
+  configDirectory: string;
+  legacyFilePath: string | null;
+  settingsFilePath: string;
+  projectsFilePath: string;
+  workspaceSessionFilePath: string;
   state: ProjectStoreState;
 
-  constructor(filePath: string) {
-    this.filePath = filePath;
+  constructor(location: string | { configDirectory: string; legacyFilePath?: string | null }) {
+    if (typeof location === "string") {
+      this.configDirectory = path.join(path.dirname(location), ".boatyard");
+      this.legacyFilePath = location;
+    } else {
+      this.configDirectory = location.configDirectory;
+      this.legacyFilePath = location.legacyFilePath || null;
+    }
+
+    this.settingsFilePath = path.join(this.configDirectory, "settings.json");
+    this.projectsFilePath = path.join(this.configDirectory, "projects.json");
+    this.workspaceSessionFilePath = path.join(this.configDirectory, "workspace-session.json");
     this.state = createDefaultState();
   }
 
   load(): ProjectStoreState {
     try {
-      const raw = fs.readFileSync(this.filePath, "utf8");
-      const parsed = toRecord(JSON.parse(raw));
-      const projects = Array.isArray(parsed.projects)
-        ? parsed.projects
-        : Array.isArray(parsed.apps)
-          ? parsed.apps
-          : [];
-      const normalizedProjects = projects.map((project, index) => normalizeProject(project, index));
-      const legacyWebAppHomeTabs = normalizeWebAppHomeTabs(parsed.webAppHomeTabs, normalizedProjects);
-      const normalizedSettings = normalizeSettings(parsed.settings);
-      const projectsWithHomeTabs = normalizedProjects.map((project) => ({
-        ...project,
-        webAppHomeTabs: project.webAppHomeTabs.length
-          ? project.webAppHomeTabs
-          : legacyWebAppHomeTabs[project.id] || [],
-        webAppOpenRules: normalizeWebAppOpenRules(project.webAppOpenRules || [])
-      }));
-      this.state = {
-        schemaVersion: normalizeSchemaVersion(parsed.schemaVersion),
-        settings: {
-          ...normalizedSettings,
-          webAppOpenRules: normalizedSettings.webAppOpenRules.filter((rule) => (
-            !rule.projectId && !isProjectSpecificWebAppOpenRule(rule)
-          ))
-        },
-        projects: projectsWithHomeTabs,
-        window: normalizeWindowState(parsed.window),
-        navigation: normalizeNavigationState(parsed.navigation),
-        webApps: normalizeWebAppState(parsed.webApps),
-        passwordVault: normalizePasswordVault(parsed.passwordVault),
-        plugins: normalizePluginsState(parsed.plugins),
-        pluginConfig: normalizePluginConfig(parsed.pluginConfig, projectsWithHomeTabs),
-        globalUrls: normalizeProjectUrls(parsed.globalUrls),
-        paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
-        widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
-        terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, projectsWithHomeTabs),
-        terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, projectsWithHomeTabs),
-        topbarWidgets: normalizeTopbarWidgetsState(parsed.topbarWidgets),
-        onboarding: normalizeOnboardingState(parsed.onboarding),
-        app: normalizeAppState(parsed.app)
-      };
+      this.migrateLegacyStateIfNeeded();
+      this.state = this.normalizeState(this.readSplitState());
     } catch (error: unknown) {
       if (getErrorCode(error) !== "ENOENT") {
         console.warn(`Could not load Boatyard state: ${getErrorMessage(error)}`);
@@ -504,8 +480,163 @@ class ProjectStore {
   }
 
   save(): void {
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    fs.writeFileSync(this.filePath, `${JSON.stringify(this.state, null, 2)}\n`);
+    fs.mkdirSync(this.configDirectory, { recursive: true });
+    this.writeJsonAtomically(this.settingsFilePath, {
+      schemaVersion: this.state.schemaVersion,
+      settings: this.state.settings,
+      passwordVault: this.state.passwordVault,
+      plugins: this.state.plugins,
+      globalPluginConfig: this.state.pluginConfig.global,
+      topbarWidgets: this.state.topbarWidgets,
+      onboarding: this.state.onboarding,
+      app: this.state.app
+    });
+    this.writeJsonAtomically(this.projectsFilePath, {
+      schemaVersion: this.state.schemaVersion,
+      projects: this.state.projects,
+      globalUrls: this.state.globalUrls,
+      projectPluginConfig: this.state.pluginConfig.projects
+    });
+    this.writeJsonAtomically(this.workspaceSessionFilePath, {
+      schemaVersion: this.state.schemaVersion,
+      window: this.state.window,
+      navigation: this.state.navigation,
+      webApps: this.state.webApps,
+      paneLayouts: this.state.paneLayouts,
+      widgetLayouts: this.state.widgetLayouts,
+      terminalSelections: this.state.terminalSelections,
+      terminalTabOrders: this.state.terminalTabOrders
+    });
+  }
+
+  private hasSplitState(): boolean {
+    return fs.existsSync(this.settingsFilePath) ||
+      fs.existsSync(this.projectsFilePath) ||
+      fs.existsSync(this.workspaceSessionFilePath);
+  }
+
+  private readJsonFile(filePath: string): UnknownRecord {
+    if (!fs.existsSync(filePath)) {
+      return {};
+    }
+
+    return toRecord(JSON.parse(fs.readFileSync(filePath, "utf8")));
+  }
+
+  private readSplitState(): UnknownRecord {
+    const settings = this.readJsonFile(this.settingsFilePath);
+    const projects = this.readJsonFile(this.projectsFilePath);
+    const workspaceSession = this.readJsonFile(this.workspaceSessionFilePath);
+
+    return {
+      ...settings,
+      ...projects,
+      ...workspaceSession,
+      schemaVersion: Math.max(
+        Number(settings.schemaVersion) || 0,
+        Number(projects.schemaVersion) || 0,
+        Number(workspaceSession.schemaVersion) || 0
+      ),
+      pluginConfig: {
+        global: settings.globalPluginConfig,
+        projects: projects.projectPluginConfig
+      }
+    };
+  }
+
+  private normalizeState(parsed: UnknownRecord): ProjectStoreState {
+    const projects = Array.isArray(parsed.projects)
+      ? parsed.projects
+      : Array.isArray(parsed.apps)
+        ? parsed.apps
+        : [];
+    const normalizedProjects = projects.map((project, index) => normalizeProject(project, index));
+    const legacyWebAppHomeTabs = normalizeWebAppHomeTabs(parsed.webAppHomeTabs, normalizedProjects);
+    const normalizedSettings = normalizeSettings(parsed.settings);
+    const projectsWithHomeTabs = normalizedProjects.map((project) => ({
+      ...project,
+      webAppHomeTabs: project.webAppHomeTabs.length
+        ? project.webAppHomeTabs
+        : legacyWebAppHomeTabs[project.id] || [],
+      webAppOpenRules: normalizeWebAppOpenRules(project.webAppOpenRules || [])
+    }));
+
+    return {
+      schemaVersion: normalizeSchemaVersion(parsed.schemaVersion),
+      settings: {
+        ...normalizedSettings,
+        webAppOpenRules: normalizedSettings.webAppOpenRules.filter((rule) => (
+          !rule.projectId && !isProjectSpecificWebAppOpenRule(rule)
+        ))
+      },
+      projects: projectsWithHomeTabs,
+      window: normalizeWindowState(parsed.window),
+      navigation: normalizeNavigationState(parsed.navigation),
+      webApps: normalizeWebAppState(parsed.webApps),
+      passwordVault: normalizePasswordVault(parsed.passwordVault),
+      plugins: normalizePluginsState(parsed.plugins),
+      pluginConfig: normalizePluginConfig(parsed.pluginConfig, projectsWithHomeTabs),
+      globalUrls: normalizeProjectUrls(parsed.globalUrls),
+      paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
+      widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
+      terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, projectsWithHomeTabs),
+      terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, projectsWithHomeTabs),
+      topbarWidgets: normalizeTopbarWidgetsState(parsed.topbarWidgets),
+      onboarding: normalizeOnboardingState(parsed.onboarding),
+      app: normalizeAppState(parsed.app)
+    };
+  }
+
+  private getLegacyMigrationSource(): string | null {
+    if (this.legacyFilePath && fs.existsSync(this.legacyFilePath)) {
+      return this.legacyFilePath;
+    }
+
+    if (!this.legacyFilePath) {
+      return null;
+    }
+
+    const directory = path.dirname(this.legacyFilePath);
+    const baseName = path.basename(this.legacyFilePath, path.extname(this.legacyFilePath));
+    const backup = fs.readdirSync(directory, { withFileTypes: true })
+      .filter((entry: { isFile(): boolean; name: string }) => entry.isFile() && entry.name.startsWith(`${baseName}.legacy-`) && entry.name.endsWith(".json"))
+      .sort((left: { name: string }, right: { name: string }) => right.name.localeCompare(left.name))[0];
+
+    return backup ? path.join(directory, backup.name) : null;
+  }
+
+  private migrateLegacyStateIfNeeded(): void {
+    if (this.hasSplitState()) {
+      return;
+    }
+
+    const source = this.getLegacyMigrationSource();
+    if (!source) {
+      return;
+    }
+
+    const legacyState = toRecord(JSON.parse(fs.readFileSync(source, "utf8")));
+    let backupPath = source;
+
+    if (source === this.legacyFilePath) {
+      const extension = path.extname(source) || ".json";
+      const baseName = path.basename(source, extension);
+      backupPath = path.join(path.dirname(source), `${baseName}.legacy-${Date.now()}${extension}`);
+      fs.renameSync(source, backupPath);
+    }
+
+    this.state = this.normalizeState(legacyState);
+    try {
+      this.save();
+    } catch (error) {
+      throw new Error(`Could not migrate legacy configuration from ${backupPath}: ${getErrorMessage(error)}`);
+    }
+  }
+
+  private writeJsonAtomically(filePath: string, value: unknown): void {
+    const temporaryPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    fs.renameSync(temporaryPath, filePath);
   }
 
   getState(): ProjectStoreState {

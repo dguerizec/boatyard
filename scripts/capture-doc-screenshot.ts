@@ -148,6 +148,7 @@ const repoRoot = process.cwd();
 const tempDir = mkdtempSync(join(tmpdir(), "boatyard-capture-"));
 const userDataPath = join(tempDir, "user-data");
 const statePath = join(tempDir, "state.json");
+const configurationPath = join(tempDir, ".boatyard");
 const requestPath = join(tempDir, "capture.json");
 const configuredStatePath = readOption("state", asString(config.statePath));
 const state = config.state ||
@@ -179,6 +180,7 @@ const result = spawnSync(
     cwd: repoRoot,
     env: {
       ...process.env,
+      BOATYARD_CONFIG_PATH: configurationPath,
       BOATYARD_STATE_PATH: statePath,
       BOATYARD_USER_DATA_PATH: userDataPath,
       BOATYARD_CAPTURE_REQUEST: requestPath

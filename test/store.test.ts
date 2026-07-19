@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const {
   ProjectStore,
@@ -37,14 +38,42 @@ test("ProjectStore persists configured projects", () => {
 });
 
 test("ProjectStore persists the store schema version", () => {
-  const { filePath, store } = createTempStore();
+  const { directory, filePath, store } = createTempStore();
 
   assert.equal(store.load().schemaVersion, 1);
   store.updateSettings({ projectsBasePath: "/workspace/example" });
 
-  const saved = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const saved = JSON.parse(fs.readFileSync(path.join(directory, ".boatyard", "settings.json"), "utf8"));
   assert.equal(saved.schemaVersion, 1);
   assert.equal(new ProjectStore(filePath).load().schemaVersion, 1);
+});
+
+test("ProjectStore migrates a legacy file into the .boatyard configuration directory", () => {
+  const { directory, filePath } = createTempStoreFile();
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    settings: { projectsBasePath: "/workspace/projects" },
+    projects: [{ id: "project-id", name: "Project", sourcePath: "/workspace/project" }],
+    window: { bounds: { x: 20, y: 30, width: 1200, height: 800 }, isMaximized: true }
+  })}\n`);
+
+  const state = new ProjectStore(filePath).load();
+  const configDirectory = path.join(directory, ".boatyard");
+  const legacyBackups = fs.readdirSync(directory).filter((entry: string) => entry.startsWith("state.legacy-") && entry.endsWith(".json"));
+
+  assert.equal(fs.existsSync(filePath), false);
+  assert.equal(legacyBackups.length, 1);
+  assert.equal(fs.existsSync(path.join(configDirectory, "settings.json")), true);
+  assert.equal(fs.existsSync(path.join(configDirectory, "projects.json")), true);
+  assert.equal(fs.existsSync(path.join(configDirectory, "workspace-session.json")), true);
+  assert.equal(state.settings.projectsBasePath, "/workspace/projects");
+  assert.equal(state.projects[0].id, "project-id");
+  assert.deepEqual(state.window, {
+    bounds: { x: 20, y: 30, width: 1200, height: 800 },
+    isMaximized: true
+  });
+
+  new ProjectStore(filePath).load();
+  assert.equal(fs.readdirSync(directory).filter((entry: string) => entry.startsWith("state.legacy-") && entry.endsWith(".json")).length, 1);
 });
 
 test("ProjectStore persists window state", () => {
