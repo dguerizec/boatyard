@@ -27,7 +27,7 @@ import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
-const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, screen, shell } = require("electron");
 const { createCaptureRunner } = require("./captureRunner");
 const { PasswordManager } = require("./passwordManager");
 const { PluginHost } = require("./pluginHost");
@@ -101,6 +101,33 @@ function getWorkspaceWindowForWebAppContents(webContents: ElectronWebContents) {
   return [...workspaceWindows.values()].find((workspaceWindow) => workspaceWindow.runtime.getWebAppForWebContents(webContents)) || null;
 }
 
+function getRestoredWindowBounds(bounds: Partial<Rectangle>) {
+  const normalized = {
+    x: Math.round(Number(bounds.x) || 0),
+    y: Math.round(Number(bounds.y) || 0),
+    width: Math.max(920, Math.round(Number(bounds.width) || 1280)),
+    height: Math.max(620, Math.round(Number(bounds.height) || 800))
+  };
+  const isVisibleOnAnyDisplay = screen.getAllDisplays().some((display: { workArea: Rectangle }) => {
+    const workArea = display.workArea;
+    return normalized.x < workArea.x + workArea.width &&
+      normalized.x + normalized.width > workArea.x &&
+      normalized.y < workArea.y + workArea.height &&
+      normalized.y + normalized.height > workArea.y;
+  });
+  if (isVisibleOnAnyDisplay) {
+    return normalized;
+  }
+
+  const primaryWorkArea = screen.getPrimaryDisplay().workArea as Rectangle;
+  return {
+    x: primaryWorkArea.x + Math.max(0, Math.round((primaryWorkArea.width - Math.min(1280, primaryWorkArea.width)) / 2)),
+    y: primaryWorkArea.y + Math.max(0, Math.round((primaryWorkArea.height - Math.min(800, primaryWorkArea.height)) / 2)),
+    width: Math.min(1280, primaryWorkArea.width),
+    height: Math.min(800, primaryWorkArea.height)
+  };
+}
+
 type CreateWorkspaceWindowOptions = {
   id?: string;
   sourceWindowId?: string | null;
@@ -116,7 +143,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   const windowState = persistedWorkspaceWindow.window;
 
   const window = new BrowserWindow({
-    ...windowState.bounds,
+    ...getRestoredWindowBounds(windowState.bounds),
     minWidth: 920,
     minHeight: 620,
     title: "Boatyard",
