@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.0] - 2026-07-20
+
+### Summary
+
+- **v0.9.0: Split workspaces and safer profiles** — Boatyard can now split a workspace across synchronized windows while keeping profile data, saved passwords, and restored windows more reliable after updating.
+
+### Added
+
+- **Split screen windows** — Open a synchronized second workspace window from the top bar for side-by-side work on the same Boatyard session.
+- **Concurrent profiles** — Run separate Boatyard profiles side by side without mixing projects, plugin state, terminal sessions, or saved credentials.
+
+### Changed
+
+- **Workspace session storage** — Boatyard now stores settings, projects, and window session snapshots separately so updates can migrate workspace data more reliably.
+- **Per-window sidebar state** — Each workspace window keeps its own sidebar state instead of sharing collapsed or overlay behavior globally.
+- **Telegram sessions** — Telegram connections are now kept per API credential set and shared safely across matching Boatyard profiles.
+
+### Fixed
+
+- **Saved web app passwords** — Passwords saved from web app panes are written to the correct workspace vault.
+- **Password vault migration** — Existing saved passwords are preserved when Boatyard migrates older configuration files into the newer profile layout.
+- **Restored window placement** — Workspace windows saved on disconnected displays reopen on an available screen.
+- **Split window interactions** — Plugin updates reach every workspace window, sidebar overlays close more predictably, and closing the last window no longer shows an unnecessary prompt.
+
+### Documentation
+
+- **Concurrent profile usage** — The README now documents how to run and isolate multiple Boatyard profiles.
+
+### Internal
+
+- **Changelog update formatting** — Release changelog updates now preserve spacing between sections.
+
 ## [0.8.10] - 2026-07-17
 
 ### Summary

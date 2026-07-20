@@ -1,6 +1,57 @@
 {
-  "generatedForVersion": "0.8.10",
+  "generatedForVersion": "0.9.0",
   "releases": [
+    {
+      "version": "0.9.0",
+      "date": "2026-07-20",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Split screen windows",
+          "body": "Open a synchronized second workspace window from the top bar for side-by-side work on the same Boatyard session."
+        },
+        {
+          "category": "Added",
+          "title": "Concurrent profiles",
+          "body": "Run separate Boatyard profiles side by side without mixing projects, plugin state, terminal sessions, or saved credentials."
+        },
+        {
+          "category": "Changed",
+          "title": "Workspace session storage",
+          "body": "Boatyard now stores settings, projects, and window session snapshots separately so updates can migrate workspace data more reliably."
+        },
+        {
+          "category": "Changed",
+          "title": "Per-window sidebar state",
+          "body": "Each workspace window keeps its own sidebar state instead of sharing collapsed or overlay behavior globally."
+        },
+        {
+          "category": "Changed",
+          "title": "Telegram sessions",
+          "body": "Telegram connections are now kept per API credential set and shared safely across matching Boatyard profiles."
+        },
+        {
+          "category": "Fixed",
+          "title": "Saved web app passwords",
+          "body": "Passwords saved from web app panes are written to the correct workspace vault."
+        },
+        {
+          "category": "Fixed",
+          "title": "Password vault migration",
+          "body": "Existing saved passwords are preserved when Boatyard migrates older configuration files into the newer profile layout."
+        },
+        {
+          "category": "Fixed",
+          "title": "Restored window placement",
+          "body": "Workspace windows saved on disconnected displays reopen on an available screen."
+        },
+        {
+          "category": "Fixed",
+          "title": "Split window interactions",
+          "body": "Plugin updates reach every workspace window, sidebar overlays close more predictably, and closing the last window no longer shows an unnecessary prompt."
+        }
+      ]
+    },
     {
       "version": "0.8.10",
       "date": "2026-07-17",
