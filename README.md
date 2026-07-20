@@ -59,15 +59,13 @@ npm install
 npm run dev
 ```
 
-The app stores local state in Electron's user data directory as `boatyard-state.json` by default.
-
 For local manual testing from this checkout, you can use:
 
 ```sh
 make run
 ```
 
-`make run` sets `BOATYARD_STATE_PATH=.boatyard-state.json` so configured projects and layouts stay in the repository working directory. That state file is ignored by git.
+`make run` starts the checkout with the local `default` Boatyard profile. If a legacy `.boatyard-state.json` file exists in the checkout, it is backed up and migrated into `./.boatyard/default/`.
 
 ## Configuration
 
@@ -77,7 +75,22 @@ Most configuration is available inside the app:
 - Project settings: identity, source path, git/repository URLs, plugin settings, and additional project URLs.
 - Project danger zone: unregisters a project from Boatyard state only.
 
-Set `BOATYARD_STATE_PATH` to force a specific state file.
+Boatyard separates its own configuration from Chromium's profile:
+
+- Chromium/Electron user data defaults to `~/.config/boatyard`. It owns cookies, cache, IndexedDB, and the shared persistent webapp partition. Set `BOATYARD_USER_DATA_PATH` only when deliberately creating a separate Chromium profile and process.
+- Packaged Boatyard configuration defaults to `~/.boatyard/default/`. Development builds keep the equivalent state below `./.boatyard/default/` in their checkout, so they do not overwrite the installed application's configuration. This state owns projects, settings, layouts, window sessions, and plugin configuration.
+
+Use a profile name to open another Boatyard configuration profile in the existing process:
+
+```sh
+boatyard --profile work
+```
+
+Launching Boatyard again with the same Chromium user-data directory never starts a second Electron process. A matching `--profile` focuses its existing window; a different `--profile` creates windows for that configuration profile in the primary process while all webapps continue to share the same Chromium sessions.
+
+To run a deliberately separate Chromium profile at the same time, set a different `BOATYARD_USER_DATA_PATH` and use a different `--profile` so the two processes do not write the same Boatyard configuration directory.
+
+Saved credentials are global across Boatyard profiles: Boatyard keeps their `safeStorage`-encrypted values in `secrets.json` at the configuration root, with strict file permissions. An implicit legacy state is migrated into `default`; `BOATYARD_STATE_PATH` remains an explicit legacy migration input for the selected profile. In either case, Boatyard backs up the legacy JSON file before importing it into split configuration files.
 
 ## Packaging
 

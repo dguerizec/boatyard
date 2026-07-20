@@ -34,9 +34,14 @@ export type ProjectStoreInstance = {
   dismissChangelog(version: string): unknown;
   getAppState(): unknown;
   getState(): AppState;
+  getStateForWorkspaceWindow(windowId: string): AppState;
   getWebAppUrl(key: string): string;
+  getWorkspaceWebAppUrl(windowId: string, key: string): string | null;
   getWindowState(): { bounds: Partial<Rectangle>; isMaximized?: boolean };
+  getWorkspaceWindowStates(): unknown[];
   load(): unknown;
+  ensureWorkspaceWindow(windowId: string, syncGroupId: string, sourceWindowId?: string | null): unknown;
+  removeWorkspaceWindow(windowId: string): void;
   reconcileAppVersion(version: string): unknown;
   removeProject(id: string): unknown;
   reorderProjects(projectIds: unknown): unknown;
@@ -57,6 +62,11 @@ export type ProjectStoreInstance = {
   updateTopbarWidgets(topbarWidgets: unknown): unknown;
   updateWidgetLayout(projectId: string | null | undefined, layout: unknown): unknown;
   updateWindowState(state: { bounds: Rectangle; isMaximized: boolean }): unknown;
+  updateWorkspaceNavigation(windowId: string, navigation: unknown): Record<string, unknown>;
+  updateWorkspacePaneLayout(windowId: string, projectId: string | null | undefined, layout: unknown): unknown;
+  updateWorkspaceWebAppState(windowId: string, key: string, state: UnknownRecord): unknown;
+  updateWorkspaceWidgetLayout(windowId: string, projectId: string | null | undefined, layout: unknown): unknown;
+  updateWorkspaceWindowState(windowId: string, state: { bounds: Rectangle; isFullScreen?: boolean; isMaximized: boolean }): unknown;
 };
 
 export type TerminalServiceInstance = {

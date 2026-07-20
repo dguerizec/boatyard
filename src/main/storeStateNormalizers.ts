@@ -16,7 +16,8 @@ import type {
   StoredProject,
   WebAppHomeTab,
   WebAppState,
-  WindowState
+  WindowState,
+  WorkspaceSessionState
 } from "./storeTypes";
 import { normalizeWebAppHomeTabList, normalizeWebAppOpenRules } from "./storeProjectNormalizers";
 
@@ -39,7 +40,12 @@ export function createDefaultState(): ProjectStoreState {
     projects: [],
     window: {
       bounds: DEFAULT_WINDOW_BOUNDS,
+      isFullScreen: false,
       isMaximized: false
+    },
+    workspaceSession: {
+      groups: {},
+      windows: {}
     },
     navigation: {
       view: "global",
@@ -82,8 +88,44 @@ export function normalizeWindowState(windowState: unknown = {}): WindowState {
 
   return {
     bounds: normalizeWindowBounds(source.bounds),
+    isFullScreen: source.isFullScreen === true,
     isMaximized: source.isMaximized === true
   };
+}
+
+export function normalizeWorkspaceSession(workspaceSession: unknown = {}): WorkspaceSessionState {
+  const source = toRecord(workspaceSession);
+  const groups: WorkspaceSessionState["groups"] = {};
+  for (const [id, value] of Object.entries(toRecord(source.groups))) {
+    const normalizedId = normalizeText(id);
+    if (!normalizedId) {
+      continue;
+    }
+    const group = toRecord(value);
+    groups[normalizedId] = { id: normalizedId, activeProjectId: normalizeText(group.activeProjectId) || null };
+  }
+
+  const windows: WorkspaceSessionState["windows"] = {};
+  for (const [id, value] of Object.entries(toRecord(source.windows))) {
+    const normalizedId = normalizeText(id);
+    const window = toRecord(value);
+    const syncGroupId = normalizeText(window.syncGroupId);
+    if (!normalizedId || !syncGroupId) {
+      continue;
+    }
+    windows[normalizedId] = {
+      id: normalizedId,
+      syncGroupId,
+      window: normalizeWindowState(window.window),
+      navigation: normalizeNavigationState(window.navigation),
+      webApps: normalizeWebAppState(window.webApps),
+      paneLayouts: {},
+      widgetLayouts: {},
+      terminalSelections: {},
+      terminalTabOrders: {}
+    };
+  }
+  return { groups, windows };
 }
 
 export function normalizeSettings(settings: unknown = {}): SettingsState {

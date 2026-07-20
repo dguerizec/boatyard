@@ -22,6 +22,7 @@ export const rendererDomElements = Object.freeze({
   projectSearchInput: requireElement<HTMLInputElement>("#project-search"),
   sidebarRail: requireElement<HTMLButtonElement>("#sidebar-rail"),
   sidebarToggleButton: requireElement<HTMLButtonElement>("#sidebar-toggle"),
+  splitScreenButton: requireElement<HTMLButtonElement>("#split-screen"),
   sidebarUpdateNotice: requireElement<HTMLElement>("#sidebar-update-notice"),
   workspace: requireElement<HTMLElement>(".workspace"),
   workspaceKicker: requireElement<HTMLElement>("#workspace-kicker"),

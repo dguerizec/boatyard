@@ -18,7 +18,8 @@ import {
   normalizeSettings,
   normalizeWebAppHomeTabs,
   normalizeWebAppState,
-  normalizeWindowState
+  normalizeWindowState,
+  normalizeWorkspaceSession
 } from "./storeStateNormalizers";
 import {
   DEFAULT_BOUNDS,
@@ -52,11 +53,13 @@ import type {
   WidgetLayout,
   WidgetPosition,
   WidgetSize,
-  WindowState
+  WindowState,
+  WorkspaceWindowState
 } from "./storeTypes";
 
 const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
+type UnknownRecord = Record<string, unknown>;
 
 function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()): PaneLayoutNode | null {
   if (!isRecord(node)) {
@@ -441,58 +444,54 @@ function isProjectSpecificWebAppOpenRule(rule: WebAppOpenRule) {
   return Boolean(rule.projectId || rule.target?.startsWith("pane:"));
 }
 
+function normalizeWorkspaceSessionState(workspaceSession: unknown, projects: StoredProject[]) {
+  const normalized = normalizeWorkspaceSession(workspaceSession);
+  const rawWindows = toRecord(toRecord(workspaceSession).windows);
+
+  for (const [id, window] of Object.entries(normalized.windows)) {
+    const source = toRecord(rawWindows[id]);
+    normalized.windows[id] = {
+      ...window,
+      paneLayouts: normalizePaneLayouts(source.paneLayouts),
+      widgetLayouts: normalizeWidgetLayouts(source.widgetLayouts),
+      terminalSelections: normalizeTerminalSelections(source.terminalSelections, projects),
+      terminalTabOrders: normalizeTerminalTabOrders(source.terminalTabOrders, projects)
+    };
+    if (!normalized.groups[window.syncGroupId]) {
+      normalized.groups[window.syncGroupId] = { id: window.syncGroupId, activeProjectId: window.navigation.projectId };
+    }
+  }
+
+  return normalized;
+}
+
 class ProjectStore {
-  filePath: string;
+  configDirectory: string;
+  legacyFilePath: string | null;
+  settingsFilePath: string;
+  projectsFilePath: string;
+  workspaceSessionFilePath: string;
   state: ProjectStoreState;
 
-  constructor(filePath: string) {
-    this.filePath = filePath;
+  constructor(location: string | { configDirectory: string; legacyFilePath?: string | null }) {
+    if (typeof location === "string") {
+      this.configDirectory = path.join(path.dirname(location), ".boatyard");
+      this.legacyFilePath = location;
+    } else {
+      this.configDirectory = location.configDirectory;
+      this.legacyFilePath = location.legacyFilePath || null;
+    }
+
+    this.settingsFilePath = path.join(this.configDirectory, "settings.json");
+    this.projectsFilePath = path.join(this.configDirectory, "projects.json");
+    this.workspaceSessionFilePath = path.join(this.configDirectory, "workspace-session.json");
     this.state = createDefaultState();
   }
 
   load(): ProjectStoreState {
     try {
-      const raw = fs.readFileSync(this.filePath, "utf8");
-      const parsed = toRecord(JSON.parse(raw));
-      const projects = Array.isArray(parsed.projects)
-        ? parsed.projects
-        : Array.isArray(parsed.apps)
-          ? parsed.apps
-          : [];
-      const normalizedProjects = projects.map((project, index) => normalizeProject(project, index));
-      const legacyWebAppHomeTabs = normalizeWebAppHomeTabs(parsed.webAppHomeTabs, normalizedProjects);
-      const normalizedSettings = normalizeSettings(parsed.settings);
-      const projectsWithHomeTabs = normalizedProjects.map((project) => ({
-        ...project,
-        webAppHomeTabs: project.webAppHomeTabs.length
-          ? project.webAppHomeTabs
-          : legacyWebAppHomeTabs[project.id] || [],
-        webAppOpenRules: normalizeWebAppOpenRules(project.webAppOpenRules || [])
-      }));
-      this.state = {
-        schemaVersion: normalizeSchemaVersion(parsed.schemaVersion),
-        settings: {
-          ...normalizedSettings,
-          webAppOpenRules: normalizedSettings.webAppOpenRules.filter((rule) => (
-            !rule.projectId && !isProjectSpecificWebAppOpenRule(rule)
-          ))
-        },
-        projects: projectsWithHomeTabs,
-        window: normalizeWindowState(parsed.window),
-        navigation: normalizeNavigationState(parsed.navigation),
-        webApps: normalizeWebAppState(parsed.webApps),
-        passwordVault: normalizePasswordVault(parsed.passwordVault),
-        plugins: normalizePluginsState(parsed.plugins),
-        pluginConfig: normalizePluginConfig(parsed.pluginConfig, projectsWithHomeTabs),
-        globalUrls: normalizeProjectUrls(parsed.globalUrls),
-        paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
-        widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
-        terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, projectsWithHomeTabs),
-        terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, projectsWithHomeTabs),
-        topbarWidgets: normalizeTopbarWidgetsState(parsed.topbarWidgets),
-        onboarding: normalizeOnboardingState(parsed.onboarding),
-        app: normalizeAppState(parsed.app)
-      };
+      this.migrateLegacyStateIfNeeded();
+      this.state = this.normalizeState(this.readSplitState());
     } catch (error: unknown) {
       if (getErrorCode(error) !== "ENOENT") {
         console.warn(`Could not load Boatyard state: ${getErrorMessage(error)}`);
@@ -504,12 +503,333 @@ class ProjectStore {
   }
 
   save(): void {
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    fs.writeFileSync(this.filePath, `${JSON.stringify(this.state, null, 2)}\n`);
+    fs.mkdirSync(this.configDirectory, { recursive: true });
+    this.writeJsonAtomically(this.settingsFilePath, {
+      schemaVersion: this.state.schemaVersion,
+      settings: this.state.settings,
+      plugins: this.state.plugins,
+      globalPluginConfig: this.state.pluginConfig.global,
+      topbarWidgets: this.state.topbarWidgets,
+      onboarding: this.state.onboarding,
+      app: this.state.app
+    });
+    this.writeJsonAtomically(this.projectsFilePath, {
+      schemaVersion: this.state.schemaVersion,
+      projects: this.state.projects,
+      globalUrls: this.state.globalUrls,
+      projectPluginConfig: this.state.pluginConfig.projects
+    });
+    this.writeJsonAtomically(this.workspaceSessionFilePath, {
+      schemaVersion: this.state.schemaVersion,
+      window: this.state.window,
+      navigation: this.state.navigation,
+      webApps: this.state.webApps,
+      paneLayouts: this.state.paneLayouts,
+      widgetLayouts: this.state.widgetLayouts,
+      terminalSelections: this.state.terminalSelections,
+      terminalTabOrders: this.state.terminalTabOrders,
+      workspaceSession: this.state.workspaceSession
+    });
+  }
+
+  private hasSplitState(): boolean {
+    return fs.existsSync(this.settingsFilePath) ||
+      fs.existsSync(this.projectsFilePath) ||
+      fs.existsSync(this.workspaceSessionFilePath);
+  }
+
+  private readJsonFile(filePath: string): UnknownRecord {
+    if (!fs.existsSync(filePath)) {
+      return {};
+    }
+
+    return toRecord(JSON.parse(fs.readFileSync(filePath, "utf8")));
+  }
+
+  private readSplitState(): UnknownRecord {
+    const settings = this.readJsonFile(this.settingsFilePath);
+    const projects = this.readJsonFile(this.projectsFilePath);
+    const workspaceSession = this.readJsonFile(this.workspaceSessionFilePath);
+
+    return {
+      ...settings,
+      ...projects,
+      ...workspaceSession,
+      schemaVersion: Math.max(
+        Number(settings.schemaVersion) || 0,
+        Number(projects.schemaVersion) || 0,
+        Number(workspaceSession.schemaVersion) || 0
+      ),
+      pluginConfig: {
+        global: settings.globalPluginConfig,
+        projects: projects.projectPluginConfig
+      }
+    };
+  }
+
+  private normalizeState(parsed: UnknownRecord): ProjectStoreState {
+    const projects = Array.isArray(parsed.projects)
+      ? parsed.projects
+      : Array.isArray(parsed.apps)
+        ? parsed.apps
+        : [];
+    const normalizedProjects = projects.map((project, index) => normalizeProject(project, index));
+    const legacyWebAppHomeTabs = normalizeWebAppHomeTabs(parsed.webAppHomeTabs, normalizedProjects);
+    const normalizedSettings = normalizeSettings(parsed.settings);
+    const projectsWithHomeTabs = normalizedProjects.map((project) => ({
+      ...project,
+      webAppHomeTabs: project.webAppHomeTabs.length
+        ? project.webAppHomeTabs
+        : legacyWebAppHomeTabs[project.id] || [],
+      webAppOpenRules: normalizeWebAppOpenRules(project.webAppOpenRules || [])
+    }));
+
+    return {
+      schemaVersion: normalizeSchemaVersion(parsed.schemaVersion),
+      settings: {
+        ...normalizedSettings,
+        webAppOpenRules: normalizedSettings.webAppOpenRules.filter((rule) => (
+          !rule.projectId && !isProjectSpecificWebAppOpenRule(rule)
+        ))
+      },
+      projects: projectsWithHomeTabs,
+      window: normalizeWindowState(parsed.window),
+      navigation: normalizeNavigationState(parsed.navigation),
+      webApps: normalizeWebAppState(parsed.webApps),
+      passwordVault: normalizePasswordVault(parsed.passwordVault),
+      plugins: normalizePluginsState(parsed.plugins),
+      pluginConfig: normalizePluginConfig(parsed.pluginConfig, projectsWithHomeTabs),
+      globalUrls: normalizeProjectUrls(parsed.globalUrls),
+      paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
+      widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
+      terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, projectsWithHomeTabs),
+      terminalTabOrders: normalizeTerminalTabOrders(parsed.terminalTabOrders, projectsWithHomeTabs),
+      topbarWidgets: normalizeTopbarWidgetsState(parsed.topbarWidgets),
+      onboarding: normalizeOnboardingState(parsed.onboarding),
+      app: normalizeAppState(parsed.app),
+      workspaceSession: normalizeWorkspaceSessionState(parsed.workspaceSession, projectsWithHomeTabs)
+    };
+  }
+
+  private getLegacyMigrationSource(): string | null {
+    if (this.legacyFilePath && fs.existsSync(this.legacyFilePath)) {
+      return this.legacyFilePath;
+    }
+
+    if (!this.legacyFilePath) {
+      return null;
+    }
+
+    const directory = path.dirname(this.legacyFilePath);
+    const baseName = path.basename(this.legacyFilePath, path.extname(this.legacyFilePath));
+    const backup = fs.readdirSync(directory, { withFileTypes: true })
+      .filter((entry: { isFile(): boolean; name: string }) => entry.isFile() && entry.name.startsWith(`${baseName}.legacy-`) && entry.name.endsWith(".json"))
+      .sort((left: { name: string }, right: { name: string }) => right.name.localeCompare(left.name))[0];
+
+    return backup ? path.join(directory, backup.name) : null;
+  }
+
+  private migrateLegacyStateIfNeeded(): void {
+    if (this.hasSplitState()) {
+      return;
+    }
+
+    const source = this.getLegacyMigrationSource();
+    if (!source) {
+      return;
+    }
+
+    const legacyState = toRecord(JSON.parse(fs.readFileSync(source, "utf8")));
+    let backupPath = source;
+
+    if (source === this.legacyFilePath) {
+      const extension = path.extname(source) || ".json";
+      const baseName = path.basename(source, extension);
+      backupPath = path.join(path.dirname(source), `${baseName}.legacy-${Date.now()}${extension}`);
+      fs.renameSync(source, backupPath);
+    }
+
+    this.state = this.normalizeState(legacyState);
+    try {
+      this.save();
+    } catch (error) {
+      throw new Error(`Could not migrate legacy configuration from ${backupPath}: ${getErrorMessage(error)}`);
+    }
+  }
+
+  private writeJsonAtomically(filePath: string, value: unknown): void {
+    const temporaryPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    fs.renameSync(temporaryPath, filePath);
   }
 
   getState(): ProjectStoreState {
     return structuredClone(this.state);
+  }
+
+  getStateForWorkspaceWindow(windowId: unknown): ProjectStoreState {
+    const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
+    if (!workspaceWindow) {
+      return this.getState();
+    }
+
+    return structuredClone({
+      ...this.state,
+      window: workspaceWindow.window,
+      navigation: workspaceWindow.navigation,
+      webApps: workspaceWindow.webApps,
+      paneLayouts: workspaceWindow.paneLayouts,
+      widgetLayouts: workspaceWindow.widgetLayouts,
+      terminalSelections: workspaceWindow.terminalSelections,
+      terminalTabOrders: workspaceWindow.terminalTabOrders
+    });
+  }
+
+  getWorkspaceWindowStates(): WorkspaceWindowState[] {
+    return structuredClone(Object.values(this.state.workspaceSession.windows));
+  }
+
+  ensureWorkspaceWindow(windowId: unknown, syncGroupId: unknown, sourceWindowId: unknown = null): WorkspaceWindowState {
+    const id = normalizeText(windowId);
+    const groupId = normalizeText(syncGroupId);
+    if (!id || !groupId) {
+      throw new Error("Workspace window and sync group ids are required.");
+    }
+    if (this.state.workspaceSession.windows[id]) {
+      return structuredClone(this.state.workspaceSession.windows[id]);
+    }
+
+    const source = this.state.workspaceSession.windows[normalizeText(sourceWindowId)];
+    const fallback: WorkspaceWindowState = {
+      id,
+      syncGroupId: groupId,
+      window: structuredClone(this.state.window),
+      navigation: structuredClone(this.state.navigation),
+      webApps: structuredClone(this.state.webApps),
+      paneLayouts: structuredClone(this.state.paneLayouts),
+      widgetLayouts: structuredClone(this.state.widgetLayouts),
+      terminalSelections: structuredClone(this.state.terminalSelections),
+      terminalTabOrders: structuredClone(this.state.terminalTabOrders)
+    };
+    this.state.workspaceSession.windows[id] = {
+      ...(source ? structuredClone(source) : fallback),
+      id,
+      syncGroupId: groupId
+    };
+    if (!this.state.workspaceSession.groups[groupId]) {
+      this.state.workspaceSession.groups[groupId] = {
+        id: groupId,
+        activeProjectId: this.state.workspaceSession.windows[id].navigation.projectId
+      };
+    }
+    this.save();
+    return structuredClone(this.state.workspaceSession.windows[id]);
+  }
+
+  removeWorkspaceWindow(windowId: unknown): void {
+    const id = normalizeText(windowId);
+    const workspaceWindow = this.state.workspaceSession.windows[id];
+    if (!workspaceWindow) {
+      return;
+    }
+    delete this.state.workspaceSession.windows[id];
+    if (!Object.values(this.state.workspaceSession.windows).some((entry) => entry.syncGroupId === workspaceWindow.syncGroupId)) {
+      delete this.state.workspaceSession.groups[workspaceWindow.syncGroupId];
+    }
+    this.save();
+  }
+
+  updateWorkspaceWindowState(windowId: unknown, windowState: unknown): WindowState {
+    const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
+    if (!workspaceWindow) {
+      return this.updateWindowState(windowState);
+    }
+    const source = toRecord(windowState);
+    workspaceWindow.window = normalizeWindowState({
+      ...workspaceWindow.window,
+      ...source,
+      bounds: source.bounds || workspaceWindow.window.bounds
+    });
+    this.save();
+    return structuredClone(workspaceWindow.window);
+  }
+
+  updateWorkspaceNavigation(windowId: unknown, navigation: unknown): Record<string, NavigationState> {
+    const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
+    if (!workspaceWindow) {
+      return { "": this.updateNavigation(navigation) };
+    }
+    const nextNavigation = normalizeNavigationState(navigation);
+    const group = this.state.workspaceSession.groups[workspaceWindow.syncGroupId];
+    const projectId = nextNavigation.view.startsWith("project") ? nextNavigation.projectId : null;
+    if (!projectId || !group) {
+      workspaceWindow.navigation = nextNavigation;
+      this.save();
+      return { [workspaceWindow.id]: structuredClone(nextNavigation) };
+    }
+
+    group.activeProjectId = projectId;
+    const updated: Record<string, NavigationState> = {};
+    for (const entry of Object.values(this.state.workspaceSession.windows)) {
+      if (entry.syncGroupId !== workspaceWindow.syncGroupId) {
+        continue;
+      }
+      entry.navigation = entry.id === workspaceWindow.id
+        ? nextNavigation
+        : normalizeNavigationState({
+          ...entry.navigation,
+          view: "project",
+          projectId
+        });
+      updated[entry.id] = structuredClone(entry.navigation);
+    }
+    this.save();
+    return updated;
+  }
+
+  updateWorkspacePaneLayout(windowId: unknown, projectId: unknown, layout: unknown): PaneLayoutNode | null {
+    const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
+    if (!workspaceWindow) {
+      return this.updatePaneLayout(projectId, layout);
+    }
+    const normalized = normalizePaneLayoutNode(layout);
+    if (!normalized) {
+      delete workspaceWindow.paneLayouts[String(projectId)];
+    } else {
+      workspaceWindow.paneLayouts[String(projectId)] = normalized;
+    }
+    this.save();
+    return structuredClone(workspaceWindow.paneLayouts[String(projectId)] || null);
+  }
+
+  updateWorkspaceWidgetLayout(windowId: unknown, projectId: unknown, layout: unknown): ProjectWidgetLayout | null {
+    const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
+    if (!workspaceWindow) {
+      return this.updateWidgetLayout(projectId, layout);
+    }
+    workspaceWindow.widgetLayouts[String(projectId)] = normalizeProjectWidgetLayout(layout);
+    this.save();
+    return structuredClone(workspaceWindow.widgetLayouts[String(projectId)] || null);
+  }
+
+  updateWorkspaceWebAppState(windowId: unknown, key: unknown, webAppState: unknown): WebAppState | null {
+    const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
+    if (!workspaceWindow) {
+      return this.updateWebAppState(String(key), webAppState) as WebAppState | null;
+    }
+    const normalized = normalizeWebAppState({ [String(key)]: webAppState });
+    if (!normalized[String(key)]) {
+      delete workspaceWindow.webApps[String(key)];
+    } else {
+      workspaceWindow.webApps[String(key)] = normalized[String(key)];
+    }
+    this.save();
+    return structuredClone(workspaceWindow.webApps[String(key)] || null);
+  }
+
+  getWorkspaceWebAppUrl(windowId: unknown, key: unknown): string | null {
+    const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
+    return workspaceWindow?.webApps[String(key)]?.url || this.getWebAppUrl(key);
   }
 
   getWindowState(): WindowState {

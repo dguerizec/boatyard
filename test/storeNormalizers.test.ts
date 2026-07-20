@@ -176,6 +176,7 @@ test("normalizeWindowState keeps maximized state", () => {
       width: 1440,
       height: 900
     },
+    isFullScreen: false,
     isMaximized: true
   }), {
     bounds: {
@@ -184,6 +185,7 @@ test("normalizeWindowState keeps maximized state", () => {
       width: 1440,
       height: 900
     },
+    isFullScreen: false,
     isMaximized: true
   });
 });

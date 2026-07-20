@@ -148,6 +148,7 @@ const repoRoot = process.cwd();
 const tempDir = mkdtempSync(join(tmpdir(), "boatyard-capture-"));
 const userDataPath = join(tempDir, "user-data");
 const statePath = join(tempDir, "state.json");
+const configurationPath = join(tempDir, ".boatyard");
 const requestPath = join(tempDir, "capture.json");
 const configuredStatePath = readOption("state", asString(config.statePath));
 const state = config.state ||
@@ -174,11 +175,12 @@ writeFileSync(requestPath, JSON.stringify({
 
 const result = spawnSync(
   process.platform === "win32" ? "npx.cmd" : "npx",
-  ["electron", ".", "--no-sandbox"],
+  ["electron", ".", "--no-sandbox", "--profile", "capture"],
   {
     cwd: repoRoot,
     env: {
       ...process.env,
+      BOATYARD_CONFIG_ROOT: configurationPath,
       BOATYARD_STATE_PATH: statePath,
       BOATYARD_USER_DATA_PATH: userDataPath,
       BOATYARD_CAPTURE_REQUEST: requestPath

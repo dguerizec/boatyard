@@ -138,6 +138,7 @@ export type ProjectSettingsViewsInstance = RendererModuleInstance & {
 
 export type BoatyardBridge = {
   addProject(values: UnknownRecord): Promise<RendererState>;
+  createWorkspaceWindow?: () => Promise<boolean>;
   dismissChangelog?: () => Promise<unknown>;
   freezeWebApps(options?: unknown): Promise<unknown>;
   getChangelogHistory?: () => Promise<unknown>;
@@ -152,6 +153,7 @@ export type BoatyardBridge = {
   onWebAppAutofillChanged?: (callback: (payload: { enabled?: boolean; key?: string }) => void) => void;
   onWebAppLoaded?: (callback: (payload: { key?: string; url?: string }) => void) => void;
   onWebAppOpenUrlRequested?: (callback: (payload: UnknownRecord & { target?: string }) => void) => void;
+  onWorkspaceNavigationChanged?: (callback: (navigation: RendererState["navigation"]) => void) => void;
   onWebAppUrlChanged(callback: (payload: { key?: string; url?: string }) => void): void;
   openExternal(url: string): unknown;
   prepareUpdate?: () => Promise<unknown>;

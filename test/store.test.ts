@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 const {
   ProjectStore,
@@ -37,14 +38,43 @@ test("ProjectStore persists configured projects", () => {
 });
 
 test("ProjectStore persists the store schema version", () => {
-  const { filePath, store } = createTempStore();
+  const { directory, filePath, store } = createTempStore();
 
   assert.equal(store.load().schemaVersion, 1);
   store.updateSettings({ projectsBasePath: "/workspace/example" });
 
-  const saved = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  const saved = JSON.parse(fs.readFileSync(path.join(directory, ".boatyard", "settings.json"), "utf8"));
   assert.equal(saved.schemaVersion, 1);
   assert.equal(new ProjectStore(filePath).load().schemaVersion, 1);
+});
+
+test("ProjectStore migrates a legacy file into the .boatyard configuration directory", () => {
+  const { directory, filePath } = createTempStoreFile();
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    settings: { projectsBasePath: "/workspace/projects" },
+    projects: [{ id: "project-id", name: "Project", sourcePath: "/workspace/project" }],
+    window: { bounds: { x: 20, y: 30, width: 1200, height: 800 }, isMaximized: true }
+  })}\n`);
+
+  const state = new ProjectStore(filePath).load();
+  const configDirectory = path.join(directory, ".boatyard");
+  const legacyBackups = fs.readdirSync(directory).filter((entry: string) => entry.startsWith("state.legacy-") && entry.endsWith(".json"));
+
+  assert.equal(fs.existsSync(filePath), false);
+  assert.equal(legacyBackups.length, 1);
+  assert.equal(fs.existsSync(path.join(configDirectory, "settings.json")), true);
+  assert.equal(fs.existsSync(path.join(configDirectory, "projects.json")), true);
+  assert.equal(fs.existsSync(path.join(configDirectory, "workspace-session.json")), true);
+  assert.equal(state.settings.projectsBasePath, "/workspace/projects");
+  assert.equal(state.projects[0].id, "project-id");
+  assert.deepEqual(state.window, {
+    bounds: { x: 20, y: 30, width: 1200, height: 800 },
+    isFullScreen: false,
+    isMaximized: true
+  });
+
+  new ProjectStore(filePath).load();
+  assert.equal(fs.readdirSync(directory).filter((entry: string) => entry.startsWith("state.legacy-") && entry.endsWith(".json")).length, 1);
 });
 
 test("ProjectStore persists window state", () => {
@@ -68,11 +98,46 @@ test("ProjectStore persists window state", () => {
       width: 1360,
       height: 860
     },
+    isFullScreen: false,
     isMaximized: true
   });
 
   const reloaded = new ProjectStore(filePath);
   assert.deepEqual(reloaded.load().window, state);
+});
+
+test("ProjectStore keeps window layouts independent while synchronizing project switching by group", () => {
+  const { filePath, store } = createTempStore();
+  store.load();
+  const projectA = store.addProject({ name: "A", sourcePath: "/workspace/a" }).projects[0].id;
+  const projectB = store.addProject({ name: "B", sourcePath: "/workspace/b" }).projects[1].id;
+
+  store.ensureWorkspaceWindow("window-a", "group-a");
+  store.ensureWorkspaceWindow("window-b", "group-a", "window-a");
+  store.updateWorkspaceNavigation("window-b", {
+    view: "global",
+    projectId: null,
+    collapsedProjectGroups: ["Operations"],
+    pinnedProjectIds: [projectA],
+    sidebarCollapsed: true
+  });
+  store.updateWorkspacePaneLayout("window-a", projectA, { type: "pane", id: "a-pane", selectedWebAppId: "twicc" });
+  store.updateWorkspacePaneLayout("window-b", projectA, { type: "pane", id: "b-pane", selectedWebAppId: "preview" });
+  const synchronized = store.updateWorkspaceNavigation("window-a", { view: "project", projectId: projectB });
+
+  assert.equal(synchronized["window-a"].projectId, projectB);
+  assert.equal(synchronized["window-a"].sidebarCollapsed, false);
+  assert.equal(synchronized["window-b"].projectId, projectB);
+  assert.equal(synchronized["window-b"].sidebarCollapsed, true);
+  assert.deepEqual(synchronized["window-b"].collapsedProjectGroups, ["Operations"]);
+  assert.deepEqual(synchronized["window-b"].pinnedProjectIds, [projectA]);
+  assert.equal(store.getStateForWorkspaceWindow("window-a").paneLayouts[projectA].id, "a-pane");
+  assert.equal(store.getStateForWorkspaceWindow("window-b").paneLayouts[projectA].id, "b-pane");
+
+  const reloaded = new ProjectStore(filePath);
+  reloaded.load();
+  assert.equal(reloaded.getStateForWorkspaceWindow("window-a").navigation.projectId, projectB);
+  assert.equal(reloaded.getStateForWorkspaceWindow("window-b").paneLayouts[projectA].id, "b-pane");
 });
 
 test("ProjectStore persists global settings", () => {

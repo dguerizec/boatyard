@@ -9,6 +9,7 @@ type Unsubscribe = () => void;
 
 contextBridge.exposeInMainWorld("boatyard", {
   getState: () => ipcRenderer.invoke("state:get"),
+  createWorkspaceWindow: () => ipcRenderer.invoke("workspace:create-window"),
   updateSettings: (patch: unknown) => ipcRenderer.invoke("settings:update", patch),
   updateNavigation: (navigation: unknown) => ipcRenderer.invoke("navigation:update", navigation),
   updateOnboarding: (onboarding: unknown) => ipcRenderer.invoke("onboarding:update", onboarding),
@@ -124,6 +125,11 @@ contextBridge.exposeInMainWorld("boatyard", {
     const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("webapp:open-url-requested", listener);
     return () => ipcRenderer.removeListener("webapp:open-url-requested", listener);
+  },
+  onWorkspaceNavigationChanged: (callback: BridgeCallback): Unsubscribe => {
+    const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("workspace:navigation-changed", listener);
+    return () => ipcRenderer.removeListener("workspace:navigation-changed", listener);
   },
   writeClipboardText: (text: unknown) => ipcRenderer.invoke("clipboard:write-text", text),
   openExternal: (url: unknown) => ipcRenderer.invoke("shell:open-external", url)

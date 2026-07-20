@@ -55,7 +55,7 @@ registerPluginSettingsFields(window);
 
 const {
   addProjectButton, appShell, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, globalViewButton, manualTourButton, pinnedProjects,
-  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, workspace, workspaceKicker, workspaceSummary, workspaceTitle
+  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, splitScreenButton, workspace, workspaceKicker, workspaceSummary, workspaceTitle
 } = rendererDomElements;
 
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
@@ -1013,6 +1013,17 @@ async function loadState() {
     maybeOpenInitialOnboarding();
   }
 }
+
+boatyardWindow.boatyard.onWorkspaceNavigationChanged?.((navigation) => {
+  state = { ...state, navigation: navigation || {} };
+  restoreNavigation(state.navigation || {});
+  render();
+  topbarWidgets.render();
+});
+
+splitScreenButton.addEventListener("click", () => {
+  void boatyardWindow.boatyard.createWorkspaceWindow?.();
+});
 
 registerRendererEventBindings({
   addProjectButton,
