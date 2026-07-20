@@ -77,6 +77,36 @@ test("ProjectStore migrates a legacy file into the .boatyard configuration direc
   assert.equal(fs.readdirSync(directory).filter((entry: string) => entry.startsWith("state.legacy-") && entry.endsWith(".json")).length, 1);
 });
 
+test("ProjectStore keeps legacy credentials available after profile configuration has been split", () => {
+  const { filePath } = createTempStoreFile();
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    passwordVault: {
+      "https://example.test": {
+        username: "alice",
+        encryptedPassword: "encrypted-alice"
+      }
+    }
+  })}\n`);
+
+  const migrated = new ProjectStore(filePath);
+  migrated.load();
+  assert.deepEqual(migrated.getPasswordVaultForMigration(), {
+    "https://example.test": {
+      username: "alice",
+      encryptedPassword: "encrypted-alice"
+    }
+  });
+
+  const reloaded = new ProjectStore(filePath);
+  reloaded.load();
+  assert.deepEqual(reloaded.getPasswordVaultForMigration(), {
+    "https://example.test": {
+      username: "alice",
+      encryptedPassword: "encrypted-alice"
+    }
+  });
+});
+
 test("ProjectStore persists window state", () => {
   const { filePath, store } = createTempStore();
 

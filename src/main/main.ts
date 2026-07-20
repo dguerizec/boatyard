@@ -145,13 +145,14 @@ function migrateLegacyConfigurationIntoItsProfile(): void {
     configDirectory: legacyConfigurationDirectory,
     legacyFilePath: getLegacyStorePath(legacyConfigurationDirectory)
   });
-  const legacyState = migrationStore.load() as { passwordVault?: unknown };
-  secretStore.importPasswordVault(legacyState.passwordVault);
+  migrationStore.load();
+  const passwordVault = migrationStore.getPasswordVaultForMigration();
+  secretStore.importPasswordVault(passwordVault);
   if (
-    legacyState.passwordVault &&
-    typeof legacyState.passwordVault === "object" &&
-    !Array.isArray(legacyState.passwordVault) &&
-    Object.keys(legacyState.passwordVault).length
+    passwordVault &&
+    typeof passwordVault === "object" &&
+    !Array.isArray(passwordVault) &&
+    Object.keys(passwordVault).length
   ) {
     migrationStore.save();
   }
@@ -1286,7 +1287,11 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("password-manager:save-credential", (event: IpcMainInvokeEvent, credential: unknown) => {
-    return getConfigurationForEvent(event).passwordManager.saveCredential(credential);
+    const workspaceWindow = getWorkspaceWindowForWebAppContents(event.sender);
+    if (!workspaceWindow) {
+      throw new Error("Password credentials may only be saved from a webapp pane.");
+    }
+    return workspaceWindow.configuration.passwordManager.saveCredential(credential);
   });
 
   ipcMain.handle("webapp:show", (event: IpcMainInvokeEvent, webApp: ShowWebAppPayload) => {

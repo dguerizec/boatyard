@@ -38,6 +38,12 @@ type PasswordManagerStatus = {
   encryptionAvailable: boolean;
 };
 
+type SafeStorage = {
+  decryptString(value: Buffer): string;
+  encryptString(value: string): Buffer;
+  isEncryptionAvailable(): boolean;
+};
+
 type SaveCredentialInput = {
   url?: unknown;
   username?: unknown;
@@ -61,11 +67,23 @@ class PasswordManager {
   private store: PasswordStore;
   private secrets: PasswordSecrets;
   private confirmSave: ConfirmSaveCallback;
+  private safeStorage: SafeStorage;
 
-  constructor({ store, secrets, confirmSave }: { store: PasswordStore; secrets: PasswordSecrets; confirmSave: ConfirmSaveCallback }) {
+  constructor({
+    store,
+    secrets,
+    confirmSave,
+    safeStorage: storage = safeStorage
+  }: {
+    store: PasswordStore;
+    secrets: PasswordSecrets;
+    confirmSave: ConfirmSaveCallback;
+    safeStorage?: SafeStorage;
+  }) {
     this.store = store;
     this.secrets = secrets;
     this.confirmSave = confirmSave;
+    this.safeStorage = storage;
   }
 
   isEnabled(): boolean {
@@ -76,12 +94,12 @@ class PasswordManager {
   getStatus(): PasswordManagerStatus {
     return {
       enabled: this.isEnabled(),
-      encryptionAvailable: safeStorage.isEncryptionAvailable()
+      encryptionAvailable: this.safeStorage.isEncryptionAvailable()
     };
   }
 
   getCredential(url: unknown): PasswordCredential | null {
-    if (!this.isEnabled() || !safeStorage.isEncryptionAvailable()) {
+    if (!this.isEnabled() || !this.safeStorage.isEncryptionAvailable()) {
       return null;
     }
 
@@ -95,7 +113,7 @@ class PasswordManager {
       return {
         origin,
         username: credential.username,
-        password: safeStorage.decryptString(Buffer.from(credential.encryptedPassword, "base64"))
+        password: this.safeStorage.decryptString(Buffer.from(credential.encryptedPassword, "base64"))
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -109,7 +127,7 @@ class PasswordManager {
       return { saved: false, reason: "disabled" };
     }
 
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!this.safeStorage.isEncryptionAvailable()) {
       return { saved: false, reason: "encryption-unavailable" };
     }
 
@@ -136,7 +154,7 @@ class PasswordManager {
       return { saved: false, reason: "cancelled" };
     }
 
-    const encryptedPassword = safeStorage.encryptString(normalizedPassword).toString("base64");
+    const encryptedPassword = this.safeStorage.encryptString(normalizedPassword).toString("base64");
     this.secrets.updatePasswordCredential(origin, {
       username: normalizedUsername,
       encryptedPassword

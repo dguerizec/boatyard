@@ -502,6 +502,27 @@ class ProjectStore {
     return this.getState();
   }
 
+  getLegacyPasswordVault(): unknown {
+    const source = this.getLegacyMigrationSource();
+    if (!source) {
+      return {};
+    }
+
+    try {
+      return toRecord(JSON.parse(fs.readFileSync(source, "utf8"))).passwordVault;
+    } catch (error) {
+      console.warn(`Could not read legacy Boatyard credentials from ${source}: ${getErrorMessage(error)}`);
+      return {};
+    }
+  }
+
+  getPasswordVaultForMigration(): unknown {
+    if (Object.keys(this.state.passwordVault).length) {
+      return structuredClone(this.state.passwordVault);
+    }
+    return this.getLegacyPasswordVault();
+  }
+
   save(): void {
     fs.mkdirSync(this.configDirectory, { recursive: true });
     this.writeJsonAtomically(this.settingsFilePath, {
