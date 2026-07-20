@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.0] - 2026-07-20
+
+### Summary
+
+- **v0.9.0: Split-screen profiles** — Boatyard gains synchronized workspace windows, profile-aware launching, and safer configuration handling for multi-profile use.
+
+### Added
+
+- **Split screen windows** — Open a second synchronized workspace window from the top bar to view the same active project across multiple windows.
+- **Named profiles** — Launch Boatyard with a profile name to keep separate project lists, settings, layouts, and plugin configuration.
+- **Shared profile credentials** — Saved credentials are stored in a shared encrypted secrets file so they can work across Boatyard profiles.
+
+### Changed
+
+- **Per-window workspace state** — Sidebar state, web app views, layouts, and navigation now belong to each workspace window instead of one global window.
+- **Single-instance launching** — Relaunching an already open profile focuses its existing window, while launching another profile opens it in the running Boatyard process.
+- **Telegram sessions** — Telegram sign-in sessions are shared across profiles that use the same API credentials.
+
+### Fixed
+
+- **Restored window placement** — Workspace windows are restored on an available display instead of reopening off-screen after display changes.
+- **Last window closing** — Closing the final Boatyard window no longer shows the split-window close prompt.
+- **Split window interactions** — Sidebar overlay and plugin updates now work correctly across multiple workspace windows.
+
+### Documentation
+
+- **Concurrent profile usage** — Documented how Boatyard profiles, Chromium user data, shared credentials, and separate concurrent processes interact.
+
 ## [0.8.10] - 2026-07-17
 
 ### Summary

@@ -1,6 +1,57 @@
 {
-  "generatedForVersion": "0.8.10",
+  "generatedForVersion": "0.9.0",
   "releases": [
+    {
+      "version": "0.9.0",
+      "date": "2026-07-20",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Split screen windows",
+          "body": "Open a second synchronized workspace window from the top bar to view the same active project across multiple windows."
+        },
+        {
+          "category": "Added",
+          "title": "Named profiles",
+          "body": "Launch Boatyard with a profile name to keep separate project lists, settings, layouts, and plugin configuration."
+        },
+        {
+          "category": "Added",
+          "title": "Shared profile credentials",
+          "body": "Saved credentials are stored in a shared encrypted secrets file so they can work across Boatyard profiles."
+        },
+        {
+          "category": "Changed",
+          "title": "Per-window workspace state",
+          "body": "Sidebar state, web app views, layouts, and navigation now belong to each workspace window instead of one global window."
+        },
+        {
+          "category": "Changed",
+          "title": "Single-instance launching",
+          "body": "Relaunching an already open profile focuses its existing window, while launching another profile opens it in the running Boatyard process."
+        },
+        {
+          "category": "Changed",
+          "title": "Telegram sessions",
+          "body": "Telegram sign-in sessions are shared across profiles that use the same API credentials."
+        },
+        {
+          "category": "Fixed",
+          "title": "Restored window placement",
+          "body": "Workspace windows are restored on an available display instead of reopening off-screen after display changes."
+        },
+        {
+          "category": "Fixed",
+          "title": "Last window closing",
+          "body": "Closing the final Boatyard window no longer shows the split-window close prompt."
+        },
+        {
+          "category": "Fixed",
+          "title": "Split window interactions",
+          "body": "Sidebar overlay and plugin updates now work correctly across multiple workspace windows."
+        }
+      ]
+    },
     {
       "version": "0.8.10",
       "date": "2026-07-17",
