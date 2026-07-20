@@ -5,6 +5,7 @@ const path = require("node:path");
 
 export const LAUNCH_DESCRIPTOR_VERSION = 1;
 export const DEFAULT_PROFILE_NAME = "default";
+export const PROFILES_DIRECTORY_NAME = "profiles";
 
 export type LaunchDescriptor = {
   configDirectory: string;
@@ -96,7 +97,7 @@ export function resolveProfileLaunch({ argv, configurationRoot }: ResolveProfile
     version: LAUNCH_DESCRIPTOR_VERSION,
     profile,
     configurationRoot: root,
-    configDirectory: path.join(root, profile),
+    configDirectory: path.join(root, PROFILES_DIRECTORY_NAME, profile),
     openingTarget: null
   };
 }
@@ -113,12 +114,55 @@ export function parseLaunchDescriptor(value: unknown): LaunchDescriptor | null {
     const profile = normalizeProfileName(source.profile);
     const configurationRoot = canonicalizeDirectory(String(source.configurationRoot || ""));
     const configDirectory = canonicalizeDirectory(String(source.configDirectory || ""));
-    if (configDirectory !== path.join(configurationRoot, profile)) {
+    if (configDirectory !== path.join(configurationRoot, PROFILES_DIRECTORY_NAME, profile)) {
       return null;
     }
     return { version: LAUNCH_DESCRIPTOR_VERSION, profile, configurationRoot, configDirectory, openingTarget: null };
   } catch {
     return null;
+  }
+}
+
+function isProfileStateDirectory(directory: string): boolean {
+  return ["settings.json", "projects.json", "workspace-session.json"].some((fileName) => (
+    fs.existsSync(path.join(directory, fileName))
+  ));
+}
+
+export function migrateConfigurationRootToProfiles(configurationRoot: string): void {
+  const root = canonicalizeDirectory(configurationRoot);
+  const profilesDirectory = path.join(root, PROFILES_DIRECTORY_NAME);
+  fs.mkdirSync(profilesDirectory, { recursive: true, mode: 0o700 });
+
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || entry.name === PROFILES_DIRECTORY_NAME) {
+      continue;
+    }
+
+    try {
+      normalizeProfileName(entry.name);
+    } catch {
+      continue;
+    }
+
+    const sourceDirectory = path.join(root, entry.name);
+    const targetDirectory = path.join(profilesDirectory, entry.name);
+    if (!isProfileStateDirectory(sourceDirectory) || fs.existsSync(targetDirectory)) {
+      continue;
+    }
+    fs.renameSync(sourceDirectory, targetDirectory);
+  }
+
+  const legacyFiles = ["settings.json", "projects.json", "workspace-session.json"];
+  const existingLegacyFiles = legacyFiles.filter((fileName) => fs.existsSync(path.join(root, fileName)));
+  const defaultDirectory = path.join(profilesDirectory, DEFAULT_PROFILE_NAME);
+  if (!existingLegacyFiles.length || fs.existsSync(defaultDirectory)) {
+    return;
+  }
+
+  fs.mkdirSync(defaultDirectory, { recursive: true, mode: 0o700 });
+  for (const fileName of existingLegacyFiles) {
+    fs.renameSync(path.join(root, fileName), path.join(defaultDirectory, fileName));
   }
 }
 

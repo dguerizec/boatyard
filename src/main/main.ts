@@ -25,7 +25,9 @@ import { createWebAppContextMenu } from "./webAppContextMenu.js";
 import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
 import {
   DEFAULT_PROFILE_NAME,
+  PROFILES_DIRECTORY_NAME,
   canonicalizeDirectory,
+  migrateConfigurationRootToProfiles,
   parseLaunchDescriptor,
   resolveDefaultConfigurationRoot,
   resolveProfileLaunch,
@@ -34,7 +36,6 @@ import {
 } from "./launchDescriptor.js";
 
 const { execFile } = require("node:child_process");
-const fs = require("node:fs");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, screen, shell } = require("electron");
@@ -64,7 +65,11 @@ const initialLaunchDescriptor = resolveProfileLaunch({
   argv: process.argv,
   configurationRoot
 });
-const defaultConfigDirectory = path.join(path.dirname(initialLaunchDescriptor.configDirectory), DEFAULT_PROFILE_NAME);
+const defaultConfigDirectory = path.join(
+  initialLaunchDescriptor.configurationRoot,
+  PROFILES_DIRECTORY_NAME,
+  DEFAULT_PROFILE_NAME
+);
 const legacyConfigurationDirectory = process.env.BOATYARD_STATE_PATH
   ? initialLaunchDescriptor.configDirectory
   : defaultConfigDirectory;
@@ -125,19 +130,6 @@ function getLegacyStorePath(configDirectory: string) {
     return null;
   }
   return process.env.BOATYARD_STATE_PATH || path.join(app.getPath("userData"), "boatyard-state.json");
-}
-
-function migrateRootConfigurationIntoDefaultProfile(): void {
-  const rootDirectory = path.dirname(defaultConfigDirectory);
-  const fileNames = ["settings.json", "projects.json", "workspace-session.json"];
-  const existingFiles = fileNames.filter((fileName) => fs.existsSync(path.join(rootDirectory, fileName)));
-  if (!existingFiles.length || fs.existsSync(defaultConfigDirectory)) {
-    return;
-  }
-  fs.mkdirSync(defaultConfigDirectory, { recursive: true, mode: 0o700 });
-  for (const fileName of existingFiles) {
-    fs.renameSync(path.join(rootDirectory, fileName), path.join(defaultConfigDirectory, fileName));
-  }
 }
 
 function migrateLegacyConfigurationIntoItsProfile(): void {
@@ -1367,8 +1359,8 @@ if (isPrimaryInstance) {
 }
 
 if (isPrimaryInstance) app.whenReady().then(async () => {
-  migrateRootConfigurationIntoDefaultProfile();
-  secretStore = new SecretStore(path.join(path.dirname(initialLaunchDescriptor.configDirectory), "secrets.json"));
+  migrateConfigurationRootToProfiles(initialLaunchDescriptor.configurationRoot);
+  secretStore = new SecretStore(path.join(initialLaunchDescriptor.configurationRoot, "secrets.json"));
   secretStore.load();
   migrateLegacyConfigurationIntoItsProfile();
   const initialConfiguration = await createConfigurationContext(initialLaunchDescriptor.configDirectory);
