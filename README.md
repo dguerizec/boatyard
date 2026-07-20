@@ -88,6 +88,8 @@ boatyard --profile work
 
 Launching Boatyard again with the same Chromium user-data directory never starts a second Electron process. A matching `--profile` focuses its existing window; a different `--profile` creates windows for that configuration profile in the primary process while all webapps continue to share the same Chromium sessions.
 
+To run a deliberately separate Chromium profile at the same time, set a different `BOATYARD_USER_DATA_PATH` and use a different `--profile` so the two processes do not write the same Boatyard configuration directory.
+
 Saved credentials are global across Boatyard profiles: Boatyard keeps their `safeStorage`-encrypted values in `~/.boatyard/secrets.json` with strict file permissions. An implicit legacy state is migrated into `default`; `BOATYARD_STATE_PATH` remains an explicit legacy migration input for the selected profile. In either case, Boatyard backs up the legacy JSON file before importing it into split configuration files.
 
 ## Packaging
