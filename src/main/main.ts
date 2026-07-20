@@ -136,12 +136,20 @@ function migrateRootConfigurationIntoDefaultProfile(): void {
 }
 
 function migrateLegacyConfigurationIntoItsProfile(): void {
-  const migrationStore: ProjectStoreInstance = new ProjectStore({
+  const migrationStore = new ProjectStore({
     configDirectory: legacyConfigurationDirectory,
     legacyFilePath: getLegacyStorePath(legacyConfigurationDirectory)
   });
   const legacyState = migrationStore.load() as { passwordVault?: unknown };
   secretStore.importPasswordVault(legacyState.passwordVault);
+  if (
+    legacyState.passwordVault &&
+    typeof legacyState.passwordVault === "object" &&
+    !Array.isArray(legacyState.passwordVault) &&
+    Object.keys(legacyState.passwordVault).length
+  ) {
+    migrationStore.save();
+  }
 }
 
 function getPrimaryWorkspaceWindow() {
