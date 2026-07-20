@@ -14,6 +14,9 @@ type StoredPasswordCredential = {
 
 type PasswordStore = {
   getState(): { settings: PasswordSettings };
+};
+
+type PasswordSecrets = {
   getPasswordCredential(origin: string): StoredPasswordCredential | null;
   updatePasswordCredential(origin: string, credential: StoredPasswordCredential): unknown;
 };
@@ -56,10 +59,12 @@ function getCredentialOrigin(rawUrl: unknown): string {
 
 class PasswordManager {
   private store: PasswordStore;
+  private secrets: PasswordSecrets;
   private confirmSave: ConfirmSaveCallback;
 
-  constructor({ store, confirmSave }: { store: PasswordStore; confirmSave: ConfirmSaveCallback }) {
+  constructor({ store, secrets, confirmSave }: { store: PasswordStore; secrets: PasswordSecrets; confirmSave: ConfirmSaveCallback }) {
     this.store = store;
+    this.secrets = secrets;
     this.confirmSave = confirmSave;
   }
 
@@ -81,7 +86,7 @@ class PasswordManager {
     }
 
     const origin = getCredentialOrigin(url);
-    const credential = origin ? this.store.getPasswordCredential(origin) : null;
+    const credential = origin ? this.secrets.getPasswordCredential(origin) : null;
     if (!credential) {
       return null;
     }
@@ -132,7 +137,7 @@ class PasswordManager {
     }
 
     const encryptedPassword = safeStorage.encryptString(normalizedPassword).toString("base64");
-    this.store.updatePasswordCredential(origin, {
+    this.secrets.updatePasswordCredential(origin, {
       username: normalizedUsername,
       encryptedPassword
     });

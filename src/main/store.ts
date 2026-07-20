@@ -507,7 +507,6 @@ class ProjectStore {
     this.writeJsonAtomically(this.settingsFilePath, {
       schemaVersion: this.state.schemaVersion,
       settings: this.state.settings,
-      passwordVault: this.state.passwordVault,
       plugins: this.state.plugins,
       globalPluginConfig: this.state.pluginConfig.global,
       topbarWidgets: this.state.topbarWidgets,

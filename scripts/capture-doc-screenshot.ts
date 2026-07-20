@@ -175,12 +175,12 @@ writeFileSync(requestPath, JSON.stringify({
 
 const result = spawnSync(
   process.platform === "win32" ? "npx.cmd" : "npx",
-  ["electron", ".", "--no-sandbox"],
+  ["electron", ".", "--no-sandbox", "--profile", "capture"],
   {
     cwd: repoRoot,
     env: {
       ...process.env,
-      BOATYARD_CONFIG_PATH: configurationPath,
+      BOATYARD_CONFIG_ROOT: configurationPath,
       BOATYARD_STATE_PATH: statePath,
       BOATYARD_USER_DATA_PATH: userDataPath,
       BOATYARD_CAPTURE_REQUEST: requestPath

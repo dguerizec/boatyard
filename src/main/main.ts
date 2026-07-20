@@ -23,8 +23,17 @@ import type {
 } from "./mainTypes.js";
 import { createWebAppContextMenu } from "./webAppContextMenu.js";
 import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
+import {
+  DEFAULT_PROFILE_NAME,
+  canonicalizeDirectory,
+  parseLaunchDescriptor,
+  resolveProfileLaunch,
+  routeLaunchDescriptor,
+  type LaunchDescriptor
+} from "./launchDescriptor.js";
 
 const { execFile } = require("node:child_process");
+const fs = require("node:fs");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, screen, shell } = require("electron");
@@ -32,6 +41,7 @@ const { createCaptureRunner } = require("./captureRunner");
 const { PasswordManager } = require("./passwordManager");
 const { PluginHost } = require("./pluginHost");
 const { ProjectStore, deriveRepoUrl } = require("./store");
+const { SecretStore } = require("./secretStore");
 const { TerminalService } = require("./terminalService");
 const { createUpdateManager, normalizeVersionTag } = require("./updateManager");
 
@@ -41,16 +51,46 @@ const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
 const DEFAULT_WEBAPP_BACKGROUND_COLOR = "#0b0f14";
 
 if (process.env.BOATYARD_USER_DATA_PATH) {
-  app.setPath("userData", process.env.BOATYARD_USER_DATA_PATH);
+  app.setPath("userData", canonicalizeDirectory(process.env.BOATYARD_USER_DATA_PATH));
+}
+
+const configurationRoot = process.env.BOATYARD_CONFIG_ROOT || path.join(app.getPath("home"), ".boatyard");
+const initialLaunchDescriptor = resolveProfileLaunch({
+  argv: process.argv,
+  configurationRoot
+});
+const defaultConfigDirectory = path.join(path.dirname(initialLaunchDescriptor.configDirectory), DEFAULT_PROFILE_NAME);
+const legacyConfigurationDirectory = process.env.BOATYARD_STATE_PATH
+  ? initialLaunchDescriptor.configDirectory
+  : defaultConfigDirectory;
+const isPrimaryInstance = app.requestSingleInstanceLock(initialLaunchDescriptor);
+if (!isPrimaryInstance) {
+  app.exit(0);
 }
 
 let mainWindow: ElectronBrowserWindow | null = null;
+let secretStore: {
+  getPasswordCredential(origin: string): { encryptedPassword: string; username: string } | null;
+  importPasswordVault(passwordVault: unknown): void;
+  load(): void;
+  updatePasswordCredential(origin: string, credential: { encryptedPassword: string; username: string }): void;
+};
 let store: ProjectStoreInstance;
-let terminalService: TerminalServiceInstance;
-let passwordManager: PasswordManagerInstance;
 let pluginHost: PluginHostInstance;
 let updateManager: UpdateManagerInstance;
+type ConfigurationContext = {
+  configDirectory: string;
+  passwordManager: PasswordManagerInstance;
+  pluginHost: PluginHostInstance;
+  store: ProjectStoreInstance;
+  terminalService: TerminalServiceInstance;
+  updateManager: UpdateManagerInstance;
+};
+const configurationContexts = new Map<string, ConfigurationContext>();
+const pendingLaunchDescriptors: LaunchDescriptor[] = [];
+let launchRoutingReady = false;
 type WorkspaceWindowRecord = {
+  configuration: ConfigurationContext;
   id: string;
   runtime: WorkspaceWindowRuntime;
   saveStateTimer: ReturnType<typeof setTimeout> | null;
@@ -75,22 +115,53 @@ function finiteNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-function getConfigDirectory() {
-  if (process.env.BOATYARD_CONFIG_PATH) {
-    return process.env.BOATYARD_CONFIG_PATH;
+function getLegacyStorePath(configDirectory: string) {
+  if (configDirectory !== legacyConfigurationDirectory) {
+    return null;
   }
-
-  return app.isPackaged
-    ? path.join(app.getPath("home"), ".boatyard")
-    : path.join(process.cwd(), ".boatyard");
+  return process.env.BOATYARD_STATE_PATH || path.join(app.getPath("userData"), "boatyard-state.json");
 }
 
-function getLegacyStorePath() {
-  return process.env.BOATYARD_STATE_PATH || path.join(app.getPath("userData"), "boatyard-state.json");
+function migrateRootConfigurationIntoDefaultProfile(): void {
+  const rootDirectory = path.dirname(defaultConfigDirectory);
+  const fileNames = ["settings.json", "projects.json", "workspace-session.json"];
+  const existingFiles = fileNames.filter((fileName) => fs.existsSync(path.join(rootDirectory, fileName)));
+  if (!existingFiles.length || fs.existsSync(defaultConfigDirectory)) {
+    return;
+  }
+  fs.mkdirSync(defaultConfigDirectory, { recursive: true, mode: 0o700 });
+  for (const fileName of existingFiles) {
+    fs.renameSync(path.join(rootDirectory, fileName), path.join(defaultConfigDirectory, fileName));
+  }
+}
+
+function migrateLegacyConfigurationIntoItsProfile(): void {
+  const migrationStore: ProjectStoreInstance = new ProjectStore({
+    configDirectory: legacyConfigurationDirectory,
+    legacyFilePath: getLegacyStorePath(legacyConfigurationDirectory)
+  });
+  const legacyState = migrationStore.load() as { passwordVault?: unknown };
+  secretStore.importPasswordVault(legacyState.passwordVault);
 }
 
 function getPrimaryWorkspaceWindow() {
   return workspaceWindows.values().next().value as WorkspaceWindowRecord | undefined;
+}
+
+function getWorkspaceWindowRegistryKey(configuration: ConfigurationContext, windowId: string) {
+  return `${configuration.configDirectory}\u0000${windowId}`;
+}
+
+function getConfigurationForWebContents(webContents: ElectronWebContents) {
+  return getWorkspaceWindowForWebContents(webContents)?.configuration || null;
+}
+
+function getConfigurationForEvent(event: IpcMainInvokeEvent): ConfigurationContext {
+  const configuration = getConfigurationForWebContents(event.sender);
+  if (!configuration) {
+    throw new Error("Boatyard configuration context is not available.");
+  }
+  return configuration;
 }
 
 function getWorkspaceWindowForWebContents(webContents: ElectronWebContents) {
@@ -129,15 +200,20 @@ function getRestoredWindowBounds(bounds: Partial<Rectangle>) {
 }
 
 type CreateWorkspaceWindowOptions = {
+  configuration?: ConfigurationContext;
   id?: string;
   sourceWindowId?: string | null;
   syncGroupId?: string;
 };
 
 function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
+  const configuration = options.configuration || configurationContexts.get(initialLaunchDescriptor.configDirectory);
+  if (!configuration) {
+    throw new Error("Boatyard configuration context is not available.");
+  }
   const workspaceWindowId = options.id || crypto.randomUUID();
   const syncGroupId = options.syncGroupId || crypto.randomUUID();
-  const persistedWorkspaceWindow = store.ensureWorkspaceWindow(workspaceWindowId, syncGroupId, options.sourceWindowId) as {
+  const persistedWorkspaceWindow = configuration.store.ensureWorkspaceWindow(workspaceWindowId, syncGroupId, options.sourceWindowId) as {
     window: { bounds: Partial<Rectangle>; isFullScreen?: boolean; isMaximized?: boolean };
   };
   const windowState = persistedWorkspaceWindow.window;
@@ -158,18 +234,19 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   });
   mainWindow = window;
   const workspaceWindow: WorkspaceWindowRecord = {
+    configuration,
     id: workspaceWindowId,
     syncGroupId,
     window,
     runtime: new WorkspaceWindowRuntime({
       id: workspaceWindowId,
       window,
-      store,
+      store: configuration.store,
       openExternalUrl
     }),
     saveStateTimer: null
   };
-  workspaceWindows.set(workspaceWindow.id, workspaceWindow);
+  workspaceWindows.set(getWorkspaceWindowRegistryKey(configuration, workspaceWindow.id), workspaceWindow);
 
   if (windowState.isMaximized) {
     window.maximize();
@@ -204,7 +281,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     }
   });
   window.on("closed", () => {
-    workspaceWindows.delete(workspaceWindow.id);
+    workspaceWindows.delete(getWorkspaceWindowRegistryKey(configuration, workspaceWindow.id));
     mainWindow = null;
   });
 
@@ -237,10 +314,10 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     }
     saveWindowState(workspaceWindow);
     if (individuallyClosingWindowIds.delete(workspaceWindow.id)) {
-      store.removeWorkspaceWindow(workspaceWindow.id);
+      configuration.store.removeWorkspaceWindow(workspaceWindow.id);
     }
     if (isQuitting) {
-      terminalService?.detachAll();
+      configuration.terminalService.detachAll();
     }
     workspaceWindow.runtime.destroy();
   });
@@ -251,7 +328,7 @@ function saveWindowState(workspaceWindow: WorkspaceWindowRecord) {
     return;
   }
 
-  store.updateWorkspaceWindowState(workspaceWindow.id, {
+  workspaceWindow.configuration.store.updateWorkspaceWindowState(workspaceWindow.id, {
     bounds: workspaceWindow.window.getNormalBounds(),
     isMaximized: workspaceWindow.window.isMaximized(),
     isFullScreen: workspaceWindow.window.isFullScreen()
@@ -265,12 +342,144 @@ function scheduleWindowStateSave(workspaceWindow: WorkspaceWindowRecord) {
   workspaceWindow.saveStateTimer = setTimeout(() => saveWindowState(workspaceWindow), 250);
 }
 
-function sendWorkspaceNavigation(windowId: string, navigation: unknown) {
-  const workspaceWindow = workspaceWindows.get(windowId);
+function sendWorkspaceNavigation(configuration: ConfigurationContext, windowId: string, navigation: unknown) {
+  const workspaceWindow = workspaceWindows.get(getWorkspaceWindowRegistryKey(configuration, windowId));
   if (!workspaceWindow || workspaceWindow.window.webContents.isDestroyed()) {
     return;
   }
   workspaceWindow.window.webContents.send("workspace:navigation-changed", navigation);
+}
+
+function getWorkspaceWindowsForConfiguration(configuration: ConfigurationContext) {
+  return [...workspaceWindows.values()].filter((workspaceWindow) => workspaceWindow.configuration === configuration);
+}
+
+function sendToConfiguration(configuration: ConfigurationContext, channel: string, payload: unknown) {
+  for (const workspaceWindow of getWorkspaceWindowsForConfiguration(configuration)) {
+    if (!workspaceWindow.window.webContents.isDestroyed()) {
+      workspaceWindow.window.webContents.send(channel, payload);
+    }
+  }
+}
+
+function getFocusedConfigurationWindow(configuration: ConfigurationContext) {
+  return getWorkspaceWindowsForConfiguration(configuration).find((workspaceWindow) => workspaceWindow.window.isFocused()) ||
+    getWorkspaceWindowsForConfiguration(configuration)[0] || null;
+}
+
+async function createConfigurationContext(configDirectory: string): Promise<ConfigurationContext> {
+  const existing = configurationContexts.get(configDirectory);
+  if (existing) {
+    return existing;
+  }
+
+  const contextStore: ProjectStoreInstance = new ProjectStore({
+    configDirectory,
+    legacyFilePath: getLegacyStorePath(configDirectory)
+  });
+  contextStore.load();
+  contextStore.reconcileAppVersion(app.getVersion());
+  secretStore.importPasswordVault(contextStore.getState().passwordVault);
+
+  let configuration: ConfigurationContext;
+  const contextTerminalService: TerminalServiceInstance = new TerminalService({
+    getProject: (projectId: string) => {
+      if (projectId === "__global__") {
+        const settings = contextStore.getState().settings || {};
+        return {
+          id: "__global__",
+          name: "Global",
+          slug: "global",
+          sourcePath: settings.projectsBasePath || process.cwd(),
+          terminalEnv: ""
+        };
+      }
+      return contextStore.getState().projects.find((project: MainProject) => project.id === projectId);
+    },
+    getSettings: () => contextStore.getState().settings,
+    sendToRenderer: (channel: string, payload: unknown) => sendToConfiguration(configuration, channel, payload),
+    suppressResizeWarnings: captureRunner.isCaptureMode()
+  });
+  const contextPluginHost: PluginHostInstance = new PluginHost({
+    store: contextStore,
+    execFileAsync,
+    // Plugin connection/session material belongs to the Electron profile, not
+    // to an individual Boatyard configuration profile.
+    userDataPath: app.getPath("userData"),
+    sendToRenderer: (channel: string, payload: unknown) => sendToConfiguration(configuration, channel, payload)
+  });
+  const contextUpdateManager: UpdateManagerInstance = createUpdateManager({
+    getAppState: () => contextStore.getAppState()
+  });
+  const contextPasswordManager: PasswordManagerInstance = new PasswordManager({
+    store: contextStore,
+    secrets: secretStore,
+    confirmSave: async ({ origin, username, isUpdate }: { isUpdate?: boolean; origin: string; username: string }) => {
+      const result = await dialog.showMessageBox(getFocusedConfigurationWindow(configuration)?.window || undefined, {
+        type: "question",
+        buttons: [isUpdate ? "Update password" : "Save password", "Cancel"],
+        defaultId: 0,
+        cancelId: 1,
+        title: "Boatyard password manager",
+        message: `${isUpdate ? "Update" : "Save"} password for ${origin}?`,
+        detail: `Username: ${username}\n\nBoatyard stores this password encrypted for the current OS user. This is a minimal local password manager, not a hardened replacement for a dedicated password manager.`
+      });
+      return result.response === 0;
+    }
+  });
+  configuration = {
+    configDirectory,
+    store: contextStore,
+    terminalService: contextTerminalService,
+    pluginHost: contextPluginHost,
+    updateManager: contextUpdateManager,
+    passwordManager: contextPasswordManager
+  };
+  configurationContexts.set(configDirectory, configuration);
+  contextPluginHost.discover();
+  await contextPluginHost.applyStateMigrations();
+  return configuration;
+}
+
+function restoreConfigurationWindows(configuration: ConfigurationContext) {
+  const restoredWindows = configuration.store.getWorkspaceWindowStates() as Array<{ id: string; syncGroupId: string }>;
+  if (restoredWindows.length) {
+    for (const restoredWindow of restoredWindows) {
+      createMainWindow({
+        configuration,
+        id: restoredWindow.id,
+        syncGroupId: restoredWindow.syncGroupId
+      });
+    }
+    return;
+  }
+  createMainWindow({ configuration });
+}
+
+function focusConfigurationWindow(configuration: ConfigurationContext) {
+  const workspaceWindow = getFocusedConfigurationWindow(configuration);
+  if (!workspaceWindow) {
+    createMainWindow({ configuration });
+    return;
+  }
+  if (workspaceWindow.window.isMinimized()) {
+    workspaceWindow.window.restore();
+  }
+  workspaceWindow.window.show();
+  workspaceWindow.window.focus();
+}
+
+async function routeLaunchRequest(descriptor: LaunchDescriptor) {
+  const route = routeLaunchDescriptor(descriptor, configurationContexts.keys());
+  if (route === "focus") {
+    const configuration = configurationContexts.get(descriptor.configDirectory);
+    if (configuration) {
+      focusConfigurationWindow(configuration);
+    }
+    return;
+  }
+  const configuration = await createConfigurationContext(descriptor.configDirectory);
+  restoreConfigurationWindows(configuration);
 }
 
 function normalizeWebAppBounds(bounds: unknown): Rectangle {
@@ -301,9 +510,9 @@ async function readGitValue(sourcePath: unknown, args: string[]) {
   }
 }
 
-async function inspectSourcePath(sourcePath: string) {
+async function inspectSourcePath(sourcePath: string, host: PluginHostInstance = pluginHost) {
   const gitUrl = await readGitValue(sourcePath, ["config", "--get", "remote.origin.url"]);
-  const plugins = await pluginHost.inspectSourcePath({
+  const plugins = await host.inspectSourcePath({
     sourcePath,
     gitUrl,
     repoUrl: deriveRepoUrl(gitUrl)
@@ -824,37 +1033,40 @@ function registerIpcHandlers() {
 
   ipcMain.handle("state:get", (event: IpcMainInvokeEvent) => {
     const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
-    return workspaceWindow ? store.getStateForWorkspaceWindow(workspaceWindow.id) : store.getState();
+    const configuration = getConfigurationForEvent(event);
+    return workspaceWindow ? configuration.store.getStateForWorkspaceWindow(workspaceWindow.id) : configuration.store.getState();
   });
 
-  ipcMain.handle("settings:update", (_event: IpcMainInvokeEvent, patch: UnknownRecord) => {
+  ipcMain.handle("settings:update", (event: IpcMainInvokeEvent, patch: UnknownRecord) => {
+    const configuration = getConfigurationForEvent(event);
     if (
       patch?.passwordManagerEnabled === true &&
       patch?.passwordManagerDisclaimerAccepted === true &&
-      !passwordManager.getStatus().encryptionAvailable
+      !configuration.passwordManager.getStatus().encryptionAvailable
     ) {
       throw new Error(
         "Electron safeStorage is unavailable. On Linux, safeStorage depends on a secret storage backend available in the desktop session, typically gnome-libsecret or kwallet/kwallet5/kwallet6. Try launching Boatyard from your desktop session instead of a detached terminal, tmux, or headless environment."
       );
     }
 
-    return store.updateSettings(patch);
+    return configuration.store.updateSettings(patch);
   });
 
   ipcMain.handle("navigation:update", (event: IpcMainInvokeEvent, navigation: unknown) => {
     const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    const configuration = getConfigurationForEvent(event);
     if (!workspaceWindow) {
-      return store.updateNavigation(navigation);
+      return configuration.store.updateNavigation(navigation);
     }
-    const updated = store.updateWorkspaceNavigation(workspaceWindow.id, navigation);
+    const updated = configuration.store.updateWorkspaceNavigation(workspaceWindow.id, navigation);
     for (const [windowId, nextNavigation] of Object.entries(updated)) {
-      sendWorkspaceNavigation(windowId, nextNavigation);
+      sendWorkspaceNavigation(configuration, windowId, nextNavigation);
     }
-    return updated[workspaceWindow.id] || store.getStateForWorkspaceWindow(workspaceWindow.id).navigation;
+    return updated[workspaceWindow.id] || configuration.store.getStateForWorkspaceWindow(workspaceWindow.id).navigation;
   });
 
-  ipcMain.handle("onboarding:update", (_event: IpcMainInvokeEvent, onboarding: unknown) => {
-    return store.updateOnboarding(onboarding);
+  ipcMain.handle("onboarding:update", (event: IpcMainInvokeEvent, onboarding: unknown) => {
+    return getConfigurationForEvent(event).store.updateOnboarding(onboarding);
   });
 
   ipcMain.handle("workspace:create-window", async (event: IpcMainInvokeEvent) => {
@@ -874,6 +1086,7 @@ function registerIpcHandlers() {
       return false;
     }
     createMainWindow({
+      configuration: sourceWorkspaceWindow.configuration,
       sourceWindowId: sourceWorkspaceWindow.id,
       syncGroupId: result.response === 0 ? sourceWorkspaceWindow.syncGroupId : crypto.randomUUID()
     });
@@ -894,145 +1107,147 @@ function registerIpcHandlers() {
     return result.canceled ? null : result.filePaths[0];
   });
 
-  ipcMain.handle("updates:info", () => {
-    return updateManager.getUpdateInfo();
+  ipcMain.handle("updates:info", (event: IpcMainInvokeEvent) => {
+    return getConfigurationForEvent(event).updateManager.getUpdateInfo();
   });
 
-  ipcMain.handle("updates:check", () => {
-    return updateManager.checkForUpdates();
+  ipcMain.handle("updates:check", (event: IpcMainInvokeEvent) => {
+    return getConfigurationForEvent(event).updateManager.checkForUpdates();
   });
 
-  ipcMain.handle("updates:prepare", () => {
-    return updateManager.prepareUpdate();
+  ipcMain.handle("updates:prepare", (event: IpcMainInvokeEvent) => {
+    return getConfigurationForEvent(event).updateManager.prepareUpdate();
   });
 
-  ipcMain.handle("updates:restart", (_event: IpcMainInvokeEvent, update: unknown) => {
-    return updateManager.restartToUpdate(update);
+  ipcMain.handle("updates:restart", (event: IpcMainInvokeEvent, update: unknown) => {
+    return getConfigurationForEvent(event).updateManager.restartToUpdate(update);
   });
 
-  ipcMain.handle("changelog:pending", () => {
-    return updateManager.getPendingChangelog();
+  ipcMain.handle("changelog:pending", (event: IpcMainInvokeEvent) => {
+    return getConfigurationForEvent(event).updateManager.getPendingChangelog();
   });
 
-  ipcMain.handle("changelog:history", () => {
+  ipcMain.handle("changelog:history", (event: IpcMainInvokeEvent) => {
     return {
       currentVersion: normalizeVersionTag(app.getVersion()),
-      releases: updateManager.readChangelogReleases()
+      releases: getConfigurationForEvent(event).updateManager.readChangelogReleases()
     };
   });
 
-  ipcMain.handle("changelog:dismiss", () => {
-    return store.dismissChangelog(app.getVersion());
+  ipcMain.handle("changelog:dismiss", (event: IpcMainInvokeEvent) => {
+    return getConfigurationForEvent(event).store.dismissChangelog(app.getVersion());
   });
 
-  ipcMain.handle("projects:inspect-source-path", (_event: IpcMainInvokeEvent, sourcePath: string) => {
-    return inspectSourcePath(sourcePath);
+  ipcMain.handle("projects:inspect-source-path", (event: IpcMainInvokeEvent, sourcePath: string) => {
+    return inspectSourcePath(sourcePath, getConfigurationForEvent(event).pluginHost);
   });
 
-  ipcMain.handle("plugins:list", () => {
-    return pluginHost.listRendererPlugins();
+  ipcMain.handle("plugins:list", (event: IpcMainInvokeEvent) => {
+    return getConfigurationForEvent(event).pluginHost.listRendererPlugins();
   });
 
-  ipcMain.handle("plugins:invoke", (_event: IpcMainInvokeEvent, pluginId: string, actionName: string, payload: unknown) => {
-    return pluginHost.invoke(pluginId, actionName, payload);
+  ipcMain.handle("plugins:invoke", (event: IpcMainInvokeEvent, pluginId: string, actionName: string, payload: unknown) => {
+    return getConfigurationForEvent(event).pluginHost.invoke(pluginId, actionName, payload);
   });
 
-  ipcMain.handle("projects:add", (_event: IpcMainInvokeEvent, projectConfig: unknown) => {
-    return store.addProject(projectConfig);
+  ipcMain.handle("projects:add", (event: IpcMainInvokeEvent, projectConfig: unknown) => {
+    return getConfigurationForEvent(event).store.addProject(projectConfig);
   });
 
-  ipcMain.handle("projects:update", (_event: IpcMainInvokeEvent, id: string, patch: unknown) => {
-    return store.updateProject(id, patch);
+  ipcMain.handle("projects:update", (event: IpcMainInvokeEvent, id: string, patch: unknown) => {
+    return getConfigurationForEvent(event).store.updateProject(id, patch);
   });
 
-  ipcMain.handle("global-urls:update", (_event: IpcMainInvokeEvent, urls: unknown) => {
-    return store.updateGlobalUrls(urls);
+  ipcMain.handle("global-urls:update", (event: IpcMainInvokeEvent, urls: unknown) => {
+    return getConfigurationForEvent(event).store.updateGlobalUrls(urls);
   });
 
-  ipcMain.handle("webapp-home-tab:update", (_event: IpcMainInvokeEvent, projectId: string, tab: unknown) => {
-    return store.updateWebAppHomeTab(projectId, tab);
+  ipcMain.handle("webapp-home-tab:update", (event: IpcMainInvokeEvent, projectId: string, tab: unknown) => {
+    return getConfigurationForEvent(event).store.updateWebAppHomeTab(projectId, tab);
   });
 
-  ipcMain.handle("webapp-home-tabs:update", (_event: IpcMainInvokeEvent, projectId: string, tabs: unknown) => {
-    return store.updateWebAppHomeTabs(projectId, tabs);
+  ipcMain.handle("webapp-home-tabs:update", (event: IpcMainInvokeEvent, projectId: string, tabs: unknown) => {
+    return getConfigurationForEvent(event).store.updateWebAppHomeTabs(projectId, tabs);
   });
 
-  ipcMain.handle("projects:reorder", (_event: IpcMainInvokeEvent, projectIds: unknown) => {
-    return store.reorderProjects(projectIds);
+  ipcMain.handle("projects:reorder", (event: IpcMainInvokeEvent, projectIds: unknown) => {
+    return getConfigurationForEvent(event).store.reorderProjects(projectIds);
   });
 
-  ipcMain.handle("projects:remove", (_event: IpcMainInvokeEvent, id: string) => {
-    return store.removeProject(id);
+  ipcMain.handle("projects:remove", (event: IpcMainInvokeEvent, id: string) => {
+    return getConfigurationForEvent(event).store.removeProject(id);
   });
 
-  ipcMain.handle("plugins:enabled:update", (_event: IpcMainInvokeEvent, pluginId: string, enabled: boolean) => {
-    return store.updatePluginEnabled(pluginId, enabled);
+  ipcMain.handle("plugins:enabled:update", (event: IpcMainInvokeEvent, pluginId: string, enabled: boolean) => {
+    return getConfigurationForEvent(event).store.updatePluginEnabled(pluginId, enabled);
   });
 
-  ipcMain.handle("global-plugin-config:update", (_event: IpcMainInvokeEvent, pluginId: string, patch: unknown) => {
-    return store.updateGlobalPluginConfig(pluginId, patch);
+  ipcMain.handle("global-plugin-config:update", (event: IpcMainInvokeEvent, pluginId: string, patch: unknown) => {
+    return getConfigurationForEvent(event).store.updateGlobalPluginConfig(pluginId, patch);
   });
 
-  ipcMain.handle("project-plugin-config:update", (_event: IpcMainInvokeEvent, projectId: string, pluginId: string, patch: unknown) => {
-    return store.updateProjectPluginConfig(projectId, pluginId, patch);
+  ipcMain.handle("project-plugin-config:update", (event: IpcMainInvokeEvent, projectId: string, pluginId: string, patch: unknown) => {
+    return getConfigurationForEvent(event).store.updateProjectPluginConfig(projectId, pluginId, patch);
   });
 
   ipcMain.handle("pane-layout:update", (event: IpcMainInvokeEvent, projectId: string | null | undefined, layout: unknown) => {
     const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    const configuration = getConfigurationForEvent(event);
     return workspaceWindow
-      ? store.updateWorkspacePaneLayout(workspaceWindow.id, projectId, layout)
-      : store.updatePaneLayout(projectId, layout);
+      ? configuration.store.updateWorkspacePaneLayout(workspaceWindow.id, projectId, layout)
+      : configuration.store.updatePaneLayout(projectId, layout);
   });
 
   ipcMain.handle("widget-layout:update", (event: IpcMainInvokeEvent, projectId: string | null | undefined, layout: unknown) => {
     const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    const configuration = getConfigurationForEvent(event);
     return workspaceWindow
-      ? store.updateWorkspaceWidgetLayout(workspaceWindow.id, projectId, layout)
-      : store.updateWidgetLayout(projectId, layout);
+      ? configuration.store.updateWorkspaceWidgetLayout(workspaceWindow.id, projectId, layout)
+      : configuration.store.updateWidgetLayout(projectId, layout);
   });
 
-  ipcMain.handle("topbar-widgets:update", (_event: IpcMainInvokeEvent, topbarWidgets: unknown) => {
-    return store.updateTopbarWidgets(topbarWidgets);
+  ipcMain.handle("topbar-widgets:update", (event: IpcMainInvokeEvent, topbarWidgets: unknown) => {
+    return getConfigurationForEvent(event).store.updateTopbarWidgets(topbarWidgets);
   });
 
-  ipcMain.handle("terminal:tabs", (_event: IpcMainInvokeEvent, projectId: string) => {
-    return terminalService.listTabs(projectId);
+  ipcMain.handle("terminal:tabs", (event: IpcMainInvokeEvent, projectId: string) => {
+    return getConfigurationForEvent(event).terminalService.listTabs(projectId);
   });
 
-  ipcMain.handle("terminal:create-tab", (_event: IpcMainInvokeEvent, projectId: string, name: string) => {
-    return terminalService.createTab(projectId, name);
+  ipcMain.handle("terminal:create-tab", (event: IpcMainInvokeEvent, projectId: string, name: string) => {
+    return getConfigurationForEvent(event).terminalService.createTab(projectId, name);
   });
 
-  ipcMain.handle("terminal:rename-tab", (_event: IpcMainInvokeEvent, projectId: string, windowId: string, name: string) => {
-    return terminalService.renameTab(projectId, windowId, name);
+  ipcMain.handle("terminal:rename-tab", (event: IpcMainInvokeEvent, projectId: string, windowId: string, name: string) => {
+    return getConfigurationForEvent(event).terminalService.renameTab(projectId, windowId, name);
   });
 
-  ipcMain.handle("terminal:close-tab", (_event: IpcMainInvokeEvent, projectId: string, windowId: string) => {
-    return terminalService.closeTab(projectId, windowId);
+  ipcMain.handle("terminal:close-tab", (event: IpcMainInvokeEvent, projectId: string, windowId: string) => {
+    return getConfigurationForEvent(event).terminalService.closeTab(projectId, windowId);
   });
 
-  ipcMain.handle("terminal:attach", (_event: IpcMainInvokeEvent, projectId: string, windowId: string, size: unknown) => {
-    return terminalService.attach(projectId, windowId, size);
+  ipcMain.handle("terminal:attach", (event: IpcMainInvokeEvent, projectId: string, windowId: string, size: unknown) => {
+    return getConfigurationForEvent(event).terminalService.attach(projectId, windowId, size);
   });
 
-  ipcMain.handle("terminal:selection:update", (_event: IpcMainInvokeEvent, projectId: string, surfaceKey: string, windowId: string) => {
-    return store.updateTerminalSelection(projectId, surfaceKey, windowId);
+  ipcMain.handle("terminal:selection:update", (event: IpcMainInvokeEvent, projectId: string, surfaceKey: string, windowId: string) => {
+    return getConfigurationForEvent(event).store.updateTerminalSelection(projectId, surfaceKey, windowId);
   });
 
-  ipcMain.handle("terminal:tab-order:update", (_event: IpcMainInvokeEvent, projectId: string, windowIds: unknown) => {
-    return store.updateTerminalTabOrder(projectId, windowIds);
+  ipcMain.handle("terminal:tab-order:update", (event: IpcMainInvokeEvent, projectId: string, windowIds: unknown) => {
+    return getConfigurationForEvent(event).store.updateTerminalTabOrder(projectId, windowIds);
   });
 
-  ipcMain.handle("terminal:write", (_event: IpcMainInvokeEvent, terminalId: string, data: string) => {
-    terminalService.write(terminalId, data);
+  ipcMain.handle("terminal:write", (event: IpcMainInvokeEvent, terminalId: string, data: string) => {
+    getConfigurationForEvent(event).terminalService.write(terminalId, data);
   });
 
-  ipcMain.handle("terminal:resize", (_event: IpcMainInvokeEvent, terminalId: string, size: unknown) => {
-    terminalService.resize(terminalId, size);
+  ipcMain.handle("terminal:resize", (event: IpcMainInvokeEvent, terminalId: string, size: unknown) => {
+    getConfigurationForEvent(event).terminalService.resize(terminalId, size);
   });
 
-  ipcMain.handle("terminal:detach", (_event: IpcMainInvokeEvent, terminalId: string) => {
-    terminalService.detach(terminalId);
+  ipcMain.handle("terminal:detach", (event: IpcMainInvokeEvent, terminalId: string) => {
+    getConfigurationForEvent(event).terminalService.detach(terminalId);
   });
 
   ipcMain.handle("terminal:write-selection", (_event: IpcMainInvokeEvent, text: unknown) => {
@@ -1043,21 +1258,22 @@ function registerIpcHandlers() {
     return clipboard.readText("selection");
   });
 
-  ipcMain.handle("password-manager:status", () => {
-    return passwordManager.getStatus();
+  ipcMain.handle("password-manager:status", (event: IpcMainInvokeEvent) => {
+    return getConfigurationForEvent(event).passwordManager.getStatus();
   });
 
   ipcMain.handle("password-manager:get-credential", (event: IpcMainInvokeEvent, url: string) => {
-    const webApp = getWorkspaceWindowForWebAppContents(event.sender)?.runtime.getWebAppForWebContents(event.sender);
+    const workspaceWindow = getWorkspaceWindowForWebAppContents(event.sender);
+    const webApp = workspaceWindow?.runtime.getWebAppForWebContents(event.sender);
     if (webApp?.item.autofillEnabled === false) {
       return null;
     }
 
-    return passwordManager.getCredential(url);
+    return workspaceWindow?.configuration.passwordManager.getCredential(url) || null;
   });
 
-  ipcMain.handle("password-manager:save-credential", (_event: IpcMainInvokeEvent, credential: unknown) => {
-    return passwordManager.saveCredential(credential);
+  ipcMain.handle("password-manager:save-credential", (event: IpcMainInvokeEvent, credential: unknown) => {
+    return getConfigurationForEvent(event).passwordManager.saveCredential(credential);
   });
 
   ipcMain.handle("webapp:show", (event: IpcMainInvokeEvent, webApp: ShowWebAppPayload) => {
@@ -1115,83 +1331,43 @@ function registerIpcHandlers() {
   });
 }
 
-app.whenReady().then(async () => {
-  store = new ProjectStore({
-    configDirectory: getConfigDirectory(),
-    legacyFilePath: getLegacyStorePath()
+if (isPrimaryInstance) {
+  app.on("second-instance", (_event: Event, _commandLine: string[], _workingDirectory: string, additionalData: unknown) => {
+    const descriptor = parseLaunchDescriptor(additionalData);
+    if (!descriptor) {
+      console.warn("Ignored an invalid secondary Boatyard launch descriptor.");
+      return;
+    }
+    if (!launchRoutingReady) {
+      pendingLaunchDescriptors.push(descriptor);
+      return;
+    }
+    void routeLaunchRequest(descriptor).catch((error: Error) => {
+      console.warn(`Could not route the secondary Boatyard launch: ${error.message}`);
+    });
   });
-  store.load();
-  store.reconcileAppVersion(app.getVersion());
-  updateManager = createUpdateManager({
-    getAppState: () => store.getAppState()
-  });
+}
+
+if (isPrimaryInstance) app.whenReady().then(async () => {
+  migrateRootConfigurationIntoDefaultProfile();
+  secretStore = new SecretStore(path.join(path.dirname(initialLaunchDescriptor.configDirectory), "secrets.json"));
+  secretStore.load();
+  migrateLegacyConfigurationIntoItsProfile();
+  const initialConfiguration = await createConfigurationContext(initialLaunchDescriptor.configDirectory);
+  store = initialConfiguration.store;
+  pluginHost = initialConfiguration.pluginHost;
+  updateManager = initialConfiguration.updateManager;
   try {
     await updateManager.ensureCurrentAppImageInstalled();
     await updateManager.cleanupOldAppImages();
   } catch (error) {
     console.warn(`Could not prepare AppImage updates: ${(error as Error).message}`);
   }
-
-  pluginHost = new PluginHost({
-    store,
-    execFileAsync,
-    userDataPath: app.getPath("userData"),
-    sendToRenderer: (channel: string, payload: unknown) => {
-      if (mainWindow && !mainWindow.webContents.isDestroyed()) {
-        mainWindow.webContents.send(channel, payload);
-      }
-    }
-  });
-  pluginHost.discover();
-  await pluginHost.applyStateMigrations();
-  passwordManager = new PasswordManager({
-    store,
-    confirmSave: async ({ origin, username, isUpdate }: { isUpdate?: boolean; origin: string; username: string }) => {
-      const result = await dialog.showMessageBox(mainWindow, {
-        type: "question",
-        buttons: [isUpdate ? "Update password" : "Save password", "Cancel"],
-        defaultId: 0,
-        cancelId: 1,
-        title: "Boatyard password manager",
-        message: `${isUpdate ? "Update" : "Save"} password for ${origin}?`,
-        detail: `Username: ${username}\n\nBoatyard stores this password encrypted for the current OS user. This is a minimal local password manager, not a hardened replacement for a dedicated password manager.`
-      });
-      return result.response === 0;
-    }
-  });
-  terminalService = new TerminalService({
-    getProject: (projectId: string) => {
-      if (projectId === "__global__") {
-        const settings = store.getState().settings || {};
-        return {
-          id: "__global__",
-          name: "Global",
-          slug: "global",
-          sourcePath: settings.projectsBasePath || process.cwd(),
-          terminalEnv: ""
-        };
-      }
-
-      return store.getState().projects.find((project: MainProject) => project.id === projectId);
-    },
-    getSettings: () => store.getState().settings,
-    sendToRenderer: (channel: string, payload: unknown) => {
-      for (const workspaceWindow of workspaceWindows.values()) {
-        if (!workspaceWindow.window.webContents.isDestroyed()) {
-          workspaceWindow.window.webContents.send(channel, payload);
-        }
-      }
-    },
-    suppressResizeWarnings: captureRunner.isCaptureMode()
-  });
   registerIpcHandlers();
-  const restoredWindows = store.getWorkspaceWindowStates() as Array<{ id: string; syncGroupId: string }>;
-  if (restoredWindows.length) {
-    for (const restoredWindow of restoredWindows) {
-      createMainWindow({ id: restoredWindow.id, syncGroupId: restoredWindow.syncGroupId });
-    }
-  } else {
-    createMainWindow();
+  restoreConfigurationWindows(initialConfiguration);
+  launchRoutingReady = true;
+  for (const descriptor of pendingLaunchDescriptors.splice(0)) {
+    await routeLaunchRequest(descriptor);
   }
 });
 
@@ -1204,7 +1380,10 @@ app.on("window-all-closed", () => {
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
-    createMainWindow();
+    const initialConfiguration = configurationContexts.get(initialLaunchDescriptor.configDirectory);
+    if (initialConfiguration) {
+      createMainWindow({ configuration: initialConfiguration });
+    }
   }
 });
 
