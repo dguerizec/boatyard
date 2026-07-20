@@ -462,7 +462,7 @@ function replaceUnreleasedSection(section: string) {
   const existing = findSection(current, "Unreleased");
 
   if (existing) {
-    const next = `${current.slice(0, existing.start)}${section}${current.slice(existing.end)}`;
+    const next = `${current.slice(0, existing.start)}${section}\n\n${current.slice(existing.end).trimStart()}`;
     fs.writeFileSync(changelogPath, `${next.trimEnd()}\n`);
     return;
   }

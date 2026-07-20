@@ -4,7 +4,7 @@ build-scripts/
 build-test/
 dist/
 *.log
-.boatyard-state.json*
+.boatyard*
 .boatyard/
 .env
 .env.*
