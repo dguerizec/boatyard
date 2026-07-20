@@ -17,7 +17,7 @@ app-build: deps
 	npm run build:app
 
 run: deps
-	DISPLAY=:0 npm start -- --no-sandbox --profile split-screen
+	DISPLAY=:0 BOATYARD_STATE_PATH=.boatyard-state.json npm start -- --no-sandbox
 
 typecheck: deps
 	npm run typecheck

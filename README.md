@@ -65,7 +65,7 @@ For local manual testing from this checkout, you can use:
 make run
 ```
 
-`make run` starts the checkout with the `split-screen` Boatyard profile.
+`make run` starts the checkout with the local `default` Boatyard profile. If a legacy `.boatyard-state.json` file exists in the checkout, it is backed up and migrated into `./.boatyard/default/`.
 
 ## Configuration
 
