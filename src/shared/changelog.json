@@ -1,6 +1,27 @@
 {
-  "generatedForVersion": "0.9.0",
+  "generatedForVersion": "0.9.1",
   "releases": [
+    {
+      "version": "0.9.1",
+      "date": "2026-07-20",
+      "features": [
+        {
+          "category": "Changed",
+          "title": "Profile storage layout",
+          "body": "Boatyard stores each configuration profile under a dedicated `profiles/` directory while keeping shared secrets, installed tools, and update files at the configuration root."
+        },
+        {
+          "category": "Fixed",
+          "title": "Saved web app passwords",
+          "body": "Passwords saved from web app panes are now written through the correct workspace password manager."
+        },
+        {
+          "category": "Fixed",
+          "title": "Legacy credential migration",
+          "body": "Saved credentials from older Boatyard state files remain available when profile configuration is split into newer storage files."
+        }
+      ]
+    },
     {
       "version": "0.9.0",
       "date": "2026-07-20",

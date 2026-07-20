@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.1] - 2026-07-20
+
+### Summary
+
+- **v0.9.1: Profile migrations and password fixes** — Boatyard now moves profile data into a clearer layout while preserving saved credentials more reliably during updates.
+
+### Changed
+
+- **Profile storage layout** — Boatyard stores each configuration profile under a dedicated `profiles/` directory while keeping shared secrets, installed tools, and update files at the configuration root.
+
+### Fixed
+
+- **Saved web app passwords** — Passwords saved from web app panes are now written through the correct workspace password manager.
+- **Legacy credential migration** — Saved credentials from older Boatyard state files remain available when profile configuration is split into newer storage files.
+
+### Documentation
+
+- **Profile configuration paths** — The README now documents the updated `profiles/default` layout and how shared credentials are stored.
+
+### Internal
+
+- **Changelog update formatting** — Release changelog updates now preserve spacing between sections.
+
 ## [0.9.0] - 2026-07-20
 
 ### Summary
