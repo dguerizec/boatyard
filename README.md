@@ -78,7 +78,7 @@ Most configuration is available inside the app:
 Boatyard separates its own configuration from Chromium's profile:
 
 - Chromium/Electron user data defaults to `~/.config/boatyard`. It owns cookies, cache, IndexedDB, and the shared persistent webapp partition. Set `BOATYARD_USER_DATA_PATH` only when deliberately creating a separate Chromium profile and process.
-- Boatyard configuration defaults to `~/.boatyard/default/`. It owns projects, settings, layouts, window sessions, and plugin configuration.
+- Packaged Boatyard configuration defaults to `~/.boatyard/default/`. Development builds keep the equivalent state below `./.boatyard/default/` in their checkout, so they do not overwrite the installed application's configuration. This state owns projects, settings, layouts, window sessions, and plugin configuration.
 
 Use a profile name to open another Boatyard configuration profile in the existing process:
 
@@ -90,7 +90,7 @@ Launching Boatyard again with the same Chromium user-data directory never starts
 
 To run a deliberately separate Chromium profile at the same time, set a different `BOATYARD_USER_DATA_PATH` and use a different `--profile` so the two processes do not write the same Boatyard configuration directory.
 
-Saved credentials are global across Boatyard profiles: Boatyard keeps their `safeStorage`-encrypted values in `~/.boatyard/secrets.json` with strict file permissions. An implicit legacy state is migrated into `default`; `BOATYARD_STATE_PATH` remains an explicit legacy migration input for the selected profile. In either case, Boatyard backs up the legacy JSON file before importing it into split configuration files.
+Saved credentials are global across Boatyard profiles: Boatyard keeps their `safeStorage`-encrypted values in `secrets.json` at the configuration root, with strict file permissions. An implicit legacy state is migrated into `default`; `BOATYARD_STATE_PATH` remains an explicit legacy migration input for the selected profile. In either case, Boatyard backs up the legacy JSON file before importing it into split configuration files.
 
 ## Packaging
 

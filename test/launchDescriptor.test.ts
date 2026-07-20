@@ -8,9 +8,29 @@ const {
   LAUNCH_DESCRIPTOR_VERSION,
   normalizeProfileName,
   parseLaunchDescriptor,
+  resolveDefaultConfigurationRoot,
   resolveProfileLaunch,
   routeLaunchDescriptor
 } = require(`${process.cwd()}/build/main/launchDescriptor`);
+
+test("development and packaged builds use separate default configuration roots", () => {
+  assert.equal(
+    resolveDefaultConfigurationRoot({
+      cwd: "/workspace/boatyard",
+      home: "/home/example",
+      isPackaged: false
+    }),
+    "/workspace/boatyard/.boatyard"
+  );
+  assert.equal(
+    resolveDefaultConfigurationRoot({
+      cwd: "/workspace/boatyard",
+      home: "/home/example",
+      isPackaged: true
+    }),
+    "/home/example/.boatyard"
+  );
+});
 
 test("profile launch descriptors resolve named profiles below the configuration root", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-launch-"));

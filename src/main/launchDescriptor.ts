@@ -19,6 +19,22 @@ type ResolveProfileOptions = {
   configurationRoot: string;
 };
 
+type ResolveDefaultConfigurationRootOptions = {
+  cwd: string;
+  home: string;
+  isPackaged: boolean;
+};
+
+export function resolveDefaultConfigurationRoot({
+  cwd,
+  home,
+  isPackaged
+}: ResolveDefaultConfigurationRootOptions): string {
+  return isPackaged
+    ? path.join(home, ".boatyard")
+    : path.resolve(cwd, ".boatyard");
+}
+
 export function canonicalizeDirectory(value: string): string {
   const resolvedDirectory = path.resolve(value);
   try {

@@ -27,6 +27,7 @@ import {
   DEFAULT_PROFILE_NAME,
   canonicalizeDirectory,
   parseLaunchDescriptor,
+  resolveDefaultConfigurationRoot,
   resolveProfileLaunch,
   routeLaunchDescriptor,
   type LaunchDescriptor
@@ -54,7 +55,11 @@ if (process.env.BOATYARD_USER_DATA_PATH) {
   app.setPath("userData", canonicalizeDirectory(process.env.BOATYARD_USER_DATA_PATH));
 }
 
-const configurationRoot = process.env.BOATYARD_CONFIG_ROOT || path.join(app.getPath("home"), ".boatyard");
+const configurationRoot = process.env.BOATYARD_CONFIG_ROOT || resolveDefaultConfigurationRoot({
+  cwd: process.cwd(),
+  home: app.getPath("home"),
+  isPackaged: app.isPackaged
+});
 const initialLaunchDescriptor = resolveProfileLaunch({
   argv: process.argv,
   configurationRoot
