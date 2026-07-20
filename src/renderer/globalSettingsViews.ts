@@ -12,7 +12,7 @@ import type { UnknownRecord } from "./rendererRecords.js";
   };
 
   type GlobalSettingsBoatyardBridge = BoatyardBridge & {
-    selectProjectsBasePath?: (currentPath?: string) => Promise<string>;
+    selectProjectsBasePath?: (currentPath?: string, title?: string) => Promise<string>;
   };
 
   type GlobalSettingsFormOptions = {

@@ -5,9 +5,9 @@
   "main": "build/main/main.js",
   "desktopName": "boatyard",
   "scripts": {
-    "start": "npm run build:app && electron .",
-    "dev": "npm run build:app && electron .",
-    "smoke": "npm run build:app && electron . --smoke --no-sandbox",
+    "start": "npm run build:app && electron . --xdg-portal-required-version=4",
+    "dev": "npm run build:app && electron . --xdg-portal-required-version=4",
+    "smoke": "npm run build:app && electron . --xdg-portal-required-version=4 --smoke --no-sandbox",
     "build:scripts": "tsc -p tsconfig.scripts.json",
     "build:app": "npm run build:scripts && node build-scripts/scripts/build-app.js",
     "build:test": "tsc -p tsconfig.test.json",

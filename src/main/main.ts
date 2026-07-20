@@ -44,6 +44,7 @@ const { PasswordManager } = require("./passwordManager");
 const { PluginHost } = require("./pluginHost");
 const { ProjectStore, deriveRepoUrl } = require("./store");
 const { SecretStore } = require("./secretStore");
+const { getErrorCode } = require("./storeUtils");
 const { TerminalService } = require("./terminalService");
 const { createUpdateManager, normalizeVersionTag } = require("./updateManager");
 
@@ -51,6 +52,11 @@ const execFileAsync = promisify(execFile);
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
 const DEFAULT_WEBAPP_BACKGROUND_COLOR = "#0b0f14";
+
+if (process.platform === "linux") {
+  // FileChooser portal versions below 4 ignore dialog.defaultPath.
+  app.commandLine.appendSwitch("xdg-portal-required-version", "4");
+}
 
 if (process.env.BOATYARD_USER_DATA_PATH) {
   app.setPath("userData", canonicalizeDirectory(process.env.BOATYARD_USER_DATA_PATH));
@@ -513,6 +519,28 @@ async function readGitValue(sourcePath: unknown, args: string[]) {
     return stdout.trim();
   } catch {
     return "";
+  }
+}
+
+function isKdeDesktop() {
+  return process.platform === "linux" && /\bkde\b/i.test(String(process.env.XDG_CURRENT_DESKTOP || ""));
+}
+
+async function selectDirectoryWithKdeDialog(defaultPath: string, title: string): Promise<string | null | undefined> {
+  const args = ["--getexistingdirectory"];
+  if (defaultPath) {
+    args.push(defaultPath);
+  }
+  args.push("--title", title);
+
+  try {
+    const { stdout } = await execFileAsync("kdialog", args, {
+      timeout: 60_000,
+      windowsHide: true
+    });
+    return stdout.trim() || null;
+  } catch (error) {
+    return getErrorCode(error) === "ENOENT" ? undefined : null;
   }
 }
 
@@ -1099,14 +1127,28 @@ function registerIpcHandlers() {
     return true;
   });
 
-  ipcMain.handle("settings:select-projects-base-path", async (event: IpcMainInvokeEvent, currentPath: unknown) => {
+  ipcMain.handle("settings:select-projects-base-path", async (
+    event: IpcMainInvokeEvent,
+    currentPath: unknown,
+    title: unknown = undefined
+  ) => {
+    const dialogTitle = typeof title === "string" && title.trim() ? title.trim() : "Select projects base path";
+    const defaultPath = typeof currentPath === "string" ? currentPath.trim() : "";
+
+    if (isKdeDesktop()) {
+      const selectedPath = await selectDirectoryWithKdeDialog(defaultPath, dialogTitle);
+      if (selectedPath !== undefined) {
+        return selectedPath;
+      }
+    }
+
     const dialogOptions: UnknownRecord = {
-      title: "Select projects base path",
+      title: dialogTitle,
       properties: ["openDirectory", "createDirectory"]
     };
 
-    if (typeof currentPath === "string" && currentPath.trim()) {
-      dialogOptions.defaultPath = currentPath.trim();
+    if (defaultPath) {
+      dialogOptions.defaultPath = defaultPath;
     }
 
     const result = await dialog.showOpenDialog(getWorkspaceWindowForWebContents(event.sender)?.window || mainWindow, dialogOptions);

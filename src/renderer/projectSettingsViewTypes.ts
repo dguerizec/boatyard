@@ -28,7 +28,7 @@ export type ProjectPluginSectionOptions = {
 
 export type ProjectSettingsBoatyardBridge = BoatyardBridge & {
   inspectSourcePath?: (sourcePath: string) => Promise<UnknownRecord>;
-  selectProjectsBasePath?(currentPath?: string): Promise<string>;
+  selectProjectsBasePath?(currentPath?: string, title?: string): Promise<string>;
 };
 
 export type ProjectSettingsViewsOptions = {

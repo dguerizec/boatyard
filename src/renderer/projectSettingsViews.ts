@@ -155,7 +155,8 @@ export function createProjectSettingsViews({
             throw new Error("Project path picker is unavailable.");
           }
           const selectedPath = await boatyard.selectProjectsBasePath(
-            sourcePathInput.value || String(settings.projectsBasePath || "")
+            sourcePathInput.value || String(settings.projectsBasePath || ""),
+            "Select project source path"
           );
           if (selectedPath) {
             setCoreFieldValue("sourcePath", selectedPath, { markEdited: true, source: "browse" });
