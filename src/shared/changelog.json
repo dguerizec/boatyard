@@ -1,6 +1,22 @@
 {
-  "generatedForVersion": "0.9.1",
+  "generatedForVersion": "0.9.2",
   "releases": [
+    {
+      "version": "0.9.2",
+      "date": "2026-07-22",
+      "features": [
+        {
+          "category": "Added",
+          "title": "TwiCC setup for restored projects",
+          "body": "Restored Boatyard projects can now be registered with TwiCC directly from project settings."
+        },
+        {
+          "category": "Fixed",
+          "title": "KDE directory picker",
+          "body": "Project directory selection now works correctly on KDE desktops."
+        }
+      ]
+    },
     {
       "version": "0.9.1",
       "date": "2026-07-20",
