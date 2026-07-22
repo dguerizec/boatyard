@@ -857,23 +857,17 @@
   function syncProjectUrlField(event: TwiccSourcePathInspectedEvent) {
     const fields = event.fields;
     const inspected = event.inspected?.plugins?.["boatyard.twicc"] || {};
-    const currentValue = fields?.getValue("twiccProjectUrl") || "";
-    const canReplace = !fields?.isEdited("twiccProjectUrl") || !currentValue.trim();
 
     if (!fields) {
       return;
     }
 
-    fields.setActionVisible("twiccProjectUrl", false);
-
-    if (!canReplace) {
-      return;
-    }
-
     if (inspected.projectUrl && inspected.matchType === "exact") {
-      fields.setValue("twiccProjectUrl", inspected.projectUrl);
-    } else if (inspected.matchType === "parent") {
-      fields.setValue("twiccProjectUrl", "");
+      fields.setActionVisible("twiccProjectUrl", false);
+      if (!fields.isEdited("twiccProjectUrl") || !fields.getValue("twiccProjectUrl").trim()) {
+        fields.setValue("twiccProjectUrl", inspected.projectUrl);
+      }
+    } else {
       fields.setActionVisible("twiccProjectUrl", true);
     }
   }

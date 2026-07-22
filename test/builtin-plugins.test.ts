@@ -326,6 +326,40 @@ test("Twicc global settings expose base URL and API token fields", () => {
   assert.equal(fields.twiccApiToken.valueType, "text");
 });
 
+test("Twicc project settings offer project creation for a missing source path without clearing its configured URL", () => {
+  const registry = loadRendererPluginEnvironment();
+  const actionVisibility: boolean[] = [];
+  const values: Record<string, string> = {
+    twiccProjectUrl: "http://localhost:3500/project/restored-project"
+  };
+
+  registry.applyEnabledState({});
+  registry.emit("boatyard.projectForm.sourcePathInspected", {
+    inspected: {
+      plugins: {
+        "boatyard.twicc": {}
+      }
+    },
+    forPlugin: () => ({
+      fields: {
+        getValue: (key: string) => values[key] || "",
+        isEdited: () => false,
+        setActionVisible: (key: string, visible: boolean) => {
+          if (key === "twiccProjectUrl") {
+            actionVisibility.push(visible);
+          }
+        },
+        setValue: (key: string, value: string) => {
+          values[key] = value;
+        }
+      }
+    })
+  });
+
+  assert.deepEqual(actionVisibility, [true]);
+  assert.equal(values.twiccProjectUrl, "http://localhost:3500/project/restored-project");
+});
+
 test("Twicc project nav badge matches the configured Twicc project URL", async () => {
   const registry = loadRendererPluginEnvironment();
 

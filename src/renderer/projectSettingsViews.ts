@@ -447,7 +447,12 @@ export function createProjectSettingsViews({
           error.hidden = !message;
         }
       });
-    
+
+      const initialSourcePath = sourcePathInput.value.trim();
+      if (initialSourcePath) {
+        void applySourcePathInspection(initialSourcePath).catch(() => {});
+      }
+
       const actions = document.createElement("div");
       actions.className = "form-actions";
     
