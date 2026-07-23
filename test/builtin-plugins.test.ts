@@ -482,7 +482,7 @@ test("Hawser global settings expose a copyable install command", () => {
   assert.equal(fields.hawserInstallCommand.action.label, "Copy");
 });
 
-test("Pier project settings derive defaults from project identity", () => {
+test("Pier project settings only default the Pier project name", () => {
   const registry = loadRendererPluginEnvironment();
 
   registry.applyEnabledState({});
@@ -501,8 +501,9 @@ test("Pier project settings derive defaults from project identity", () => {
     resolveFieldDefault(fields.pierPreviewUrl, {
       project: { slug: "Jobo", devBranch: "feature/demo" }
     }),
-    "http://pier.test/#/projects/jobo"
+    ""
   );
+  assert.equal(fields.pierPreviewUrl.placeholder, "Optional custom Pier pane URL");
 
   const updatedDefaults: Record<string, unknown> = {};
   registry.emit("boatyard.projectForm.coreFieldChanged", {
@@ -522,10 +523,7 @@ test("Pier project settings derive defaults from project identity", () => {
     })
   });
 
-  assert.deepEqual(updatedDefaults, {
-    pierProjectName: "boatyard",
-    pierPreviewUrl: "http://pier.test/#/projects/boatyard"
-  });
+  assert.deepEqual(updatedDefaults, { pierProjectName: "boatyard" });
 });
 
 test("Pier pane resolves the project dashboard URL", () => {

@@ -139,11 +139,6 @@
     return normalizeApiUrl(options.globalPluginConfig?.pierUrl || options.globalPluginConfig?.pierApiUrl);
   }
 
-  function getDefaultPreviewUrl(project: PierProject = {}) {
-    const projectName = getDefaultPierProjectName(project);
-    return projectName ? `${getPierUrl()}/#/projects/${encodeURIComponent(projectName)}` : "";
-  }
-
   function getPierPaneUrl(project: PierProject = {}, options: PierOptions = {}) {
     const configuredUrl = String(options.pluginConfig?.pierPreviewUrl || "").trim();
     if (configuredUrl) {
@@ -835,7 +830,6 @@
 
     const fields = event.fields;
     fields?.setDefaultValue("pierProjectName", getDefaultPierProjectName(event.coreFields));
-    fields?.setDefaultValue("pierPreviewUrl", getDefaultPreviewUrl(event.coreFields));
   }
 
   registry.register(
@@ -899,10 +893,7 @@
               label: "Pier pane URL override",
               type: "text",
               valueType: "url",
-              placeholder: "http://pier.test/#/projects/project",
-              defaultValue({ project }: PierFieldContext) {
-                return getDefaultPreviewUrl(project);
-              }
+              placeholder: "Optional custom Pier pane URL"
             },
             {
               key: "pierProjectName",
