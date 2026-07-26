@@ -30,7 +30,7 @@ export type AppState = UnknownRecord & {
 };
 
 export type ProjectStoreInstance = {
-  addProject(values: unknown): unknown;
+  addProject(values: unknown, workspaceWindowId?: string | null): unknown;
   dismissChangelog(version: string): unknown;
   getAppState(): unknown;
   getState(): AppState;
@@ -43,21 +43,21 @@ export type ProjectStoreInstance = {
   ensureWorkspaceWindow(windowId: string, syncGroupId: string, sourceWindowId?: string | null): unknown;
   removeWorkspaceWindow(windowId: string): void;
   reconcileAppVersion(version: string): unknown;
-  removeProject(id: string): unknown;
-  reorderProjects(projectIds: unknown): unknown;
-  updateGlobalPluginConfig(pluginId: string, patch: unknown): unknown;
-  updateGlobalUrls(urls: unknown): unknown;
+  removeProject(id: string, workspaceWindowId?: string | null): unknown;
+  reorderProjects(projectIds: unknown, workspaceWindowId?: string | null): unknown;
+  updateGlobalPluginConfig(pluginId: string, patch: unknown, workspaceWindowId?: string | null): unknown;
+  updateGlobalUrls(urls: unknown, workspaceWindowId?: string | null): unknown;
   updateNavigation(navigation: unknown): unknown;
   updateOnboarding(onboarding: unknown): unknown;
   updatePaneLayout(projectId: string | null | undefined, layout: unknown): unknown;
-  updatePluginEnabled(pluginId: string, enabled: boolean): unknown;
-  updateProject(id: string, patch: unknown): unknown;
-  updateProjectPluginConfig(projectId: string, pluginId: string, patch: unknown): unknown;
-  updateSettings(patch: UnknownRecord): unknown;
+  updatePluginEnabled(pluginId: string, enabled: boolean, workspaceWindowId?: string | null): unknown;
+  updateProject(id: string, patch: unknown, workspaceWindowId?: string | null): unknown;
+  updateProjectPluginConfig(projectId: string, pluginId: string, patch: unknown, workspaceWindowId?: string | null): unknown;
+  updateSettings(patch: UnknownRecord, workspaceWindowId?: string | null): unknown;
   updateTerminalSelection(projectId: string, surfaceKey: string, windowId: string): unknown;
   updateTerminalTabOrder(projectId: string, windowIds: unknown): unknown;
-  updateWebAppHomeTab(projectId: string, tab: unknown): unknown;
-  updateWebAppHomeTabs(projectId: string, tabs: unknown): unknown;
+  updateWebAppHomeTab(projectId: string, tab: unknown, workspaceWindowId?: string | null): unknown;
+  updateWebAppHomeTabs(projectId: string, tabs: unknown, workspaceWindowId?: string | null): unknown;
   updateWebAppState(key: string, state: UnknownRecord): unknown;
   updateTopbarWidgets(topbarWidgets: unknown): unknown;
   updateWidgetLayout(projectId: string | null | undefined, layout: unknown): unknown;

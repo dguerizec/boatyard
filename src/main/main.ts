@@ -176,6 +176,10 @@ function getConfigurationForEvent(event: IpcMainInvokeEvent): ConfigurationConte
   return configuration;
 }
 
+function getWorkspaceWindowIdForEvent(event: IpcMainInvokeEvent): string | null {
+  return getWorkspaceWindowForWebContents(event.sender)?.id || null;
+}
+
 function getWorkspaceWindowForWebContents(webContents: ElectronWebContents) {
   return [...workspaceWindows.values()].find((workspaceWindow) => workspaceWindow.window.webContents.id === webContents.id) || null;
 }
@@ -1083,7 +1087,7 @@ function registerIpcHandlers() {
       );
     }
 
-    return configuration.store.updateSettings(patch);
+    return configuration.store.updateSettings(patch, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("navigation:update", (event: IpcMainInvokeEvent, navigation: unknown) => {
@@ -1199,43 +1203,48 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("projects:add", (event: IpcMainInvokeEvent, projectConfig: unknown) => {
-    return getConfigurationForEvent(event).store.addProject(projectConfig);
+    return getConfigurationForEvent(event).store.addProject(projectConfig, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("projects:update", (event: IpcMainInvokeEvent, id: string, patch: unknown) => {
-    return getConfigurationForEvent(event).store.updateProject(id, patch);
+    return getConfigurationForEvent(event).store.updateProject(id, patch, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("global-urls:update", (event: IpcMainInvokeEvent, urls: unknown) => {
-    return getConfigurationForEvent(event).store.updateGlobalUrls(urls);
+    return getConfigurationForEvent(event).store.updateGlobalUrls(urls, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("webapp-home-tab:update", (event: IpcMainInvokeEvent, projectId: string, tab: unknown) => {
-    return getConfigurationForEvent(event).store.updateWebAppHomeTab(projectId, tab);
+    return getConfigurationForEvent(event).store.updateWebAppHomeTab(projectId, tab, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("webapp-home-tabs:update", (event: IpcMainInvokeEvent, projectId: string, tabs: unknown) => {
-    return getConfigurationForEvent(event).store.updateWebAppHomeTabs(projectId, tabs);
+    return getConfigurationForEvent(event).store.updateWebAppHomeTabs(projectId, tabs, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("projects:reorder", (event: IpcMainInvokeEvent, projectIds: unknown) => {
-    return getConfigurationForEvent(event).store.reorderProjects(projectIds);
+    return getConfigurationForEvent(event).store.reorderProjects(projectIds, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("projects:remove", (event: IpcMainInvokeEvent, id: string) => {
-    return getConfigurationForEvent(event).store.removeProject(id);
+    return getConfigurationForEvent(event).store.removeProject(id, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("plugins:enabled:update", (event: IpcMainInvokeEvent, pluginId: string, enabled: boolean) => {
-    return getConfigurationForEvent(event).store.updatePluginEnabled(pluginId, enabled);
+    return getConfigurationForEvent(event).store.updatePluginEnabled(pluginId, enabled, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("global-plugin-config:update", (event: IpcMainInvokeEvent, pluginId: string, patch: unknown) => {
-    return getConfigurationForEvent(event).store.updateGlobalPluginConfig(pluginId, patch);
+    return getConfigurationForEvent(event).store.updateGlobalPluginConfig(pluginId, patch, getWorkspaceWindowIdForEvent(event));
   });
 
   ipcMain.handle("project-plugin-config:update", (event: IpcMainInvokeEvent, projectId: string, pluginId: string, patch: unknown) => {
-    return getConfigurationForEvent(event).store.updateProjectPluginConfig(projectId, pluginId, patch);
+    return getConfigurationForEvent(event).store.updateProjectPluginConfig(
+      projectId,
+      pluginId,
+      patch,
+      getWorkspaceWindowIdForEvent(event)
+    );
   });
 
   ipcMain.handle("pane-layout:update", (event: IpcMainInvokeEvent, projectId: string | null | undefined, layout: unknown) => {

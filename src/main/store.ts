@@ -706,6 +706,12 @@ class ProjectStore {
     });
   }
 
+  private getMutationState(workspaceWindowId: unknown = null): ProjectStoreState {
+    return workspaceWindowId === null || workspaceWindowId === undefined
+      ? this.getState()
+      : this.getStateForWorkspaceWindow(workspaceWindowId);
+  }
+
   getWorkspaceWindowStates(): WorkspaceWindowState[] {
     return structuredClone(Object.values(this.state.workspaceSession.windows));
   }
@@ -893,13 +899,13 @@ class ProjectStore {
     return this.getAppState();
   }
 
-  updateSettings(patch: unknown): ProjectStoreState {
+  updateSettings(patch: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     this.state.settings = normalizeSettings({
       ...this.state.settings,
       ...toRecord(patch)
     });
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
   updateWindowState(windowState: unknown): WindowState {
@@ -947,13 +953,13 @@ class ProjectStore {
     return structuredClone(this.state.webApps[String(key)] || null);
   }
 
-  updateGlobalUrls(urls: unknown): ProjectStoreState {
+  updateGlobalUrls(urls: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     this.state.globalUrls = normalizeProjectUrls(urls);
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
-  updateWebAppHomeTab(projectId: unknown, tab: unknown): ProjectStoreState {
+  updateWebAppHomeTab(projectId: unknown, tab: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const normalizedProjectId = normalizeText(projectId);
     const projectIndex = this.state.projects.findIndex((project) => project.id === normalizedProjectId);
     if (projectIndex === -1) {
@@ -977,10 +983,10 @@ class ProjectStore {
       ]
     };
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
-  updateWebAppHomeTabs(projectId: unknown, tabs: unknown): ProjectStoreState {
+  updateWebAppHomeTabs(projectId: unknown, tabs: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const normalizedProjectId = normalizeText(projectId);
     const projectIndex = this.state.projects.findIndex((project) => project.id === normalizedProjectId);
     if (projectIndex === -1) {
@@ -993,7 +999,7 @@ class ProjectStore {
     };
 
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
   getPasswordCredential(origin: unknown): PasswordCredentialState | null {
@@ -1114,7 +1120,7 @@ class ProjectStore {
     return structuredClone(this.state.terminalTabOrders[normalizedProjectId] || []);
   }
 
-  updatePluginEnabled(pluginId: unknown, enabled: unknown): ProjectStoreState {
+  updatePluginEnabled(pluginId: unknown, enabled: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const normalizedPluginId = normalizeText(pluginId);
 
     if (!normalizedPluginId) {
@@ -1128,14 +1134,14 @@ class ProjectStore {
     }
 
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
   getGlobalPluginConfig(pluginId: unknown): PluginConfigObject {
     return structuredClone(this.state.pluginConfig.global[String(pluginId)] || {});
   }
 
-  updateGlobalPluginConfig(pluginId: unknown, patch: unknown): ProjectStoreState {
+  updateGlobalPluginConfig(pluginId: unknown, patch: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const normalizedPluginId = normalizeText(pluginId);
 
     if (!normalizedPluginId) {
@@ -1155,14 +1161,14 @@ class ProjectStore {
     }
 
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
   getProjectPluginConfig(projectId: unknown, pluginId: unknown): PluginConfigObject {
     return structuredClone(this.state.pluginConfig.projects[String(projectId)]?.[String(pluginId)] || {});
   }
 
-  updateProjectPluginConfig(projectId: unknown, pluginId: unknown, patch: unknown): ProjectStoreState {
+  updateProjectPluginConfig(projectId: unknown, pluginId: unknown, patch: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const normalizedProjectId = normalizeText(projectId);
     const normalizedPluginId = normalizeText(pluginId);
 
@@ -1196,10 +1202,10 @@ class ProjectStore {
     }
 
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
-  addProject(project: unknown): ProjectStoreState {
+  addProject(project: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const normalized = normalizeProject(
       {
         ...toRecord(project),
@@ -1211,10 +1217,10 @@ class ProjectStore {
     this.state.projects.push(normalized);
     this.state.pluginConfig = normalizePluginConfig(this.state.pluginConfig, this.state.projects);
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
-  updateProject(id: unknown, patch: unknown): ProjectStoreState {
+  updateProject(id: unknown, patch: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const projectId = normalizeText(id);
     const patchRecord = toRecord(patch);
     const index = this.state.projects.findIndex((project) => project.id === projectId);
@@ -1232,10 +1238,10 @@ class ProjectStore {
     }, index);
     this.state.pluginConfig = normalizePluginConfig(this.state.pluginConfig, this.state.projects);
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
-  reorderProjects(projectIds: unknown): ProjectStoreState {
+  reorderProjects(projectIds: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const order = Array.isArray(projectIds) ? projectIds.map(String) : [];
     const positionById = new Map(order.map((id, index) => [id, index]));
     this.state.projects = this.state.projects
@@ -1249,10 +1255,10 @@ class ProjectStore {
       })
       .map(({ project }) => project);
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 
-  removeProject(id: unknown): ProjectStoreState {
+  removeProject(id: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const projectId = String(id);
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
     delete this.state.paneLayouts[projectId];
@@ -1281,7 +1287,7 @@ class ProjectStore {
     }
 
     this.save();
-    return this.getState();
+    return this.getMutationState(workspaceWindowId);
   }
 }
 

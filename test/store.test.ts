@@ -170,6 +170,103 @@ test("ProjectStore keeps window layouts independent while synchronizing project 
   assert.equal(reloaded.getStateForWorkspaceWindow("window-b").paneLayouts[projectA].id, "b-pane");
 });
 
+test("ProjectStore returns the caller workspace state after shared mutations", () => {
+  const { store } = createTempStore();
+  store.load();
+  const projectId = store.addProject({ name: "Project", sourcePath: "/workspace/project" }).projects[0].id;
+  const oldLayout = { type: "pane", id: "old-pane" };
+  const workspaceLayout = {
+    type: "split",
+    id: "workspace-split",
+    direction: "vertical",
+    ratio: 0.5,
+    first: { type: "pane", id: "workspace-pane-a" },
+    second: { type: "pane", id: "workspace-pane-b" }
+  };
+
+  store.updatePaneLayout(projectId, oldLayout);
+  store.ensureWorkspaceWindow("window-a", "group-a");
+  store.updateWorkspaceNavigation("window-a", {
+    view: "project",
+    projectId,
+    collapsedProjectGroups: [],
+    pinnedProjectIds: [projectId],
+    sidebarCollapsed: false
+  });
+  store.updateWorkspacePaneLayout("window-a", projectId, workspaceLayout);
+
+  const assertWorkspaceResponse = (label: string, response: {
+    navigation: { pinnedProjectIds: string[] };
+    paneLayouts: Record<string, unknown>;
+  }) => {
+    assert.deepEqual(response.navigation.pinnedProjectIds, [projectId], `${label} returned stale pinned projects`);
+    assert.deepEqual(response.paneLayouts[projectId], workspaceLayout, `${label} returned a stale pane layout`);
+  };
+
+  assertWorkspaceResponse("settings update", store.updateSettings({ blurWebAppOverlays: false }, "window-a"));
+  assertWorkspaceResponse("global URL update", store.updateGlobalUrls([], "window-a"));
+  assertWorkspaceResponse("project update", store.updateProject(projectId, { name: "Renamed" }, "window-a"));
+  assertWorkspaceResponse("home tab update", store.updateWebAppHomeTab(projectId, {
+    id: "home:status",
+    parentWebAppId: "preview",
+    parentLabel: "Preview",
+    label: "Status",
+    url: "https://status.example.test"
+  }, "window-a"));
+  assertWorkspaceResponse("home tabs update", store.updateWebAppHomeTabs(projectId, [], "window-a"));
+  assertWorkspaceResponse("project reorder", store.reorderProjects([projectId], "window-a"));
+  assertWorkspaceResponse("plugin enabled update", store.updatePluginEnabled("vendor.plugin", false, "window-a"));
+  assertWorkspaceResponse("global plugin update", store.updateGlobalPluginConfig("vendor.plugin", { enabled: true }, "window-a"));
+  assertWorkspaceResponse("project plugin update", store.updateProjectPluginConfig(projectId, "vendor.plugin", { enabled: true }, "window-a"));
+
+  const added = store.addProject({ name: "Temporary", sourcePath: "/workspace/temporary" }, "window-a");
+  assertWorkspaceResponse("project add", added);
+  const temporaryProjectId = added.projects.find((project: StoreProject) => project.name === "Temporary").id;
+  assertWorkspaceResponse("project removal", store.removeProject(temporaryProjectId, "window-a"));
+});
+
+test("ProjectStore does not persist stale workspace navigation and panes after a shared mutation", () => {
+  const { filePath, store } = createTempStore();
+  store.load();
+  const projectId = store.addProject({ name: "Project", sourcePath: "/workspace/project" }).projects[0].id;
+  const oldLayout = { type: "pane", id: "old-pane" };
+  const workspaceLayout = {
+    type: "split",
+    id: "workspace-split",
+    direction: "vertical",
+    ratio: 0.5,
+    first: { type: "pane", id: "workspace-pane-a" },
+    second: { type: "pane", id: "workspace-pane-b" }
+  };
+
+  store.updateNavigation({
+    view: "project",
+    projectId,
+    collapsedProjectGroups: [],
+    pinnedProjectIds: [],
+    sidebarCollapsed: false
+  });
+  store.updatePaneLayout(projectId, oldLayout);
+  store.ensureWorkspaceWindow("window-a", "group-a");
+  store.updateWorkspaceNavigation("window-a", {
+    view: "project",
+    projectId,
+    collapsedProjectGroups: [],
+    pinnedProjectIds: [projectId],
+    sidebarCollapsed: false
+  });
+  store.updateWorkspacePaneLayout("window-a", projectId, workspaceLayout);
+
+  const rendererState = store.updateGlobalUrls([], "window-a");
+  store.updateWorkspaceNavigation("window-a", rendererState.navigation);
+  store.updateWorkspacePaneLayout("window-a", projectId, rendererState.paneLayouts[projectId]);
+
+  const reloaded = new ProjectStore(filePath);
+  const restoredWorkspace = reloaded.load().workspaceSession.windows["window-a"];
+  assert.deepEqual(restoredWorkspace.navigation.pinnedProjectIds, [projectId]);
+  assert.deepEqual(restoredWorkspace.paneLayouts[projectId], workspaceLayout);
+});
+
 test("ProjectStore persists global settings", () => {
   const { filePath, store } = createTempStore();
 
