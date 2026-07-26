@@ -1,4 +1,5 @@
 import type { UnknownRecord } from "./rendererRecords.js";
+import { createGlobalSettingsShell } from "./globalSettingsShell.js";
 
 type GlobalSettingsPageViewOptions = {
   closeTerminalTabMenu: () => void;
@@ -53,6 +54,8 @@ export function createGlobalSettingsPageView({
   workspaceSummary,
   workspaceTitle
 }: GlobalSettingsPageViewOptions) {
+  let activeSectionId = "general";
+
   function renderGlobalSettingsPage() {
     closeWidgetAddMenu();
     closeTerminalTabMenu();
@@ -61,49 +64,144 @@ export function createGlobalSettingsPageView({
     workspace.classList.remove("project-mode");
     workspaceKicker.textContent = "Global";
     workspaceTitle.textContent = "Global settings";
-    workspaceSummary.textContent = "";
+    workspaceSummary.textContent = "Manage Boatyard preferences from one place.";
     dashboardGrid.innerHTML = "";
-    dashboardGrid.className = "project-form-layout global-settings-layout";
+    dashboardGrid.className = "global-settings-layout";
     dashboardGrid.style.gridTemplateColumns = "";
 
-    dashboardGrid.append(createGlobalUpdateCard(), createGlobalProjectsSettingsForm({
+    const projectsSettings = createGlobalProjectsSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
         renderGlobalSettingsPage();
       }
-    }), createGlobalUrlsSettingsForm({
+    });
+    const globalUrlsSettings = createGlobalUrlsSettingsForm({
       onSubmit: async (urls: unknown) => {
         await updateGlobalUrls(urls);
         hydratePaneLayouts();
         hydrateWidgetLayouts();
         renderGlobalSettingsPage();
       }
-    }), createGlobalPresentationSettingsForm({
+    });
+    const presentationSettings = createGlobalPresentationSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
         renderGlobalSettingsPage();
       }
-    }), createGlobalTerminalSettingsForm({
+    });
+    const terminalSettings = createGlobalTerminalSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
         renderGlobalSettingsPage();
       }
-    }), createGlobalPasswordManagerSettingsForm({
+    });
+    const passwordSettings = createGlobalPasswordManagerSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
         renderGlobalSettingsPage();
       }
-    }), createGlobalWebAppOpenRulesSettingsForm({
+    });
+    const openRulesSettings = createGlobalWebAppOpenRulesSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
         renderGlobalSettingsPage();
       }
-    }), createGlobalPluginsSettingsView(), createGlobalWidgetsSettingsView());
+    });
+    const pluginsSettings = createGlobalPluginsSettingsView();
+    const widgetsSettings = createGlobalWidgetsSettingsView();
+    const updateSettingsCard = createGlobalUpdateCard();
+
+    const pluginCount = pluginsSettings.querySelectorAll(".installed-plugin-item").length;
+    const widgetCount = widgetsSettings.querySelectorAll(".installed-widget-item").length;
+    const shell = createGlobalSettingsShell({
+      initialSectionId: activeSectionId,
+      onSectionChange(sectionId) {
+        activeSectionId = sectionId;
+      },
+      sections: [
+        {
+          id: "general",
+          label: "General",
+          description: "Core defaults shared by projects and tooling.",
+          group: "boatyard",
+          icon: "sliders",
+          keywords: ["projects", "base path", "defaults"],
+          elements: [projectsSettings]
+        },
+        {
+          id: "appearance",
+          label: "Appearance",
+          description: "Presentation preferences for embedded webapps.",
+          group: "boatyard",
+          icon: "settingsMonitor",
+          keywords: ["presentation", "blur", "screenshots"],
+          elements: [presentationSettings]
+        },
+        {
+          id: "terminal",
+          label: "Terminal",
+          description: "Defaults applied to new terminal sessions.",
+          group: "boatyard",
+          icon: "terminal",
+          keywords: ["environment", "variables", "shell"],
+          elements: [terminalSettings]
+        },
+        {
+          id: "security",
+          label: "Security",
+          description: "Local credentials and autofill preferences.",
+          group: "boatyard",
+          icon: "settingsShield",
+          keywords: ["password manager", "credentials", "autofill"],
+          elements: [passwordSettings]
+        },
+        {
+          id: "webapps",
+          label: "Web apps",
+          description: "Global URLs and link routing behavior.",
+          group: "boatyard",
+          icon: "settingsGlobe",
+          keywords: ["urls", "rules", "links", "domains"],
+          elements: [globalUrlsSettings, openRulesSettings]
+        },
+        {
+          id: "plugins",
+          label: "Plugins",
+          description: "Installed extensions, health and contributions.",
+          group: "extensions",
+          icon: "plug",
+          badge: String(pluginCount),
+          keywords: ["extensions", "Pier", "Twicc", "Hawser", "Telegram"],
+          elements: [pluginsSettings]
+        },
+        {
+          id: "widgets",
+          label: "Widgets",
+          description: "Widget extensions available to workspaces.",
+          group: "extensions",
+          icon: "grid",
+          badge: String(widgetCount),
+          keywords: ["extensions", "panes", "dashboard"],
+          elements: [widgetsSettings]
+        },
+        {
+          id: "about",
+          label: "About",
+          description: "Version, updates and release notes.",
+          group: "system",
+          icon: "info",
+          keywords: ["version", "updates", "changelog"],
+          elements: [updateSettingsCard]
+        }
+      ]
+    });
+
+    dashboardGrid.append(shell.element);
 
     emitOpened();
   }

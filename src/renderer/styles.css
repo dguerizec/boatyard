@@ -821,15 +821,220 @@ body.sidebar-collapsed .workspace {
 
 .global-settings-layout {
   display: block;
-  column-width: 460px;
-  column-gap: 16px;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
 }
 
-.global-settings-layout > .project-form-page {
-  display: inline-block;
+.global-settings-shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  height: calc(100vh - 188px);
+  min-height: 640px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(18, 23, 29, 0.94);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.22);
+}
+
+.global-settings-index {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.075);
+  background: rgba(10, 14, 18, 0.38);
+}
+
+.global-settings-search {
+  position: relative;
+  display: block;
+  margin: 0 2px 16px;
+}
+
+.global-settings-search .webapp-tool-icon {
+  position: absolute;
+  top: 10px;
+  left: 11px;
+  width: 14px;
+  height: 14px;
+  color: #74818c;
+}
+
+.global-settings-search input {
   width: 100%;
-  margin: 0 0 16px;
-  break-inside: avoid;
+  min-height: 36px;
+  padding: 0 50px 0 34px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0d1318;
+  color: var(--text);
+}
+
+.global-settings-search input::placeholder {
+  color: #75818c;
+}
+
+.global-settings-search input:focus {
+  border-color: var(--accent);
+  outline: 2px solid rgba(65, 184, 131, 0.25);
+}
+
+.global-settings-search-shortcut {
+  position: absolute;
+  top: 11px;
+  right: 9px;
+  color: #6f7c87;
+  font-size: 9px;
+}
+
+.global-settings-nav {
+  display: grid;
+  gap: 3px;
+}
+
+.global-settings-nav-group {
+  margin: 13px 10px 6px;
+  color: #71808d;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.global-settings-nav-button {
+  width: 100%;
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #b9c3cc;
+  text-align: left;
+}
+
+.global-settings-nav-button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.global-settings-nav-button.active {
+  border-color: rgba(65, 184, 131, 0.28);
+  background: rgba(65, 184, 131, 0.12);
+  color: #dff9ec;
+}
+
+.global-settings-nav-button.active .webapp-tool-icon {
+  color: var(--accent);
+}
+
+.global-settings-nav-badge {
+  min-width: 20px;
+  min-height: 18px;
+  display: inline-grid;
+  place-items: center;
+  margin-left: auto;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.global-settings-search-empty {
+  margin: 20px 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.global-settings-stage {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.global-settings-stage-header {
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 24px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.global-settings-stage-header h3,
+.global-settings-stage-header p {
+  margin: 0;
+}
+
+.global-settings-stage-header h3 {
+  font-size: 20px;
+}
+
+.global-settings-stage-header p {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.global-settings-saved-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.global-settings-saved-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.global-settings-content {
+  min-width: 0;
+  overflow: auto;
+  padding: 7px 24px 35px;
+}
+
+.global-settings-category-page {
+  width: 100%;
+  max-width: 920px;
+}
+
+.global-settings-category-page[hidden] {
+  display: none;
+}
+
+.global-settings-category-page > .project-form-page {
+  padding: 25px 0;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.global-settings-category-page > .project-form-page:last-child {
+  border-bottom: 0;
+}
+
+.global-settings-category-page .form-heading h3 {
+  font-size: 15px;
+}
+
+.global-settings-category-page .form-heading p {
+  max-width: 640px;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .project-settings-layout {

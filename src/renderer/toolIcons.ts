@@ -16,6 +16,11 @@ const LUCIDE_TOOL_ICONS: Record<string, IconNode> = {
 };
 
 const TOOL_ICONS: Record<string, string[]> = {
+  alert: [
+    "M12 9v4",
+    "M12 17h.01",
+    "M10.3 4.1 2.7 18a2 2 0 0 0 1.8 3h15a2 2 0 0 0 1.8-3L13.7 4.1a2 2 0 0 0-3.4 0z"
+  ],
   arrowLeft: [
     "M19 12H5",
     "M12 5l-7 7 7 7"
@@ -39,6 +44,17 @@ const TOOL_ICONS: Record<string, string[]> = {
     "M6.5 10v9h11v-9",
     "M10 19v-5h4v5"
   ],
+  grid: [
+    "M4 4h6v6H4z",
+    "M14 4h6v6h-6z",
+    "M4 14h6v6H4z",
+    "M14 14h6v6h-6z"
+  ],
+  info: [
+    "M12 11v6",
+    "M12 7h.01",
+    "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"
+  ],
   lock: [
     "M6.5 10V7.5a5.5 5.5 0 0 1 11 0V10",
     "M5.5 10h13a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-7A1.5 1.5 0 0 1 5.5 10z"
@@ -46,6 +62,13 @@ const TOOL_ICONS: Record<string, string[]> = {
   pencil: [
     "M12 20h9",
     "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"
+  ],
+  plug: [
+    "M8 12 16 4",
+    "M14 4l6 6",
+    "M4 14l6 6",
+    "M11 9l4 4",
+    "M7 17l-3 3"
   ],
   plus: [
     "M12 5v14",
@@ -56,6 +79,35 @@ const TOOL_ICONS: Record<string, string[]> = {
     "M4 18v-5h5",
     "M18 11a6.5 6.5 0 0 0-11.42-4.24L4 9",
     "M6 13a6.5 6.5 0 0 0 11.42 4.24L20 15"
+  ],
+  search: [
+    "M20 20l-4.4-4.4",
+    "M18 11a7 7 0 1 1-14 0 7 7 0 0 1 14 0z"
+  ],
+  settingsGlobe: [
+    "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z",
+    "M3 12h18",
+    "M12 3c2.4 2.5 3.7 5.5 3.7 9S14.4 18.5 12 21c-2.4-2.5-3.7-5.5-3.7-9S9.6 5.5 12 3z"
+  ],
+  settingsMonitor: [
+    "M3 4h18v13H3z",
+    "M8 21h8",
+    "M12 17v4"
+  ],
+  settingsShield: [
+    "M12 3 4.5 6v5.5c0 4.5 3.2 7.8 7.5 9.5 4.3-1.7 7.5-5 7.5-9.5V6z",
+    "M9 12l2 2 4-4"
+  ],
+  sliders: [
+    "M4 6h10",
+    "M18 6h2",
+    "M4 12h3",
+    "M11 12h9",
+    "M4 18h8",
+    "M16 18h4",
+    "M16 4v4",
+    "M9 10v4",
+    "M14 16v4"
   ],
   shrinkPane: [
     "M10 3v7H3",
@@ -74,6 +126,11 @@ const TOOL_ICONS: Record<string, string[]> = {
   splitVertical: [
     "M4 5.5C4 4.67 4.67 4 5.5 4h13c.83 0 1.5.67 1.5 1.5v13c0 .83-.67 1.5-1.5 1.5h-13C4.67 20 4 19.33 4 18.5z",
     "M12 4v16"
+  ],
+  terminal: [
+    "M3 4h18v16H3z",
+    "M7 9l3 3-3 3",
+    "M13 15h4"
   ],
   trash: [
     "M3 6h18",
