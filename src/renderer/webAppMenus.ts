@@ -219,9 +219,14 @@ export function createWebAppMenus({
       }
     }
 
-    function createTransientWebApp(url: string, label = "", parentWebApp: MenuWebApp | null = null): MenuWebApp {
+    function createTransientWebApp(
+      url: string,
+      label = "",
+      parentWebApp: MenuWebApp | null = null,
+      id = ""
+    ): MenuWebApp {
       return {
-        id: `transient:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+        id: id || `transient:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
         label: label || `Temp: ${getWebAppOpenUrlLabel(url)}`,
         parentLabel: String(parentWebApp?.label || ""),
         parentWebAppId: parentWebApp?.id || "",
@@ -342,7 +347,12 @@ export function createWebAppMenus({
         return false;
       }
 
-      const transientWebApp = createTransientWebApp(url, "", sourceEntry?.webApp || null);
+      const transientWebApp = createTransientWebApp(
+        url,
+        "",
+        sourceEntry?.webApp || null,
+        destinationPaneNode.transientWebApp?.id
+      );
       destinationPaneNode.transientWebApp = transientWebApp;
       destinationPaneNode.selectedWebAppId = transientWebApp.id;
       setSelectedWebAppForPane(destinationPaneNode.id, transientWebApp.id);
