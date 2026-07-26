@@ -1,4 +1,10 @@
 import { createToolIcon } from "./toolIcons.js";
+import {
+  GLOBAL_SETTINGS_SAVE_REQUEST_EVENT,
+  getGlobalSettingsFormController,
+  serializeGlobalSettingsState,
+  type GlobalSettingsFormController
+} from "./globalSettingsFormController.js";
 
 export type GlobalSettingsSectionGroup = "boatyard" | "extensions" | "system";
 
@@ -15,6 +21,8 @@ export type GlobalSettingsSection = {
 
 type GlobalSettingsShellOptions = {
   initialSectionId?: string;
+  onDiscard?: () => void;
+  onSaveComplete?: () => void;
   onSectionChange?: (sectionId: string) => void;
   sections: GlobalSettingsSection[];
 };
@@ -70,6 +78,8 @@ function createNavigationButton(section: GlobalSettingsSection) {
 export function createGlobalSettingsShell({
   sections,
   initialSectionId,
+  onDiscard,
+  onSaveComplete,
   onSectionChange
 }: GlobalSettingsShellOptions) {
   const sectionById = new Map(sections.map((section) => [section.id, section]));
@@ -144,23 +154,31 @@ export function createGlobalSettingsShell({
   savedState.className = "global-settings-saved-state";
   const savedDot = document.createElement("span");
   savedDot.className = "global-settings-saved-dot";
-  savedState.append(savedDot, "Stored locally");
+  const savedLabel = document.createElement("span");
+  savedLabel.textContent = "All changes saved";
+  savedState.append(savedDot, savedLabel);
   header.append(heading, savedState);
 
   const content = document.createElement("div");
   content.className = "global-settings-content";
 
   const pagesById = new Map<string, HTMLElement>();
+  const controllerSections = new Map<GlobalSettingsFormController, string>();
   for (const section of sections) {
     const page = document.createElement("section");
     page.className = "global-settings-category-page";
     page.dataset.sectionId = section.id;
     page.hidden = true;
     page.append(...section.elements);
+    for (const element of section.elements) {
+      const controller = getGlobalSettingsFormController(element);
+      if (controller) {
+        controllerSections.set(controller, section.id);
+      }
+    }
     pagesById.set(section.id, page);
     content.append(page);
   }
-
   function selectSection(sectionId: string) {
     const section = sectionById.get(sectionId);
     if (!section) {
@@ -219,9 +237,130 @@ export function createGlobalSettingsShell({
     }
   });
 
-  stage.append(header, content);
+  const actionBar = document.createElement("footer");
+  actionBar.className = "global-settings-action-bar";
+
+  const changeState = document.createElement("div");
+  changeState.className = "global-settings-change-state";
+  const changeIcon = document.createElement("span");
+  changeIcon.className = "global-settings-change-icon";
+  changeIcon.append(createToolIcon("check"));
+  const changeLabel = document.createElement("span");
+  changeLabel.textContent = "All changes saved";
+  changeState.append(changeIcon, changeLabel);
+
+  const actionButtons = document.createElement("div");
+  actionButtons.className = "global-settings-action-buttons";
+
+  const discardButton = document.createElement("button");
+  discardButton.className = "secondary-button";
+  discardButton.type = "button";
+  discardButton.textContent = "Discard";
+  discardButton.disabled = true;
+
+  const saveButton = document.createElement("button");
+  saveButton.className = "primary-button";
+  saveButton.type = "button";
+  saveButton.textContent = "Save changes";
+  saveButton.disabled = true;
+
+  actionButtons.append(discardButton, saveButton);
+  actionBar.append(changeState, actionButtons);
+
+  const initialStates = new Map(
+    [...controllerSections.keys()].map((controller) => [
+      controller,
+      serializeGlobalSettingsState(controller.getState())
+    ])
+  );
+  let saving = false;
+  let displayedDirtyState = false;
+
+  function getDirtyControllers() {
+    return [...controllerSections.keys()].filter((controller) => (
+      serializeGlobalSettingsState(controller.getState()) !== initialStates.get(controller)
+    ));
+  }
+
+  function refreshChangeState() {
+    const dirtyCount = getDirtyControllers().length;
+    const dirty = dirtyCount > 0;
+    shell.classList.toggle("dirty", dirty);
+    changeState.classList.toggle("dirty", dirty);
+    if (dirty !== displayedDirtyState) {
+      changeIcon.replaceChildren(createToolIcon(dirty ? "alert" : "check"));
+      displayedDirtyState = dirty;
+    }
+    changeLabel.textContent = dirty
+      ? `${dirtyCount} unsaved ${dirtyCount === 1 ? "section" : "sections"}`
+      : "All changes saved";
+    savedDot.classList.toggle("dirty", dirty);
+    savedLabel.textContent = dirty ? `${dirtyCount} pending` : "All changes saved";
+    discardButton.disabled = saving || !dirty;
+    saveButton.disabled = saving || !dirty;
+  }
+
+  async function saveChanges() {
+    if (saving) {
+      return;
+    }
+
+    const dirtyControllers = getDirtyControllers();
+    if (!dirtyControllers.length) {
+      return;
+    }
+
+    saving = true;
+    saveButton.textContent = "Saving...";
+    refreshChangeState();
+
+    try {
+      for (const controller of dirtyControllers) {
+        try {
+          await controller.save();
+        } catch (error) {
+          const sectionId = controllerSections.get(controller);
+          if (sectionId) {
+            selectSection(sectionId);
+          }
+          throw error;
+        }
+      }
+
+      for (const controller of dirtyControllers) {
+        initialStates.set(controller, serializeGlobalSettingsState(controller.getState()));
+      }
+      onSaveComplete?.();
+    } catch (error) {
+      console.error("Could not save global settings:", error);
+    } finally {
+      saving = false;
+      saveButton.textContent = "Save changes";
+      refreshChangeState();
+    }
+  }
+
+  shell.addEventListener("input", refreshChangeState);
+  shell.addEventListener("change", refreshChangeState);
+  shell.addEventListener(GLOBAL_SETTINGS_SAVE_REQUEST_EVENT, () => {
+    void saveChanges();
+  });
+  const observer = new MutationObserver(refreshChangeState);
+  observer.observe(content, { childList: true, subtree: true });
+
+  discardButton.addEventListener("click", () => {
+    if (!saving && getDirtyControllers().length) {
+      onDiscard?.();
+    }
+  });
+  saveButton.addEventListener("click", () => {
+    void saveChanges();
+  });
+
+  stage.append(header, content, actionBar);
   shell.append(index, stage);
   selectSection(activeSectionId);
+  refreshChangeState();
 
   return Object.freeze({
     element: shell,

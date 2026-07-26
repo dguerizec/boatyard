@@ -1,4 +1,5 @@
 import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSettings.js";
+import { bindGlobalSettingsForm } from "./globalSettingsFormController.js";
 import type { BoatyardBridge } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 
@@ -160,35 +161,20 @@ export function createGlobalSettingsViews({
       error.setAttribute("role", "alert");
       error.hidden = true;
 
-      const actions = document.createElement("div");
-      actions.className = "form-actions";
-
-      const submitButton = document.createElement("button");
-      submitButton.className = "primary-button";
-      submitButton.type = "submit";
-      submitButton.textContent = "Save projects settings";
-
-      actions.append(submitButton);
-      form.append(heading, projectsBasePathLabel, error, actions);
+      form.append(heading, projectsBasePathLabel, error);
       applyFormControls(form);
 
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        error.textContent = "";
-        error.hidden = true;
-
-        try {
-          await onSubmit({
-            projectsBasePath: projectsBasePathInput.value
-          });
-        } catch (submitError) {
-          error.textContent = asErrorMessage(submitError);
-          error.hidden = false;
-        }
+      bindGlobalSettingsForm({
+        root: shell,
+        form,
+        error,
+        getValues: () => ({
+          projectsBasePath: projectsBasePathInput.value
+        }),
+        onSubmit
       });
 
       shell.append(form);
-      requestAnimationFrame(() => projectsBasePathInput.focus());
       return shell;
     }
 
@@ -232,31 +218,17 @@ export function createGlobalSettingsViews({
       error.setAttribute("role", "alert");
       error.hidden = true;
 
-      const actions = document.createElement("div");
-      actions.className = "form-actions";
-
-      const submitButton = document.createElement("button");
-      submitButton.className = "primary-button";
-      submitButton.type = "submit";
-      submitButton.textContent = "Save presentation";
-
-      actions.append(submitButton);
-      form.append(heading, blurLabel, error, actions);
+      form.append(heading, blurLabel, error);
       applyFormControls(form);
 
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        error.textContent = "";
-        error.hidden = true;
-
-        try {
-          await onSubmit({
-            blurWebAppOverlays: blurSwitch.checked
-          });
-        } catch (submitError) {
-          error.textContent = asErrorMessage(submitError);
-          error.hidden = false;
-        }
+      bindGlobalSettingsForm({
+        root: shell,
+        form,
+        error,
+        getValues: () => ({
+          blurWebAppOverlays: blurSwitch.checked
+        }),
+        onSubmit
       });
 
       shell.append(form);
@@ -294,31 +266,17 @@ export function createGlobalSettingsViews({
       error.setAttribute("role", "alert");
       error.hidden = true;
 
-      const actions = document.createElement("div");
-      actions.className = "form-actions";
-
-      const submitButton = document.createElement("button");
-      submitButton.className = "primary-button";
-      submitButton.type = "submit";
-      submitButton.textContent = "Save terminal";
-
-      actions.append(submitButton);
-      form.append(heading, terminalEnvLabel, error, actions);
+      form.append(heading, terminalEnvLabel, error);
       applyFormControls(form);
 
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        error.textContent = "";
-        error.hidden = true;
-
-        try {
-          await onSubmit({
-            terminalEnv: terminalEnvInput.value
-          });
-        } catch (submitError) {
-          error.textContent = asErrorMessage(submitError);
-          error.hidden = false;
-        }
+      bindGlobalSettingsForm({
+        root: shell,
+        form,
+        error,
+        getValues: () => ({
+          terminalEnv: terminalEnvInput.value
+        }),
+        onSubmit
       });
 
       shell.append(form);
@@ -383,38 +341,23 @@ export function createGlobalSettingsViews({
       error.setAttribute("role", "alert");
       error.hidden = true;
 
-      const actions = document.createElement("div");
-      actions.className = "form-actions";
-
-      const submitButton = document.createElement("button");
-      submitButton.className = "primary-button";
-      submitButton.type = "submit";
-      submitButton.textContent = "Save password settings";
-
-      actions.append(submitButton);
-      form.append(heading, disclaimer, enableLabel, acceptLabel, error, actions);
+      form.append(heading, disclaimer, enableLabel, acceptLabel, error);
       applyFormControls(form);
 
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        error.textContent = "";
-        error.hidden = true;
-
-        if (enableSwitch.checked && !acceptCheckbox.checked) {
-          error.textContent = "Accept the security disclaimer before enabling the password manager.";
-          error.hidden = false;
-          return;
-        }
-
-        try {
-          await onSubmit({
-            passwordManagerEnabled: enableSwitch.checked,
-            passwordManagerDisclaimerAccepted: acceptCheckbox.checked
-          });
-        } catch (submitError) {
-          error.textContent = asErrorMessage(submitError);
-          error.hidden = false;
-        }
+      bindGlobalSettingsForm({
+        root: shell,
+        form,
+        error,
+        getValues: () => ({
+          passwordManagerEnabled: enableSwitch.checked,
+          passwordManagerDisclaimerAccepted: acceptCheckbox.checked
+        }),
+        validate(values) {
+          return values.passwordManagerEnabled && !values.passwordManagerDisclaimerAccepted
+            ? "Accept the security disclaimer before enabling the password manager."
+            : "";
+        },
+        onSubmit
       });
 
       shell.append(form);

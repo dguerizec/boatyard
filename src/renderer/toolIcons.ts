@@ -29,6 +29,9 @@ const TOOL_ICONS: Record<string, string[]> = {
     "M5 12h14",
     "M12 5l7 7-7 7"
   ],
+  check: [
+    "M5 12l4 4L19 6"
+  ],
   close: [
     "M6 6l12 12",
     "M18 6L6 18"

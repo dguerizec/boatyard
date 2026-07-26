@@ -1016,6 +1016,13 @@ async function loadState() {
 
 boatyardWindow.boatyard.onWorkspaceNavigationChanged?.((navigation) => {
   state = { ...state, navigation: navigation || {} };
+  const hasPendingGlobalSettings = (
+    navigationController.getCurrentView() === "global-settings" &&
+    document.querySelector(".global-settings-shell.dirty")
+  );
+  if (hasPendingGlobalSettings) {
+    return;
+  }
   restoreNavigation(state.navigation || {});
   render();
   topbarWidgets.render();

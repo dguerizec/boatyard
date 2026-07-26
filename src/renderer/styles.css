@@ -954,7 +954,7 @@ body.sidebar-collapsed .workspace {
 .global-settings-stage {
   min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -999,6 +999,10 @@ body.sidebar-collapsed .workspace {
   background: var(--accent);
 }
 
+.global-settings-saved-dot.dirty {
+  background: #f4b942;
+}
+
 .global-settings-content {
   min-width: 0;
   overflow: auto;
@@ -1035,6 +1039,67 @@ body.sidebar-collapsed .workspace {
   max-width: 640px;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.global-settings-action-bar {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 24px;
+  border-top: 1px solid var(--line);
+  background: rgba(22, 28, 35, 0.97);
+  box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.16);
+}
+
+.global-settings-change-state,
+.global-settings-action-buttons {
+  display: flex;
+  align-items: center;
+}
+
+.global-settings-change-state {
+  min-width: 0;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.global-settings-change-icon {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(65, 184, 131, 0.34);
+  border-radius: 999px;
+  background: rgba(65, 184, 131, 0.12);
+  color: var(--accent);
+}
+
+.global-settings-change-icon .webapp-tool-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.global-settings-change-state.dirty {
+  color: #e0c98e;
+}
+
+.global-settings-change-state.dirty .global-settings-change-icon {
+  border-color: rgba(244, 185, 66, 0.36);
+  background: rgba(244, 185, 66, 0.08);
+  color: #f4b942;
+}
+
+.global-settings-action-buttons {
+  gap: 8px;
+}
+
+.global-settings-action-buttons .primary-button,
+.global-settings-action-buttons .secondary-button {
+  min-height: 36px;
 }
 
 .project-settings-layout {

@@ -73,36 +73,29 @@ export function createGlobalSettingsPageView({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
-        renderGlobalSettingsPage();
       }
     });
     const globalUrlsSettings = createGlobalUrlsSettingsForm({
       onSubmit: async (urls: unknown) => {
         await updateGlobalUrls(urls);
-        hydratePaneLayouts();
-        hydrateWidgetLayouts();
-        renderGlobalSettingsPage();
       }
     });
     const presentationSettings = createGlobalPresentationSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
-        renderGlobalSettingsPage();
       }
     });
     const terminalSettings = createGlobalTerminalSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
-        renderGlobalSettingsPage();
       }
     });
     const passwordSettings = createGlobalPasswordManagerSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
-        renderGlobalSettingsPage();
       }
     });
     const openRulesSettings = createGlobalWebAppOpenRulesSettingsForm({
@@ -120,6 +113,14 @@ export function createGlobalSettingsPageView({
     const widgetCount = widgetsSettings.querySelectorAll(".installed-widget-item").length;
     const shell = createGlobalSettingsShell({
       initialSectionId: activeSectionId,
+      onDiscard() {
+        renderGlobalSettingsPage();
+      },
+      onSaveComplete() {
+        hydratePaneLayouts();
+        hydrateWidgetLayouts();
+        renderGlobalSettingsPage();
+      },
       onSectionChange(sectionId) {
         activeSectionId = sectionId;
       },

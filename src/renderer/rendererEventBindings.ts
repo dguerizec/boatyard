@@ -135,7 +135,8 @@ export function registerRendererEventBindings({
   boatyard.onTerminalExit(handleTerminalExit);
 
   windowObject.addEventListener("boatyard:plugin-status-changed", () => {
-    if (getCurrentView() === "global-settings") {
+    const hasPendingSettings = document.querySelector(".global-settings-shell.dirty");
+    if (getCurrentView() === "global-settings" && !hasPendingSettings) {
       renderGlobalSettingsPage();
     }
   });

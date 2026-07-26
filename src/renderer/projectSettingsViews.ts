@@ -1,6 +1,7 @@
 import { createProjectSettingsRows } from "./projectSettingsRows.js";
 import { createProjectSettingsSimpleForms } from "./projectSettingsSimpleForms.js";
 import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSettings.js";
+import { bindGlobalSettingsForm } from "./globalSettingsFormController.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type {
   CoreFieldSetOptions,
@@ -861,26 +862,16 @@ export function createProjectSettingsViews({
       addButton.textContent = "Add URL";
       addButton.addEventListener("click", () => list.append(createProjectUrlRow()));
     
-      const submitButton = document.createElement("button");
-      submitButton.className = "primary-button";
-      submitButton.type = "submit";
-      submitButton.textContent = "Save global URLs";
-    
-      actions.append(addButton, submitButton);
+      actions.append(addButton);
       form.append(heading, list, error, actions);
       applyFormControls(form);
-    
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        error.textContent = "";
-        error.hidden = true;
-    
-        try {
-          await onSubmit(readProjectUrlRows(list));
-        } catch (submitError) {
-          error.textContent = asErrorMessage(submitError);
-          error.hidden = false;
-        }
+
+      bindGlobalSettingsForm({
+        root: shell,
+        form,
+        error,
+        getValues: () => readProjectUrlRows(list),
+        onSubmit
       });
     
       shell.append(form);
