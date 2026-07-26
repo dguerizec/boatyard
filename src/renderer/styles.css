@@ -1232,6 +1232,10 @@ body.sidebar-collapsed .workspace {
   gap: 8px;
 }
 
+.global-settings-category-page .installed-widget-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .installed-widget-item,
 .installed-plugin-item {
   min-width: 0;
@@ -1244,7 +1248,73 @@ body.sidebar-collapsed .workspace {
 }
 
 .installed-plugin-item {
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: minmax(210px, 1fr) minmax(150px, 0.72fr) auto;
+  align-items: center;
+  min-height: 68px;
+  padding: 10px 12px;
+}
+
+.installed-plugin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.installed-plugin-toolbar input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.installed-plugin-toolbar select {
+  width: 160px;
+  min-height: 36px;
+  padding: 0 28px 0 10px;
+}
+
+.installed-plugin-summary {
+  min-width: 0;
+}
+
+.installed-plugin-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.installed-plugin-title h4 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.installed-plugin-summary p {
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.installed-plugin-meta {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  color: #7f8c97;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.installed-plugin-meta span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .installed-widget-title {
@@ -1259,7 +1329,6 @@ body.sidebar-collapsed .workspace {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
 }
 
 .plugin-settings-button,
@@ -1276,9 +1345,7 @@ body.sidebar-collapsed .workspace {
 }
 
 .plugin-settings-button {
-  width: 28px;
-  padding: 0;
-  font-size: 13px;
+  min-width: 28px;
 }
 
 .plugin-reload-button:disabled {
@@ -1286,6 +1353,7 @@ body.sidebar-collapsed .workspace {
 }
 
 .installed-widget-title h4 {
+  margin: 0;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1298,6 +1366,14 @@ body.sidebar-collapsed .workspace {
   color: #c3ccd5;
   font-size: 12px;
   line-height: 1.4;
+}
+
+.installed-widget-item p {
+  margin: 0;
+}
+
+.installed-plugin-filter-empty {
+  margin: 12px 0 0;
 }
 
 .widget-status,

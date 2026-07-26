@@ -1,5 +1,12 @@
 import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSettings.js";
-import { bindGlobalSettingsForm } from "./globalSettingsFormController.js";
+import {
+  bindGlobalSettingsForm,
+  registerGlobalSettingsFormController
+} from "./globalSettingsFormController.js";
+import {
+  getGlobalPluginStatusGroup,
+  matchesGlobalPluginFilter
+} from "./globalPluginSettingsFilters.js";
 import type { BoatyardBridge } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 
@@ -435,49 +442,98 @@ export function createGlobalSettingsViews({
       headingCopy.textContent = "Installed plugins and their Boatyard contributions.";
       heading.append(headingTitle, headingCopy);
 
+      const toolbar = document.createElement("div");
+      toolbar.className = "installed-plugin-toolbar";
+
+      const searchInput = document.createElement("input");
+      searchInput.type = "search";
+      searchInput.autocomplete = "off";
+      searchInput.placeholder = "Filter plugins...";
+      searchInput.setAttribute("aria-label", "Filter plugins");
+      applyFormControl(searchInput);
+
+      const statusSelect = document.createElement("select");
+      statusSelect.setAttribute("aria-label", "Filter plugins by status");
+      applyFormControl(statusSelect);
+      for (const [value, label] of [
+        ["all", "All statuses"],
+        ["ready", "Ready"],
+        ["attention", "Needs attention"],
+        ["error", "Unavailable"],
+        ["disabled", "Disabled"]
+      ]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        statusSelect.append(option);
+      }
+      toolbar.append(searchInput, statusSelect);
+
       const list = document.createElement("div");
       list.className = "installed-plugin-list";
 
+      const toggleEntries = new Map<string, {
+        initialEnabled: boolean;
+        toggle: HTMLInputElement;
+      }>();
+      const filterEntries: Array<{
+        item: HTMLElement;
+        plugin: {
+          description: string;
+          id: string;
+          name: string;
+          statusState: string;
+          statusSummary: string;
+        };
+      }> = [];
+
       for (const plugin of globalScope.BoatyardPluginRegistry?.list() || []) {
         const status = globalScope.BoatyardPluginRegistry.getStatus(plugin.id);
+        const statusState = status?.state || "unknown";
+        const statusSummary = status?.summary || plugin.description || "No plugin status provided.";
         const globalSettingsSections = getPluginGlobalSettingsSections()
           .map(asPluginSettingsSection)
           .filter((section) => section.pluginId === plugin.id);
         const item = document.createElement("article");
         item.className = "installed-plugin-item";
+        item.dataset.statusGroup = getGlobalPluginStatusGroup(statusState);
+
+        const summary = document.createElement("div");
+        summary.className = "installed-plugin-summary";
 
         const titleRow = document.createElement("div");
-        titleRow.className = "installed-widget-title";
-
+        titleRow.className = "installed-plugin-title";
         const title = document.createElement("h4");
         title.textContent = plugin.name;
 
         const statusBadge = document.createElement("span");
-        statusBadge.className = `plugin-status ${status?.state || "unknown"}`;
-        statusBadge.textContent = status?.state || "unknown";
+        statusBadge.className = `plugin-status ${statusState}`;
+        statusBadge.textContent = statusState.replace(/([a-z])([A-Z])/g, "$1 $2");
 
         titleRow.append(title, statusBadge);
 
         const description = document.createElement("p");
-        description.textContent = status?.summary || plugin.description || "No plugin status provided.";
+        description.textContent = statusSummary;
+        summary.append(titleRow, description);
 
         const meta = document.createElement("div");
-        meta.className = "installed-widget-meta";
+        meta.className = "installed-plugin-meta";
 
-        const contributionCounts = [
-          ["widgets", plugin.contributes?.widgets?.length || 0],
-          ["panes", plugin.contributes?.panes?.length || 0],
-          ["global settings", plugin.contributes?.globalSettings?.length || globalSettingsSections.length],
-          ["project settings", plugin.contributes?.projectSettings?.length || 0],
-          ["services", plugin.contributes?.services?.length || 0],
-          ["tools", plugin.contributes?.tools?.length || 0]
+        const identity = document.createElement("span");
+        identity.textContent = `${plugin.id} · v${plugin.version}`;
+
+        const contributionCounts: Array<[string, number]> = [
+          ["widget", plugin.contributes?.widgets?.length || 0],
+          ["pane", plugin.contributes?.panes?.length || 0],
+          ["service", plugin.contributes?.services?.length || 0],
+          ["tool", plugin.contributes?.tools?.length || 0]
         ];
-
-        for (const value of [plugin.id, `v${plugin.version}`, ...contributionCounts.map(([label, count]) => `${count} ${label}`)]) {
-          const chip = document.createElement("span");
-          chip.textContent = value;
-          meta.append(chip);
-        }
+        const contributions = document.createElement("span");
+        contributions.textContent = contributionCounts
+          .filter(([, count]) => count > 0)
+          .map(([label, count]) => `${count} ${label}${count === 1 ? "" : "s"}`)
+          .join(" · ") || "No contributions";
+        meta.append(identity, contributions);
 
         const controls = document.createElement("label");
         controls.className = "plugin-toggle-row";
@@ -488,23 +544,23 @@ export function createGlobalSettingsViews({
         const toggle = document.createElement("input");
         toggle.type = "checkbox";
         toggle.checked = plugin.enabled !== false;
-        toggle.addEventListener("change", async () => {
-          await updatePluginEnabled(plugin.id, toggle.checked);
-          renderGlobalSettingsPage();
-        });
 
         const switchTrack = document.createElement("span");
         switchTrack.className = "switch-track";
         switchTrack.setAttribute("aria-hidden", "true");
 
         controls.append(controlCopy, toggle, switchTrack);
+        toggleEntries.set(plugin.id, {
+          initialEnabled: toggle.checked,
+          toggle
+        });
 
         const settingsButton = document.createElement("button");
         settingsButton.className = "plugin-settings-button";
         settingsButton.type = "button";
         settingsButton.title = `${plugin.name} settings`;
         settingsButton.setAttribute("aria-label", `${plugin.name} settings`);
-        settingsButton.textContent = "⚙";
+        settingsButton.textContent = "Settings";
         settingsButton.hidden = !globalSettingsSections.length;
         settingsButton.addEventListener("click", () => {
           openGlobalPluginSettingsDialog(plugin, globalSettingsSections);
@@ -521,18 +577,51 @@ export function createGlobalSettingsViews({
           } catch (error) {
             console.error(`Could not reload plugin ${plugin.id}:`, error);
           }
-          renderGlobalSettingsPage();
         });
 
         const titleActions = document.createElement("div");
         titleActions.className = "installed-plugin-actions";
         titleActions.append(settingsButton, reloadButton, controls);
 
-        titleRow.append(titleActions);
-        item.append(titleRow, description, meta);
+        toggle.addEventListener("change", () => {
+          controlCopy.textContent = toggle.checked ? "Enabled" : "Disabled";
+          reloadButton.disabled = !toggle.checked;
+        });
 
+        item.append(summary, meta, titleActions);
         list.append(item);
+        filterEntries.push({
+          item,
+          plugin: {
+            id: plugin.id,
+            name: plugin.name,
+            description: plugin.description || "",
+            statusState,
+            statusSummary
+          }
+        });
       }
+
+      const emptyFilter = document.createElement("p");
+      emptyFilter.className = "settings-empty-state installed-plugin-filter-empty";
+      emptyFilter.textContent = "No plugins match these filters.";
+      emptyFilter.hidden = true;
+
+      function filterPlugins() {
+        let visibleCount = 0;
+        for (const entry of filterEntries) {
+          const visible = matchesGlobalPluginFilter(
+            entry.plugin,
+            searchInput.value,
+            statusSelect.value
+          );
+          entry.item.hidden = !visible;
+          visibleCount += visible ? 1 : 0;
+        }
+        emptyFilter.hidden = visibleCount > 0 || filterEntries.length === 0;
+      }
+      searchInput.addEventListener("input", filterPlugins);
+      statusSelect.addEventListener("change", filterPlugins);
 
       if (!list.children.length) {
         const empty = document.createElement("p");
@@ -541,7 +630,35 @@ export function createGlobalSettingsViews({
         list.append(empty);
       }
 
-      shell.append(heading, list);
+      const error = document.createElement("p");
+      error.className = "form-error";
+      error.setAttribute("role", "alert");
+      error.hidden = true;
+
+      registerGlobalSettingsFormController(shell, {
+        getState() {
+          return Object.fromEntries(
+            [...toggleEntries].map(([pluginId, { toggle }]) => [pluginId, toggle.checked])
+          );
+        },
+        async save() {
+          error.textContent = "";
+          error.hidden = true;
+          try {
+            for (const [pluginId, entry] of toggleEntries) {
+              if (entry.toggle.checked !== entry.initialEnabled) {
+                await updatePluginEnabled(pluginId, entry.toggle.checked);
+              }
+            }
+          } catch (saveError) {
+            error.textContent = asErrorMessage(saveError);
+            error.hidden = false;
+            throw saveError;
+          }
+        }
+      });
+
+      shell.append(heading, toolbar, list, emptyFilter, error);
       return shell;
     }
 
@@ -573,7 +690,6 @@ export function createGlobalSettingsViews({
         panel.append(createGlobalPluginSettingsForm(section, {
           onSaved() {
             dialog.close();
-            renderGlobalSettingsPage();
           }
         }));
       }
