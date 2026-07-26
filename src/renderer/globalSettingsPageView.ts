@@ -140,7 +140,7 @@ export function createGlobalSettingsPageView({
           description: "Presentation preferences for embedded webapps.",
           group: "boatyard",
           icon: "settingsMonitor",
-          keywords: ["presentation", "blur", "screenshots"],
+          keywords: ["presentation", "blur", "screenshots", "widget rail", "width"],
           elements: [presentationSettings]
         },
         {

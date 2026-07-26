@@ -119,7 +119,7 @@ export function createGlobalSettingsViews({
       heading.className = "form-heading";
 
       const headingTitle = document.createElement("h3");
-      headingTitle.textContent = "Projects global settings";
+      headingTitle.textContent = "Projects";
 
       const headingCopy = document.createElement("p");
       headingCopy.textContent = "Configure defaults shared by project forms and tooling.";
@@ -220,12 +220,41 @@ export function createGlobalSettingsViews({
 
       blurLabel.append(blurCopy, blurSwitch, switchTrack);
 
+      const widgetRailLabel = document.createElement("label");
+      widgetRailLabel.className = "settings-range-field";
+
+      const widgetRailCopy = document.createElement("span");
+      widgetRailCopy.className = "switch-copy";
+      widgetRailCopy.innerHTML = "<strong>Widget rail width</strong><small>Default width of the widget rail beside project panes.</small>";
+
+      const widgetRailControl = document.createElement("span");
+      widgetRailControl.className = "settings-range-control";
+
+      const widgetRailWidth = Number(settings.widgetRailWidth) || 340;
+      const widgetRailInput = document.createElement("input");
+      widgetRailInput.name = "widgetRailWidth";
+      widgetRailInput.type = "range";
+      widgetRailInput.min = "240";
+      widgetRailInput.max = String(Math.max(560, widgetRailWidth));
+      widgetRailInput.step = "10";
+      widgetRailInput.value = String(widgetRailWidth);
+
+      const widgetRailValue = document.createElement("output");
+      widgetRailValue.value = `${widgetRailWidth} px`;
+      widgetRailValue.textContent = widgetRailValue.value;
+      widgetRailInput.addEventListener("input", () => {
+        widgetRailValue.value = `${widgetRailInput.value} px`;
+        widgetRailValue.textContent = widgetRailValue.value;
+      });
+      widgetRailControl.append(widgetRailInput, widgetRailValue);
+      widgetRailLabel.append(widgetRailCopy, widgetRailControl);
+
       const error = document.createElement("p");
       error.className = "form-error";
       error.setAttribute("role", "alert");
       error.hidden = true;
 
-      form.append(heading, blurLabel, error);
+      form.append(heading, blurLabel, widgetRailLabel, error);
       applyFormControls(form);
 
       bindGlobalSettingsForm({
@@ -233,7 +262,8 @@ export function createGlobalSettingsViews({
         form,
         error,
         getValues: () => ({
-          blurWebAppOverlays: blurSwitch.checked
+          blurWebAppOverlays: blurSwitch.checked,
+          widgetRailWidth: Number(widgetRailInput.value)
         }),
         onSubmit
       });

@@ -1100,6 +1100,42 @@ body.sidebar-collapsed .workspace {
 .global-settings-action-buttons .primary-button,
 .global-settings-action-buttons .secondary-button {
   min-height: 36px;
+  white-space: nowrap;
+}
+
+.settings-range-field {
+  display: grid;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(15, 20, 25, 0.72);
+  color: var(--text);
+  text-transform: none;
+}
+
+.settings-range-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 68px;
+  gap: 12px;
+  align-items: center;
+}
+
+.settings-range-control input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.settings-range-control output {
+  min-height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #0f1419;
+  color: #c9d3dc;
+  font-size: 12px;
 }
 
 .project-settings-layout {
@@ -3663,6 +3699,52 @@ textarea.form-control {
   margin-top: 4px;
 }
 
+@media (max-width: 1200px) {
+  .global-settings-shell {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+
+  .global-settings-content {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .installed-plugin-item {
+    grid-template-columns: minmax(200px, 1fr) auto;
+  }
+
+  .installed-plugin-meta {
+    display: none;
+  }
+}
+
+@media (max-width: 1000px) {
+  .global-settings-shell {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+
+  .installed-plugin-item {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .installed-plugin-actions {
+    justify-content: flex-start;
+  }
+
+  .global-settings-category-page .installed-widget-list {
+    grid-template-columns: 1fr;
+  }
+
+  .global-settings-search input {
+    padding-right: 10px;
+  }
+
+  .global-settings-search-shortcut {
+    display: none;
+  }
+}
+
 @media (max-width: 820px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -3682,6 +3764,11 @@ textarea.form-control {
 
   .workspace-summary {
     text-align: left;
+  }
+
+  .global-settings-shell {
+    height: calc(100vh - 220px);
+    min-height: 620px;
   }
 
   .app-update-content {
@@ -3778,5 +3865,113 @@ textarea.form-control {
   .webapp-open-rule-dialog .form-actions .danger-button,
   .webapp-open-rule-dialog .form-actions .secondary-button {
     justify-self: stretch;
+  }
+}
+
+@media (max-width: 660px) {
+  .workspace {
+    padding: 14px;
+  }
+
+  .workspace-header h2 {
+    font-size: 24px;
+  }
+
+  .global-settings-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: calc(100vh - 210px);
+    min-height: 680px;
+  }
+
+  .global-settings-index {
+    overflow: hidden;
+    padding: 12px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+  }
+
+  .global-settings-search {
+    margin-bottom: 10px;
+  }
+
+  .global-settings-nav {
+    display: flex;
+    gap: 5px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .global-settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .global-settings-nav-group {
+    display: none;
+  }
+
+  .global-settings-nav-button {
+    width: auto;
+    flex: 0 0 auto;
+    padding-right: 12px;
+  }
+
+  .global-settings-search-empty {
+    margin: 10px;
+  }
+
+  .global-settings-stage-header {
+    min-height: 68px;
+    padding: 14px 16px;
+  }
+
+  .global-settings-saved-state {
+    display: none;
+  }
+
+  .global-settings-content {
+    padding: 5px 16px 26px;
+  }
+
+  .global-settings-action-bar {
+    padding: 10px 16px;
+  }
+
+  .global-settings-category-page .installed-widget-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 500px) {
+  .installed-plugin-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .installed-plugin-toolbar select {
+    width: 100%;
+  }
+
+  .installed-plugin-item {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .installed-plugin-actions {
+    justify-content: flex-start;
+  }
+
+  .global-settings-change-icon {
+    display: none;
+  }
+
+  .global-settings-action-bar {
+    gap: 8px;
+  }
+
+  .global-settings-action-buttons .primary-button,
+  .global-settings-action-buttons .secondary-button {
+    padding-right: 9px;
+    padding-left: 9px;
   }
 }

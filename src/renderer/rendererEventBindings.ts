@@ -1,4 +1,5 @@
 import { createPluginLoader } from "./pluginLoader.js";
+import { hasActiveGlobalSettingsInteraction } from "./globalSettingsFormController.js";
 import type { BoatyardBridge, RendererProject } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 
@@ -135,8 +136,10 @@ export function registerRendererEventBindings({
   boatyard.onTerminalExit(handleTerminalExit);
 
   windowObject.addEventListener("boatyard:plugin-status-changed", () => {
-    const hasPendingSettings = document.querySelector(".global-settings-shell.dirty");
-    if (getCurrentView() === "global-settings" && !hasPendingSettings) {
+    if (
+      getCurrentView() === "global-settings" &&
+      !hasActiveGlobalSettingsInteraction(windowObject.document)
+    ) {
       renderGlobalSettingsPage();
     }
   });
@@ -159,6 +162,18 @@ export function registerRendererEventBindings({
   globalViewButton.addEventListener("click", selectGlobal);
   manualTourButton.addEventListener("click", () => openOnboardingTour({ force: true }));
   addProjectButton.addEventListener("click", selectCreateProject);
+  windowObject.addEventListener("keydown", (event) => {
+    if (
+      getCurrentView() === "global-settings" &&
+      (event.ctrlKey || event.metaKey) &&
+      event.key.toLocaleLowerCase() === "k"
+    ) {
+      event.preventDefault();
+      windowObject.document
+        .querySelector<HTMLInputElement>(".global-settings-search input")
+        ?.focus();
+    }
+  });
   windowObject.addEventListener("resize", queueWebAppSync);
   workspace.addEventListener("scroll", queueWebAppSync);
 

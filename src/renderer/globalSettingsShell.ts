@@ -230,12 +230,6 @@ export function createGlobalSettingsShell({
   }
 
   searchInput.addEventListener("input", filterNavigation);
-  shell.addEventListener("keydown", (event) => {
-    if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === "k") {
-      event.preventDefault();
-      searchInput.focus();
-    }
-  });
 
   const actionBar = document.createElement("footer");
   actionBar.className = "global-settings-action-bar";

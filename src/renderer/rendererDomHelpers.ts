@@ -18,7 +18,7 @@ export function applyFormControl(control: HTMLElement) {
 
 export function applyFormControls(root: HTMLElement) {
   root
-    .querySelectorAll<HTMLElement>('input:not([type="hidden"]):not([type="checkbox"]), textarea')
+    .querySelectorAll<HTMLElement>('input:not([type="hidden"]):not([type="checkbox"]):not([type="range"]), textarea')
     .forEach(applyFormControl);
 }
 

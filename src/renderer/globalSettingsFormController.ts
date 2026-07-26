@@ -36,6 +36,14 @@ export function getGlobalSettingsFormController(root: HTMLElement) {
   return controllers.get(root) || null;
 }
 
+export function hasActiveGlobalSettingsInteraction(root: ParentNode = document) {
+  const shell = root.querySelector<HTMLElement>(".global-settings-shell");
+  return Boolean(shell && (
+    shell.classList.contains("dirty") ||
+    shell.matches(":focus-within")
+  ));
+}
+
 export function bindGlobalSettingsForm<T>({
   error,
   form,
