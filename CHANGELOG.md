@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.3] - 2026-07-26
+
+### Summary
+
+- **v0.9.3: Smarter project panes** — Boatyard reuses existing web app panes, respects global Pier URLs, and keeps workspace state updates reliable.
+
+### Changed
+
+- **Web app pane reuse** — Opening a transient web app now reuses its existing pane instead of creating duplicates.
+- **Global Pier URL** — Project panes now use the globally configured Pier URL when available.
+
+### Fixed
+
+- **Workspace state updates** — Workspace changes now return the correct updated state, preventing stale or inconsistent interface responses.
+
 ## [0.9.2] - 2026-07-22
 
 ### Summary

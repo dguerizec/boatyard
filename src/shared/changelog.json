@@ -1,6 +1,27 @@
 {
-  "generatedForVersion": "0.9.2",
+  "generatedForVersion": "0.9.3",
   "releases": [
+    {
+      "version": "0.9.3",
+      "date": "2026-07-26",
+      "features": [
+        {
+          "category": "Changed",
+          "title": "Web app pane reuse",
+          "body": "Opening a transient web app now reuses its existing pane instead of creating duplicates."
+        },
+        {
+          "category": "Changed",
+          "title": "Global Pier URL",
+          "body": "Project panes now use the globally configured Pier URL when available."
+        },
+        {
+          "category": "Fixed",
+          "title": "Workspace state updates",
+          "body": "Workspace changes now return the correct updated state, preventing stale or inconsistent interface responses."
+        }
+      ]
+    },
     {
       "version": "0.9.2",
       "date": "2026-07-22",
