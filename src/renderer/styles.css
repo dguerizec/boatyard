@@ -1053,6 +1053,13 @@ body.sidebar-collapsed .workspace {
   box-shadow: 0 -12px 34px rgba(0, 0, 0, 0.16);
 }
 
+.settings-action-bar.auto-save {
+  min-height: 48px;
+  justify-content: flex-start;
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
 .settings-change-state,
 .settings-action-buttons {
   display: flex;

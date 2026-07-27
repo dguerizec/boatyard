@@ -109,11 +109,6 @@ export function createRendererNavigationController({
     render();
   }
 
-  function reloadProjectSettings(id: string) {
-    setCurrentView("project-edit", id);
-    render();
-  }
-
   function restoreReturnView() {
     if (returnView.view === "project" && hasProject(returnView.projectId)) {
       selectProject(returnView.projectId as string);
@@ -126,7 +121,6 @@ export function createRendererNavigationController({
   return Object.freeze({
     getCurrentProjectId: () => currentProjectId,
     getCurrentView: () => currentView,
-    reloadProjectSettings,
     restoreNavigation,
     restoreReturnView,
     selectCreateProject,

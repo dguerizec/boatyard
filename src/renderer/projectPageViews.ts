@@ -14,7 +14,6 @@ type ProjectPageViewsOptions = {
   dashboardGrid: HTMLElement;
   hideWebApps: () => void;
   persistProjectPluginConfig: (projectId: string, pluginConfig?: UnknownRecord) => Promise<RendererState>;
-  reloadProjectSettings: (projectId: string) => void;
   removeProject: (projectId: string) => Promise<RendererState>;
   resetVisibleWebAppHosts: () => void;
   restoreReturnView: () => void;
@@ -41,7 +40,6 @@ export function createProjectPageViews({
   dashboardGrid,
   hideWebApps,
   persistProjectPluginConfig,
-  reloadProjectSettings,
   removeProject,
   resetVisibleWebAppHosts,
   restoreReturnView,
@@ -133,6 +131,10 @@ export function createProjectPageViews({
           values.pluginConfig as UnknownRecord | undefined
         );
         setState(nextState);
+        if (projectDetails.isConnected) {
+          workspaceTitle.textContent = `${String(values.name || project.name)} settings`;
+          workspaceSummary.textContent = String(values.slug || "");
+        }
       }
     });
 
@@ -183,15 +185,10 @@ export function createProjectPageViews({
         { id: "system", label: "System" }
       ],
       initialSectionId: activeProjectSettingsSectionId,
-      onDiscard() {
-        reloadProjectSettings(projectId);
-      },
-      onSaveComplete() {
-        reloadProjectSettings(projectId);
-      },
       onSectionChange(sectionId) {
         activeProjectSettingsSectionId = sectionId;
       },
+      saveMode: "blur",
       sections: [
         {
           id: "general",

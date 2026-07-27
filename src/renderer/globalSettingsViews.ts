@@ -678,6 +678,7 @@ export function createGlobalSettingsViews({
             for (const [pluginId, entry] of toggleEntries) {
               if (entry.toggle.checked !== entry.initialEnabled) {
                 await updatePluginEnabled(pluginId, entry.toggle.checked);
+                entry.initialEnabled = entry.toggle.checked;
               }
             }
           } catch (saveError) {

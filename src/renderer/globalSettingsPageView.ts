@@ -119,17 +119,14 @@ export function createGlobalSettingsPageView({
         { id: "system", label: "System" }
       ],
       initialSectionId: activeSectionId,
-      onDiscard() {
-        renderGlobalSettingsPage();
-      },
       onSaveComplete() {
         hydratePaneLayouts();
         hydrateWidgetLayouts();
-        renderGlobalSettingsPage();
       },
       onSectionChange(sectionId) {
         activeSectionId = sectionId;
       },
+      saveMode: "blur",
       sections: [
         {
           id: "general",

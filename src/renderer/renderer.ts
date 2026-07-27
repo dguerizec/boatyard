@@ -110,7 +110,6 @@ navigationController = createRendererNavigationController({
 });
 
 const {
-  reloadProjectSettings,
   restoreNavigation,
   restoreReturnView,
   selectCreateProject,
@@ -887,7 +886,6 @@ const projectPageViews = createProjectPageViews({
   dashboardGrid,
   hideWebApps: () => invokeWebApp("hideWebApp"),
   persistProjectPluginConfig,
-  reloadProjectSettings,
   removeProject: (projectId: string) => boatyardWindow.boatyard.removeProject(projectId),
   resetVisibleWebAppHosts: () => {
     visibleWebApps.reset();

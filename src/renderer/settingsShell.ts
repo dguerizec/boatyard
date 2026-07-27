@@ -23,6 +23,8 @@ export type SettingsSection = {
   label: string;
 };
 
+export type SettingsSaveMode = "manual" | "blur";
+
 type SettingsShellOptions = {
   ariaLabel?: string;
   className?: string;
@@ -31,6 +33,7 @@ type SettingsShellOptions = {
   onDiscard?: () => void;
   onSaveComplete?: () => void;
   onSectionChange?: (sectionId: string) => void;
+  saveMode?: SettingsSaveMode;
   searchPlaceholder?: string;
   sections: SettingsSection[];
 };
@@ -86,6 +89,7 @@ export function createSettingsShell({
   onDiscard,
   onSaveComplete,
   onSectionChange,
+  saveMode = "manual",
   searchPlaceholder = "Find a setting..."
 }: SettingsShellOptions) {
   const sectionById = new Map(sections.map((section) => [section.id, section]));
@@ -170,6 +174,7 @@ export function createSettingsShell({
 
   const pagesById = new Map<string, HTMLElement>();
   const controllerSections = new Map<SettingsFormController, string>();
+  const controllerElements = new Map<SettingsFormController, HTMLElement[]>();
   for (const section of sections) {
     const page = document.createElement("section");
     page.className = "settings-category-page";
@@ -180,6 +185,10 @@ export function createSettingsShell({
       const controller = getSettingsFormController(element);
       if (controller) {
         controllerSections.set(controller, section.id);
+        controllerElements.set(controller, [
+          ...(controllerElements.get(controller) || []),
+          element
+        ]);
       }
     }
     pagesById.set(section.id, page);
@@ -239,6 +248,7 @@ export function createSettingsShell({
 
   const actionBar = document.createElement("footer");
   actionBar.className = "settings-action-bar";
+  actionBar.classList.toggle("auto-save", saveMode === "blur");
 
   const changeState = document.createElement("div");
   changeState.className = "settings-change-state";
@@ -265,7 +275,10 @@ export function createSettingsShell({
   saveButton.disabled = true;
 
   actionButtons.append(discardButton, saveButton);
-  actionBar.append(changeState, actionButtons);
+  actionBar.append(changeState);
+  if (saveMode === "manual") {
+    actionBar.append(actionButtons);
+  }
 
   const initialStates = new Map(
     [...controllerSections.keys()].map((controller) => [
@@ -275,6 +288,8 @@ export function createSettingsShell({
   );
   let saving = false;
   let displayedDirtyState = false;
+  let autoSaveTimer: number | null = null;
+  const pendingAutoSaveControllers = new Set<SettingsFormController>();
 
   function getDirtyControllers() {
     return [...controllerSections.keys()].filter((controller) => (
@@ -291,21 +306,27 @@ export function createSettingsShell({
       changeIcon.replaceChildren(createToolIcon(dirty ? "alert" : "check"));
       displayedDirtyState = dirty;
     }
-    changeLabel.textContent = dirty
-      ? `${dirtyCount} unsaved ${dirtyCount === 1 ? "section" : "sections"}`
-      : "All changes saved";
+    changeLabel.textContent = saving
+      ? "Saving changes..."
+      : dirty
+        ? `${dirtyCount} unsaved ${dirtyCount === 1 ? "section" : "sections"}`
+        : saveMode === "blur" ? "Changes save automatically" : "All changes saved";
     savedDot.classList.toggle("dirty", dirty);
-    savedLabel.textContent = dirty ? `${dirtyCount} pending` : "All changes saved";
+    savedLabel.textContent = saving
+      ? "Saving..."
+      : dirty ? `${dirtyCount} pending` : "All changes saved";
     discardButton.disabled = saving || !dirty;
     saveButton.disabled = saving || !dirty;
   }
 
-  async function saveChanges() {
+  async function saveChanges(requestedControllers?: SettingsFormController[]) {
     if (saving) {
       return;
     }
 
-    const dirtyControllers = getDirtyControllers();
+    const dirtyControllerSet = new Set(getDirtyControllers());
+    const dirtyControllers = (requestedControllers || [...dirtyControllerSet])
+      .filter((controller) => dirtyControllerSet.has(controller));
     if (!dirtyControllers.length) {
       return;
     }
@@ -316,8 +337,10 @@ export function createSettingsShell({
 
     try {
       for (const controller of dirtyControllers) {
+        const savedState = serializeSettingsState(controller.getState());
         try {
           await controller.save();
+          initialStates.set(controller, savedState);
         } catch (error) {
           const sectionId = controllerSections.get(controller);
           if (sectionId) {
@@ -327,9 +350,6 @@ export function createSettingsShell({
         }
       }
 
-      for (const controller of dirtyControllers) {
-        initialStates.set(controller, serializeSettingsState(controller.getState()));
-      }
       onSaveComplete?.();
     } catch (error) {
       console.error("Could not save settings:", error);
@@ -337,16 +357,62 @@ export function createSettingsShell({
       saving = false;
       saveButton.textContent = "Save changes";
       refreshChangeState();
+      if (pendingAutoSaveControllers.size && autoSaveTimer === null) {
+        scheduleAutoSave([]);
+      }
+    }
+  }
+
+  function scheduleAutoSave(controllers: SettingsFormController[]) {
+    for (const controller of controllers) {
+      pendingAutoSaveControllers.add(controller);
+    }
+    if (saveMode !== "blur" || autoSaveTimer !== null) {
+      return;
+    }
+
+    autoSaveTimer = window.setTimeout(() => {
+      autoSaveTimer = null;
+      if (saving) {
+        return;
+      }
+
+      const controllersToSave = [...pendingAutoSaveControllers];
+      pendingAutoSaveControllers.clear();
+      void saveChanges(controllersToSave);
+    }, 0);
+  }
+
+  function getControllersForTarget(target: EventTarget | null) {
+    if (!(target instanceof Node)) {
+      return [];
+    }
+
+    return [...controllerElements]
+      .filter(([, elements]) => elements.some((element) => element.contains(target)))
+      .map(([controller]) => controller);
+  }
+
+  function refreshFromStateChange(event?: Event) {
+    refreshChangeState();
+    if (saveMode === "blur" && !shell.matches(":focus-within")) {
+      const targetControllers = getControllersForTarget(event?.target || null);
+      scheduleAutoSave(targetControllers.length ? targetControllers : getDirtyControllers());
     }
   }
 
   shell.addEventListener("input", refreshChangeState);
   shell.addEventListener("change", refreshChangeState);
-  shell.addEventListener(SETTINGS_STATE_CHANGED_EVENT, refreshChangeState);
+  shell.addEventListener(SETTINGS_STATE_CHANGED_EVENT, refreshFromStateChange);
+  shell.addEventListener("focusout", (event) => {
+    if (saveMode === "blur") {
+      scheduleAutoSave(getControllersForTarget(event.target));
+    }
+  });
   shell.addEventListener(SETTINGS_SAVE_REQUEST_EVENT, () => {
     void saveChanges();
   });
-  const observer = new MutationObserver(refreshChangeState);
+  const observer = new MutationObserver(() => refreshFromStateChange());
   observer.observe(content, { childList: true, subtree: true });
 
   discardButton.addEventListener("click", () => {
