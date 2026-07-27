@@ -1,44 +1,45 @@
 import { createToolIcon } from "./toolIcons.js";
 import {
-  GLOBAL_SETTINGS_SAVE_REQUEST_EVENT,
-  getGlobalSettingsFormController,
-  serializeGlobalSettingsState,
-  type GlobalSettingsFormController
-} from "./globalSettingsFormController.js";
+  SETTINGS_SAVE_REQUEST_EVENT,
+  getSettingsFormController,
+  serializeSettingsState,
+  type SettingsFormController
+} from "./settingsFormController.js";
 
-export type GlobalSettingsSectionGroup = "boatyard" | "extensions" | "system";
+export type SettingsSectionGroup = {
+  id: string;
+  label: string;
+};
 
-export type GlobalSettingsSection = {
+export type SettingsSection = {
   badge?: string;
   description: string;
   elements: HTMLElement[];
-  group: GlobalSettingsSectionGroup;
+  group: string;
   icon: string;
   id: string;
   keywords?: string[];
   label: string;
 };
 
-type GlobalSettingsShellOptions = {
+type SettingsShellOptions = {
+  ariaLabel?: string;
+  className?: string;
+  groups: SettingsSectionGroup[];
   initialSectionId?: string;
   onDiscard?: () => void;
   onSaveComplete?: () => void;
   onSectionChange?: (sectionId: string) => void;
-  sections: GlobalSettingsSection[];
-};
-
-const GROUP_LABELS: Record<GlobalSettingsSectionGroup, string> = {
-  boatyard: "Boatyard",
-  extensions: "Extensions",
-  system: "System"
+  searchPlaceholder?: string;
+  sections: SettingsSection[];
 };
 
 function normalizeSearchValue(value: unknown) {
   return String(value || "").trim().toLocaleLowerCase();
 }
 
-export function filterGlobalSettingsSectionIds(
-  sections: GlobalSettingsSection[],
+export function filterSettingsSectionIds(
+  sections: SettingsSection[],
   query: unknown
 ) {
   const normalizedQuery = normalizeSearchValue(query);
@@ -54,9 +55,9 @@ export function filterGlobalSettingsSectionIds(
     .map((section) => section.id);
 }
 
-function createNavigationButton(section: GlobalSettingsSection) {
+function createNavigationButton(section: SettingsSection) {
   const button = document.createElement("button");
-  button.className = "global-settings-nav-button";
+  button.className = "settings-nav-button";
   button.type = "button";
   button.dataset.sectionId = section.id;
   button.append(createToolIcon(section.icon));
@@ -67,7 +68,7 @@ function createNavigationButton(section: GlobalSettingsSection) {
 
   if (section.badge) {
     const badge = document.createElement("span");
-    badge.className = "global-settings-nav-badge";
+    badge.className = "settings-nav-badge";
     badge.textContent = section.badge;
     button.append(badge);
   }
@@ -75,54 +76,58 @@ function createNavigationButton(section: GlobalSettingsSection) {
   return button;
 }
 
-export function createGlobalSettingsShell({
+export function createSettingsShell({
+  ariaLabel = "Settings categories",
+  className = "",
+  groups,
   sections,
   initialSectionId,
   onDiscard,
   onSaveComplete,
-  onSectionChange
-}: GlobalSettingsShellOptions) {
+  onSectionChange,
+  searchPlaceholder = "Find a setting..."
+}: SettingsShellOptions) {
   const sectionById = new Map(sections.map((section) => [section.id, section]));
   let activeSectionId = sectionById.has(String(initialSectionId || ""))
     ? String(initialSectionId)
     : sections[0]?.id || "";
 
   const shell = document.createElement("section");
-  shell.className = "global-settings-shell";
+  shell.className = ["settings-shell", className].filter(Boolean).join(" ");
 
   const index = document.createElement("aside");
-  index.className = "global-settings-index";
+  index.className = "settings-index";
 
   const searchLabel = document.createElement("label");
-  searchLabel.className = "global-settings-search";
+  searchLabel.className = "settings-search";
 
   const searchIcon = createToolIcon("search");
   const searchInput = document.createElement("input");
   searchInput.type = "search";
   searchInput.autocomplete = "off";
-  searchInput.placeholder = "Find a setting...";
+  searchInput.placeholder = searchPlaceholder;
   searchInput.setAttribute("aria-label", "Find a setting");
 
   const shortcut = document.createElement("span");
-  shortcut.className = "global-settings-search-shortcut";
+  shortcut.className = "settings-search-shortcut";
   shortcut.textContent = "Ctrl K";
   searchLabel.append(searchIcon, searchInput, shortcut);
 
   const navigation = document.createElement("nav");
-  navigation.className = "global-settings-nav";
-  navigation.setAttribute("aria-label", "Global settings categories");
+  navigation.className = "settings-nav";
+  navigation.setAttribute("aria-label", ariaLabel);
 
   const buttonsById = new Map<string, HTMLButtonElement>();
-  for (const group of Object.keys(GROUP_LABELS) as GlobalSettingsSectionGroup[]) {
-    const groupSections = sections.filter((section) => section.group === group);
+  for (const group of groups) {
+    const groupSections = sections.filter((section) => section.group === group.id);
     if (!groupSections.length) {
       continue;
     }
 
     const groupLabel = document.createElement("p");
-    groupLabel.className = "global-settings-nav-group";
-    groupLabel.dataset.settingsGroup = group;
-    groupLabel.textContent = GROUP_LABELS[group];
+    groupLabel.className = "settings-nav-group";
+    groupLabel.dataset.settingsGroup = group.id;
+    groupLabel.textContent = group.label;
     navigation.append(groupLabel);
 
     for (const section of groupSections) {
@@ -133,17 +138,17 @@ export function createGlobalSettingsShell({
   }
 
   const emptySearch = document.createElement("p");
-  emptySearch.className = "global-settings-search-empty";
+  emptySearch.className = "settings-search-empty";
   emptySearch.textContent = "No settings category matches this search.";
   emptySearch.hidden = true;
 
   index.append(searchLabel, navigation, emptySearch);
 
   const stage = document.createElement("div");
-  stage.className = "global-settings-stage";
+  stage.className = "settings-stage";
 
   const header = document.createElement("header");
-  header.className = "global-settings-stage-header";
+  header.className = "settings-stage-header";
 
   const heading = document.createElement("div");
   const title = document.createElement("h3");
@@ -151,27 +156,27 @@ export function createGlobalSettingsShell({
   heading.append(title, description);
 
   const savedState = document.createElement("span");
-  savedState.className = "global-settings-saved-state";
+  savedState.className = "settings-saved-state";
   const savedDot = document.createElement("span");
-  savedDot.className = "global-settings-saved-dot";
+  savedDot.className = "settings-saved-dot";
   const savedLabel = document.createElement("span");
   savedLabel.textContent = "All changes saved";
   savedState.append(savedDot, savedLabel);
   header.append(heading, savedState);
 
   const content = document.createElement("div");
-  content.className = "global-settings-content";
+  content.className = "settings-content";
 
   const pagesById = new Map<string, HTMLElement>();
-  const controllerSections = new Map<GlobalSettingsFormController, string>();
+  const controllerSections = new Map<SettingsFormController, string>();
   for (const section of sections) {
     const page = document.createElement("section");
-    page.className = "global-settings-category-page";
+    page.className = "settings-category-page";
     page.dataset.sectionId = section.id;
     page.hidden = true;
     page.append(...section.elements);
     for (const element of section.elements) {
-      const controller = getGlobalSettingsFormController(element);
+      const controller = getSettingsFormController(element);
       if (controller) {
         controllerSections.set(controller, section.id);
       }
@@ -208,17 +213,17 @@ export function createGlobalSettingsShell({
   }
 
   function filterNavigation() {
-    const matchingIds = new Set(filterGlobalSettingsSectionIds(sections, searchInput.value));
+    const matchingIds = new Set(filterSettingsSectionIds(sections, searchInput.value));
 
     for (const [sectionId, button] of buttonsById) {
       button.hidden = !matchingIds.has(sectionId);
     }
 
-    for (const group of Object.keys(GROUP_LABELS) as GlobalSettingsSectionGroup[]) {
-      const groupLabel = navigation.querySelector<HTMLElement>(`[data-settings-group="${group}"]`);
+    for (const group of groups) {
+      const groupLabel = navigation.querySelector<HTMLElement>(`[data-settings-group="${group.id}"]`);
       if (groupLabel) {
         groupLabel.hidden = !sections.some(
-          (section) => section.group === group && matchingIds.has(section.id)
+          (section) => section.group === group.id && matchingIds.has(section.id)
         );
       }
     }
@@ -232,19 +237,19 @@ export function createGlobalSettingsShell({
   searchInput.addEventListener("input", filterNavigation);
 
   const actionBar = document.createElement("footer");
-  actionBar.className = "global-settings-action-bar";
+  actionBar.className = "settings-action-bar";
 
   const changeState = document.createElement("div");
-  changeState.className = "global-settings-change-state";
+  changeState.className = "settings-change-state";
   const changeIcon = document.createElement("span");
-  changeIcon.className = "global-settings-change-icon";
+  changeIcon.className = "settings-change-icon";
   changeIcon.append(createToolIcon("check"));
   const changeLabel = document.createElement("span");
   changeLabel.textContent = "All changes saved";
   changeState.append(changeIcon, changeLabel);
 
   const actionButtons = document.createElement("div");
-  actionButtons.className = "global-settings-action-buttons";
+  actionButtons.className = "settings-action-buttons";
 
   const discardButton = document.createElement("button");
   discardButton.className = "secondary-button";
@@ -264,7 +269,7 @@ export function createGlobalSettingsShell({
   const initialStates = new Map(
     [...controllerSections.keys()].map((controller) => [
       controller,
-      serializeGlobalSettingsState(controller.getState())
+      serializeSettingsState(controller.getState())
     ])
   );
   let saving = false;
@@ -272,7 +277,7 @@ export function createGlobalSettingsShell({
 
   function getDirtyControllers() {
     return [...controllerSections.keys()].filter((controller) => (
-      serializeGlobalSettingsState(controller.getState()) !== initialStates.get(controller)
+      serializeSettingsState(controller.getState()) !== initialStates.get(controller)
     ));
   }
 
@@ -322,11 +327,11 @@ export function createGlobalSettingsShell({
       }
 
       for (const controller of dirtyControllers) {
-        initialStates.set(controller, serializeGlobalSettingsState(controller.getState()));
+        initialStates.set(controller, serializeSettingsState(controller.getState()));
       }
       onSaveComplete?.();
     } catch (error) {
-      console.error("Could not save global settings:", error);
+      console.error("Could not save settings:", error);
     } finally {
       saving = false;
       saveButton.textContent = "Save changes";
@@ -336,7 +341,7 @@ export function createGlobalSettingsShell({
 
   shell.addEventListener("input", refreshChangeState);
   shell.addEventListener("change", refreshChangeState);
-  shell.addEventListener(GLOBAL_SETTINGS_SAVE_REQUEST_EVENT, () => {
+  shell.addEventListener(SETTINGS_SAVE_REQUEST_EVENT, () => {
     void saveChanges();
   });
   const observer = new MutationObserver(refreshChangeState);

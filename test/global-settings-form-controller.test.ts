@@ -3,19 +3,19 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
-  serializeGlobalSettingsState
-} = require(`${process.cwd()}/build/renderer/globalSettingsFormController`);
+  serializeSettingsState
+} = require(`${process.cwd()}/build/renderer/settingsFormController`);
 
-test("global settings state serialization detects meaningful form changes", () => {
-  const initial = serializeGlobalSettingsState({
+test("settings state serialization detects meaningful form changes", () => {
+  const initial = serializeSettingsState({
     projectsBasePath: "/workspace/example",
     enabled: true
   });
-  const unchanged = serializeGlobalSettingsState({
+  const unchanged = serializeSettingsState({
     projectsBasePath: "/workspace/example",
     enabled: true
   });
-  const changed = serializeGlobalSettingsState({
+  const changed = serializeSettingsState({
     projectsBasePath: "/workspace/projects",
     enabled: true
   });
@@ -24,11 +24,11 @@ test("global settings state serialization detects meaningful form changes", () =
   assert.notEqual(initial, changed);
 });
 
-test("global settings state serialization preserves ordered collection changes", () => {
-  const initial = serializeGlobalSettingsState([
+test("settings state serialization preserves ordered collection changes", () => {
+  const initial = serializeSettingsState([
     { label: "Docs", url: "https://docs.example/" }
   ]);
-  const changed = serializeGlobalSettingsState([
+  const changed = serializeSettingsState([
     { label: "Docs", url: "https://docs.example/" },
     { label: "Status", url: "https://status.example/" }
   ]);

@@ -3,8 +3,8 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
-  filterGlobalSettingsSectionIds
-} = require(`${process.cwd()}/build/renderer/globalSettingsShell`);
+  filterSettingsSectionIds
+} = require(`${process.cwd()}/build/renderer/settingsShell`);
 
 const sections = [
   {
@@ -35,18 +35,18 @@ const sections = [
   }
 ];
 
-test("global settings section search returns all categories for an empty query", () => {
+test("settings section search returns all categories for an empty query", () => {
   assert.deepEqual(
-    filterGlobalSettingsSectionIds(sections, ""),
+    filterSettingsSectionIds(sections, ""),
     ["general", "plugins", "about"]
   );
 });
 
-test("global settings section search matches labels, descriptions, and keywords", () => {
-  assert.deepEqual(filterGlobalSettingsSectionIds(sections, "plugin"), ["plugins"]);
-  assert.deepEqual(filterGlobalSettingsSectionIds(sections, "project"), ["general"]);
-  assert.deepEqual(filterGlobalSettingsSectionIds(sections, "twicc"), ["plugins"]);
-  assert.deepEqual(filterGlobalSettingsSectionIds(sections, "UPDATE"), ["about"]);
+test("settings section search matches labels, descriptions, and keywords", () => {
+  assert.deepEqual(filterSettingsSectionIds(sections, "plugin"), ["plugins"]);
+  assert.deepEqual(filterSettingsSectionIds(sections, "project"), ["general"]);
+  assert.deepEqual(filterSettingsSectionIds(sections, "twicc"), ["plugins"]);
+  assert.deepEqual(filterSettingsSectionIds(sections, "UPDATE"), ["about"]);
 });
 
 export {};

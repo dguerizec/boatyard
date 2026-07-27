@@ -1,8 +1,8 @@
 import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSettings.js";
 import {
-  bindGlobalSettingsForm,
-  registerGlobalSettingsFormController
-} from "./globalSettingsFormController.js";
+  bindSettingsForm,
+  registerSettingsFormController
+} from "./settingsFormController.js";
 import {
   getGlobalPluginStatusGroup,
   matchesGlobalPluginFilter
@@ -171,7 +171,7 @@ export function createGlobalSettingsViews({
       form.append(heading, projectsBasePathLabel, error);
       applyFormControls(form);
 
-      bindGlobalSettingsForm({
+      bindSettingsForm({
         root: shell,
         form,
         error,
@@ -257,7 +257,7 @@ export function createGlobalSettingsViews({
       form.append(heading, blurLabel, widgetRailLabel, error);
       applyFormControls(form);
 
-      bindGlobalSettingsForm({
+      bindSettingsForm({
         root: shell,
         form,
         error,
@@ -306,7 +306,7 @@ export function createGlobalSettingsViews({
       form.append(heading, terminalEnvLabel, error);
       applyFormControls(form);
 
-      bindGlobalSettingsForm({
+      bindSettingsForm({
         root: shell,
         form,
         error,
@@ -381,7 +381,7 @@ export function createGlobalSettingsViews({
       form.append(heading, disclaimer, enableLabel, acceptLabel, error);
       applyFormControls(form);
 
-      bindGlobalSettingsForm({
+      bindSettingsForm({
         root: shell,
         form,
         error,
@@ -665,7 +665,7 @@ export function createGlobalSettingsViews({
       error.setAttribute("role", "alert");
       error.hidden = true;
 
-      registerGlobalSettingsFormController(shell, {
+      registerSettingsFormController(shell, {
         getState() {
           return Object.fromEntries(
             [...toggleEntries].map(([pluginId, { toggle }]) => [pluginId, toggle.checked])

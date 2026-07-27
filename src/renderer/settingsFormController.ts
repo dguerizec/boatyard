@@ -1,11 +1,11 @@
-export const GLOBAL_SETTINGS_SAVE_REQUEST_EVENT = "boatyard:global-settings-save-request";
+export const SETTINGS_SAVE_REQUEST_EVENT = "boatyard:settings-save-request";
 
-export type GlobalSettingsFormController = {
+export type SettingsFormController = {
   getState: () => unknown;
   save: () => Promise<void>;
 };
 
-type BindGlobalSettingsFormOptions<T> = {
+type BindSettingsFormOptions<T> = {
   error: HTMLElement;
   form: HTMLFormElement;
   getValues: () => T;
@@ -14,52 +14,52 @@ type BindGlobalSettingsFormOptions<T> = {
   validate?: (values: T) => string;
 };
 
-const controllers = new WeakMap<HTMLElement, GlobalSettingsFormController>();
+const controllers = new WeakMap<HTMLElement, SettingsFormController>();
 
 function asErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function serializeGlobalSettingsState(value: unknown) {
+export function serializeSettingsState(value: unknown) {
   return JSON.stringify(value);
 }
 
-export function registerGlobalSettingsFormController(
+export function registerSettingsFormController(
   root: HTMLElement,
-  controller: GlobalSettingsFormController
+  controller: SettingsFormController
 ) {
   controllers.set(root, controller);
   return root;
 }
 
-export function getGlobalSettingsFormController(root: HTMLElement) {
+export function getSettingsFormController(root: HTMLElement) {
   return controllers.get(root) || null;
 }
 
-export function hasActiveGlobalSettingsInteraction(root: ParentNode = document) {
-  const shell = root.querySelector<HTMLElement>(".global-settings-shell");
+export function hasActiveSettingsInteraction(root: ParentNode = document) {
+  const shell = root.querySelector<HTMLElement>(".settings-shell");
   return Boolean(shell && (
     shell.classList.contains("dirty") ||
     shell.matches(":focus-within")
   ));
 }
 
-export function bindGlobalSettingsForm<T>({
+export function bindSettingsForm<T>({
   error,
   form,
   getValues,
   onSubmit,
   root,
   validate
-}: BindGlobalSettingsFormOptions<T>) {
+}: BindSettingsFormOptions<T>) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    root.dispatchEvent(new CustomEvent(GLOBAL_SETTINGS_SAVE_REQUEST_EVENT, {
+    root.dispatchEvent(new CustomEvent(SETTINGS_SAVE_REQUEST_EVENT, {
       bubbles: true
     }));
   });
 
-  registerGlobalSettingsFormController(root, {
+  registerSettingsFormController(root, {
     getState: getValues,
     async save() {
       error.textContent = "";

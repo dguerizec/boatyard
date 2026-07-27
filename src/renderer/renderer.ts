@@ -1,5 +1,5 @@
 import { createGlobalSettingsPageView } from "./globalSettingsPageView.js";
-import { hasActiveGlobalSettingsInteraction } from "./globalSettingsFormController.js";
+import { hasActiveSettingsInteraction } from "./settingsFormController.js";
 import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
@@ -1019,7 +1019,7 @@ boatyardWindow.boatyard.onWorkspaceNavigationChanged?.((navigation) => {
   state = { ...state, navigation: navigation || {} };
   const hasPendingGlobalSettings = (
     navigationController.getCurrentView() === "global-settings" &&
-    hasActiveGlobalSettingsInteraction(document)
+    hasActiveSettingsInteraction(document)
   );
   if (hasPendingGlobalSettings) {
     return;

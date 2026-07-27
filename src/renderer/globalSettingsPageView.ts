@@ -1,5 +1,5 @@
 import type { UnknownRecord } from "./rendererRecords.js";
-import { createGlobalSettingsShell } from "./globalSettingsShell.js";
+import { createSettingsShell } from "./settingsShell.js";
 
 type GlobalSettingsPageViewOptions = {
   closeTerminalTabMenu: () => void;
@@ -111,7 +111,14 @@ export function createGlobalSettingsPageView({
 
     const pluginCount = pluginsSettings.querySelectorAll(".installed-plugin-item").length;
     const widgetCount = widgetsSettings.querySelectorAll(".installed-widget-item").length;
-    const shell = createGlobalSettingsShell({
+    const shell = createSettingsShell({
+      ariaLabel: "Global settings categories",
+      className: "global-settings-shell",
+      groups: [
+        { id: "boatyard", label: "Boatyard" },
+        { id: "extensions", label: "Extensions" },
+        { id: "system", label: "System" }
+      ],
       initialSectionId: activeSectionId,
       onDiscard() {
         renderGlobalSettingsPage();

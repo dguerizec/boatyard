@@ -1,7 +1,7 @@
 import { createProjectSettingsRows } from "./projectSettingsRows.js";
 import { createProjectSettingsSimpleForms } from "./projectSettingsSimpleForms.js";
 import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSettings.js";
-import { bindGlobalSettingsForm } from "./globalSettingsFormController.js";
+import { bindSettingsForm } from "./settingsFormController.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type {
   CoreFieldSetOptions,
@@ -866,7 +866,7 @@ export function createProjectSettingsViews({
       form.append(heading, list, error, actions);
       applyFormControls(form);
 
-      bindGlobalSettingsForm({
+      bindSettingsForm({
         root: shell,
         form,
         error,

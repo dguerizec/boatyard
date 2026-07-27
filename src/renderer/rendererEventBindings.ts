@@ -1,5 +1,5 @@
 import { createPluginLoader } from "./pluginLoader.js";
-import { hasActiveGlobalSettingsInteraction } from "./globalSettingsFormController.js";
+import { hasActiveSettingsInteraction } from "./settingsFormController.js";
 import type { BoatyardBridge, RendererProject } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 
@@ -138,7 +138,7 @@ export function registerRendererEventBindings({
   windowObject.addEventListener("boatyard:plugin-status-changed", () => {
     if (
       getCurrentView() === "global-settings" &&
-      !hasActiveGlobalSettingsInteraction(windowObject.document)
+      !hasActiveSettingsInteraction(windowObject.document)
     ) {
       renderGlobalSettingsPage();
     }
@@ -170,7 +170,7 @@ export function registerRendererEventBindings({
     ) {
       event.preventDefault();
       windowObject.document
-        .querySelector<HTMLInputElement>(".global-settings-search input")
+        .querySelector<HTMLInputElement>(".settings-search input")
         ?.focus();
     }
   });
