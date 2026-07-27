@@ -102,7 +102,6 @@ export function createGlobalSettingsPageView({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
         await updateSettings(values);
-        renderGlobalSettingsPage();
       }
     });
     const pluginsSettings = createGlobalPluginsSettingsView();

@@ -1139,16 +1139,10 @@ body.sidebar-collapsed .workspace {
 }
 
 .project-settings-layout {
-  grid-template-columns: minmax(min(420px, 100%), 460px) minmax(min(420px, 100%), 460px);
-  gap: 14px;
-  align-items: start;
-}
-
-.project-settings-primary,
-.project-settings-secondary {
-  min-width: 0;
-  display: grid;
-  gap: 14px;
+  display: block;
+  width: 100%;
+  max-width: 1320px;
+  margin: 0 auto;
 }
 
 .project-settings-layout .project-form-page {
@@ -3743,6 +3737,33 @@ textarea.form-control {
   .settings-search-shortcut {
     display: none;
   }
+
+  .settings-category-page .project-url-row,
+  .settings-category-page .project-webapp-home-tab-row {
+    grid-template-columns: 1fr 34px;
+  }
+
+  .settings-category-page .project-url-row input[name="urlValue"],
+  .settings-category-page .project-webapp-home-tab-parent,
+  .settings-category-page .project-webapp-home-tab-row input[name="homeTabUrl"] {
+    grid-column: 1 / -1;
+  }
+
+  .settings-category-page .project-url-row input[name="urlValue"] {
+    order: 3;
+  }
+
+  .settings-category-page .project-webapp-home-tab-parent {
+    order: 3;
+  }
+
+  .settings-category-page .project-webapp-home-tab-row input[name="homeTabUrl"] {
+    order: 4;
+  }
+
+  .settings-category-page .project-url-remove {
+    order: 2;
+  }
 }
 
 @media (max-width: 820px) {
@@ -3826,36 +3847,6 @@ textarea.form-control {
 
   .webapp-url {
     max-width: none;
-  }
-
-  .project-url-row {
-    grid-template-columns: 1fr 34px;
-  }
-
-  .project-webapp-home-tab-row {
-    grid-template-columns: 1fr 34px;
-  }
-
-  .project-url-row input[name="urlValue"] {
-    grid-column: 1 / -1;
-    order: 3;
-  }
-
-  .project-webapp-home-tab-parent,
-  .project-webapp-home-tab-row input[name="homeTabUrl"] {
-    grid-column: 1 / -1;
-  }
-
-  .project-webapp-home-tab-parent {
-    order: 3;
-  }
-
-  .project-webapp-home-tab-row input[name="homeTabUrl"] {
-    order: 4;
-  }
-
-  .project-url-remove {
-    order: 2;
   }
 
   .webapp-open-rule-dialog .form-actions {

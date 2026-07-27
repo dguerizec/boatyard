@@ -1,4 +1,5 @@
 export const SETTINGS_SAVE_REQUEST_EVENT = "boatyard:settings-save-request";
+export const SETTINGS_STATE_CHANGED_EVENT = "boatyard:settings-state-changed";
 
 export type SettingsFormController = {
   getState: () => unknown;
@@ -42,6 +43,12 @@ export function hasActiveSettingsInteraction(root: ParentNode = document) {
     shell.classList.contains("dirty") ||
     shell.matches(":focus-within")
   ));
+}
+
+export function notifySettingsStateChanged(target: EventTarget) {
+  target.dispatchEvent(new CustomEvent(SETTINGS_STATE_CHANGED_EVENT, {
+    bubbles: true
+  }));
 }
 
 export function bindSettingsForm<T>({

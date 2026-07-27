@@ -1,6 +1,7 @@
 import { createToolIcon } from "./toolIcons.js";
 import {
   SETTINGS_SAVE_REQUEST_EVENT,
+  SETTINGS_STATE_CHANGED_EVENT,
   getSettingsFormController,
   serializeSettingsState,
   type SettingsFormController
@@ -341,6 +342,7 @@ export function createSettingsShell({
 
   shell.addEventListener("input", refreshChangeState);
   shell.addEventListener("change", refreshChangeState);
+  shell.addEventListener(SETTINGS_STATE_CHANGED_EVENT, refreshChangeState);
   shell.addEventListener(SETTINGS_SAVE_REQUEST_EVENT, () => {
     void saveChanges();
   });

@@ -5,6 +5,10 @@ import {
   type WebAppMiniLayoutNode,
   type WebAppMiniLayoutPaneNode
 } from "./webAppMiniLayout.js";
+import {
+  notifySettingsStateChanged,
+  registerSettingsFormController
+} from "./settingsFormController.js";
 
 type WebAppOpenRule = {
   pattern?: string;
@@ -523,12 +527,12 @@ export function createGlobalWebAppOpenRulesSettings({
     error.setAttribute("role", "alert");
     error.hidden = true;
 
-    async function saveRules(nextRules: WebAppOpenRule[]) {
+    function saveRules(nextRules: WebAppOpenRule[]) {
       error.textContent = "";
       error.hidden = true;
-      await onSubmit({
-        webAppOpenRules: nextRules.filter((rule) => rule.pattern?.trim())
-      });
+      rules = nextRules.filter((rule) => rule.pattern?.trim());
+      renderRules();
+      notifySettingsStateChanged(shell);
     }
 
     function renderRules() {
@@ -578,6 +582,21 @@ export function createGlobalWebAppOpenRulesSettings({
     actions.append(addButton);
     panel.append(heading, list, error, actions);
     renderRules();
+
+    registerSettingsFormController(shell, {
+      getState: () => rules,
+      async save() {
+        error.textContent = "";
+        error.hidden = true;
+        try {
+          await onSubmit({ webAppOpenRules: rules });
+        } catch (submitError) {
+          error.textContent = asErrorMessage(submitError);
+          error.hidden = false;
+          throw submitError;
+        }
+      }
+    });
 
     shell.append(panel);
     return shell;

@@ -1,7 +1,10 @@
 import { createProjectSettingsRows } from "./projectSettingsRows.js";
 import { createProjectSettingsSimpleForms } from "./projectSettingsSimpleForms.js";
 import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSettings.js";
-import { bindSettingsForm } from "./settingsFormController.js";
+import {
+  bindSettingsForm,
+  notifySettingsStateChanged
+} from "./settingsFormController.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type {
   CoreFieldSetOptions,
@@ -63,6 +66,7 @@ export function createProjectSettingsViews({
     });
 
     function createProjectFormView({
+      deferred = false,
       title,
       submitLabel,
       initialValues = {},
@@ -281,6 +285,7 @@ export function createProjectSettingsViews({
           value: nextValue,
           source: options.source || "core"
         });
+        notifySettingsStateChanged(input);
         return true;
       }
     
@@ -469,6 +474,16 @@ export function createProjectSettingsViews({
       submitButton.textContent = submitLabel;
     
       actions.append(cancelButton, submitButton);
+      const readValues = () => ({
+        name: nameInput.value,
+        slug: slugInput.value,
+        group: groupInput.value,
+        sourcePath: sourcePathInput.value,
+        gitUrl: gitUrlInput.value,
+        repoUrl: repoUrlInput.value,
+        devBranch: devBranchInput.value,
+        pluginConfig: pluginSettings.readValues()
+      });
       form.append(
         heading,
         sourcePathLabel,
@@ -480,34 +495,38 @@ export function createProjectSettingsViews({
         devBranchLabel,
         ...pluginSettings.controls,
         error,
-        actions
+        ...(deferred ? [] : [actions])
       );
       applyFormControls(form);
-    
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        error.textContent = "";
-        error.hidden = true;
-    
-        try {
-          await onSubmit({
-            name: nameInput.value,
-            slug: slugInput.value,
-            group: groupInput.value,
-            sourcePath: sourcePathInput.value,
-            gitUrl: gitUrlInput.value,
-            repoUrl: repoUrlInput.value,
-            devBranch: devBranchInput.value,
-            pluginConfig: pluginSettings.readValues()
-          });
-        } catch (submitError) {
-          error.textContent = asErrorMessage(submitError);
-          error.hidden = false;
-        }
-      });
+
+      if (deferred) {
+        bindSettingsForm({
+          root: shell,
+          form,
+          error,
+          getValues: readValues,
+          validate: () => form.checkValidity() ? "" : "Complete the required project fields.",
+          onSubmit
+        });
+      } else {
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          error.textContent = "";
+          error.hidden = true;
+
+          try {
+            await onSubmit(readValues());
+          } catch (submitError) {
+            error.textContent = asErrorMessage(submitError);
+            error.hidden = false;
+          }
+        });
+      }
     
       shell.append(form);
-      requestAnimationFrame(() => sourcePathInput.focus());
+      if (!deferred) {
+        requestAnimationFrame(() => sourcePathInput.focus());
+      }
       return shell;
     }
     
@@ -652,6 +671,7 @@ export function createProjectSettingsViews({
           if (options.markEdited) {
             input.dataset.edited = "true";
           }
+          notifySettingsStateChanged(input);
           return true;
         },
         isEdited(key: string) {
@@ -731,26 +751,16 @@ export function createProjectSettingsViews({
       addButton.textContent = "Add URL";
       addButton.addEventListener("click", () => list.append(createProjectUrlRow()));
     
-      const submitButton = document.createElement("button");
-      submitButton.className = "primary-button";
-      submitButton.type = "submit";
-      submitButton.textContent = "Save URLs";
-    
-      actions.append(addButton, submitButton);
+      actions.append(addButton);
       form.append(heading, list, error, actions);
       applyFormControls(form);
-    
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        error.textContent = "";
-        error.hidden = true;
-    
-        try {
-          await onSubmit(readProjectUrlRows(list));
-        } catch (submitError) {
-          error.textContent = asErrorMessage(submitError);
-          error.hidden = false;
-        }
+
+      bindSettingsForm({
+        root: shell,
+        form,
+        error,
+        getValues: () => readProjectUrlRows(list),
+        onSubmit
       });
     
       shell.append(form);
@@ -791,29 +801,15 @@ export function createProjectSettingsViews({
       error.setAttribute("role", "alert");
       error.hidden = true;
     
-      const actions = document.createElement("div");
-      actions.className = "form-actions";
-    
-      const submitButton = document.createElement("button");
-      submitButton.className = "primary-button";
-      submitButton.type = "submit";
-      submitButton.textContent = "Save home tabs";
-    
-      actions.append(submitButton);
-      form.append(heading, list, empty, error, actions);
+      form.append(heading, list, empty, error);
       applyFormControls(form);
-    
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        error.textContent = "";
-        error.hidden = true;
-    
-        try {
-          await onSubmit(readProjectWebAppHomeTabRows(list));
-        } catch (submitError) {
-          error.textContent = asErrorMessage(submitError);
-          error.hidden = false;
-        }
+
+      bindSettingsForm({
+        root: shell,
+        form,
+        error,
+        getValues: () => readProjectWebAppHomeTabRows(list),
+        onSubmit
       });
     
       shell.append(form);
@@ -916,26 +912,16 @@ export function createProjectSettingsViews({
       addButton.textContent = "Add widget pane";
       addButton.addEventListener("click", () => list.append(createProjectWidgetPaneRow()));
     
-      const submitButton = document.createElement("button");
-      submitButton.className = "primary-button";
-      submitButton.type = "submit";
-      submitButton.textContent = "Save widget panes";
-    
-      actions.append(addButton, submitButton);
+      actions.append(addButton);
       form.append(heading, list, error, actions);
       applyFormControls(form);
-    
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        error.textContent = "";
-        error.hidden = true;
-    
-        try {
-          await onSubmit(readProjectWidgetPaneRows(list));
-        } catch (submitError) {
-          error.textContent = asErrorMessage(submitError);
-          error.hidden = false;
-        }
+
+      bindSettingsForm({
+        root: shell,
+        form,
+        error,
+        getValues: () => readProjectWidgetPaneRows(list),
+        onSubmit
       });
     
       shell.append(form);

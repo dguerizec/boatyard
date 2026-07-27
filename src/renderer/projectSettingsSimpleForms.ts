@@ -1,3 +1,5 @@
+import { bindSettingsForm } from "./settingsFormController.js";
+
 type ProjectSettingsSimpleFormsOptions = {
   applyFormControl: (control: HTMLElement) => void;
   applyFormControls: (root: HTMLElement) => void;
@@ -59,31 +61,15 @@ export function createProjectSettingsSimpleForms({
     error.setAttribute("role", "alert");
     error.hidden = true;
 
-    const actions = document.createElement("div");
-    actions.className = "form-actions";
-
-    const submitButton = document.createElement("button");
-    submitButton.className = "primary-button";
-    submitButton.type = "submit";
-    submitButton.textContent = "Save terminal";
-
-    actions.append(submitButton);
-    form.append(heading, terminalEnvLabel, error, actions);
+    form.append(heading, terminalEnvLabel, error);
     applyFormControls(form);
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      error.textContent = "";
-      error.hidden = true;
-
-      try {
-        await onSubmit({
-          terminalEnv: terminalEnvInput.value
-        });
-      } catch (submitError) {
-        error.textContent = getErrorMessage(submitError);
-        error.hidden = false;
-      }
+    bindSettingsForm({
+      root: shell,
+      form,
+      error,
+      getValues: () => ({ terminalEnv: terminalEnvInput.value }),
+      onSubmit
     });
 
     shell.append(form);

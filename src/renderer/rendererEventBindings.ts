@@ -164,7 +164,7 @@ export function registerRendererEventBindings({
   addProjectButton.addEventListener("click", selectCreateProject);
   windowObject.addEventListener("keydown", (event) => {
     if (
-      getCurrentView() === "global-settings" &&
+      ["global-settings", "project-edit"].includes(getCurrentView()) &&
       (event.ctrlKey || event.metaKey) &&
       event.key.toLocaleLowerCase() === "k"
     ) {

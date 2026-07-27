@@ -1017,11 +1017,11 @@ async function loadState() {
 
 boatyardWindow.boatyard.onWorkspaceNavigationChanged?.((navigation) => {
   state = { ...state, navigation: navigation || {} };
-  const hasPendingGlobalSettings = (
-    navigationController.getCurrentView() === "global-settings" &&
+  const hasPendingSettings = (
+    ["global-settings", "project-edit"].includes(navigationController.getCurrentView()) &&
     hasActiveSettingsInteraction(document)
   );
-  if (hasPendingGlobalSettings) {
+  if (hasPendingSettings) {
     return;
   }
   restoreNavigation(state.navigation || {});

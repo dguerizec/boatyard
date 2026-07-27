@@ -1,5 +1,6 @@
 import type { UnknownRecord } from "./rendererRecords";
 import type { RendererProject, RendererState } from "./rendererTypes";
+import { createSettingsShell } from "./settingsShell.js";
 
 type ProjectPageViewsOptions = {
   addProject: (values: UnknownRecord) => Promise<RendererState>;
@@ -54,6 +55,8 @@ export function createProjectPageViews({
   workspaceSummary,
   workspaceTitle
 }: ProjectPageViewsOptions) {
+  let activeProjectSettingsSectionId = "general";
+
   function prepareProjectFormPage(className: string) {
     resetVisibleWebAppHosts();
     hideWebApps();
@@ -108,13 +111,8 @@ export function createProjectPageViews({
     workspaceTitle.textContent = `${project.name} settings`;
     workspaceSummary.textContent = project.slug || "";
 
-    const primaryColumn = document.createElement("div");
-    primaryColumn.className = "project-settings-primary";
-
-    const secondaryColumn = document.createElement("div");
-    secondaryColumn.className = "project-settings-secondary";
-
-    primaryColumn.append(createProjectFormView({
+    const projectDetails = createProjectFormView({
+      deferred: true,
       title: "Project settings",
       submitLabel: "Save changes",
       initialValues: project,
@@ -135,49 +133,115 @@ export function createProjectPageViews({
           values.pluginConfig as UnknownRecord | undefined
         );
         setState(nextState);
-        reloadProjectSettings(projectId);
       }
-    }));
+    });
 
-    secondaryColumn.append(createProjectTerminalSettingsForm({
+    const terminalSettings = createProjectTerminalSettingsForm({
       project,
       onSubmit: async (values: UnknownRecord) => {
         setState(await updateProject(projectId, values));
-        reloadProjectSettings(projectId);
       }
-    }), createProjectUrlsForm({
+    });
+    const projectUrls = createProjectUrlsForm({
       project,
       onSubmit: async (urls: UnknownRecord[]) => {
         setState(await updateProject(projectId, { urls }));
-        reloadProjectSettings(projectId);
       }
-    }), createProjectWebAppHomeTabsForm({
+    });
+    const homeTabs = createProjectWebAppHomeTabsForm({
       project,
       onSubmit: async (homeTabs: UnknownRecord[]) => {
         setState(await updateWebAppHomeTabs(projectId, homeTabs));
-        reloadProjectSettings(projectId);
       }
-    }), createProjectWebAppOpenRulesForm({
+    });
+    const openRules = createProjectWebAppOpenRulesForm({
       project,
       onSubmit: async (webAppOpenRules: UnknownRecord[]) => {
         setState(await updateProject(projectId, { webAppOpenRules }));
-        reloadProjectSettings(projectId);
       }
-    }), createProjectWidgetPanesForm({
+    });
+    const widgetPanes = createProjectWidgetPanesForm({
       project,
       onSubmit: async (widgetPanes: UnknownRecord[]) => {
         setState(await updateProject(projectId, { widgetPanes }));
-        reloadProjectSettings(projectId);
       }
-    }), createProjectDangerZone({
+    });
+    const dangerZone = createProjectDangerZone({
       project,
       onUnregister: async () => {
         setState(await removeProject(projectId));
         selectGlobal();
       }
-    }));
+    });
 
-    dashboardGrid.append(primaryColumn, secondaryColumn);
+    const shell = createSettingsShell({
+      ariaLabel: "Project settings categories",
+      className: "project-settings-shell",
+      groups: [
+        { id: "project", label: "Project" },
+        { id: "workspace", label: "Workspace" },
+        { id: "system", label: "System" }
+      ],
+      initialSectionId: activeProjectSettingsSectionId,
+      onDiscard() {
+        reloadProjectSettings(projectId);
+      },
+      onSaveComplete() {
+        reloadProjectSettings(projectId);
+      },
+      onSectionChange(sectionId) {
+        activeProjectSettingsSectionId = sectionId;
+      },
+      sections: [
+        {
+          id: "general",
+          label: "General",
+          description: "Project identity, source checkout, and linked integrations.",
+          group: "project",
+          icon: "sliders",
+          keywords: ["name", "slug", "group", "source", "git", "repository", "plugins", "integrations"],
+          elements: [projectDetails]
+        },
+        {
+          id: "terminal",
+          label: "Terminal",
+          description: "Environment variables applied to this project's terminal sessions.",
+          group: "project",
+          icon: "terminal",
+          keywords: ["environment", "variables", "shell"],
+          elements: [terminalSettings]
+        },
+        {
+          id: "web-apps",
+          label: "Web apps",
+          description: "Project links, home tabs, and URL opening behavior.",
+          group: "workspace",
+          icon: "settingsGlobe",
+          keywords: ["urls", "links", "tabs", "opening", "rules"],
+          elements: [projectUrls, homeTabs, openRules]
+        },
+        {
+          id: "widgets",
+          label: "Widgets",
+          description: "Named widget panes available in this project.",
+          group: "workspace",
+          icon: "grid",
+          keywords: ["panes", "tabs", "layout"],
+          elements: [widgetPanes]
+        },
+        {
+          id: "danger",
+          label: "Danger zone",
+          description: "Remove this project from Boatyard without deleting its files.",
+          group: "system",
+          icon: "trash",
+          keywords: ["unregister", "remove", "delete"],
+          elements: [dangerZone]
+        }
+      ]
+    });
+
+    dashboardGrid.append(shell.element);
   }
 
   return Object.freeze({

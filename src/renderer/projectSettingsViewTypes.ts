@@ -53,6 +53,7 @@ export type ProjectSettingsViewsOptions = {
 };
 
 export type ProjectFormOptions = {
+  deferred?: boolean;
   title: string;
   submitLabel: string;
   initialValues?: ProjectFormInitialValues;
