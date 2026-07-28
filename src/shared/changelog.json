@@ -1,6 +1,32 @@
 {
-  "generatedForVersion": "0.9.3",
+  "generatedForVersion": "0.9.4",
   "releases": [
+    {
+      "version": "0.9.4",
+      "date": "2026-07-28",
+      "features": [
+        {
+          "category": "Changed",
+          "title": "Settings navigation",
+          "body": "Global and project settings now use a clearer, consistent sidebar layout."
+        },
+        {
+          "category": "Changed",
+          "title": "Automatic saving",
+          "body": "Setting changes now save when you leave a field, reducing manual save actions."
+        },
+        {
+          "category": "Changed",
+          "title": "Extension settings",
+          "body": "Global extension settings are more compact and easier to browse and filter."
+        },
+        {
+          "category": "Changed",
+          "title": "Save feedback",
+          "body": "Settings forms now provide consistent save status and error feedback."
+        }
+      ]
+    },
     {
       "version": "0.9.3",
       "date": "2026-07-26",

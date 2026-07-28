@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.4] - 2026-07-28
+
+### Summary
+
+- **v0.9.4: Streamlined settings** — Redesigned navigation, compact extension controls, and automatic saving make global and project settings faster to manage.
+
+### Changed
+
+- **Settings navigation** — Global and project settings now use a clearer, consistent sidebar layout.
+- **Automatic saving** — Setting changes now save when you leave a field, reducing manual save actions.
+- **Extension settings** — Global extension settings are more compact and easier to browse and filter.
+- **Save feedback** — Settings forms now provide consistent save status and error feedback.
+
 ## [0.9.3] - 2026-07-26
 
 ### Summary
