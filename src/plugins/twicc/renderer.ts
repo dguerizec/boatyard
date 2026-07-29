@@ -8,6 +8,7 @@
   type TwiccConfig = {
     twiccApiToken?: string;
     twiccBaseUrl?: string;
+    twiccProjectStatusDisplay?: string;
     twiccProjectUrl?: string;
     twiccTopbarUsageDisplay?: string;
   };
@@ -110,6 +111,11 @@
     input: "Input",
     done: "Done"
   };
+  const TWICC_PROJECT_STATUS_DISPLAY_DEFAULT = "labels";
+  const TWICC_PROJECT_STATUS_DISPLAY_OPTIONS = [
+    { value: "labels", label: "Labels" },
+    { value: "icon", label: "Colored icon" }
+  ];
   const TWICC_USAGE_REFRESH_MS = 60000;
   const TWICC_TOPBAR_USAGE_DISPLAY_DEFAULT = "chartsWithValues";
   const TWICC_TOPBAR_USAGE_DISPLAY_OPTIONS = [
@@ -290,15 +296,22 @@
     }
 
     const label = TWICC_PROJECT_STATUS_LABELS[status.state as keyof typeof TWICC_PROJECT_STATUS_LABELS] || status.state;
+    const iconOnly = options.globalPluginConfig?.twiccProjectStatusDisplay === "icon";
     const badge = document.createElement("span");
-    badge.className = `project-nav-badge project-twicc-status ${status.state}`;
-    badge.textContent = label;
+    badge.className = [
+      "project-nav-badge",
+      "project-twicc-status",
+      status.state,
+      iconOnly ? "icon-only" : ""
+    ].filter(Boolean).join(" ");
+    badge.textContent = iconOnly ? "" : label;
 
     const sessionLabel = status.count === 1 ? "session" : "sessions";
     const primarySession = status.sessions?.find((session) => session.state === status.state) || status.sessions?.[0];
     badge.title = primarySession?.title
       ? `Twicc: ${label.toLowerCase()} (${status.count} ${sessionLabel}) - ${primarySession.title}`
       : `Twicc: ${label.toLowerCase()} (${status.count} ${sessionLabel})`;
+    badge.setAttribute("aria-label", badge.title);
 
     return badge;
   }
@@ -927,6 +940,15 @@
               placeholder: "Optional Bearer token"
             },
             {
+              key: "twiccProjectStatusDisplay",
+              label: "Project status display",
+              type: "select",
+              valueType: "text",
+              defaultValue: TWICC_PROJECT_STATUS_DISPLAY_DEFAULT,
+              options: TWICC_PROJECT_STATUS_DISPLAY_OPTIONS,
+              description: "Choose whether project status uses text labels or the colored Twicc icon."
+            },
+            {
               key: "twiccTopbarUsageDisplay",
               label: "Top bar usage display",
               type: "select",
@@ -990,7 +1012,10 @@
           id: "boatyard.twicc.projectStatus",
           render({ project, projectConfig, globalConfig, isActiveProject }: PluginProjectNavBadgeRenderContext) {
             latestGlobalConfig = globalConfig || {};
-            return createProjectStatusBadge(project || {}, projectConfig, { isActiveProject });
+            return createProjectStatusBadge(project || {}, projectConfig, {
+              globalPluginConfig: globalConfig,
+              isActiveProject
+            });
           }
         });
 

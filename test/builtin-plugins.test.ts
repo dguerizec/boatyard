@@ -27,7 +27,7 @@ type PluginPane = {
 
 type PluginBadge = {
   id: string;
-  render(context: unknown): { className: string; textContent: string } | null;
+  render(context: unknown): { className: string; textContent: string; title: string } | null;
 };
 
 type PluginSection = {
@@ -41,6 +41,7 @@ type PluginField = {
   };
   defaultValue?: unknown;
   key: string;
+  options?: Array<{ label: string; value: string }>;
   persist?: boolean;
   readOnly?: boolean;
   type?: string;
@@ -317,7 +318,7 @@ test("Twicc service resolves session URLs from the configured project URL", () =
   );
 });
 
-test("Twicc global settings expose base URL and API token fields", () => {
+test("Twicc global settings expose connection and project status display fields", () => {
   const registry = loadRendererPluginEnvironment();
 
   registry.applyEnabledState({});
@@ -329,6 +330,12 @@ test("Twicc global settings expose base URL and API token fields", () => {
   assert.equal(fields.twiccBaseUrl.valueType, "url");
   assert.equal(fields.twiccApiToken.type, "password");
   assert.equal(fields.twiccApiToken.valueType, "text");
+  assert.equal(fields.twiccProjectStatusDisplay.type, "select");
+  assert.equal(fields.twiccProjectStatusDisplay.defaultValue, "labels");
+  assert.deepEqual(plain(fields.twiccProjectStatusDisplay.options), [
+    { value: "labels", label: "Labels" },
+    { value: "icon", label: "Colored icon" }
+  ]);
 });
 
 test("Twicc project settings offer project creation for a missing source path without clearing its configured URL", () => {
@@ -386,6 +393,47 @@ test("Twicc project nav badge matches the configured Twicc project URL", async (
 
   assert.equal(element.className, "project-nav-badge project-twicc-status working");
   assert.equal(element.textContent, "Working");
+});
+
+test("Twicc project nav badge renders a colored icon when configured", async () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const badge = registry
+    .listProjectNavBadges()
+    .find((candidate: PluginBadge) => candidate.id === "boatyard.twicc.projectStatus");
+  const element = badge.render({
+    project: {
+      id: "boatyard-internal-id",
+      name: "Project"
+    },
+    projectConfig: {
+      twiccProjectUrl: "http://localhost:3500/project/twicc-project"
+    },
+    globalConfig: {
+      twiccProjectStatusDisplay: "icon"
+    }
+  });
+
+  assert.equal(element.className, "project-nav-badge project-twicc-status working icon-only");
+  assert.equal(element.textContent, "");
+  assert.match(element.title, /^Twicc: working/);
+});
+
+test("Twicc working and input icons use distinct pulse animations", () => {
+  const styles = fs.readFileSync(`${process.cwd()}/src/plugins/twicc/style.css`, "utf8");
+
+  assert.match(
+    styles,
+    /\.project-twicc-status\.icon-only\.working::before\s*\{\s*animation: twicc-status-working-pulse 1\.8s/
+  );
+  assert.match(
+    styles,
+    /\.project-twicc-status\.icon-only\.input::before\s*\{\s*animation: twicc-status-input-pulse 0\.9s/
+  );
+  assert.match(styles, /@keyframes twicc-status-input-pulse[\s\S]*scale\(1\.14\)/);
 });
 
 test("Twicc done project nav badge stays visible for the active project", async () => {

@@ -13,6 +13,62 @@
   color: #8ee7bb;
 }
 
+.project-twicc-status.icon-only {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  justify-content: center;
+  padding: 0;
+  border-color: transparent;
+}
+
+.project-twicc-status.icon-only::before {
+  width: 16px;
+  height: 13px;
+  content: "";
+  background: currentColor;
+  -webkit-mask: url("./twicc-icon.svg") center / contain no-repeat;
+  mask: url("./twicc-icon.svg") center / contain no-repeat;
+  transform-origin: center;
+}
+
+.project-twicc-status.icon-only.working::before {
+  animation: twicc-status-working-pulse 1.8s ease-in-out infinite;
+}
+
+.project-twicc-status.icon-only.input::before {
+  animation: twicc-status-input-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes twicc-status-working-pulse {
+  0%,
+  100% {
+    opacity: 0.72;
+    transform: scale(0.94);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes twicc-status-input-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    filter: drop-shadow(0 0 0 currentColor);
+    transform: scale(0.88);
+  }
+
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 4px currentColor);
+    transform: scale(1.14);
+  }
+}
+
 .twicc-usage-widget {
   gap: 4px;
   padding: 6px;
