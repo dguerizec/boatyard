@@ -9,7 +9,7 @@ const { resolveFieldDefault } = require(`${process.cwd()}/build/renderer/pluginS
 const { registerPluginRegistry } = require(`${process.cwd()}/build/renderer/pluginRegistry`);
 const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widgetRegistry`);
 
-const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette"];
+const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette", "github"];
 
 type MockFetch = (...args: unknown[]) => Promise<unknown>;
 
@@ -269,6 +269,8 @@ test("Built-in plugins register project integrations and widgets", () => {
   );
   const colorPalettePlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.colorPalette");
   assert.deepEqual(plain(colorPalettePlugin.contributes.widgets), ["boatyard.colorPalette.widget"]);
+  const githubPlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.github");
+  assert.deepEqual(plain(githubPlugin.contributes.widgets || []), []);
 });
 
 test("Telegram plugin defaults project topic titles to the project slug", () => {

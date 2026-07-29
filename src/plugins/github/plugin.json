@@ -1,0 +1,8 @@
+{
+  "id": "boatyard.github",
+  "name": "GitHub",
+  "version": "0.1.0",
+  "apiVersion": "0.1",
+  "renderer": "renderer.js",
+  "main": "main.js"
+}
