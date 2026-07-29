@@ -422,18 +422,22 @@ test("Twicc project nav badge renders a colored icon when configured", async () 
   assert.match(element.title, /^Twicc: working/);
 });
 
-test("Twicc working and input icons use distinct pulse animations", () => {
+test("Twicc working and input icons use distinct status animations", () => {
   const styles = fs.readFileSync(`${process.cwd()}/src/plugins/twicc/style.css`, "utf8");
 
   assert.match(
     styles,
-    /\.project-twicc-status\.icon-only\.working::before\s*\{\s*animation: twicc-status-working-pulse 1\.8s/
+    /\.project-twicc-status\.icon-only\.working::before\s*\{\s*animation: twicc-status-working-spin 1s linear infinite/
   );
   assert.match(
     styles,
-    /\.project-twicc-status\.icon-only\.input::before\s*\{\s*animation: twicc-status-input-pulse 0\.9s/
+    /\.project-twicc-status\.icon-only\.input::before\s*\{\s*animation: twicc-status-input-pulse 1s linear infinite/
   );
-  assert.match(styles, /@keyframes twicc-status-input-pulse[\s\S]*scale\(1\.14\)/);
+  assert.match(
+    styles,
+    /@keyframes twicc-status-working-spin[\s\S]*rotate\(0deg\)[\s\S]*rotate\(360deg\)/
+  );
+  assert.match(styles, /@keyframes twicc-status-input-pulse[\s\S]*opacity: 1[\s\S]*opacity: 0/);
 });
 
 test("Twicc done project nav badge stays visible for the active project", async () => {

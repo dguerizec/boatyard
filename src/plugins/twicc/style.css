@@ -9,8 +9,8 @@
 }
 
 .project-twicc-status.done {
-  border-color: rgba(65, 184, 131, 0.52);
-  color: #8ee7bb;
+  border-color: rgba(65, 184, 131, 0.42);
+  color: #6fcf9f;
 }
 
 .project-twicc-status.icon-only {
@@ -34,38 +34,30 @@
 }
 
 .project-twicc-status.icon-only.working::before {
-  animation: twicc-status-working-pulse 1.8s ease-in-out infinite;
+  animation: twicc-status-working-spin 1s linear infinite;
 }
 
 .project-twicc-status.icon-only.input::before {
-  animation: twicc-status-input-pulse 0.9s ease-in-out infinite;
+  animation: twicc-status-input-pulse 1s linear infinite;
 }
 
-@keyframes twicc-status-working-pulse {
-  0%,
-  100% {
-    opacity: 0.72;
-    transform: scale(0.94);
+@keyframes twicc-status-working-spin {
+  from {
+    transform: rotate(0deg);
   }
 
-  50% {
-    opacity: 1;
-    transform: scale(1.04);
+  to {
+    transform: rotate(360deg);
   }
 }
 
 @keyframes twicc-status-input-pulse {
-  0%,
-  100% {
-    opacity: 0.55;
-    filter: drop-shadow(0 0 0 currentColor);
-    transform: scale(0.88);
+  from {
+    opacity: 1;
   }
 
-  50% {
-    opacity: 1;
-    filter: drop-shadow(0 0 4px currentColor);
-    transform: scale(1.14);
+  to {
+    opacity: 0;
   }
 }
 
