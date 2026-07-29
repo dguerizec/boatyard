@@ -1,3 +1,8 @@
+.project-twicc-status {
+  order: 1;
+  align-self: center;
+}
+
 .project-twicc-status.working {
   border-color: rgba(96, 165, 250, 0.55);
   color: #93c5fd;

@@ -438,10 +438,14 @@ test("GitHub project status styles use the GitHub icon and requested tones", () 
     styles,
     /\.project-github-status\.workflow-running\s*\{[\s\S]*color: #f59e0b;[\s\S]*animation: github-project-status-pulse 1s/
   );
-  assert.match(styles, /\.project-github-status\.pull-request\s*\{[\s\S]*color: #a78bfa;/);
-  assert.match(styles, /\.project-github-status\.pull-request-draft\s*\{[\s\S]*color: #6d4a8f;/);
+  assert.match(styles, /\.project-github-status\s*\{[\s\S]*order: 2;/);
+  assert.match(styles, /\.project-github-status\[hidden\]\s*\{\s*display: none;/);
+  assert.match(styles, /\.project-github-status\.pull-request\s*\{[\s\S]*color: #8b5cf6;/);
+  assert.match(styles, /\.project-github-status\.pull-request-draft\s*\{[\s\S]*color: #5b21b6;/);
   assert.match(styles, /\.project-github-status\.workflow-success\s*\{[\s\S]*color: #3fb950;/);
   assert.match(styles, /\.project-github-status\.workflow-failure\s*\{[\s\S]*color: #f85149;/);
+  const twiccStyles = fs.readFileSync(`${process.cwd()}/src/plugins/twicc/style.css`, "utf8");
+  assert.match(twiccStyles, /\.project-twicc-status\s*\{[\s\S]*order: 1;[\s\S]*align-self: center;/);
   assert.equal(
     fs.existsSync(`${process.cwd()}/src/plugins/github/github-icon.svg`),
     true
