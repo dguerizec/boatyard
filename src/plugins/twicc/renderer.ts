@@ -302,7 +302,8 @@
       "project-nav-badge",
       "project-twicc-status",
       status.state,
-      iconOnly ? "icon-only" : ""
+      iconOnly ? "icon-only" : "",
+      status.state === "done" && !options.isActiveProject ? "needs-attention" : ""
     ].filter(Boolean).join(" ");
     badge.textContent = iconOnly ? "" : label;
 

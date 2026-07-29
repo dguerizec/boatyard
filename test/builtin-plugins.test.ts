@@ -438,6 +438,10 @@ test("Twicc working and input icons use distinct status animations", () => {
     /@keyframes twicc-status-working-spin[\s\S]*rotate\(0deg\)[\s\S]*rotate\(360deg\)/
   );
   assert.match(styles, /@keyframes twicc-status-input-pulse[\s\S]*opacity: 1[\s\S]*opacity: 0/);
+  assert.match(
+    styles,
+    /\.project-twicc-status\.done\.needs-attention\s*\{\s*animation: twicc-status-done-pulse 1\.4s ease-in-out infinite/
+  );
 });
 
 test("Twicc done project nav badge stays visible for the active project", async () => {
@@ -472,7 +476,10 @@ test("Twicc done project nav badge stays visible for the active project", async 
   };
 
   const inactiveElement = badge.render({ ...input, isActiveProject: false });
-  assert.equal(inactiveElement.className, "project-nav-badge project-twicc-status done");
+  assert.equal(
+    inactiveElement.className,
+    "project-nav-badge project-twicc-status done needs-attention"
+  );
   assert.equal(inactiveElement.textContent, "Done");
   const activeElement = badge.render({ ...input, isActiveProject: true });
   assert.equal(activeElement.className, "project-nav-badge project-twicc-status done");
@@ -512,13 +519,19 @@ test("Twicc done project nav badge is retained until the project is opened", asy
   };
 
   const firstElement = badge.render({ ...input, isActiveProject: false });
-  assert.equal(firstElement.className, "project-nav-badge project-twicc-status done");
+  assert.equal(
+    firstElement.className,
+    "project-nav-badge project-twicc-status done needs-attention"
+  );
 
   delete twiccProjectProcessStatuses["twicc-project"];
   await refreshIntervals();
 
   const retainedElement = badge.render({ ...input, isActiveProject: false });
-  assert.equal(retainedElement.className, "project-nav-badge project-twicc-status done");
+  assert.equal(
+    retainedElement.className,
+    "project-nav-badge project-twicc-status done needs-attention"
+  );
 
   assert.equal(badge.render({ ...input, isActiveProject: true }), null);
 });
