@@ -3,8 +3,14 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  createAsyncRequestCache,
+  createGitHubService,
   getGitHubProjectStatus,
+  normalizeGitHubCommandError,
+  normalizeWorkflowJob,
+  normalizeWorkflowRun,
   parseGitHubRepositoryUrl,
+  runGitHubApiJson,
   resolveGitHubRepository
 } = require(`${process.cwd()}/build/plugins/github/service`);
 
@@ -132,6 +138,213 @@ test("getGitHubProjectStatus does not expose command errors in renderer details"
 
   assert.equal(status.state, "error");
   assert.doesNotMatch(JSON.stringify(status), /secret|sensitive/);
+});
+
+test("createAsyncRequestCache deduplicates in-flight work and honors TTL and force refresh", async () => {
+  let currentTime = 1000;
+  let resolveLoad!: (value: string) => void;
+  let calls = 0;
+  const cache = createAsyncRequestCache({ now: () => currentTime });
+  const loader = () => {
+    calls += 1;
+    return new Promise<string>((resolve) => {
+      resolveLoad = resolve;
+    });
+  };
+
+  const first = cache.get("key", loader, { ttlMs: 100 });
+  const duplicate = cache.get("key", loader, { ttlMs: 100 });
+  assert.equal(calls, 1);
+  resolveLoad("first");
+  assert.equal(await first, "first");
+  assert.equal(await duplicate, "first");
+  assert.equal(await cache.get("key", async () => "unexpected", { ttlMs: 100 }), "first");
+
+  currentTime += 100;
+  assert.equal(await cache.get("key", async () => {
+    calls += 1;
+    return "expired";
+  }, { ttlMs: 100 }), "expired");
+  assert.equal(await cache.get("key", async () => {
+    calls += 1;
+    return "forced";
+  }, { force: true, ttlMs: 100 }), "forced");
+  assert.equal(calls, 3);
+});
+
+test("runGitHubApiJson uses hostname-aware gh API arguments and rejects invalid JSON safely", async () => {
+  const calls: Array<{ command: string; args: string[] }> = [];
+  const repository = {
+    host: "github.com",
+    owner: "octo-org",
+    repo: "example"
+  };
+  const result = await runGitHubApiJson(repository, "repos/octo-org/example/actions/runs", {
+    execFileAsync: async (command: string, args: string[]) => {
+      calls.push({ command, args });
+      return { stdout: "{\"ok\":true}" };
+    }
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(calls, [{
+    command: "gh",
+    args: [
+      "api",
+      "--hostname",
+      "github.com",
+      "repos/octo-org/example/actions/runs"
+    ]
+  }]);
+
+  await assert.rejects(
+    runGitHubApiJson(repository, "repos/octo-org/example", {
+      execFileAsync: async () => ({ stdout: "not json" })
+    }),
+    (error: Error & { code?: string }) => (
+      error.message === "GitHub CLI returned invalid JSON."
+      && error.code === "invalidResponse"
+    )
+  );
+});
+
+test("normalizeGitHubCommandError maps rate limits without exposing raw command output", () => {
+  const error = new Error("API rate limit exceeded for secret account") as CommandError;
+  error.stderr = "secondary rate limit; private detail";
+  const normalized = normalizeGitHubCommandError(error);
+
+  assert.equal(normalized.code, "rateLimited");
+  assert.equal(normalized.message, "GitHub API rate limit reached. Refresh will resume later.");
+  assert.doesNotMatch(normalized.message, /secret|private/);
+});
+
+test("workflow normalizers preserve authoritative run, job, and step status", () => {
+  const job = normalizeWorkflowJob({
+    id: 22,
+    name: "Linux",
+    status: "in_progress",
+    conclusion: null,
+    html_url: "https://github.com/octo-org/example/actions/runs/11/job/22",
+    runner_name: "GitHub Actions 1",
+    labels: ["ubuntu-latest"],
+    started_at: "2026-07-29T10:01:00Z",
+    steps: [
+      {
+        number: 1,
+        name: "Checkout",
+        status: "completed",
+        conclusion: "success",
+        started_at: "2026-07-29T10:01:00Z",
+        completed_at: "2026-07-29T10:01:02Z"
+      },
+      {
+        number: 2,
+        name: "Test",
+        status: "in_progress",
+        conclusion: null,
+        started_at: "2026-07-29T10:01:02Z"
+      }
+    ]
+  });
+  const run = normalizeWorkflowRun({
+    id: 11,
+    name: "CI",
+    display_title: "Run tests",
+    status: "in_progress",
+    conclusion: null,
+    event: "push",
+    head_branch: "main",
+    head_sha: "abcdef123456",
+    run_attempt: 2,
+    run_started_at: "2026-07-29T10:01:00Z",
+    html_url: "https://github.com/octo-org/example/actions/runs/11",
+    actor: { login: "octocat" }
+  }, [job]);
+
+  assert.equal(run.status, "in_progress");
+  assert.equal(run.runAttempt, 2);
+  assert.equal(run.actorLogin, "octocat");
+  assert.equal(run.jobs[0].steps[0].conclusion, "success");
+  assert.equal(run.jobs[0].steps[1].status, "in_progress");
+});
+
+test("createGitHubService loads active jobs, keeps completed runs compact, and caches snapshots", async () => {
+  const calls: string[][] = [];
+  const execFileAsync = async (_command: string, args: string[]) => {
+    calls.push(args);
+    if (args[0] === "auth") {
+      return { stdout: "" };
+    }
+    if (args.at(-1)?.includes("/actions/runs?")) {
+      return {
+        stdout: JSON.stringify({
+          workflow_runs: [
+            {
+              id: 11,
+              name: "CI",
+              status: "in_progress",
+              conclusion: null,
+              head_branch: "main",
+              run_attempt: 1,
+              run_started_at: "2026-07-29T10:01:00Z",
+              html_url: "https://github.com/octo-org/example/actions/runs/11"
+            },
+            {
+              id: 10,
+              name: "Release",
+              status: "completed",
+              conclusion: "success",
+              head_branch: "v1.0.0",
+              run_attempt: 1,
+              run_started_at: "2026-07-29T09:00:00Z",
+              updated_at: "2026-07-29T09:02:00Z",
+              html_url: "https://github.com/octo-org/example/actions/runs/10"
+            }
+          ]
+        })
+      };
+    }
+    if (args.at(-1)?.includes("/actions/runs/11/jobs?")) {
+      return {
+        stdout: JSON.stringify({
+          jobs: [{
+            id: 22,
+            name: "Linux",
+            status: "in_progress",
+            steps: [{
+              number: 1,
+              name: "Test",
+              status: "in_progress"
+            }]
+          }]
+        })
+      };
+    }
+    throw new Error(`Unexpected arguments: ${args.join(" ")}`);
+  };
+  const service = createGitHubService({
+    execFileAsync,
+    now: () => Date.parse("2026-07-29T10:02:00Z")
+  });
+  const project = {
+    repoUrl: "https://github.com/octo-org/example"
+  };
+
+  const snapshot = await service.actionsSnapshotForProject(project);
+  assert.equal(snapshot.status.state, "ready");
+  assert.equal(snapshot.activeRunCount, 1);
+  assert.equal(snapshot.runs.length, 2);
+  assert.equal(snapshot.runs[0].jobs[0].name, "Linux");
+  assert.deepEqual(snapshot.runs[1].jobs, []);
+  assert.equal(snapshot.refreshedAt, "2026-07-29T10:02:00.000Z");
+  assert.equal(calls.length, 3);
+
+  await service.actionsSnapshotForProject(project);
+  assert.equal(calls.length, 3);
+
+  await service.actionsSnapshotForProject(project, { force: true });
+  assert.equal(calls.length, 5);
+  assert.equal(calls.filter((args) => args[0] === "auth").length, 1);
 });
 
 export {};

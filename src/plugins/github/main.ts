@@ -2,7 +2,7 @@
 
 import type { ExecFileAsync, PluginActions } from "../../shared/pluginTypes";
 
-const { getGitHubProjectStatus } = require("./service");
+const { createGitHubService } = require("./service");
 
 type GitHubProject = {
   gitUrl?: unknown;
@@ -10,6 +10,7 @@ type GitHubProject = {
 };
 
 type ProjectPayload = {
+  force?: boolean;
   project?: GitHubProject;
 };
 
@@ -19,10 +20,16 @@ type GitHubPluginContext = {
 };
 
 function activate(ctx: GitHubPluginContext) {
-  ctx.actions.handle<ProjectPayload>("statusForProject", ({ project = {} } = {}) => {
-    return getGitHubProjectStatus(project, {
-      execFileAsync: ctx.execFileAsync
-    });
+  const service = createGitHubService({
+    execFileAsync: ctx.execFileAsync
+  });
+
+  ctx.actions.handle<ProjectPayload>("statusForProject", ({ force = false, project = {} } = {}) => {
+    return service.statusForProject(project, { force });
+  });
+
+  ctx.actions.handle<ProjectPayload>("actionsSnapshotForProject", ({ force = false, project = {} } = {}) => {
+    return service.actionsSnapshotForProject(project, { force });
   });
 }
 

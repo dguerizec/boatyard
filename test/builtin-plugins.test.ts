@@ -270,7 +270,7 @@ test("Built-in plugins register project integrations and widgets", () => {
   const colorPalettePlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.colorPalette");
   assert.deepEqual(plain(colorPalettePlugin.contributes.widgets), ["boatyard.colorPalette.widget"]);
   const githubPlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.github");
-  assert.deepEqual(plain(githubPlugin.contributes.widgets || []), []);
+  assert.deepEqual(plain(githubPlugin.contributes.widgets), ["boatyard.github.actions"]);
 });
 
 test("Telegram plugin defaults project topic titles to the project slug", () => {
