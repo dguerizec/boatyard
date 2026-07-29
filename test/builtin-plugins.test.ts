@@ -431,7 +431,7 @@ test("Twicc working and input icons use distinct status animations", () => {
   );
   assert.match(
     styles,
-    /\.project-twicc-status\.icon-only\.input::before\s*\{\s*animation: twicc-status-input-pulse 1s linear infinite/
+    /\.project-twicc-status\.input\s*\{[\s\S]*?animation: twicc-status-input-pulse 1s linear infinite/
   );
   assert.match(
     styles,
