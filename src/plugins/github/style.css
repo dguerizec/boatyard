@@ -1,3 +1,61 @@
+.project-github-status {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  justify-content: center;
+  padding: 0;
+  border-color: transparent;
+  cursor: pointer;
+}
+
+.project-github-status::before {
+  width: 15px;
+  height: 15px;
+  content: "";
+  background: currentColor;
+  -webkit-mask: url("./github-icon.svg") center / contain no-repeat;
+  mask: url("./github-icon.svg") center / contain no-repeat;
+}
+
+.project-github-status.workflow-running {
+  color: #f59e0b;
+  animation: github-project-status-pulse 1s ease-in-out infinite;
+}
+
+.project-github-status.pull-request {
+  color: #a78bfa;
+}
+
+.project-github-status.pull-request-draft {
+  color: #6d4a8f;
+}
+
+.project-github-status.workflow-success {
+  color: #3fb950;
+}
+
+.project-github-status.workflow-failure {
+  color: #f85149;
+}
+
+.project-github-status:hover,
+.project-github-status:focus-visible {
+  outline: none;
+  filter: brightness(1.2);
+}
+
+@keyframes github-project-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.42;
+  }
+}
+
 .github-widget {
   min-width: 0;
   gap: 10px;

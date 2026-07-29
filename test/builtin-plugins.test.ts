@@ -50,6 +50,8 @@ type PluginField = {
 
 type PluginSummary = {
   contributes: {
+    globalSettings?: string[];
+    projectNavBadges?: string[];
     widgets: string[];
   };
   id: string;
@@ -257,11 +259,17 @@ test("Built-in plugins register project integrations and widgets", () => {
   );
   assert.deepEqual(
     plain(registry.listProjectNavBadges().map((badge: PluginBadge) => badge.id).sort()),
-    ["boatyard.twicc.projectStatus"]
+    ["boatyard.github.projectStatus", "boatyard.twicc.projectStatus"]
   );
   assert.deepEqual(
     plain(registry.listGlobalSettingsSections().map((section: PluginSection) => section.id).sort()),
-    ["boatyard.hawser.global", "boatyard.pier.global", "boatyard.telegram.global", "boatyard.twicc.global"]
+    [
+      "boatyard.github.global",
+      "boatyard.hawser.global",
+      "boatyard.pier.global",
+      "boatyard.telegram.global",
+      "boatyard.twicc.global"
+    ]
   );
   const twiccPlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.twicc");
   assert.deepEqual(
@@ -274,6 +282,14 @@ test("Built-in plugins register project integrations and widgets", () => {
   assert.deepEqual(
     plain(githubPlugin.contributes.widgets),
     ["boatyard.github.actions", "boatyard.github.pullRequests"]
+  );
+  assert.deepEqual(
+    plain(githubPlugin.contributes.projectNavBadges),
+    ["boatyard.github.projectStatus"]
+  );
+  assert.deepEqual(
+    plain(githubPlugin.contributes.globalSettings),
+    ["boatyard.github.global"]
   );
 });
 
@@ -336,6 +352,27 @@ test("Twicc global settings expose connection and project status display fields"
     { value: "labels", label: "Labels" },
     { value: "icon", label: "Colored icon" }
   ]);
+});
+
+test("GitHub global settings expose all project status priority orders", () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+  const githubSection = registry
+    .listGlobalSettingsSections()
+    .find((section: PluginSection) => section.id === "boatyard.github.global");
+  const fields = fieldMap(githubSection.fields.map((field: PluginField) => [field.key, field]));
+
+  assert.equal(fields.githubProjectStatusPriority.type, "select");
+  assert.equal(
+    fields.githubProjectStatusPriority.defaultValue,
+    "workflowRunning,pullRequest,workflowResult"
+  );
+  assert.equal(fields.githubProjectStatusPriority.options.length, 6);
+  assert.deepEqual(plain(fields.githubProjectStatusPriority.options[0]), {
+    value: "workflowRunning,pullRequest,workflowResult",
+    label: "Running workflow > Pull request > Workflow result"
+  });
 });
 
 test("Twicc project settings offer project creation for a missing source path without clearing its configured URL", () => {

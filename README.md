@@ -28,7 +28,7 @@ Optional plugin dependencies:
 - [Twicc](https://github.com/twidi/twicc), for Twicc project/session panes, widgets, and project creation helpers.
 - [Pier](https://github.com/LeoPartt/pier), for Pier preview panes and URL widgets.
 - [Hawser](https://github.com/dguerizec/hawser), for Hawser inbox panes, widgets, and task/session links.
-- [GitHub CLI](https://cli.github.com/), authenticated with `gh auth login`, for read-only GitHub Actions and pull request widgets.
+- [GitHub CLI](https://cli.github.com/), authenticated with `gh auth login`, for read-only GitHub Actions, pull request widgets, and project status icons.
 - Telegram API credentials, for Telegram project topic panes and widgets.
 
 ## Install
@@ -157,7 +157,7 @@ Core project form events currently emitted:
 
 Implemented built-in plugins:
 
-- `boatyard.github`: project-scoped GitHub Actions and pull request widgets. They use the project's repository URL, share cached refreshes, and keep review and CI states independent.
+- `boatyard.github`: project-scoped GitHub Actions and pull request widgets plus a priority-driven project status icon. They use the project's repository URL, share cached refreshes, and keep review and CI states independent.
 - `boatyard.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
 - `boatyard.twicc`: Twicc pane, global/project settings, project creation action, and service.
 - `boatyard.hawser`: Hawser pane, inbox widget, global/project settings, and service.

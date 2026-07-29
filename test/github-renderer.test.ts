@@ -10,6 +10,7 @@ const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widg
 type EventHandler = (...args: unknown[]) => void;
 
 class FakeElement {
+  attributes = new Map<string, string>();
   children: FakeElement[] = [];
   className = "";
   disabled = false;
@@ -53,11 +54,20 @@ class FakeElement {
     this.children = [...children];
   }
 
-  setAttribute() {}
+  setAttribute(name: string, value: unknown) {
+    this.attributes.set(name, String(value));
+  }
 
-  trigger(name: string) {
+  getAttribute(name: string) {
+    return this.attributes.get(name) || null;
+  }
+
+  trigger(name: string, event: unknown = {
+    preventDefault() {},
+    stopPropagation() {}
+  }) {
     for (const handler of this.listeners.get(name) || []) {
-      handler();
+      handler(event);
     }
   }
 }
@@ -148,6 +158,295 @@ function createSnapshot() {
     }
   };
 }
+
+function createPullRequestsSnapshot(pullRequests: Array<Record<string, unknown>> = []) {
+  return {
+    pullRequests,
+    refreshedAt: "2026-07-29T10:00:00Z",
+    repository: {
+      host: "github.com",
+      owner: "octo-org",
+      repo: "example"
+    },
+    status: {
+      state: "ready",
+      summary: "Authenticated."
+    },
+    viewerLogin: "octocat"
+  };
+}
+
+function getProjectStatusBadgeDefinition(context: RendererContext) {
+  const badges = context.window.BoatyardPluginRegistry?.listProjectNavBadges() as Array<{
+    id: string;
+    render(context: Record<string, unknown>): FakeElement;
+  }>;
+  return badges.find((badge) => badge.id === "boatyard.github.projectStatus");
+}
+
+test("GitHub project badges share snapshots and apply the configured status priority", async () => {
+  const invocationCounts = {
+    actions: 0,
+    pullRequests: 0
+  };
+  const activeRun = {
+    conclusion: "",
+    createdAt: "2026-07-29T10:00:00Z",
+    event: "push",
+    headBranch: "main",
+    headSha: "abcdef1",
+    htmlUrl: "https://github.com/octo-org/example/actions/runs/3",
+    id: 3,
+    jobs: [],
+    name: "Deploy",
+    runAttempt: 1,
+    startedAt: "2026-07-29T10:00:00Z",
+    status: "in_progress",
+    updatedAt: "2026-07-29T10:01:00Z"
+  };
+  const completedRun = {
+    ...activeRun,
+    conclusion: "success",
+    htmlUrl: "https://github.com/octo-org/example/actions/runs/2",
+    id: 2,
+    name: "CI",
+    status: "completed",
+    updatedAt: "2026-07-29T09:01:00Z"
+  };
+  const pullRequest = {
+    isDraft: false,
+    number: 12,
+    title: "Ready for review",
+    url: "https://github.com/octo-org/example/pull/12"
+  };
+  const context: RendererContext = {
+    clearTimeout: () => {},
+    console,
+    document: {
+      createElement: () => new FakeElement()
+    },
+    queueMicrotask,
+    setTimeout: () => 1,
+    window: {
+      boatyard: {
+        invokePlugin: async (_pluginId, actionName) => {
+          if (actionName === "actionsSnapshotForProject") {
+            invocationCounts.actions += 1;
+            return {
+              ...createSnapshot(),
+              activeRunCount: 1,
+              runs: [activeRun, completedRun]
+            };
+          }
+          if (actionName === "pullRequestsSnapshotForProject") {
+            invocationCounts.pullRequests += 1;
+            return createPullRequestsSnapshot([pullRequest]);
+          }
+          throw new Error(`Unexpected action ${actionName}`);
+        },
+        openExternal: () => {}
+      }
+    }
+  };
+  activateGitHubWidgets(context);
+  const definition = getProjectStatusBadgeDefinition(context);
+  const project = {
+    id: "project-id",
+    repoUrl: "https://github.com/octo-org/example"
+  };
+  const defaultBadge = definition?.render({ project }) as FakeElement;
+  const pullRequestFirstBadge = definition?.render({
+    project,
+    globalConfig: {
+      githubProjectStatusPriority: "pullRequest,workflowRunning,workflowResult"
+    }
+  }) as FakeElement;
+  defaultBadge.isConnected = true;
+  pullRequestFirstBadge.isConnected = true;
+
+  await flush();
+  await flush();
+
+  assert.equal(invocationCounts.actions, 1);
+  assert.equal(invocationCounts.pullRequests, 1);
+  assert.ok(defaultBadge.className.includes("workflow-running"));
+  assert.ok(pullRequestFirstBadge.className.includes("pull-request"));
+  assert.match(defaultBadge.title, /Workflow running: Deploy/);
+  assert.match(defaultBadge.title, /Pull request: Ready for review/);
+  assert.match(defaultBadge.title, /Workflow passed: CI/);
+});
+
+test("GitHub project badge distinguishes draft pull requests", async () => {
+  const context: RendererContext = {
+    clearTimeout: () => {},
+    console,
+    document: {
+      createElement: () => new FakeElement()
+    },
+    queueMicrotask,
+    setTimeout: () => 1,
+    window: {
+      boatyard: {
+        invokePlugin: async (_pluginId, actionName) => {
+          if (actionName === "actionsSnapshotForProject") {
+            return createSnapshot();
+          }
+          if (actionName === "pullRequestsSnapshotForProject") {
+            return createPullRequestsSnapshot([
+              {
+                isDraft: true,
+                number: 8,
+                title: "Work in progress",
+                url: "https://github.com/octo-org/example/pull/8"
+              }
+            ]);
+          }
+          throw new Error(`Unexpected action ${actionName}`);
+        },
+        openExternal: () => {}
+      }
+    }
+  };
+  activateGitHubWidgets(context);
+  const badge = getProjectStatusBadgeDefinition(context)?.render({
+    project: {
+      id: "project-id",
+      repoUrl: "https://github.com/octo-org/example"
+    }
+  }) as FakeElement;
+  badge.isConnected = true;
+
+  await flush();
+  await flush();
+
+  assert.ok(badge.className.includes("pull-request-draft"));
+  assert.match(badge.title, /Draft pull request: Work in progress/);
+});
+
+test("GitHub project workflow result badge opens and acknowledges successful and failed runs", async () => {
+  const openedUrls: string[] = [];
+  const results = new Map([
+    ["success", {
+      conclusion: "success",
+      htmlUrl: "https://github.com/octo-org/success/actions/runs/4",
+      id: 4,
+      name: "Successful CI"
+    }],
+    ["failure", {
+      conclusion: "failure",
+      htmlUrl: "https://github.com/octo-org/failure/actions/runs/5",
+      id: 5,
+      name: "Failed CI"
+    }]
+  ]);
+  const context: RendererContext = {
+    clearTimeout: () => {},
+    console,
+    document: {
+      createElement: () => new FakeElement()
+    },
+    queueMicrotask,
+    setTimeout: () => 1,
+    window: {
+      boatyard: {
+        invokePlugin: async (_pluginId, actionName, payload) => {
+          if (actionName === "pullRequestsSnapshotForProject") {
+            return createPullRequestsSnapshot();
+          }
+          if (actionName === "actionsSnapshotForProject") {
+            const repoUrl = String(
+              (payload as { project: { repoUrl: string } }).project.repoUrl
+            );
+            const key = repoUrl.endsWith("/failure") ? "failure" : "success";
+            const result = results.get(key) as Record<string, unknown>;
+            return {
+              ...createSnapshot(),
+              runs: [
+                {
+                  conclusion: result.conclusion,
+                  createdAt: "2026-07-29T10:00:00Z",
+                  event: "push",
+                  headBranch: "main",
+                  headSha: "abcdef1",
+                  htmlUrl: result.htmlUrl,
+                  id: result.id,
+                  jobs: [],
+                  name: result.name,
+                  runAttempt: 1,
+                  startedAt: "2026-07-29T10:00:00Z",
+                  status: "completed",
+                  updatedAt: "2026-07-29T10:01:00Z"
+                }
+              ]
+            };
+          }
+          throw new Error(`Unexpected action ${actionName}`);
+        },
+        openExternal: (url?: unknown) => {
+          openedUrls.push(String(url || ""));
+        }
+      }
+    }
+  };
+  activateGitHubWidgets(context);
+  const definition = getProjectStatusBadgeDefinition(context);
+  const successBadge = definition?.render({
+    project: {
+      id: "success-project",
+      repoUrl: "https://github.com/octo-org/success"
+    }
+  }) as FakeElement;
+  const failureBadge = definition?.render({
+    project: {
+      id: "failure-project",
+      repoUrl: "https://github.com/octo-org/failure"
+    }
+  }) as FakeElement;
+  successBadge.isConnected = true;
+  failureBadge.isConnected = true;
+
+  await flush();
+  await flush();
+
+  assert.ok(successBadge.className.includes("workflow-success"));
+  assert.ok(failureBadge.className.includes("workflow-failure"));
+
+  successBadge.trigger("click");
+  assert.equal(successBadge.hidden, true);
+  failureBadge.trigger("click");
+  assert.equal(failureBadge.hidden, true);
+  assert.deepEqual(openedUrls, [
+    "https://github.com/octo-org/success/actions/runs/4",
+    "https://github.com/octo-org/failure/actions/runs/5"
+  ]);
+
+  const acknowledgedBadge = definition?.render({
+    project: {
+      id: "success-project",
+      repoUrl: "https://github.com/octo-org/success"
+    }
+  }) as FakeElement;
+  acknowledgedBadge.isConnected = true;
+  assert.equal(acknowledgedBadge.hidden, true);
+});
+
+test("GitHub project status styles use the GitHub icon and requested tones", () => {
+  const styles = fs.readFileSync(`${process.cwd()}/src/plugins/github/style.css`, "utf8");
+
+  assert.match(styles, /mask: url\("\.\/github-icon\.svg"\)/);
+  assert.match(
+    styles,
+    /\.project-github-status\.workflow-running\s*\{[\s\S]*color: #f59e0b;[\s\S]*animation: github-project-status-pulse 1s/
+  );
+  assert.match(styles, /\.project-github-status\.pull-request\s*\{[\s\S]*color: #a78bfa;/);
+  assert.match(styles, /\.project-github-status\.pull-request-draft\s*\{[\s\S]*color: #6d4a8f;/);
+  assert.match(styles, /\.project-github-status\.workflow-success\s*\{[\s\S]*color: #3fb950;/);
+  assert.match(styles, /\.project-github-status\.workflow-failure\s*\{[\s\S]*color: #f85149;/);
+  assert.equal(
+    fs.existsSync(`${process.cwd()}/src/plugins/github/github-icon.svg`),
+    true
+  );
+});
 
 test("GitHub Actions widgets share in-flight refreshes, queue manual refresh, and stop after disconnect", async () => {
   const invocationPayloads: Array<Record<string, unknown>> = [];

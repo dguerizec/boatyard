@@ -108,6 +108,20 @@
     viewerLogin: string;
   };
 
+  type GitHubConfig = {
+    githubProjectStatusPriority?: string;
+  };
+
+  type GitHubProjectStatusCategory = "workflowRunning" | "pullRequest" | "workflowResult";
+
+  type GitHubProjectStatusSignal = {
+    category: GitHubProjectStatusCategory;
+    className: string;
+    label: string;
+    resultSignature?: string;
+    url: string;
+  };
+
   type RefreshState<TSnapshot> = {
     error: string;
     loading: boolean;
@@ -155,6 +169,34 @@
   const ACTIONS_IDLE_REFRESH_MS = 30000;
   const PULL_REQUESTS_REFRESH_MS = 30000;
   const MAX_BACKOFF_MS = 5 * 60 * 1000;
+  const GITHUB_PROJECT_STATUS_PRIORITY_DEFAULT = "workflowRunning,pullRequest,workflowResult";
+  const GITHUB_PROJECT_STATUS_PRIORITY_OPTIONS = [
+    {
+      value: "workflowRunning,pullRequest,workflowResult",
+      label: "Running workflow > Pull request > Workflow result"
+    },
+    {
+      value: "workflowRunning,workflowResult,pullRequest",
+      label: "Running workflow > Workflow result > Pull request"
+    },
+    {
+      value: "pullRequest,workflowRunning,workflowResult",
+      label: "Pull request > Running workflow > Workflow result"
+    },
+    {
+      value: "pullRequest,workflowResult,workflowRunning",
+      label: "Pull request > Workflow result > Running workflow"
+    },
+    {
+      value: "workflowResult,workflowRunning,pullRequest",
+      label: "Workflow result > Running workflow > Pull request"
+    },
+    {
+      value: "workflowResult,pullRequest,workflowRunning",
+      label: "Workflow result > Pull request > Running workflow"
+    }
+  ];
+  const acknowledgedWorkflowResults = new Map<string, string>();
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
@@ -400,6 +442,187 @@
       return PULL_REQUESTS_REFRESH_MS;
     }
   });
+
+  function getProjectStatusPriority(value: unknown): GitHubProjectStatusCategory[] {
+    const categories: GitHubProjectStatusCategory[] = [
+      "workflowRunning",
+      "pullRequest",
+      "workflowResult"
+    ];
+    const requested = String(value || "")
+      .split(",")
+      .map((category) => category.trim())
+      .filter((category): category is GitHubProjectStatusCategory => (
+        categories.includes(category as GitHubProjectStatusCategory)
+      ));
+
+    return requested.length === categories.length && new Set(requested).size === categories.length
+      ? requested
+      : GITHUB_PROJECT_STATUS_PRIORITY_DEFAULT.split(",") as GitHubProjectStatusCategory[];
+  }
+
+  function getPullRequestsUrl(snapshot: GitHubPullRequestsSnapshot): string {
+    const repository = snapshot.repository;
+    return repository
+      ? `https://${repository.host}/${repository.owner}/${repository.repo}/pulls`
+      : "";
+  }
+
+  function getProjectStatusSignals(
+    actionsSnapshot: GitHubActionsSnapshot | null,
+    pullRequestsSnapshot: GitHubPullRequestsSnapshot | null
+  ): Map<GitHubProjectStatusCategory, GitHubProjectStatusSignal> {
+    const signals = new Map<GitHubProjectStatusCategory, GitHubProjectStatusSignal>();
+    const activeRuns = actionsSnapshot?.status.state === "ready"
+      ? actionsSnapshot.runs.filter((run) => isActiveWorkflowStatus(run.status))
+      : [];
+    if (activeRuns.length) {
+      signals.set("workflowRunning", {
+        category: "workflowRunning",
+        className: "workflow-running",
+        label: activeRuns.length === 1
+          ? `Workflow running: ${activeRuns[0].name}`
+          : `${activeRuns.length} workflows running`,
+        url: activeRuns[0].htmlUrl
+      });
+    }
+
+    const pullRequests = pullRequestsSnapshot?.status.state === "ready"
+      ? pullRequestsSnapshot.pullRequests
+      : [];
+    const nonDraftPullRequests = pullRequests.filter((pullRequest) => !pullRequest.isDraft);
+    const displayedPullRequests = nonDraftPullRequests.length ? nonDraftPullRequests : pullRequests;
+    if (displayedPullRequests.length) {
+      const draftsOnly = !nonDraftPullRequests.length;
+      const directUrl = displayedPullRequests.length === 1
+        ? displayedPullRequests[0].url
+        : getPullRequestsUrl(pullRequestsSnapshot as GitHubPullRequestsSnapshot);
+      signals.set("pullRequest", {
+        category: "pullRequest",
+        className: draftsOnly ? "pull-request-draft" : "pull-request",
+        label: displayedPullRequests.length === 1
+          ? `${draftsOnly ? "Draft pull request" : "Pull request"}: ${displayedPullRequests[0].title}`
+          : `${displayedPullRequests.length} ${draftsOnly ? "draft " : ""}pull requests`,
+        url: directUrl
+      });
+    }
+
+    const completedRun = actionsSnapshot?.status.state === "ready"
+      ? actionsSnapshot.runs.find((run) => !isActiveWorkflowStatus(run.status))
+      : null;
+    const failedConclusions = ["action_required", "failure", "startup_failure", "timed_out"];
+    const resultClassName = completedRun?.conclusion === "success"
+      ? "workflow-success"
+      : failedConclusions.includes(completedRun?.conclusion || "")
+        ? "workflow-failure"
+        : "";
+    if (completedRun && resultClassName) {
+      signals.set("workflowResult", {
+        category: "workflowResult",
+        className: resultClassName,
+        label: resultClassName === "workflow-success"
+          ? `Workflow passed: ${completedRun.name}`
+          : `Workflow failed: ${completedRun.name}`,
+        resultSignature: [
+          completedRun.id,
+          completedRun.runAttempt,
+          completedRun.conclusion
+        ].join(":"),
+        url: completedRun.htmlUrl
+      });
+    }
+
+    return signals;
+  }
+
+  function createProjectStatusBadge(
+    project: GitHubProject,
+    globalConfig: GitHubConfig = {}
+  ): HTMLElement {
+    const projectKey = getProjectKey(project);
+    const badge = document.createElement("span");
+    badge.className = "project-nav-badge project-github-status";
+    badge.hidden = true;
+
+    let actionsSnapshot: GitHubActionsSnapshot | null = null;
+    let pullRequestsSnapshot: GitHubPullRequestsSnapshot | null = null;
+    let currentSignal: GitHubProjectStatusSignal | null = null;
+    let connectionCheckCompleted = false;
+
+    function updateBadge() {
+      const signals = getProjectStatusSignals(actionsSnapshot, pullRequestsSnapshot);
+      const priority = getProjectStatusPriority(globalConfig.githubProjectStatusPriority);
+      currentSignal = priority
+        .map((category) => signals.get(category) || null)
+        .find((signal) => (
+          signal
+          && (
+            signal.category !== "workflowResult"
+            || acknowledgedWorkflowResults.get(projectKey) !== signal.resultSignature
+          )
+        )) || null;
+
+      badge.hidden = !currentSignal;
+      badge.className = [
+        "project-nav-badge",
+        "project-github-status",
+        currentSignal?.className || ""
+      ].filter(Boolean).join(" ");
+      const summary = priority
+        .map((category) => signals.get(category)?.label || "")
+        .filter(Boolean)
+        .join(" · ");
+      badge.title = currentSignal ? `GitHub: ${summary}` : "";
+      badge.setAttribute("aria-hidden", currentSignal ? "false" : "true");
+      badge.setAttribute("aria-label", badge.title);
+      badge.setAttribute("role", currentSignal?.url ? "link" : "img");
+      badge.setAttribute("tabindex", currentSignal?.url ? "0" : "-1");
+    }
+
+    function activateCurrentSignal(event?: Event) {
+      if (!currentSignal?.url) {
+        return;
+      }
+      const signal = currentSignal;
+      event?.preventDefault();
+      event?.stopPropagation();
+      if (signal.category === "workflowResult" && signal.resultSignature) {
+        acknowledgedWorkflowResults.set(projectKey, signal.resultSignature);
+        updateBadge();
+      }
+      globalScope.boatyard?.openExternal?.(signal.url);
+    }
+
+    badge.addEventListener("click", activateCurrentSignal);
+    badge.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        activateCurrentSignal(event);
+      }
+    });
+
+    queueMicrotask(() => {
+      connectionCheckCompleted = true;
+    });
+    const isAlive = () => !connectionCheckCompleted || badge.isConnected;
+    actionsCoordinator.subscribe(
+      project,
+      (state) => {
+        actionsSnapshot = state.snapshot;
+        updateBadge();
+      },
+      isAlive
+    );
+    pullRequestsCoordinator.subscribe(
+      project,
+      (state) => {
+        pullRequestsSnapshot = state.snapshot;
+        updateBadge();
+      },
+      isAlive
+    );
+
+    return badge;
+  }
 
   function getStatusPresentation(status: string, conclusion = ""): StatusPresentation {
     const value = conclusion || status;
@@ -1006,7 +1229,9 @@
         widgets: [
           "boatyard.github.actions",
           "boatyard.github.pullRequests"
-        ]
+        ],
+        projectNavBadges: ["boatyard.github.projectStatus"],
+        globalSettings: ["boatyard.github.global"]
       },
       permissions: [
         "system:exec",
@@ -1018,6 +1243,31 @@
         ctx.status.set({
           state: "ready",
           summary: "GitHub integration is available"
+        });
+
+        ctx.settings.registerGlobalSection({
+          id: "boatyard.github.global",
+          title: "GitHub",
+          fields: [
+            {
+              key: "githubProjectStatusPriority",
+              label: "Project status priority",
+              type: "select",
+              valueType: "text",
+              defaultValue: GITHUB_PROJECT_STATUS_PRIORITY_DEFAULT,
+              options: GITHUB_PROJECT_STATUS_PRIORITY_OPTIONS
+            }
+          ]
+        });
+
+        ctx.projectNavBadges.register({
+          id: "boatyard.github.projectStatus",
+          render({ project, globalConfig }: PluginProjectNavBadgeRenderContext) {
+            return createProjectStatusBadge(
+              project || {},
+              globalConfig as GitHubConfig | undefined
+            );
+          }
         });
 
         ctx.widgets.register({
@@ -1051,6 +1301,9 @@
           },
           createElement: createPullRequestsWidget
         });
+      },
+      deactivate() {
+        acknowledgedWorkflowResults.clear();
       }
     }
   );
