@@ -72,6 +72,42 @@
     status: GitHubStatus;
   };
 
+  type GitHubPullRequestCiState = "blocked" | "failed" | "none" | "passed" | "running";
+  type GitHubPullRequestMergeState = "blocked" | "clean" | "conflicting" | "unknown";
+  type GitHubPullRequestReviewState = "approved" | "changesRequested" | "none" | "required";
+  type GitHubPullRequestFilter = "all" | "authored" | "changesRequested" | "ready" | "reviewRequested";
+
+  type GitHubPullRequest = {
+    authorLogin: string;
+    baseRefName: string;
+    checks: Array<{
+      conclusion: string;
+      name: string;
+      status: string;
+      url: string;
+    }>;
+    ciState: GitHubPullRequestCiState;
+    headRefName: string;
+    isAuthoredByViewer: boolean;
+    isDraft: boolean;
+    isReadyToMerge: boolean;
+    isReviewRequestedFromViewer: boolean;
+    mergeState: GitHubPullRequestMergeState;
+    number: number;
+    reviewState: GitHubPullRequestReviewState;
+    title: string;
+    updatedAt: string;
+    url: string;
+  };
+
+  type GitHubPullRequestsSnapshot = {
+    pullRequests: GitHubPullRequest[];
+    refreshedAt: string;
+    repository: GitHubActionsSnapshot["repository"];
+    status: GitHubStatus;
+    viewerLogin: string;
+  };
+
   type RefreshState<TSnapshot> = {
     error: string;
     loading: boolean;
@@ -117,6 +153,7 @@
   const registry = globalScope.BoatyardPluginRegistry;
   const ACTIONS_ACTIVE_REFRESH_MS = 5000;
   const ACTIONS_IDLE_REFRESH_MS = 30000;
+  const PULL_REQUESTS_REFRESH_MS = 30000;
   const MAX_BACKOFF_MS = 5 * 60 * 1000;
 
   if (!registry) {
@@ -143,6 +180,13 @@
       throw new Error("GitHub returned an invalid Actions snapshot.");
     }
     return value as GitHubActionsSnapshot;
+  }
+
+  function asPullRequestsSnapshot(value: unknown): GitHubPullRequestsSnapshot {
+    if (!isRecord(value) || !isRecord(value.status) || !Array.isArray(value.pullRequests)) {
+      throw new Error("GitHub returned an invalid pull request snapshot.");
+    }
+    return value as GitHubPullRequestsSnapshot;
   }
 
   function getProjectKey(project: GitHubProject): string {
@@ -333,6 +377,14 @@
       return snapshot?.activeRunCount
         ? ACTIONS_ACTIVE_REFRESH_MS
         : ACTIONS_IDLE_REFRESH_MS;
+    }
+  });
+
+  const pullRequestsCoordinator = createProjectRefreshCoordinator<GitHubPullRequestsSnapshot>({
+    actionName: "pullRequestsSnapshotForProject",
+    normalize: asPullRequestsSnapshot,
+    getRefreshInterval() {
+      return PULL_REQUESTS_REFRESH_MS;
     }
   });
 
@@ -650,6 +702,287 @@
     return card;
   }
 
+  function getReviewPresentation(pullRequest: GitHubPullRequest): StatusPresentation {
+    if (pullRequest.isDraft) {
+      return { icon: "◇", label: "Draft", tone: "muted" };
+    }
+    if (pullRequest.isReviewRequestedFromViewer) {
+      return { icon: "◎", label: "Review requested from you", tone: "review-requested" };
+    }
+    if (pullRequest.reviewState === "changesRequested") {
+      return { icon: "↺", label: "Changes requested", tone: "warning" };
+    }
+    if (pullRequest.reviewState === "approved") {
+      return { icon: "✓", label: "Approved", tone: "success" };
+    }
+    if (pullRequest.isAuthoredByViewer && pullRequest.reviewState === "required") {
+      return { icon: "○", label: "Waiting for reviewers", tone: "queued" };
+    }
+    if (pullRequest.reviewState === "required") {
+      return { icon: "○", label: "Review required", tone: "queued" };
+    }
+    return { icon: "—", label: "No review requirement", tone: "muted" };
+  }
+
+  function getCiPresentation(ciState: GitHubPullRequestCiState): StatusPresentation {
+    const presentations: Record<GitHubPullRequestCiState, StatusPresentation> = {
+      blocked: { icon: "⚠", label: "Checks blocked or action required", tone: "warning" },
+      failed: { icon: "✕", label: "Checks failed", tone: "failure" },
+      none: { icon: "—", label: "No checks", tone: "muted" },
+      passed: { icon: "✓", label: "Checks passed", tone: "success" },
+      running: { icon: "◌", label: "Checks running", tone: "running" }
+    };
+    return presentations[ciState];
+  }
+
+  function createPullRequestStatus(
+    presentation: StatusPresentation,
+    className: string
+  ): HTMLElement {
+    const status = document.createElement("span");
+    status.className = `github-pr-status ${className} ${presentation.tone}`;
+    status.title = presentation.label;
+    status.setAttribute("aria-label", presentation.label);
+    const icon = document.createElement("span");
+    icon.className = "github-pr-status-icon";
+    icon.textContent = presentation.icon;
+    const label = document.createElement("span");
+    label.className = "github-pr-status-label";
+    label.textContent = presentation.label;
+    status.append(icon, label);
+    return status;
+  }
+
+  function matchesPullRequestFilter(
+    pullRequest: GitHubPullRequest,
+    filter: GitHubPullRequestFilter
+  ): boolean {
+    switch (filter) {
+      case "authored":
+        return pullRequest.isAuthoredByViewer;
+      case "changesRequested":
+        return pullRequest.reviewState === "changesRequested";
+      case "ready":
+        return pullRequest.isReadyToMerge;
+      case "reviewRequested":
+        return pullRequest.isReviewRequestedFromViewer;
+      default:
+        return true;
+    }
+  }
+
+  function getPullRequestFilterOptions(): Array<{
+    id: GitHubPullRequestFilter;
+    label: string;
+  }> {
+    return [
+      { id: "all", label: "All" },
+      { id: "reviewRequested", label: "Review requested" },
+      { id: "authored", label: "Authored by me" },
+      { id: "changesRequested", label: "Changes requested" },
+      { id: "ready", label: "Ready" }
+    ];
+  }
+
+  function createPullRequestRow(pullRequest: GitHubPullRequest): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "github-pr-row";
+
+    const main = document.createElement("div");
+    main.className = "github-pr-main";
+    const titleLine = document.createElement("div");
+    titleLine.className = "github-pr-title-line";
+    const number = document.createElement("span");
+    number.className = "github-pr-number";
+    number.textContent = `#${pullRequest.number}`;
+    const title = createExternalLink(pullRequest.title, pullRequest.url, "github-pr-link");
+    titleLine.append(number, title);
+
+    const metadata = document.createElement("small");
+    metadata.className = "github-pr-metadata";
+    metadata.textContent = [
+      pullRequest.authorLogin,
+      pullRequest.headRefName && pullRequest.baseRefName
+        ? `${pullRequest.headRefName} → ${pullRequest.baseRefName}`
+        : "",
+      formatTimestamp(pullRequest.updatedAt)
+    ].filter(Boolean).join(" · ");
+    main.append(titleLine, metadata);
+
+    const statuses = document.createElement("div");
+    statuses.className = "github-pr-statuses";
+    statuses.append(
+      createPullRequestStatus(getReviewPresentation(pullRequest), "review"),
+      createPullRequestStatus(getCiPresentation(pullRequest.ciState), "ci")
+    );
+    if (pullRequest.mergeState === "conflicting") {
+      statuses.append(createPullRequestStatus({
+        icon: "⚠",
+        label: "Merge conflicts",
+        tone: "failure"
+      }, "merge"));
+    } else if (pullRequest.isReadyToMerge) {
+      statuses.append(createPullRequestStatus({
+        icon: "✓",
+        label: "Ready to merge",
+        tone: "ready"
+      }, "merge"));
+    }
+    row.append(main, statuses);
+    return row;
+  }
+
+  function createPullRequestsContent(
+    snapshot: GitHubPullRequestsSnapshot,
+    selectedFilter: GitHubPullRequestFilter,
+    onSelectFilter: (filter: GitHubPullRequestFilter) => void
+  ): HTMLElement {
+    const content = document.createElement("div");
+    content.className = "github-widget-content github-pr-content";
+
+    if (snapshot.status.state !== "ready") {
+      const message = document.createElement("p");
+      message.className = "github-widget-message";
+      message.textContent = snapshot.status.summary;
+      content.append(message);
+      const host = snapshot.status.details?.host;
+      if (snapshot.status.state === "notConfigured" && host) {
+        const command = document.createElement("code");
+        command.className = "github-auth-command";
+        command.textContent = `gh auth login --hostname ${host}`;
+        content.append(command);
+      }
+      return content;
+    }
+
+    const filters = document.createElement("div");
+    filters.className = "github-pr-filters";
+    for (const option of getPullRequestFilterOptions()) {
+      const count = snapshot.pullRequests.filter((pullRequest) => (
+        matchesPullRequestFilter(pullRequest, option.id)
+      )).length;
+      const button = document.createElement("button");
+      button.className = "github-pr-filter";
+      button.classList.toggle("active", option.id === selectedFilter);
+      button.type = "button";
+      button.textContent = `${option.label} ${count}`;
+      button.setAttribute("aria-pressed", String(option.id === selectedFilter));
+      button.addEventListener("click", () => onSelectFilter(option.id));
+      filters.append(button);
+    }
+
+    const pullRequests = snapshot.pullRequests.filter((pullRequest) => (
+      matchesPullRequestFilter(pullRequest, selectedFilter)
+    ));
+    const list = document.createElement("div");
+    list.className = "github-pr-list";
+    if (pullRequests.length) {
+      list.append(...pullRequests.map(createPullRequestRow));
+    } else {
+      const empty = document.createElement("p");
+      empty.className = "github-widget-message";
+      empty.textContent = snapshot.pullRequests.length
+        ? "No pull requests match this filter."
+        : "No open pull requests.";
+      list.append(empty);
+    }
+    content.append(filters, list);
+    return content;
+  }
+
+  function createPullRequestsWidget(project: GitHubProject): HTMLElement {
+    const card = document.createElement("article");
+    card.className = "widget-card github-widget github-pull-requests-widget";
+
+    const header = document.createElement("div");
+    header.className = "github-widget-header";
+    const titleGroup = document.createElement("div");
+    titleGroup.className = "github-widget-title";
+    const title = document.createElement("h3");
+    title.textContent = "Pull Requests";
+    const subtitle = document.createElement("small");
+    subtitle.textContent = "Loading pull requests…";
+    titleGroup.append(title, subtitle);
+
+    const refreshButton = document.createElement("button");
+    refreshButton.className = "github-refresh-button";
+    refreshButton.type = "button";
+    refreshButton.textContent = "↻";
+    refreshButton.title = "Refresh pull requests";
+    refreshButton.setAttribute("aria-label", "Refresh pull requests");
+    header.append(titleGroup, refreshButton);
+
+    const body = document.createElement("div");
+    body.className = "github-widget-body";
+    const loading = document.createElement("p");
+    loading.className = "github-widget-message";
+    loading.textContent = "Loading pull requests…";
+    body.append(loading);
+    card.append(header, body);
+
+    let latestSnapshot: GitHubPullRequestsSnapshot | null = null;
+    let selectedFilter: GitHubPullRequestFilter = "all";
+    let wasConnected = false;
+
+    function renderSnapshot() {
+      if (!latestSnapshot) {
+        return;
+      }
+      body.replaceChildren(createPullRequestsContent(
+        latestSnapshot,
+        selectedFilter,
+        (filter) => {
+          selectedFilter = filter;
+          renderSnapshot();
+        }
+      ));
+    }
+
+    const subscription = pullRequestsCoordinator.subscribe(
+      project,
+      (state) => {
+        refreshButton.disabled = state.loading;
+        refreshButton.classList.toggle("loading", state.loading);
+        if (state.snapshot) {
+          latestSnapshot = state.snapshot;
+          renderSnapshot();
+          subtitle.textContent = [
+            `${state.snapshot.pullRequests.length} open`,
+            state.stale ? "stale" : "",
+            formatTimestamp(state.snapshot.refreshedAt)
+          ].filter(Boolean).join(" · ");
+        } else if (state.loading) {
+          subtitle.textContent = "Loading pull requests…";
+        }
+
+        if (state.error) {
+          const error = document.createElement("p");
+          error.className = "github-widget-error";
+          error.textContent = state.stale
+            ? `Could not refresh: ${state.error}`
+            : state.error;
+          if (!state.snapshot) {
+            body.replaceChildren(error);
+          } else {
+            body.append(error);
+          }
+          subtitle.textContent = state.stale ? "Showing stale data" : "Refresh failed";
+        }
+      },
+      () => {
+        if (card.isConnected) {
+          wasConnected = true;
+        }
+        return !wasConnected || card.isConnected;
+      }
+    );
+
+    refreshButton.addEventListener("click", () => {
+      void subscription.refresh(true);
+    });
+    return card;
+  }
+
   registry.register(
     {
       id: "boatyard.github",
@@ -657,7 +990,10 @@
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
-        widgets: ["boatyard.github.actions"]
+        widgets: [
+          "boatyard.github.actions",
+          "boatyard.github.pullRequests"
+        ]
       },
       permissions: [
         "system:exec",
@@ -685,6 +1021,22 @@
             min: { columns: 3, rows: 3 }
           },
           createElement: createActionsWidget
+        });
+
+        ctx.widgets.register({
+          id: "boatyard.github.pullRequests",
+          name: "GitHub Pull Requests",
+          title: "GitHub Pull Requests",
+          scope: "project",
+          category: "Developer tools",
+          status: "experimental",
+          defaultVisible: false,
+          description: "Shows open pull requests with independent review and CI status.",
+          layout: {
+            default: { columns: 4, rows: 4 },
+            min: { columns: 3, rows: 3 }
+          },
+          createElement: createPullRequestsWidget
         });
       }
     }

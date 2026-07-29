@@ -31,6 +31,10 @@ function activate(ctx: GitHubPluginContext) {
   ctx.actions.handle<ProjectPayload>("actionsSnapshotForProject", ({ force = false, project = {} } = {}) => {
     return service.actionsSnapshotForProject(project, { force });
   });
+
+  ctx.actions.handle<ProjectPayload>("pullRequestsSnapshotForProject", ({ force = false, project = {} } = {}) => {
+    return service.pullRequestsSnapshotForProject(project, { force });
+  });
 }
 
 export { activate };

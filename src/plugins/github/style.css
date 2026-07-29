@@ -308,6 +308,170 @@
   font-size: 10px;
 }
 
+.github-pr-content {
+  gap: 9px;
+}
+
+.github-pr-filters {
+  min-width: 0;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.github-pr-filter {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(15, 23, 32, 0.58);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.github-pr-filter:hover,
+.github-pr-filter:focus-visible,
+.github-pr-filter.active {
+  border-color: rgba(65, 184, 131, 0.75);
+  color: var(--text);
+  outline: none;
+}
+
+.github-pr-filter.active {
+  background: rgba(65, 184, 131, 0.14);
+}
+
+.github-pr-list {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.github-pr-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 8px;
+  border: 1px solid rgba(52, 64, 76, 0.62);
+  border-radius: 7px;
+  background: rgba(15, 23, 32, 0.48);
+}
+
+.github-pr-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.github-pr-title-line {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.github-pr-number {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+}
+
+.github-pr-link {
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-pr-link:hover,
+.github-pr-link:focus-visible {
+  color: #58a6ff;
+  outline: none;
+}
+
+.github-pr-metadata {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.github-pr-statuses {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(28px, auto));
+  gap: 4px;
+}
+
+.github-pr-status {
+  min-width: 28px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 5px;
+  border: 1px solid rgba(52, 64, 76, 0.62);
+  border-radius: 5px;
+  background: rgba(7, 13, 18, 0.66);
+  color: var(--muted);
+}
+
+.github-pr-status-icon {
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.github-pr-status-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.github-pr-status.running {
+  color: #58a6ff;
+}
+
+.github-pr-status.running .github-pr-status-icon {
+  animation: github-spin 1.2s linear infinite;
+}
+
+.github-pr-status.review-requested {
+  border-color: rgba(88, 166, 255, 0.5);
+  color: #58a6ff;
+}
+
+.github-pr-status.queued,
+.github-pr-status.warning {
+  color: #d29922;
+}
+
+.github-pr-status.success,
+.github-pr-status.ready {
+  color: #3fb950;
+}
+
+.github-pr-status.failure {
+  color: #f85149;
+}
+
 @keyframes github-spin {
   to {
     transform: rotate(360deg);

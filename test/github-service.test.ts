@@ -3,14 +3,21 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  GITHUB_PULL_REQUESTS_QUERY,
   createAsyncRequestCache,
   createGitHubService,
   getGitHubProjectStatus,
   normalizeGitHubCommandError,
+  normalizePullRequest,
+  normalizePullRequestCiState,
+  normalizePullRequestMergeState,
+  normalizePullRequestReviewState,
+  normalizePullRequestsGraphQl,
   normalizeWorkflowJob,
   normalizeWorkflowRun,
   parseGitHubRepositoryUrl,
   runGitHubApiJson,
+  runGitHubGraphQlJson,
   resolveGitHubRepository
 } = require(`${process.cwd()}/build/plugins/github/service`);
 
@@ -18,6 +25,77 @@ type CommandError = Error & {
   code?: string;
   stderr?: string;
 };
+
+function createPullRequestGraphQlResponse() {
+  return {
+    data: {
+      viewer: {
+        login: "octocat"
+      },
+      repository: {
+        pullRequests: {
+          nodes: [
+            {
+              number: 12,
+              title: "Review this change",
+              url: "https://github.com/octo-org/example/pull/12",
+              updatedAt: "2026-07-29T11:00:00Z",
+              isDraft: false,
+              mergeStateStatus: "BLOCKED",
+              reviewDecision: "REVIEW_REQUIRED",
+              headRefName: "feature/review",
+              baseRefName: "main",
+              author: { login: "contributor" },
+              statusCheckRollup: {
+                state: "PENDING",
+                contexts: {
+                  nodes: [{
+                    __typename: "CheckRun",
+                    name: "Test",
+                    status: "IN_PROGRESS",
+                    conclusion: null,
+                    detailsUrl: "https://github.com/octo-org/example/actions/runs/1"
+                  }]
+                }
+              }
+            },
+            {
+              number: 11,
+              title: "Ready change",
+              url: "https://github.com/octo-org/example/pull/11",
+              updatedAt: "2026-07-29T10:00:00Z",
+              isDraft: false,
+              mergeStateStatus: "CLEAN",
+              reviewDecision: "APPROVED",
+              headRefName: "feature/ready",
+              baseRefName: "main",
+              author: { login: "octocat" },
+              statusCheckRollup: {
+                state: "SUCCESS",
+                contexts: {
+                  nodes: [{
+                    __typename: "StatusContext",
+                    context: "ci/build",
+                    state: "SUCCESS",
+                    targetUrl: "https://ci.example/build/1"
+                  }]
+                }
+              }
+            }
+          ]
+        }
+      },
+      search: {
+        nodes: [{
+          number: 12,
+          repository: {
+            nameWithOwner: "octo-org/example"
+          }
+        }]
+      }
+    }
+  };
+}
 
 test("parseGitHubRepositoryUrl normalizes supported GitHub remote formats", () => {
   const expected = {
@@ -344,6 +422,177 @@ test("createGitHubService loads active jobs, keeps completed runs compact, and c
 
   await service.actionsSnapshotForProject(project, { force: true });
   assert.equal(calls.length, 5);
+  assert.equal(calls.filter((args) => args[0] === "auth").length, 1);
+});
+
+test("runGitHubGraphQlJson passes the query and variables as safe gh arguments", async () => {
+  const calls: string[][] = [];
+  const repository = {
+    host: "github.com",
+    owner: "octo-org",
+    repo: "example"
+  };
+  const result = await runGitHubGraphQlJson(
+    repository,
+    "query Example($owner: String!) { repository(owner: $owner, name: \"example\") { id } }",
+    { owner: "octo-org" },
+    {
+      execFileAsync: async (_command: string, args: string[]) => {
+        calls.push(args);
+        return { stdout: "{\"data\":{\"repository\":{\"id\":\"repo-id\"}}}" };
+      }
+    }
+  );
+
+  assert.equal(result.data.repository.id, "repo-id");
+  assert.deepEqual(calls[0].slice(0, 4), [
+    "api",
+    "graphql",
+    "--hostname",
+    "github.com"
+  ]);
+  assert.ok(calls[0].includes("owner=octo-org"));
+  assert.ok(calls[0].some((argument) => argument.startsWith("query=query Example")));
+});
+
+test("pull request status normalizers keep review, CI, and merge state independent", () => {
+  assert.equal(normalizePullRequestReviewState("APPROVED"), "approved");
+  assert.equal(normalizePullRequestReviewState("CHANGES_REQUESTED"), "changesRequested");
+  assert.equal(normalizePullRequestReviewState("REVIEW_REQUIRED"), "required");
+  assert.equal(normalizePullRequestMergeState("CLEAN"), "clean");
+  assert.equal(normalizePullRequestMergeState("DIRTY"), "conflicting");
+  assert.equal(normalizePullRequestMergeState("BLOCKED"), "blocked");
+
+  assert.equal(normalizePullRequestCiState(null), "none");
+  assert.equal(normalizePullRequestCiState({
+    state: "PENDING",
+    contexts: {
+      nodes: [{ __typename: "CheckRun", status: "IN_PROGRESS", conclusion: null }]
+    }
+  }), "running");
+  assert.equal(normalizePullRequestCiState({
+    state: "SUCCESS",
+    contexts: {
+      nodes: [{ __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" }]
+    }
+  }), "passed");
+  assert.equal(normalizePullRequestCiState({
+    state: "FAILURE",
+    contexts: {
+      nodes: [{ __typename: "CheckRun", status: "COMPLETED", conclusion: "TIMED_OUT" }]
+    }
+  }), "failed");
+  assert.equal(normalizePullRequestCiState({
+    state: "FAILURE",
+    contexts: {
+      nodes: [{ __typename: "CheckRun", status: "COMPLETED", conclusion: "ACTION_REQUIRED" }]
+    }
+  }), "blocked");
+});
+
+test("normalizePullRequest marks readiness only after independent requirements pass", () => {
+  const ready = normalizePullRequest({
+    number: 11,
+    title: "Ready",
+    url: "https://github.com/octo-org/example/pull/11",
+    author: { login: "octocat" },
+    isDraft: false,
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "APPROVED",
+    statusCheckRollup: {
+      state: "SUCCESS",
+      contexts: { nodes: [] }
+    }
+  }, {
+    requestedReviewNumbers: new Set([11]),
+    viewerLogin: "octocat"
+  });
+  assert.equal(ready.isAuthoredByViewer, true);
+  assert.equal(ready.isReviewRequestedFromViewer, true);
+  assert.equal(ready.reviewState, "approved");
+  assert.equal(ready.ciState, "passed");
+  assert.equal(ready.isReadyToMerge, true);
+
+  const pending = normalizePullRequest({
+    ...ready,
+    number: 12,
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "APPROVED",
+    statusCheckRollup: {
+      state: "PENDING",
+      contexts: { nodes: [] }
+    }
+  }, {
+    viewerLogin: "octocat"
+  });
+  assert.equal(pending.reviewState, "approved");
+  assert.equal(pending.ciState, "running");
+  assert.equal(pending.isReadyToMerge, false);
+});
+
+test("normalizePullRequestsGraphQl identifies viewer review requests and authored ready PRs", () => {
+  const normalized = normalizePullRequestsGraphQl(createPullRequestGraphQlResponse());
+
+  assert.equal(normalized.viewerLogin, "octocat");
+  assert.equal(normalized.pullRequests.length, 2);
+  assert.deepEqual({
+    reviewRequested: normalized.pullRequests[0].isReviewRequestedFromViewer,
+    reviewState: normalized.pullRequests[0].reviewState,
+    ciState: normalized.pullRequests[0].ciState,
+    mergeState: normalized.pullRequests[0].mergeState
+  }, {
+    reviewRequested: true,
+    reviewState: "required",
+    ciState: "running",
+    mergeState: "blocked"
+  });
+  assert.deepEqual({
+    authored: normalized.pullRequests[1].isAuthoredByViewer,
+    reviewState: normalized.pullRequests[1].reviewState,
+    ciState: normalized.pullRequests[1].ciState,
+    ready: normalized.pullRequests[1].isReadyToMerge
+  }, {
+    authored: true,
+    reviewState: "approved",
+    ciState: "passed",
+    ready: true
+  });
+});
+
+test("createGitHubService loads and caches project pull requests with one GraphQL request", async () => {
+  const calls: string[][] = [];
+  const service = createGitHubService({
+    execFileAsync: async (_command: string, args: string[]) => {
+      calls.push(args);
+      if (args[0] === "auth") {
+        return { stdout: "" };
+      }
+      if (args[0] === "api" && args[1] === "graphql") {
+        assert.ok(args.some((argument) => argument === "owner=octo-org"));
+        assert.ok(args.some((argument) => argument === "name=example"));
+        assert.ok(args.some((argument) => argument.includes("review-requested:@me")));
+        assert.ok(args.some((argument) => argument.includes(GITHUB_PULL_REQUESTS_QUERY.trim())));
+        return { stdout: JSON.stringify(createPullRequestGraphQlResponse()) };
+      }
+      throw new Error(`Unexpected arguments: ${args.join(" ")}`);
+    },
+    now: () => Date.parse("2026-07-29T12:00:00Z")
+  });
+  const project = {
+    repoUrl: "https://github.com/octo-org/example"
+  };
+
+  const snapshot = await service.pullRequestsSnapshotForProject(project);
+  assert.equal(snapshot.status.state, "ready");
+  assert.equal(snapshot.viewerLogin, "octocat");
+  assert.equal(snapshot.pullRequests.length, 2);
+  assert.equal(snapshot.refreshedAt, "2026-07-29T12:00:00.000Z");
+  assert.equal(calls.length, 2);
+
+  await service.pullRequestsSnapshotForProject(project);
+  assert.equal(calls.length, 2);
+  await service.pullRequestsSnapshotForProject(project, { force: true });
+  assert.equal(calls.length, 3);
   assert.equal(calls.filter((args) => args[0] === "auth").length, 1);
 });
 
