@@ -14,7 +14,7 @@ Documentation: [boatyard.dev/doc](https://boatyard.dev/doc/)
 - Open project webapps and widget grids in panes with navigation controls, editable URL bar for webapps, tab picker, split panes, close panes, and persisted pane layouts.
 - Manage a freeform widget grid with lock/unlock, drag-and-drop placement, resize handles, trash dropzone, and opt-in widget installation per project.
 - Use built-in project widgets for persistent tmux terminal tabs.
-- Extend projects with built-in plugins for Pier, Twicc, and Hawser panes, widgets, settings, and services.
+- Extend projects with built-in plugins for GitHub, Pier, Twicc, and Hawser panes, widgets, settings, and services.
 - Configure global settings for projects base path, webapp overlay blur, password handling, plugins, and installed widgets.
 
 ## Requirements
@@ -28,6 +28,7 @@ Optional plugin dependencies:
 - [Twicc](https://github.com/twidi/twicc), for Twicc project/session panes, widgets, and project creation helpers.
 - [Pier](https://github.com/LeoPartt/pier), for Pier preview panes and URL widgets.
 - [Hawser](https://github.com/dguerizec/hawser), for Hawser inbox panes, widgets, and task/session links.
+- [GitHub CLI](https://cli.github.com/), authenticated with `gh auth login`, for read-only GitHub Actions and pull request widgets.
 - Telegram API credentials, for Telegram project topic panes and widgets.
 
 ## Install
@@ -156,6 +157,7 @@ Core project form events currently emitted:
 
 Implemented built-in plugins:
 
+- `boatyard.github`: project-scoped GitHub Actions and pull request widgets. They use the project's repository URL, share cached refreshes, and keep review and CI states independent.
 - `boatyard.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
 - `boatyard.twicc`: Twicc pane, global/project settings, project creation action, and service.
 - `boatyard.hawser`: Hawser pane, inbox widget, global/project settings, and service.
@@ -168,7 +170,7 @@ npm run lint
 npm test
 ```
 
-`npm run lint` performs JavaScript syntax checks with Node. `npm test` runs the store, plugin registry, widget registry, terminal service, Twicc service, Hawser service, and plugin field tests.
+`npm run lint` performs JavaScript syntax checks with Node. `npm test` runs the store, plugin registry, widget registry, terminal service, GitHub service and widget renderer, Twicc service, Hawser service, and plugin field tests.
 
 The smoke entrypoint is also available:
 

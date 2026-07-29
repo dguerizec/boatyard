@@ -168,7 +168,15 @@
   }
 
   function getErrorMessage(error: unknown): string {
-    return error instanceof Error ? error.message : String(error || "GitHub request failed.");
+    if (
+      error
+      && typeof error === "object"
+      && "message" in error
+      && typeof error.message === "string"
+    ) {
+      return error.message;
+    }
+    return String(error || "GitHub request failed.");
   }
 
   function isRecord(value: unknown): value is PluginRegistryRecord {
@@ -190,7 +198,12 @@
   }
 
   function getProjectKey(project: GitHubProject): string {
-    return String(project.id || project.repoUrl || project.gitUrl || project.slug || "").trim();
+    return [
+      project.id,
+      project.repoUrl,
+      project.gitUrl,
+      project.slug
+    ].map((value) => String(value || "").trim()).join("\u0000");
   }
 
   function createProjectRefreshCoordinator<TSnapshot>({
