@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.5] - 2026-07-30
+
+### Summary
+
+- **v0.9.5: Project activity at a glance** — GitHub and Twicc project indicators now make pull requests, workflow results, and agent activity easier to scan from Boatyard.
+
+### Added
+
+- **GitHub project widget** — Projects can now show GitHub Actions runs and pull requests directly in Boatyard.
+- **GitHub status icon** — The project list now surfaces prioritized GitHub activity so important workflow and pull request states are visible at a glance.
+- **Twicc status icon** — Twicc project activity now appears with a dedicated status icon in project rows.
+
+### Changed
+
+- **Workflow run history** — GitHub workflow results now appear as clear state transitions with readable run titles.
+- **Twicc activity feedback** — Twicc status animations and input pulses are more consistent across display modes.
+- **Twicc unread completions** — Unread Twicc completions are prioritized contextually so finished work is easier to notice.
+- **Worktree status rollup** — Twicc status now aggregates activity across a project's worktrees.
+
+### Fixed
+
+- **GitHub refresh behavior** — The GitHub widget refresh flow is more resilient when project data changes.
+- **Twicc completion notifications** — Twicc completion notifications can now be acknowledged so completed activity stops demanding attention.
+
 ## [0.9.4] - 2026-07-28
 
 ### Summary

@@ -1,6 +1,57 @@
 {
-  "generatedForVersion": "0.9.4",
+  "generatedForVersion": "0.9.5",
   "releases": [
+    {
+      "version": "0.9.5",
+      "date": "2026-07-30",
+      "features": [
+        {
+          "category": "Added",
+          "title": "GitHub project widget",
+          "body": "Projects can now show GitHub Actions runs and pull requests directly in Boatyard."
+        },
+        {
+          "category": "Added",
+          "title": "GitHub status icon",
+          "body": "The project list now surfaces prioritized GitHub activity so important workflow and pull request states are visible at a glance."
+        },
+        {
+          "category": "Added",
+          "title": "Twicc status icon",
+          "body": "Twicc project activity now appears with a dedicated status icon in project rows."
+        },
+        {
+          "category": "Changed",
+          "title": "Workflow run history",
+          "body": "GitHub workflow results now appear as clear state transitions with readable run titles."
+        },
+        {
+          "category": "Changed",
+          "title": "Twicc activity feedback",
+          "body": "Twicc status animations and input pulses are more consistent across display modes."
+        },
+        {
+          "category": "Changed",
+          "title": "Twicc unread completions",
+          "body": "Unread Twicc completions are prioritized contextually so finished work is easier to notice."
+        },
+        {
+          "category": "Changed",
+          "title": "Worktree status rollup",
+          "body": "Twicc status now aggregates activity across a project's worktrees."
+        },
+        {
+          "category": "Fixed",
+          "title": "GitHub refresh behavior",
+          "body": "The GitHub widget refresh flow is more resilient when project data changes."
+        },
+        {
+          "category": "Fixed",
+          "title": "Twicc completion notifications",
+          "body": "Twicc completion notifications can now be acknowledged so completed activity stops demanding attention."
+        }
+      ]
+    },
     {
       "version": "0.9.4",
       "date": "2026-07-28",
