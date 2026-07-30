@@ -66,7 +66,7 @@ type BoatyardManualGlobal = typeof globalThis & {
         entries: [
           {
             title: "Add a project",
-            body: "Use Add project to register a checkout. Boatyard can infer the name, slug, Git URL, and repository URL from the source path."
+            body: "Use Add project, then select the source path first. Boatyard can infer the name, slug, Git URL, repository URL, and development branch from the selected checkout; review the derived fields before saving."
           },
           {
             title: "Project settings",
