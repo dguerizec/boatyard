@@ -434,6 +434,10 @@
     return `${run.id}:${run.runAttempt}`;
   }
 
+  function getWorkflowRunTitle(run: GitHubWorkflowRun): string {
+    return run.displayTitle || run.name;
+  }
+
   function getWorkflowNotificationState(projectKey: string): GitHubWorkflowNotificationState {
     let state = workflowNotificationStates.get(projectKey);
     if (!state) {
@@ -460,8 +464,8 @@
       category: "workflowResult",
       className,
       label: className === "workflow-success"
-        ? `Workflow passed: ${run.name}`
-        : `Workflow failed: ${run.name}`,
+        ? `Workflow passed: ${getWorkflowRunTitle(run)}`
+        : `Workflow failed: ${getWorkflowRunTitle(run)}`,
       url: run.htmlUrl
     };
   }
@@ -584,7 +588,7 @@
         category: "workflowRunning",
         className: "workflow-running",
         label: activeRuns.length === 1
-          ? `Workflow running: ${activeRuns[0].name}`
+          ? `Workflow running: ${getWorkflowRunTitle(activeRuns[0])}`
           : `${activeRuns.length} workflows running`,
         url: activeRuns[0].htmlUrl
       });
@@ -848,7 +852,7 @@
     const header = document.createElement("div");
     header.className = "github-run-header";
     const status = createStatusIcon(run.status, run.conclusion);
-    const title = createExternalLink(run.name, run.htmlUrl, "github-run-link");
+    const title = createExternalLink(getWorkflowRunTitle(run), run.htmlUrl, "github-run-link");
     const duration = document.createElement("small");
     duration.className = "github-run-duration";
     duration.textContent = formatDuration(run.startedAt || run.createdAt);
@@ -881,7 +885,7 @@
     const row = document.createElement("div");
     row.className = "github-completed-run";
     const status = createStatusIcon(run.status, run.conclusion);
-    const link = createExternalLink(run.name, run.htmlUrl, "github-run-link");
+    const link = createExternalLink(getWorkflowRunTitle(run), run.htmlUrl, "github-run-link");
     const metadata = document.createElement("small");
     metadata.textContent = [
       run.headBranch || run.headSha.slice(0, 7),

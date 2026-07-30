@@ -792,6 +792,7 @@ test("GitHub Actions widget renders active matrix jobs and terminal conclusions"
             {
               conclusion: "",
               createdAt: "2026-07-29T10:00:00Z",
+              displayTitle: "Validate widget changes",
               event: "pull_request",
               headBranch: "feature/widgets",
               headSha: "abcdef123456",
@@ -859,6 +860,7 @@ test("GitHub Actions widget renders active matrix jobs and terminal conclusions"
             ...["success", "failure", "cancelled", "timed_out", "neutral"].map((conclusion, index) => ({
               conclusion,
               createdAt: `2026-07-29T0${9 - index}:00:00Z`,
+              displayTitle: `Release ${conclusion}`,
               event: "push",
               headBranch: "main",
               headSha: `abcdef${index}`,
@@ -894,11 +896,13 @@ test("GitHub Actions widget renders active matrix jobs and terminal conclusions"
   assert.ok(findByText(card, "Test (Node 24)"));
   assert.ok(findByText(card, "Optional integration"));
   assert.ok(findByText(card, "Protected deployment"));
-  assert.ok(findByText(card, "Completed success"));
-  assert.ok(findByText(card, "Completed failure"));
-  assert.ok(findByText(card, "Completed cancelled"));
-  assert.ok(findByText(card, "Completed timed_out"));
-  assert.ok(findByText(card, "Completed neutral"));
+  assert.ok(findByText(card, "Validate widget changes"));
+  assert.ok(findByText(card, "Release success"));
+  assert.ok(findByText(card, "Release failure"));
+  assert.ok(findByText(card, "Release cancelled"));
+  assert.ok(findByText(card, "Release timed_out"));
+  assert.ok(findByText(card, "Release neutral"));
+  assert.equal(findByText(card, "Completed success"), null);
   assert.ok(findAllByClass(card, "running").length >= 2);
   assert.ok(findAllByClass(card, "queued").length >= 2);
   assert.ok(findAllByClass(card, "success").length >= 1);
