@@ -299,21 +299,39 @@ test("aliasTwiccProjectProcessStatuses exposes statuses by Boatyard project id",
   );
 });
 
-test("aliasTwiccProjectProcessStatuses rolls worktree statuses up to Boatyard parent projects", () => {
-  const status = {
+test("aliasTwiccProjectProcessStatuses aggregates root and worktree statuses by project", () => {
+  const rootStatus = {
+    state: "done",
+    count: 1,
+    sessions: [{
+      id: "root-session",
+      title: "Finished root session",
+      state: "done"
+    }]
+  };
+  const worktreeStatus = {
     state: "working",
     count: 1,
     sessions: [{
-      id: "session-id",
-      title: "Working session",
+      id: "worktree-session",
+      title: "Working worktree session",
       state: "working"
     }]
+  };
+  const aggregatedStatus = {
+    state: "working",
+    count: 2,
+    sessions: [
+      ...rootStatus.sessions,
+      ...worktreeStatus.sessions
+    ]
   };
 
   assert.deepEqual(
     aliasTwiccProjectProcessStatuses(
       {
-        "twicc-worktree": status
+        "twicc-parent": rootStatus,
+        "twicc-worktree": worktreeStatus
       },
       [
         {
@@ -335,8 +353,9 @@ test("aliasTwiccProjectProcessStatuses rolls worktree statuses up to Boatyard pa
       }]
     ),
     {
-      "twicc-worktree": status,
-      "boatyard-parent": status
+      "twicc-parent": aggregatedStatus,
+      "twicc-worktree": worktreeStatus,
+      "boatyard-parent": aggregatedStatus
     }
   );
 });

@@ -429,12 +429,24 @@ function aliasTwiccProjectProcessStatuses(
   boatyardProjects: BoatyardProject[] = []
 ): TwiccProjectProcessStatuses {
   const aliased = { ...statuses };
+  const projectList = Array.isArray(twiccProjects) ? twiccProjects : [];
+
+  for (const twiccProject of projectList) {
+    if (!twiccProject?.id || twiccProject.worktree_of) {
+      continue;
+    }
+
+    const twiccStatus = mergeTwiccProjectProcessStatuses(
+      getRelatedTwiccProjectIds(twiccProject, projectList).map((projectId) => statuses[projectId])
+    );
+    if (twiccStatus) {
+      aliased[twiccProject.id] = twiccStatus;
+    }
+  }
 
   for (const project of Array.isArray(boatyardProjects) ? boatyardProjects : []) {
-    const twiccProject = findTwiccProjectForPath(twiccProjects, project?.sourcePath);
-    const twiccStatus = mergeTwiccProjectProcessStatuses(
-      getRelatedTwiccProjectIds(twiccProject, twiccProjects).map((projectId) => statuses[projectId])
-    );
+    const twiccProject = findTwiccProjectForPath(projectList, project?.sourcePath);
+    const twiccStatus = twiccProject?.id ? aliased[twiccProject.id] : null;
     if (project?.id && twiccStatus && !aliased[project.id]) {
       aliased[project.id] = twiccStatus;
     }
