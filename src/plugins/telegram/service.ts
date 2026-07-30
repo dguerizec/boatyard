@@ -2,14 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { EventEmitter } = require("node:events");
 const { safeStorage } = require("electron");
-const { Api, TelegramClient, utils } = require("telegram");
-const { CustomFile } = require("telegram/client/uploads");
-const { NewMessage } = require("telegram/events");
-const { StringSession } = require("telegram/sessions");
 
-const CLIENT_OPTIONS = {
-  connectionRetries: 3
-};
 const LOGIN_WAIT_TIMEOUT_MS = 30000;
 const MESSAGE_LIMIT = 50;
 const TOPIC_HISTORY_SCAN_LIMIT = 500;
@@ -17,9 +10,10 @@ const MAX_PASTED_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_MESSAGE_IMAGE_BYTES = 20 * 1024 * 1024;
 const MAX_MESSAGE_IMAGE_PREVIEW_BYTES = 2 * 1024 * 1024;
 const MESSAGE_IMAGE_PREVIEW_CONCURRENCY = 4;
-const MESSAGE_IMAGE_PREVIEW_THUMB_INDICES = [2, 1, 0];
+const GRAMJS_SESSION_VERSION = "1";
 
 type UnknownRecord = Record<string, unknown>;
+type MtcuteModule = typeof import("@mtcute/node");
 
 type TelegramCredentials = {
   apiId: number;
@@ -52,37 +46,41 @@ type TelegramLoginState = {
   summary: string;
 };
 
-type TelegramEventHandler = (event: { message?: unknown }) => void;
+type TelegramEventHandler = (message: unknown) => void;
 
 type TelegramRuntimeClient = {
-  addEventHandler(handler: TelegramEventHandler, builder: unknown): void;
-  checkAuthorization(): Promise<boolean>;
-  connect(): Promise<unknown>;
-  connected?: boolean;
-  getInputEntity(peer: unknown): Promise<unknown>;
+  connect(): Promise<void>;
+  createForumTopic(params: UnknownRecord): Promise<UnknownRecord>;
+  destroy(): Promise<void>;
+  downloadAsBuffer(location: unknown, options?: UnknownRecord): Promise<Uint8Array>;
+  exportSession(): Promise<string>;
+  getForumTopics(peer: unknown, options: UnknownRecord): Promise<UnknownRecord[]>;
+  getForumTopicsById(peer: unknown, ids: number[]): Promise<(UnknownRecord | null)[]>;
+  getHistory(peer: unknown, options: UnknownRecord): Promise<UnknownRecord[]>;
   getMe(): Promise<UnknownRecord>;
-  getMessages(peer: unknown, options: UnknownRecord): Promise<UnknownRecord[]>;
-  downloadMedia(message: unknown, options?: UnknownRecord): Promise<Buffer | string | undefined>;
-  invoke(request: unknown): Promise<UnknownRecord>;
-  removeEventHandler(handler: TelegramEventHandler, builder: unknown): void;
-  sendMessage(peer: unknown, options: UnknownRecord): Promise<UnknownRecord>;
-  sendFile(peer: unknown, options: UnknownRecord): Promise<UnknownRecord>;
-  session: {
-    save(): string;
+  getMessages(peer: unknown, ids: number[]): Promise<(UnknownRecord | null)[]>;
+  importSession(session: string | MtcuteSessionData, force?: boolean): Promise<void>;
+  isConnected: boolean;
+  notifyLoggedIn(user: unknown): Promise<unknown>;
+  onNewMessage: {
+    add(handler: TelegramEventHandler): void;
+    remove(handler: TelegramEventHandler): void;
   };
-  signInUser(
-    credentials: TelegramCredentials,
-    callbacks: {
-      onError(error: Error): boolean;
-      password(): Promise<string>;
-      phoneCode(isCodeViaApp: boolean): Promise<string>;
-      phoneNumber: string;
-    }
-  ): Promise<unknown>;
+  prepare(): Promise<void>;
+  sendMedia(peer: unknown, media: UnknownRecord, options: UnknownRecord): Promise<UnknownRecord>;
+  sendText(peer: unknown, text: string, options: UnknownRecord): Promise<UnknownRecord>;
+  start(options: {
+    code(): Promise<string>;
+    codeSentCallback(code: UnknownRecord): void;
+    invalidCodeCallback(type: "code" | "password"): void;
+    password(): Promise<string>;
+    phone: string;
+  }): Promise<UnknownRecord>;
 };
 
 type TelegramImageUpload = {
   buffer: Buffer;
+  mimeType: string;
   name: string;
 };
 
@@ -95,6 +93,27 @@ type TelegramPendingLogin = {
   phase: string;
   summary: string;
 };
+
+type MtcuteDc = {
+  id: number;
+  ipAddress: string;
+  port: number;
+};
+
+type MtcuteSessionData = {
+  authKey: Uint8Array;
+  primaryDcs: {
+    main: MtcuteDc;
+    media: MtcuteDc;
+  };
+};
+
+let mtcuteModulePromise: Promise<MtcuteModule> | null = null;
+
+function loadMtcute(): Promise<MtcuteModule> {
+  mtcuteModulePromise ||= import("@mtcute/node");
+  return mtcuteModulePromise;
+}
 
 function isRecord(value: unknown): value is UnknownRecord {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -152,6 +171,7 @@ function parsePastedImage(value: unknown): TelegramImageUpload | null {
 
   return {
     buffer,
+    mimeType,
     name: normalizeImageName(value.name, mimeType)
   };
 }
@@ -187,37 +207,42 @@ function normalizeThreadId(value: unknown): number | null {
 
 function getMessageTopicIds(message: unknown = {}): number[] {
   const source = getRecord(message);
-  const replyTo = getRecord(source.replyTo);
+  const replyTo = getRecord(source.replyToMessage);
   return [
     source.id,
-    replyTo.replyToTopId,
-    replyTo.replyToMsgId
+    replyTo.threadId,
+    replyTo.id
   ]
     .map((value) => Number(value))
     .filter((value) => Number.isInteger(value) && value > 0);
 }
 
 function getMessageChatId(message: unknown = {}): string {
-  const source = getRecord(message);
-  return source.peerId ? utils.getPeerId(source.peerId) : "";
+  const chat = getRecord(getRecord(message).chat);
+  return normalizeText(chat.id);
 }
 
 function getTelegramImageMimeType(message: unknown = {}): string {
   const media = getRecord(getRecord(message).media);
-  if (media.photo) {
+  if (media.type === "photo") {
     return "image/jpeg";
   }
 
-  const mimeType = normalizeText(getRecord(media.document).mimeType).toLowerCase();
+  const mimeType = normalizeText(media.mimeType).toLowerCase();
   return /^image\/(gif|jpeg|png|webp)$/.test(mimeType) ? mimeType : "";
 }
 
 function getImageDataUrl(value: unknown, mimeType: string, maxBytes: number): string {
-  if (!Buffer.isBuffer(value) || !value.length || value.length > maxBytes) {
+  if (!ArrayBuffer.isView(value)) {
     return "";
   }
 
-  return `data:${mimeType};base64,${value.toString("base64")}`;
+  const buffer = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  if (!buffer.length || buffer.length > maxBytes) {
+    return "";
+  }
+
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
 function normalizeTopicTitle(value: unknown): string {
@@ -250,12 +275,26 @@ function addTopicMetadataPrefix(text: unknown, target: unknown = {}): string {
   return prefix ? `${prefix}\n${message}` : message;
 }
 
-function serializeError(error: unknown): string {
+function getTelegramErrorText(error: unknown): string {
   const source = getRecord(error);
-  return normalizeText(source.errorMessage || source.message) || "Telegram request failed.";
+  return normalizeText(source.text || source.errorMessage || source.message);
+}
+
+function serializeError(error: unknown): string {
+  return getTelegramErrorText(error) || "Telegram request failed.";
+}
+
+function isUnauthorizedError(error: unknown): boolean {
+  return /AUTH_KEY_UNREGISTERED|SESSION_EXPIRED|SESSION_REVOKED|USER_DEACTIVATED/i.test(
+    getTelegramErrorText(error)
+  );
 }
 
 function formatMessageDate(value: unknown): string {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? "" : value.toISOString();
+  }
+
   const date = Number(value);
   if (!Number.isFinite(date)) {
     return "";
@@ -269,9 +308,143 @@ function getSenderName(message: unknown = {}): string {
   const sender = getRecord(source.sender);
   return normalizeText(
     sender.username ||
+    sender.displayName ||
     [sender.firstName, sender.lastName].map(normalizeText).filter(Boolean).join(" ") ||
-    source.senderId?.toString()
+    sender.id
   );
+}
+
+function renderRichText(value: unknown): string {
+  const source = getRecord(value);
+  const type = normalizeText(source._);
+  if (!type || type === "textEmpty" || type === "textImage") {
+    return "";
+  }
+  if (type === "textPlain") {
+    return String(source.text || "");
+  }
+  if (type === "textMath") {
+    return String(source.source || "");
+  }
+  if (type === "textCustomEmoji") {
+    return String(source.alt || "");
+  }
+  if (type === "textConcat") {
+    return Array.isArray(source.texts) ? source.texts.map(renderRichText).join("") : "";
+  }
+  return renderRichText(source.text);
+}
+
+function renderPageCaption(value: unknown): string {
+  const caption = getRecord(value);
+  return [renderRichText(caption.text), renderRichText(caption.credit)]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join("\n");
+}
+
+function renderPageListItem(value: unknown, prefix: string): string {
+  const item = getRecord(value);
+  const content = item.text
+    ? renderRichText(item.text)
+    : renderPageBlocks(Array.isArray(item.blocks) ? item.blocks : []);
+  const checkbox = item.checkbox === true ? `[${item.checked === true ? "x" : " "}] ` : "";
+  return content
+    .split("\n")
+    .map((line, index) => `${index === 0 ? `${prefix}${checkbox}` : "  "}${line}`)
+    .join("\n");
+}
+
+function renderPageBlock(value: unknown): string {
+  const block = getRecord(value);
+  const type = normalizeText(block._);
+
+  switch (type) {
+    case "pageBlockUnsupported":
+    case "pageBlockDivider":
+    case "pageBlockAnchor":
+      return "";
+    case "pageBlockList":
+      return Array.isArray(block.items)
+        ? block.items.map((item) => renderPageListItem(item, "- ")).join("\n")
+        : "";
+    case "pageBlockOrderedList":
+      return Array.isArray(block.items)
+        ? block.items.map((item, index) => {
+          const source = getRecord(item);
+          return renderPageListItem(item, `${normalizeText(source.num) || index + 1}. `);
+        }).join("\n")
+        : "";
+    case "pageBlockTable": {
+      const title = renderRichText(block.title);
+      const rows = Array.isArray(block.rows)
+        ? block.rows.map((row) => {
+          const cells = getRecord(row).cells;
+          return Array.isArray(cells)
+            ? cells.map((cell) => renderRichText(getRecord(cell).text)).join(" | ")
+            : "";
+        }).filter(Boolean)
+        : [];
+      return [title, ...rows].map(normalizeText).filter(Boolean).join("\n");
+    }
+    case "pageBlockBlockquote":
+    case "pageBlockPullquote": {
+      const quote = renderRichText(block.text);
+      const caption = renderRichText(block.caption);
+      return [quote && quote.split("\n").map((line) => `> ${line}`).join("\n"), caption]
+        .map(normalizeText)
+        .filter(Boolean)
+        .join("\n");
+    }
+    case "pageBlockCover":
+      return renderPageBlock(block.cover);
+    case "pageBlockDetails":
+      return [
+        renderRichText(block.title),
+        renderPageBlocks(Array.isArray(block.blocks) ? block.blocks : [])
+      ].map(normalizeText).filter(Boolean).join("\n");
+    case "pageBlockEmbedPost":
+      return [
+        normalizeText(block.author),
+        renderPageBlocks(Array.isArray(block.blocks) ? block.blocks : []),
+        renderPageCaption(block.caption)
+      ].filter(Boolean).join("\n");
+    case "pageBlockCollage":
+    case "pageBlockSlideshow":
+      return [
+        renderPageBlocks(Array.isArray(block.items) ? block.items : []),
+        renderPageCaption(block.caption)
+      ].map(normalizeText).filter(Boolean).join("\n");
+    case "pageBlockPhoto":
+    case "pageBlockVideo":
+    case "pageBlockAudio":
+    case "pageBlockEmbed":
+    case "pageBlockMap":
+      return renderPageCaption(block.caption);
+    case "pageBlockMath":
+      return normalizeText(block.source);
+    case "pageBlockBlockquoteBlocks":
+      return [
+        renderPageBlocks(Array.isArray(block.blocks) ? block.blocks : []),
+        renderPageCaption(block.caption)
+      ].map(normalizeText).filter(Boolean).join("\n");
+    default:
+      return renderRichText(block.text);
+  }
+}
+
+function renderPageBlocks(blocks: unknown[]): string {
+  return blocks.map(renderPageBlock).map(normalizeText).filter(Boolean).join("\n");
+}
+
+function renderRichMessageText(message: unknown = {}): string {
+  const richMessage = getRecord(getRecord(message).richMessage);
+  return renderPageBlocks(Array.isArray(richMessage.blocks) ? richMessage.blocks : []);
+}
+
+function getMessageText(message: unknown = {}): string {
+  const source = getRecord(message);
+  return normalizeText(source.text) || renderRichMessageText(source);
 }
 
 function mapMessage(message: unknown = {}): TelegramMappedMessage {
@@ -279,13 +452,33 @@ function mapMessage(message: unknown = {}): TelegramMappedMessage {
   const isImage = Boolean(getTelegramImageMimeType(source));
   return {
     id: source.id,
-    text: normalizeText(source.message),
-    outgoing: source.out === true,
+    text: getMessageText(source),
+    outgoing: source.isOutgoing === true,
     senderName: getSenderName(source),
     sentAt: formatMessageDate(source.date),
     hasMedia: Boolean(source.media),
     isImage
   };
+}
+
+function getMessageMedia(message: unknown = {}): UnknownRecord {
+  return getRecord(getRecord(message).media);
+}
+
+function getPreviewLocations(message: unknown = {}): unknown[] {
+  const media = getMessageMedia(message);
+  const thumbnails = Array.isArray(media.thumbnails) ? [...media.thumbnails] : [];
+  return thumbnails
+    .filter((thumbnail) => {
+      const source = getRecord(thumbnail);
+      return Number.isFinite(Number(source.width)) && Number.isFinite(Number(source.height));
+    })
+    .sort((left, right) => {
+      const leftRecord = getRecord(left);
+      const rightRecord = getRecord(right);
+      return Number(rightRecord.width) * Number(rightRecord.height) -
+        Number(leftRecord.width) * Number(leftRecord.height);
+    });
 }
 
 async function mapMessageWithImagePreview(client: TelegramRuntimeClient, message: unknown = {}): Promise<TelegramMappedMessage> {
@@ -295,9 +488,9 @@ async function mapMessageWithImagePreview(client: TelegramRuntimeClient, message
     return mapped;
   }
 
-  for (const thumb of MESSAGE_IMAGE_PREVIEW_THUMB_INDICES) {
+  for (const location of getPreviewLocations(message)) {
     try {
-      const preview = await client.downloadMedia(message, { thumb });
+      const preview = await client.downloadAsBuffer(location);
       const imagePreviewDataUrl = getImageDataUrl(preview, "image/jpeg", MAX_MESSAGE_IMAGE_PREVIEW_BYTES);
       if (imagePreviewDataUrl) {
         return { ...mapped, imagePreviewDataUrl };
@@ -325,10 +518,59 @@ async function mapMessagesWithImagePreviews(client: TelegramRuntimeClient, messa
   return mapped;
 }
 
+function parseGramJsSession(sessionString: string): MtcuteSessionData {
+  if (!sessionString.startsWith(GRAMJS_SESSION_VERSION)) {
+    throw new Error("Unsupported GramJS session version.");
+  }
+
+  const encoded = sessionString.slice(1);
+  const payload = Buffer.from(encoded, "base64");
+  if (payload.length < 1 + 2 + 1 + 2 + 256) {
+    throw new Error("The stored GramJS session is invalid.");
+  }
+
+  let offset = 0;
+  const dcId = payload.readUInt8(offset);
+  offset += 1;
+  let ipAddress = "";
+
+  if (encoded.length === 352) {
+    ipAddress = [...payload.subarray(offset, offset + 4)].join(".");
+    offset += 4;
+  } else {
+    const addressLength = payload.readInt16BE(offset);
+    offset += 2;
+    if (addressLength <= 0 || addressLength > 100 || offset + addressLength + 2 > payload.length) {
+      throw new Error("The stored GramJS datacenter address is invalid.");
+    }
+    ipAddress = payload.subarray(offset, offset + addressLength).toString("utf8");
+    offset += addressLength;
+  }
+
+  const port = payload.readInt16BE(offset);
+  offset += 2;
+  const authKey = payload.subarray(offset);
+  if (!dcId || !ipAddress || port <= 0 || authKey.length !== 256) {
+    throw new Error("The stored GramJS session is incomplete.");
+  }
+
+  const primaryDc = { id: dcId, ipAddress, port };
+  return {
+    authKey: Uint8Array.from(authKey),
+    primaryDcs: {
+      main: primaryDc,
+      media: primaryDc
+    }
+  };
+}
+
+function isGramJsSession(sessionString: string): boolean {
+  return sessionString.startsWith(GRAMJS_SESSION_VERSION);
+}
+
 class TelegramService extends EventEmitter {
   client: TelegramRuntimeClient | null;
   clientKey: string;
-  messageEventBuilder: unknown | null;
   messageEventClient: TelegramRuntimeClient | null;
   messageEventHandler: TelegramEventHandler | null;
   pendingLogin: TelegramPendingLogin | null;
@@ -341,7 +583,6 @@ class TelegramService extends EventEmitter {
     this.clientKey = "";
     this.pendingLogin = null;
     this.messageEventClient = null;
-    this.messageEventBuilder = null;
     this.messageEventHandler = null;
   }
 
@@ -372,18 +613,19 @@ class TelegramService extends EventEmitter {
       throw new Error("Electron safeStorage is unavailable; Telegram session cannot be saved securely.");
     }
 
-    fs.mkdirSync(path.dirname(this.sessionFilePath), { recursive: true });
+    fs.mkdirSync(path.dirname(this.sessionFilePath), { recursive: true, mode: 0o700 });
     fs.writeFileSync(
       this.sessionFilePath,
       `${JSON.stringify({
         encryptedSession: safeStorage.encryptString(sessionString).toString("base64"),
+        sessionFormat: "mtcute-v3",
         updatedAt: new Date().toISOString()
       }, null, 2)}\n`,
       { mode: 0o600 }
     );
   }
 
-  clearSession(): void {
+  async clearSession(): Promise<void> {
     try {
       fs.unlinkSync(this.sessionFilePath);
     } catch (error: unknown) {
@@ -392,9 +634,13 @@ class TelegramService extends EventEmitter {
       }
     }
     this.detachMessageEventHandler();
+    const client = this.client;
     this.client = null;
     this.clientKey = "";
     this.pendingLogin = null;
+    if (client) {
+      await client.destroy().catch(() => {});
+    }
   }
 
   detachMessageEventHandler(): void {
@@ -402,9 +648,8 @@ class TelegramService extends EventEmitter {
       return;
     }
 
-    this.messageEventClient.removeEventHandler(this.messageEventHandler, this.messageEventBuilder);
+    this.messageEventClient.onNewMessage.remove(this.messageEventHandler);
     this.messageEventClient = null;
-    this.messageEventBuilder = null;
     this.messageEventHandler = null;
   }
 
@@ -414,9 +659,7 @@ class TelegramService extends EventEmitter {
     }
 
     this.detachMessageEventHandler();
-    const builder = new NewMessage({});
-    const handler: TelegramEventHandler = (event) => {
-      const message = event?.message;
+    const handler: TelegramEventHandler = (message) => {
       if (!isRecord(message)) {
         return;
       }
@@ -428,9 +671,8 @@ class TelegramService extends EventEmitter {
       });
     };
 
-    client.addEventHandler(handler, builder);
+    client.onNewMessage.add(handler);
     this.messageEventClient = client;
-    this.messageEventBuilder = builder;
     this.messageEventHandler = handler;
   }
 
@@ -441,15 +683,46 @@ class TelegramService extends EventEmitter {
   async getClient(credentials: TelegramCredentials): Promise<TelegramRuntimeClient> {
     const key = this.getClientKey(credentials);
     if (this.client && this.clientKey === key) {
-      if (!this.client.connected) {
+      if (!this.client.isConnected) {
         await this.client.connect();
       }
       return this.client;
     }
 
-    const session = new StringSession(this.getStoredSession());
-    const client = new TelegramClient(session, credentials.apiId, credentials.apiHash, CLIENT_OPTIONS) as TelegramRuntimeClient;
-    await client.connect();
+    if (this.client) {
+      this.detachMessageEventHandler();
+      await this.client.destroy().catch(() => {});
+      this.client = null;
+      this.clientKey = "";
+    }
+
+    const mtcute = await loadMtcute();
+    const client = new mtcute.TelegramClient({
+      apiId: credentials.apiId,
+      apiHash: credentials.apiHash,
+      storage: new mtcute.MemoryStorage()
+    }) as unknown as TelegramRuntimeClient;
+    const storedSession = this.getStoredSession();
+    const migrateGramJsSession = isGramJsSession(storedSession);
+
+    try {
+      await client.prepare();
+      if (storedSession) {
+        await client.importSession(
+          migrateGramJsSession ? parseGramJsSession(storedSession) : storedSession
+        );
+      }
+      await client.connect();
+      if (migrateGramJsSession) {
+        const me = await client.getMe();
+        await client.notifyLoggedIn(me.raw);
+        this.saveSession(await client.exportSession());
+      }
+    } catch (error) {
+      await client.destroy().catch(() => {});
+      throw error;
+    }
+
     this.client = client;
     this.clientKey = key;
     this.attachMessageEventHandler(client);
@@ -463,9 +736,13 @@ class TelegramService extends EventEmitter {
     }
 
     const client = await this.getClient(credentials);
-    const authorized = await client.checkAuthorization();
-    if (!authorized) {
-      throw new Error("Telegram user is not authenticated.");
+    try {
+      await client.getMe();
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        throw new Error("Telegram user is not authenticated.");
+      }
+      throw error;
     }
     return client;
   }
@@ -488,20 +765,18 @@ class TelegramService extends EventEmitter {
 
     try {
       const client = await this.getClient(credentials);
-      const authorized = await client.checkAuthorization();
-      if (!authorized) {
+      const me = await client.getMe();
+      return {
+        state: "ready",
+        summary: `Connected as ${me.username ? `@${me.username}` : normalizeText(me.displayName) || "Telegram user"}.`
+      };
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
         return {
           state: "notAuthenticated",
           summary: "Telegram user is not authenticated."
         };
       }
-
-      const me = await client.getMe();
-      return {
-        state: "ready",
-        summary: `Connected as ${me.username ? `@${me.username}` : [me.firstName, me.lastName].map(normalizeText).filter(Boolean).join(" ") || "Telegram user"}.`
-      };
-    } catch (error) {
       return {
         state: "unavailable",
         summary: serializeError(error)
@@ -561,11 +836,16 @@ class TelegramService extends EventEmitter {
     }
 
     const client = await this.getClient(credentials);
-    if (await client.checkAuthorization()) {
+    try {
+      await client.getMe();
       return {
         state: "ready",
         summary: "Telegram user is already authenticated."
       };
+    } catch (error) {
+      if (!isUnauthorizedError(error)) {
+        throw error;
+      }
     }
 
     const login: TelegramPendingLogin = {
@@ -579,16 +859,18 @@ class TelegramService extends EventEmitter {
     };
     this.pendingLogin = login;
 
-    login.authPromise = client.signInUser(credentials, {
-      phoneNumber: normalizedPhoneNumber,
-      phoneCode: async (isCodeViaApp: boolean) => {
+    login.authPromise = client.start({
+      phone: normalizedPhoneNumber,
+      codeSentCallback: (sentCode) => {
         login.phase = "codeRequired";
-        login.isCodeViaApp = isCodeViaApp === true;
-        login.summary = isCodeViaApp ? "Enter the code sent in Telegram." : "Enter the Telegram login code.";
-        return new Promise((resolve) => {
-          login.codeResolve = resolve;
-        });
+        login.isCodeViaApp = sentCode.type === "app";
+        login.summary = login.isCodeViaApp
+          ? "Enter the code sent in Telegram."
+          : "Enter the Telegram login code.";
       },
+      code: async () => new Promise((resolve) => {
+        login.codeResolve = resolve;
+      }),
       password: async () => {
         login.phase = "passwordRequired";
         login.summary = "Enter the Telegram 2FA password.";
@@ -596,12 +878,14 @@ class TelegramService extends EventEmitter {
           login.passwordResolve = resolve;
         });
       },
-      onError: (error: Error) => {
-        login.error = error;
-        return true;
+      invalidCodeCallback: (type) => {
+        login.phase = type === "code" ? "codeRequired" : "passwordRequired";
+        login.summary = type === "code"
+          ? "The Telegram login code is invalid. Try again."
+          : "The Telegram 2FA password is invalid. Try again.";
       }
-    }).then((user) => {
-      this.saveSession(client.session.save());
+    }).then(async (user) => {
+      this.saveSession(await client.exportSession());
       if (this.pendingLogin === login) {
         this.pendingLogin = null;
       }
@@ -649,7 +933,10 @@ class TelegramService extends EventEmitter {
   async waitForLoginCompletion(login: TelegramPendingLogin): Promise<TelegramLoginState> {
     const startedAt = Date.now();
     while (this.pendingLogin === login) {
-      if (login.phase === "passwordRequired" && login.passwordResolve) {
+      if (
+        (login.phase === "codeRequired" && login.codeResolve) ||
+        (login.phase === "passwordRequired" && login.passwordResolve)
+      ) {
         return this.getLoginState(login);
       }
       if (login.error) {
@@ -668,7 +955,7 @@ class TelegramService extends EventEmitter {
     };
   }
 
-  getPeerValue(target: unknown = {}): string | bigint {
+  getPeerValue(target: unknown = {}): string | number {
     const source = getRecord(target);
     const chatId = normalizeText(source.chatId);
     if (!chatId) {
@@ -680,54 +967,48 @@ class TelegramService extends EventEmitter {
     }
 
     if (/^-?\d+$/.test(chatId)) {
-      return BigInt(chatId);
+      const numericChatId = Number(chatId);
+      if (!Number.isSafeInteger(numericChatId)) {
+        throw new Error("Project Telegram chat ID exceeds the supported numeric range.");
+      }
+      return numericChatId;
     }
 
     return chatId;
   }
 
-  async getInputChannel(client: TelegramRuntimeClient, target: unknown = {}): Promise<unknown> {
-    return utils.getInputChannel(await client.getInputEntity(this.getPeerValue(target)));
-  }
-
   getTopicThreadId(topic: unknown = {}): number | null {
-    const source = getRecord(topic);
-    const id = Number(source.id);
-    if (Number.isInteger(id) && id > 0) {
-      return id;
-    }
-
-    const topMessage = Number(source.topMessage);
-    return Number.isInteger(topMessage) && topMessage > 0 ? topMessage : null;
+    return normalizeThreadId(getRecord(topic).id);
   }
 
   getTopicTopMessageId(topic: unknown = {}): number | null {
-    const source = getRecord(topic);
-    const topMessage = Number(source.topMessage);
-    if (Number.isInteger(topMessage) && topMessage > 0) {
-      return topMessage;
-    }
-
     return this.getTopicThreadId(topic);
   }
 
   async listForumTopics(client: TelegramRuntimeClient, target: unknown = {}, query: unknown = ""): Promise<UnknownRecord[]> {
-    const channel = await this.getInputChannel(client, target);
-    const response = await client.invoke(new Api.channels.GetForumTopics({
-      channel,
-      q: normalizeText(query) || undefined,
-      offsetDate: 0,
-      offsetId: 0,
-      offsetTopic: 0,
+    const topics = await client.getForumTopics(this.getPeerValue(target), {
+      query: normalizeText(query) || undefined,
       limit: 100
-    }));
-
-    return Array.isArray(response.topics) ? response.topics.filter(isRecord) : [];
+    });
+    return Array.isArray(topics) ? topics.filter(isRecord) : [];
   }
 
   async findForumTopic(client: TelegramRuntimeClient, target: unknown = {}): Promise<UnknownRecord | null> {
     const normalizedTarget = normalizeTarget(target);
     const title = normalizeTopicTitle(normalizedTarget.topicTitle);
+    const threadId = normalizeThreadId(normalizedTarget.threadId);
+
+    if (threadId) {
+      try {
+        const [topic] = await client.getForumTopicsById(this.getPeerValue(normalizedTarget), [threadId]);
+        if (topic && (!title || normalizeTopicTitle(topic.title) === title)) {
+          return topic;
+        }
+      } catch {
+        // Fall back to title lookup so stale stored thread IDs can self-heal.
+      }
+    }
+
     if (!title) {
       return null;
     }
@@ -752,13 +1033,15 @@ class TelegramService extends EventEmitter {
       };
     }
 
-    const channel = await this.getInputChannel(client, normalizedTarget);
-    await client.invoke(new Api.channels.CreateForumTopic({
-      channel,
+    await client.createForumTopic({
+      chatId: this.getPeerValue(normalizedTarget),
       title: normalizedTarget.topicTitle
-    }));
+    });
 
-    const created = await this.findForumTopic(client, normalizedTarget);
+    const created = await this.findForumTopic(client, {
+      ...normalizedTarget,
+      threadId: ""
+    });
     const threadId = this.getTopicThreadId(created);
     if (!threadId) {
       throw new Error(`Telegram topic was created but its thread id could not be resolved: ${normalizedTarget.topicTitle}`);
@@ -775,27 +1058,23 @@ class TelegramService extends EventEmitter {
   async resolveProjectTopicWithoutStoredThread(client: TelegramRuntimeClient, target: unknown = {}): Promise<TelegramTarget> {
     return this.resolveProjectTopic(client, {
       ...normalizeTarget(target),
-      threadId: ""
+      threadId: "",
+      topicTopMessageId: ""
     });
   }
 
-  getMessageOptions(target: unknown = {}): { replyTo?: number; topMsgId?: number } {
+  getMessageOptions(target: unknown = {}): { threadId?: number } {
     const threadId = normalizeThreadId(getRecord(target).threadId);
-    return threadId ? { replyTo: threadId, topMsgId: threadId } : {};
+    return threadId ? { threadId } : {};
   }
 
   async getTopicMessages(client: TelegramRuntimeClient, target: unknown = {}, threadId: number): Promise<UnknownRecord[]> {
-    const normalizedTarget = normalizeTarget(target);
-    const topicIds = new Set([
-      threadId,
-      normalizeThreadId(normalizedTarget.topicTopMessageId)
-    ].filter(Boolean));
-    const messages = await client.getMessages(this.getPeerValue(normalizedTarget), {
+    const messages = await client.getHistory(this.getPeerValue(target), {
       limit: TOPIC_HISTORY_SCAN_LIMIT
     });
 
     return messages
-      .filter((message) => getMessageTopicIds(message).some((id) => topicIds.has(id)))
+      .filter((message) => getMessageTopicIds(message).includes(threadId))
       .slice(0, MESSAGE_LIMIT);
   }
 
@@ -815,19 +1094,15 @@ class TelegramService extends EventEmitter {
     try {
       const client = await this.getAuthorizedClient(globalConfig);
       let resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
-      const params: UnknownRecord = { limit: MESSAGE_LIMIT };
       const threadId = normalizeThreadId(resolvedTarget.threadId);
-      if (threadId) {
-        params.replyTo = threadId;
-      }
 
       let messages;
       try {
         messages = threadId
           ? await this.getTopicMessages(client, resolvedTarget, threadId)
-          : await client.getMessages(this.getPeerValue(resolvedTarget), params);
+          : await client.getHistory(this.getPeerValue(resolvedTarget), { limit: MESSAGE_LIMIT });
       } catch (error) {
-        if (serializeError(error) !== "TOPIC_ID_INVALID" || !normalizeThreadId(normalizedTarget.threadId)) {
+        if (!/TOPIC_ID_INVALID/.test(getTelegramErrorText(error)) || !normalizeThreadId(normalizedTarget.threadId)) {
           throw error;
         }
 
@@ -835,7 +1110,7 @@ class TelegramService extends EventEmitter {
         const retryThreadId = normalizeThreadId(resolvedTarget.threadId);
         messages = retryThreadId
           ? await this.getTopicMessages(client, resolvedTarget, retryThreadId)
-          : await client.getMessages(this.getPeerValue(resolvedTarget), { limit: MESSAGE_LIMIT });
+          : await client.getHistory(this.getPeerValue(resolvedTarget), { limit: MESSAGE_LIMIT });
       }
       return {
         status: {
@@ -869,15 +1144,20 @@ class TelegramService extends EventEmitter {
     const resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
     const messageWithMetadata = message ? addTopicMetadataPrefix(message, resolvedTarget) : "";
     const sentMessage = pastedImage
-      ? await client.sendFile(this.getPeerValue(resolvedTarget), {
-        file: new CustomFile(pastedImage.name, pastedImage.buffer.length, "", pastedImage.buffer),
+      ? await client.sendMedia(this.getPeerValue(resolvedTarget), {
+        type: pastedImage.mimeType === "image/gif" ? "document" : "photo",
+        file: pastedImage.buffer,
+        fileName: pastedImage.name,
+        fileMime: pastedImage.mimeType
+      }, {
         caption: messageWithMetadata,
         ...this.getMessageOptions(resolvedTarget)
       })
-      : await client.sendMessage(this.getPeerValue(resolvedTarget), {
-        message: messageWithMetadata,
-        ...this.getMessageOptions(resolvedTarget)
-      });
+      : await client.sendText(
+        this.getPeerValue(resolvedTarget),
+        messageWithMetadata,
+        this.getMessageOptions(resolvedTarget)
+      );
 
     return {
       sent: true,
@@ -895,7 +1175,7 @@ class TelegramService extends EventEmitter {
     const normalizedTarget = normalizeTarget(target);
     const client = await this.getAuthorizedClient(globalConfig);
     const resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
-    const [message] = await client.getMessages(this.getPeerValue(resolvedTarget), { ids: id });
+    const [message] = await client.getMessages(this.getPeerValue(resolvedTarget), [id]);
     if (!message || !getTelegramImageMimeType(message)) {
       throw new Error("Telegram message does not contain a supported image.");
     }
@@ -908,7 +1188,7 @@ class TelegramService extends EventEmitter {
       throw new Error("Telegram image does not belong to this project topic.");
     }
 
-    const image = await client.downloadMedia(message);
+    const image = await client.downloadAsBuffer(getMessageMedia(message));
     const dataUrl = getImageDataUrl(image, getTelegramImageMimeType(message), MAX_MESSAGE_IMAGE_BYTES);
     if (!dataUrl) {
       throw new Error("Telegram image is unavailable or exceeds the 20 MB limit.");
@@ -923,6 +1203,9 @@ export {
   addTopicMetadataPrefix,
   getTopicMetadataPrefix,
   getTelegramImageMimeType,
+  mapMessage,
   normalizeTarget,
-  parsePastedImage
+  parseGramJsSession,
+  parsePastedImage,
+  renderRichMessageText
 };

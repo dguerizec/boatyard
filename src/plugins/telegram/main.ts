@@ -125,12 +125,12 @@ function activate(ctx: TelegramPluginContext) {
     return activeService.completeLoginPassword(password);
   });
 
-  ctx.actions.handle("logout", () => {
+  ctx.actions.handle("logout", async () => {
     if (!activeService) {
       throw new Error("Telegram API credentials are not configured.");
     }
     const service = activeService;
-    service.clearSession();
+    await service.clearSession();
     return { state: "notAuthenticated", summary: "Telegram user is not authenticated." };
   });
 }
