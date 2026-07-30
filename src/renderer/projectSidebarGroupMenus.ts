@@ -245,6 +245,7 @@ export function createProjectSidebarGroupMenus({
 
   function createProjectGroupMenu(event: MouseEvent, maxBottomOffset: number) {
     event.preventDefault();
+    event.stopPropagation();
     closeProjectGroupMenu();
 
     const menu = document.createElement("div") as ProjectGroupMenu;
