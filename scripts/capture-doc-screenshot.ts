@@ -60,6 +60,8 @@ Options:
   --height <px>       Window height
   --user-data-path <path>
                       Reuse a dedicated Chromium profile across launches
+  --terminal-session-prefix <prefix>
+                      Isolate tmux sessions from another Boatyard instance
   --interactive       Open the fixture without capturing so external webapps
                       can be authenticated in the dedicated Chromium profile
   --debug             Print renderer state before capture
@@ -69,8 +71,8 @@ Examples:
   npm run capture:doc -- --scenario global --output docs/screenshots/global.png
   npm run capture:doc -- --scenario onboarding-step:5 --output docs/screenshots/manual-dropdown.png
   npm run capture:doc -- --config docs/captures/sidebar.json
-  npm run capture:doc -- --config docs/captures/workbench.json --user-data-path /tmp/boatyard-doc-profile --interactive
-  npm run capture:doc -- --config docs/captures/workbench.json --user-data-path /tmp/boatyard-doc-profile
+  npm run capture:doc -- --config docs/captures/workbench.json --user-data-path /tmp/boatyard-doc-profile --terminal-session-prefix boatyard-doc-capture --interactive
+  npm run capture:doc -- --config docs/captures/workbench.json --user-data-path /tmp/boatyard-doc-profile --terminal-session-prefix boatyard-doc-capture
 `);
 }
 
@@ -152,9 +154,10 @@ const width = parsePositiveInteger(readOption("width", asString(config.width)), 
 const height = parsePositiveInteger(readOption("height", asString(config.height)), asNumber(config.height, DEFAULT_HEIGHT));
 const repoRoot = process.cwd();
 const configuredUserDataPath = readOption("user-data-path");
+const terminalSessionPrefix = readOption("terminal-session-prefix");
 const interactive = hasFlag("interactive");
-if (interactive && !configuredUserDataPath) {
-  throw new Error("--interactive requires --user-data-path so authenticated webapp state survives the launch.");
+if (interactive && (!configuredUserDataPath || !terminalSessionPrefix)) {
+  throw new Error("--interactive requires --user-data-path and --terminal-session-prefix to isolate authenticated webapp and terminal state.");
 }
 const tempDir = mkdtempSync(join(tmpdir(), "boatyard-capture-"));
 const userDataPath = configuredUserDataPath ? resolve(configuredUserDataPath) : join(tempDir, "user-data");
@@ -193,6 +196,9 @@ const childEnv: NodeJS.ProcessEnv = {
   BOATYARD_STATE_PATH: statePath,
   BOATYARD_USER_DATA_PATH: userDataPath
 };
+if (terminalSessionPrefix) {
+  childEnv.BOATYARD_TERMINAL_SESSION_PREFIX = terminalSessionPrefix;
+}
 if (interactive) {
   delete childEnv.BOATYARD_CAPTURE_REQUEST;
 } else {

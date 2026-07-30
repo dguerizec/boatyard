@@ -22,6 +22,9 @@ test("getProjectTmuxSessionName derives project session names", () => {
   assert.equal(getProjectTmuxSessionName({
     name: "Project Name"
   }), "boatyard-project-name");
+  assert.equal(getProjectTmuxSessionName({
+    slug: "boatyard"
+  }, "boatyard-doc-capture"), "boatyard-doc-capture-boatyard");
 });
 
 test("getTerminalClientSessionName derives per-terminal linked session names", () => {

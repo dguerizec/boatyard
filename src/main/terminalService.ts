@@ -39,6 +39,7 @@ type TerminalRecord = {
 type TerminalServiceOptions = {
   getProject: (projectId: string) => TerminalProject | null | undefined;
   getSettings?: () => TerminalSettings;
+  sessionPrefix?: string;
   sendToRenderer: (channel: string, payload: unknown) => void;
   suppressResizeWarnings?: boolean;
 };
@@ -54,8 +55,8 @@ function slugifyTmuxName(value: unknown, fallback = "session"): string {
   return normalized || fallback;
 }
 
-function getProjectTmuxSessionName(project: TerminalProject): string {
-  return `boatyard-${slugifyTmuxName(project.slug || project.name || project.id, "project")}`;
+function getProjectTmuxSessionName(project: TerminalProject, sessionPrefix = "boatyard"): string {
+  return `${slugifyTmuxName(sessionPrefix, "boatyard")}-${slugifyTmuxName(project.slug || project.name || project.id, "project")}`;
 }
 
 function getTerminalClientSessionName(projectSession: string, terminalId: unknown): string {
@@ -179,13 +180,21 @@ async function destroyTmuxSession(session: string | undefined): Promise<void> {
 class TerminalService {
   private findProject: (projectId: string) => TerminalProject | null | undefined;
   private getSettings: () => TerminalSettings;
+  private sessionPrefix: string;
   private sendToRenderer: (channel: string, payload: unknown) => void;
   private suppressResizeWarnings: boolean;
   private terminals: Map<string, TerminalRecord>;
 
-  constructor({ getProject, getSettings = () => ({}), sendToRenderer, suppressResizeWarnings = false }: TerminalServiceOptions) {
+  constructor({
+    getProject,
+    getSettings = () => ({}),
+    sessionPrefix = "boatyard",
+    sendToRenderer,
+    suppressResizeWarnings = false
+  }: TerminalServiceOptions) {
     this.findProject = getProject;
     this.getSettings = getSettings;
+    this.sessionPrefix = sessionPrefix;
     this.sendToRenderer = sendToRenderer;
     this.suppressResizeWarnings = suppressResizeWarnings;
     this.terminals = new Map();
@@ -209,7 +218,7 @@ class TerminalService {
   }
 
   async ensureProjectSession(project: TerminalProject): Promise<string> {
-    const session = getProjectTmuxSessionName(project);
+    const session = getProjectTmuxSessionName(project, this.sessionPrefix);
     const envArgs = getTmuxEnvironmentArgs(this.getProjectTerminalEnv(project));
 
     try {

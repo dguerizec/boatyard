@@ -413,6 +413,7 @@ async function createConfigurationContext(configDirectory: string): Promise<Conf
       return contextStore.getState().projects.find((project: MainProject) => project.id === projectId);
     },
     getSettings: () => contextStore.getState().settings,
+    sessionPrefix: process.env.BOATYARD_TERMINAL_SESSION_PREFIX || "boatyard",
     sendToRenderer: (channel: string, payload: unknown) => sendToConfiguration(configuration, channel, payload),
     suppressResizeWarnings: captureRunner.isCaptureMode()
   });
