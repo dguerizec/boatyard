@@ -1,6 +1,22 @@
 {
-  "generatedForVersion": "0.9.5",
+  "generatedForVersion": "0.9.6",
   "releases": [
+    {
+      "version": "0.9.6",
+      "date": "2026-07-30",
+      "features": [
+        {
+          "category": "Changed",
+          "title": "Built-in manual",
+          "body": "The in-app manual now reflects Boatyard 0.9 workflows and explains source-first project setup more clearly."
+        },
+        {
+          "category": "Fixed",
+          "title": "Project sidebar menus",
+          "body": "Top bar context menus no longer overlap in the project sidebar."
+        }
+      ]
+    },
     {
       "version": "0.9.5",
       "date": "2026-07-30",
