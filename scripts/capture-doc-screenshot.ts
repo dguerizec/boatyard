@@ -58,6 +58,10 @@ Options:
   --padding <px>      Padding around the cropped selector
   --width <px>        Window width
   --height <px>       Window height
+  --user-data-path <path>
+                      Reuse a dedicated Chromium profile across launches
+  --interactive       Open the fixture without capturing so external webapps
+                      can be authenticated in the dedicated Chromium profile
   --debug             Print renderer state before capture
   --keep-temp         Keep the generated temporary state directory
 
@@ -65,6 +69,8 @@ Examples:
   npm run capture:doc -- --scenario global --output docs/screenshots/global.png
   npm run capture:doc -- --scenario onboarding-step:5 --output docs/screenshots/manual-dropdown.png
   npm run capture:doc -- --config docs/captures/sidebar.json
+  npm run capture:doc -- --config docs/captures/workbench.json --user-data-path /tmp/boatyard-doc-profile --interactive
+  npm run capture:doc -- --config docs/captures/workbench.json --user-data-path /tmp/boatyard-doc-profile
 `);
 }
 
@@ -145,8 +151,13 @@ const output = resolveFrom(configDir, readOption("output", asString(config.outpu
 const width = parsePositiveInteger(readOption("width", asString(config.width)), asNumber(config.width, DEFAULT_WIDTH));
 const height = parsePositiveInteger(readOption("height", asString(config.height)), asNumber(config.height, DEFAULT_HEIGHT));
 const repoRoot = process.cwd();
+const configuredUserDataPath = readOption("user-data-path");
+const interactive = hasFlag("interactive");
+if (interactive && !configuredUserDataPath) {
+  throw new Error("--interactive requires --user-data-path so authenticated webapp state survives the launch.");
+}
 const tempDir = mkdtempSync(join(tmpdir(), "boatyard-capture-"));
-const userDataPath = join(tempDir, "user-data");
+const userDataPath = configuredUserDataPath ? resolve(configuredUserDataPath) : join(tempDir, "user-data");
 const statePath = join(tempDir, "state.json");
 const configurationPath = join(tempDir, ".boatyard");
 const requestPath = join(tempDir, "capture.json");
@@ -163,28 +174,37 @@ const crop = cropSelector
   : config.crop;
 
 mkdirSync(dirname(output), { recursive: true });
+mkdirSync(userDataPath, { recursive: true });
 writeFileSync(statePath, JSON.stringify(state, null, 2));
-writeFileSync(requestPath, JSON.stringify({
-  scenario,
-  output,
-  actions: config.actions || [],
-  crop,
-  settleMs: Number.isFinite(config.settleMs) ? config.settleMs : 350,
-  debug: hasFlag("debug") || config.debug === true
-}, null, 2));
+if (!interactive) {
+  writeFileSync(requestPath, JSON.stringify({
+    scenario,
+    output,
+    actions: config.actions || [],
+    crop,
+    settleMs: Number.isFinite(config.settleMs) ? config.settleMs : 350,
+    debug: hasFlag("debug") || config.debug === true
+  }, null, 2));
+}
+
+const childEnv: NodeJS.ProcessEnv = {
+  ...process.env,
+  BOATYARD_CONFIG_ROOT: configurationPath,
+  BOATYARD_STATE_PATH: statePath,
+  BOATYARD_USER_DATA_PATH: userDataPath
+};
+if (interactive) {
+  delete childEnv.BOATYARD_CAPTURE_REQUEST;
+} else {
+  childEnv.BOATYARD_CAPTURE_REQUEST = requestPath;
+}
 
 const result = spawnSync(
   process.platform === "win32" ? "npx.cmd" : "npx",
   ["electron", ".", "--no-sandbox", "--profile", "capture"],
   {
     cwd: repoRoot,
-    env: {
-      ...process.env,
-      BOATYARD_CONFIG_ROOT: configurationPath,
-      BOATYARD_STATE_PATH: statePath,
-      BOATYARD_USER_DATA_PATH: userDataPath,
-      BOATYARD_CAPTURE_REQUEST: requestPath
-    },
+    env: childEnv,
     stdio: "inherit"
   }
 );
@@ -199,4 +219,8 @@ if (result.status !== 0) {
   process.exit(result.status || 1);
 }
 
-console.log(`Captured ${scenario} to ${output}`);
+if (interactive) {
+  console.log(`Closed interactive capture profile at ${userDataPath}`);
+} else {
+  console.log(`Captured ${scenario} to ${output}`);
+}
