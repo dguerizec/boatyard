@@ -185,6 +185,7 @@
 
   function getDoneStatusSignature(status: TwiccProjectStatus): string {
     const sessions = (status.sessions || [])
+      .filter((session) => !session.state || session.state === "done")
       .map((session) => [
         session.id || "",
         session.lastStateChangeAt || "",
@@ -194,6 +195,37 @@
       .sort();
 
     return JSON.stringify([status.count || sessions.length, sessions]);
+  }
+
+  function hasProjectStatusState(status: TwiccProjectStatus | null, state: string): boolean {
+    if (!status) {
+      return false;
+    }
+    const sessions = status.sessions || [];
+    return sessions.some((session) => session.state === state)
+      || (!sessions.length && status.state === state);
+  }
+
+  function getDoneProjectStatus(status: TwiccProjectStatus | null): TwiccProjectStatus | null {
+    if (!hasProjectStatusState(status, "done")) {
+      return null;
+    }
+    const doneSessions = (status?.sessions || []).filter((session) => session.state === "done");
+    return {
+      ...status,
+      count: doneSessions.length || status?.count,
+      sessions: doneSessions.length ? doneSessions : status?.sessions,
+      state: "done"
+    };
+  }
+
+  function getLiveProjectStatusForState(
+    status: TwiccProjectStatus | null,
+    state: string
+  ): TwiccProjectStatus | null {
+    return hasProjectStatusState(status, state)
+      ? { ...status, state }
+      : null;
   }
 
   function asCreatedProject(value: unknown): TwiccCreatedProject {
@@ -302,35 +334,36 @@
       .find((key) => projectProcessStatuses?.[key]);
     const liveStatus = statusKey ? projectProcessStatuses[statusKey] : null;
     const retainKey = String(project.id || statusKey || "").trim();
+    const liveInputStatus = getLiveProjectStatusForState(liveStatus, "input");
+    const liveWorkingStatus = getLiveProjectStatusForState(liveStatus, "working");
+    const liveDoneStatus = getDoneProjectStatus(liveStatus);
+    const retainedDoneStatus = retainKey ? retainedDoneProjectStatuses.get(retainKey) || null : null;
+    const doneStatus = liveDoneStatus || retainedDoneStatus;
+    const doneSignature = doneStatus ? getDoneStatusSignature(doneStatus) : "";
 
     if (options.isActiveProject && retainKey) {
       retainedDoneProjectStatuses.delete(retainKey);
-    }
-
-    if (liveStatus && retainKey) {
-      if (liveStatus.state === "done" && !options.isActiveProject) {
-        retainedDoneProjectStatuses.set(retainKey, liveStatus);
-      } else if (liveStatus.state !== "done") {
-        retainedDoneProjectStatuses.delete(retainKey);
-        acknowledgedDoneProjectSignatures.delete(retainKey);
+      if (doneSignature) {
+        acknowledgedDoneProjectSignatures.set(retainKey, doneSignature);
       }
+    } else if (liveDoneStatus && retainKey) {
+      retainedDoneProjectStatuses.set(retainKey, liveDoneStatus);
     }
 
-    const status = liveStatus || (retainKey ? retainedDoneProjectStatuses.get(retainKey) : null);
-    if (!status?.state) {
-      return null;
-    }
-
-    const doneSignature = status.state === "done" ? getDoneStatusSignature(status) : "";
-    if (options.isActiveProject && retainKey && doneSignature) {
-      acknowledgedDoneProjectSignatures.set(retainKey, doneSignature);
-    }
     const needsAttention = !!(
       doneSignature
       && retainKey
-      && !options.isActiveProject
       && acknowledgedDoneProjectSignatures.get(retainKey) !== doneSignature
     );
+    const readDoneStatus = liveDoneStatus || (!options.isActiveProject ? retainedDoneStatus : null);
+    const status = liveInputStatus
+      || (needsAttention ? doneStatus : null)
+      || liveWorkingStatus
+      || readDoneStatus;
+    if (!status?.state) {
+      return null;
+    }
+    const showsAttention = needsAttention && status.state === "done";
     const label = TWICC_PROJECT_STATUS_LABELS[status.state as keyof typeof TWICC_PROJECT_STATUS_LABELS] || status.state;
     const iconOnly = options.globalPluginConfig?.twiccProjectStatusDisplay === "icon";
     const badge = document.createElement("span");
@@ -339,7 +372,7 @@
       "project-twicc-status",
       status.state,
       iconOnly ? "icon-only" : "",
-      needsAttention ? "needs-attention" : ""
+      showsAttention ? "needs-attention" : ""
     ].filter(Boolean).join(" ");
     badge.textContent = iconOnly ? "" : label;
 

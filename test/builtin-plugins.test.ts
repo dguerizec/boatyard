@@ -526,6 +526,123 @@ test("Twicc done project nav badge stops requesting attention after the project 
   assert.equal(inactiveAgainElement.textContent, "Done");
 });
 
+test("Twicc project nav badge prioritizes unread completion over working and read completion below it", async () => {
+  const twiccProjectProcessStatuses: Record<string, unknown> = {
+    "twicc-project": {
+      state: "working",
+      count: 2,
+      sessions: [
+        {
+          id: "done-session",
+          lastStateChangeAt: "2026-07-30T10:00:00Z",
+          state: "done"
+        },
+        {
+          id: "working-session",
+          lastStateChangeAt: "2026-07-30T10:01:00Z",
+          state: "working"
+        }
+      ]
+    }
+  };
+  const { registry, refreshIntervals } = loadRendererPluginContext(twiccProjectProcessStatuses);
+
+  registry.applyEnabledState({});
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const badge = registry
+    .listProjectNavBadges()
+    .find((candidate: PluginBadge) => candidate.id === "boatyard.twicc.projectStatus");
+  const input = {
+    project: {
+      id: "boatyard-internal-id",
+      name: "Project"
+    },
+    projectConfig: {
+      twiccProjectUrl: "http://localhost:3500/project/twicc-project"
+    }
+  };
+
+  assert.equal(
+    badge.render({ ...input, isActiveProject: false }).className,
+    "project-nav-badge project-twicc-status done needs-attention"
+  );
+  assert.equal(
+    badge.render({ ...input, isActiveProject: true }).className,
+    "project-nav-badge project-twicc-status working"
+  );
+  assert.equal(
+    badge.render({ ...input, isActiveProject: false }).className,
+    "project-nav-badge project-twicc-status working"
+  );
+
+  twiccProjectProcessStatuses["twicc-project"] = {
+    state: "done",
+    count: 1,
+    sessions: [
+      {
+        id: "done-session",
+        lastStateChangeAt: "2026-07-30T10:00:00Z",
+        state: "done"
+      }
+    ]
+  };
+  await refreshIntervals();
+  assert.equal(
+    badge.render({ ...input, isActiveProject: false }).className,
+    "project-nav-badge project-twicc-status done"
+  );
+
+  twiccProjectProcessStatuses["twicc-project"] = {
+    state: "input",
+    count: 3,
+    sessions: [
+      {
+        id: "done-session",
+        lastStateChangeAt: "2026-07-30T10:02:00Z",
+        state: "done"
+      },
+      {
+        id: "working-session",
+        lastStateChangeAt: "2026-07-30T10:01:00Z",
+        state: "working"
+      },
+      {
+        id: "input-session",
+        lastStateChangeAt: "2026-07-30T10:03:00Z",
+        state: "input"
+      }
+    ]
+  };
+  await refreshIntervals();
+  assert.equal(
+    badge.render({ ...input, isActiveProject: false }).className,
+    "project-nav-badge project-twicc-status input"
+  );
+
+  twiccProjectProcessStatuses["twicc-project"] = {
+    state: "working",
+    count: 2,
+    sessions: [
+      {
+        id: "done-session",
+        lastStateChangeAt: "2026-07-30T10:02:00Z",
+        state: "done"
+      },
+      {
+        id: "working-session",
+        lastStateChangeAt: "2026-07-30T10:01:00Z",
+        state: "working"
+      }
+    ]
+  };
+  await refreshIntervals();
+  assert.equal(
+    badge.render({ ...input, isActiveProject: false }).className,
+    "project-nav-badge project-twicc-status done needs-attention"
+  );
+});
+
 test("Twicc done project nav badge requests attention again after new activity", async () => {
   const twiccProjectProcessStatuses: Record<string, unknown> = {
     "twicc-project": {
