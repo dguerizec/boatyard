@@ -33,7 +33,7 @@ type BoatyardManualGlobal = typeof globalThis & {
   const manual: BoatyardManual = {
     version: 1,
     title: "Boatyard Manual",
-    description: "A practical guide to project dashboards, webapp panes, widgets, terminals, plugins, and settings.",
+    description: "A practical guide to projects, workbench panes, widgets, terminals, integrations, profiles, and settings.",
     publicUrlStatus: "pending",
     sections: [
       {
@@ -47,7 +47,11 @@ type BoatyardManualGlobal = typeof globalThis & {
           },
           {
             title: "Project workbenches",
-            body: "Each project opens as a split-pane workbench with webapps, terminals, repository links, plugin panes, and widgets."
+            body: "Each project opens as a split-pane workbench with webapps, terminals, repository links, integration panes, and widgets."
+          },
+          {
+            title: "Project navigation",
+            body: "Search projects by name, slug, source path, or group. Pin frequent projects, collapse the sidebar when space is tight, and use integration status indicators to spot activity that needs attention."
           },
           {
             title: "Manual and tour",
@@ -66,11 +70,15 @@ type BoatyardManualGlobal = typeof globalThis & {
           },
           {
             title: "Project settings",
-            body: "Use the gear next to a project to edit identity, source path, repository links, project URLs, widget panes, terminal environment, plugin settings, and unregister actions."
+            body: "Use the gear next to a project to edit identity, source path, repository links, project URLs, widget panes, terminal environment, integration settings, and unregister actions. Most fields save when you leave them."
           },
           {
             title: "Project URLs",
             body: "Project URLs appear as webapp tabs, which makes deployment dashboards, cloud consoles, preview URLs, and issue trackers available beside the terminal."
+          },
+          {
+            title: "Groups and pins",
+            body: "Assign optional groups to organize related projects, drag projects to reorder them, and pin the projects you want to keep at the top of the sidebar."
           }
         ]
       },
@@ -88,8 +96,16 @@ type BoatyardManualGlobal = typeof globalThis & {
             body: "Pane tabs include widgets, preview URLs, saved project URLs, terminals, plugin panes, and repository links. The Home menu can save useful sub-tabs."
           },
           {
+            title: "Navigation and focus",
+            body: "Use Back, Forward, Refresh, Hard reload, and the editable address field for embedded webapps. Expand a pane group when you need to focus it, then shrink it to restore the saved split layout."
+          },
+          {
+            title: "Mobile previews",
+            body: "Preview development webapps at preset or bookmarked mobile viewport sizes without leaving the workbench."
+          },
+          {
             title: "Open rules",
-            body: "When a webapp requests a new URL, choose whether it should stay in the same pane, open in a split pane, or open externally. Reusable rules live in global settings."
+            body: "When a webapp requests a new URL, keep it in the same pane, open it in a new split, route it to an existing pane, or open it externally. Save reusable exact, host, path-prefix, or wildcard rules in global settings."
           }
         ]
       },
@@ -104,11 +120,15 @@ type BoatyardManualGlobal = typeof globalThis & {
           },
           {
             title: "Layout controls",
-            body: "Drag widgets to reorder them, resize them from their controls, and hide widgets that are not relevant to the current workflow."
+            body: "Drag widgets to reorder them, resize them from their controls, and hide widgets that are not relevant to the current workflow. Project widget layouts are restored with the current profile."
           },
           {
-            title: "Plugin widgets",
-            body: "Plugins can contribute widgets, panes, settings sections, and navigation badges. Enable or disable plugins from global settings."
+            title: "Integration widgets",
+            body: "Integrations can contribute widgets, panes, settings sections, and project status indicators. GitHub provides Actions and Pull Requests widgets; Pier and TwiCC add project-specific operational views."
+          },
+          {
+            title: "Top bar widgets",
+            body: "Compact widgets can live in the top bar for information that should stay visible while you move between projects."
           }
         ]
       },
@@ -119,7 +139,7 @@ type BoatyardManualGlobal = typeof globalThis & {
         entries: [
           {
             title: "Shell tabs",
-            body: "Create, rename, switch, and close shell tabs from terminal surfaces. Boatyard remembers the selected shell per surface."
+            body: "Create, rename, switch, and close shell tabs from terminal panes and widgets. Boatyard remembers the selected shell per surface."
           },
           {
             title: "Environment",
@@ -141,31 +161,54 @@ type BoatyardManualGlobal = typeof globalThis & {
             body: "Set a default base path so project registration starts from the directory where your checkouts usually live."
           },
           {
+            title: "Search and automatic saves",
+            body: "Use the settings search to find global or project options. Most editable fields save when they lose focus, while explicit actions remain available for operations that need confirmation."
+          },
+          {
             title: "Presentation",
-            body: "Tune webapp overlay behavior and widget rail width to match your display and workflow."
+            body: "Tune webapp overlay behavior, sidebar behavior, and widget rail width to match your display and workflow."
           },
           {
             title: "Password autofill",
-            body: "Optional local autofill stores encrypted credentials through Electron safeStorage when the desktop session supports it."
+            body: "Optional local autofill stores encrypted credentials through Electron safeStorage when the desktop session supports it. The shared secrets vault is kept at the Boatyard configuration root."
           }
         ]
       },
       {
         id: "plugins",
-        title: "Plugins",
-        summary: "Plugins extend Boatyard without changing the core app.",
+        title: "Integrations",
+        summary: "Integrations connect project tools without changing the core app.",
         entries: [
           {
-            title: "Built-in plugins",
-            body: "The app ships with built-in integrations such as TwiCC, Hawser, Pier, Telegram, and color palette tooling when their plugin files are present."
+            title: "Built-in integrations",
+            body: "Boatyard includes GitHub, Pier, TwiCC, Hawser, Telegram, and Color Palette integrations when their plugin files are present."
           },
           {
-            title: "Plugin settings",
-            body: "Global plugin settings affect shared integration state. Project plugin settings let each project point a plugin at project-specific resources."
+            title: "Integration settings",
+            body: "The Extensions section shows status, contributed surfaces, settings, reload controls, filters, and enable switches. Global settings affect shared integration state; project settings point integrations at project-specific resources."
           },
           {
             title: "Plugin API",
-            body: "Use the plugin API to contribute panes, widgets, badges, settings sections, and background services."
+            body: "Use the plugin API to contribute panes, widgets, status indicators, settings sections, and background services."
+          }
+        ]
+      },
+      {
+        id: "profiles",
+        title: "Profiles and Windows",
+        summary: "Windows expand one workspace; profiles isolate configuration.",
+        entries: [
+          {
+            title: "Split-screen windows",
+            body: "Use Split screen to open another workbench window. It can follow project changes from the current window or navigate independently."
+          },
+          {
+            title: "Configuration profiles",
+            body: "Start Boatyard with --profile NAME when you need separate projects, layouts, terminal sessions, and integration settings. Launching the same profile again focuses an existing window."
+          },
+          {
+            title: "Shared and isolated data",
+            body: "Each profile has its own state under the profiles directory. Encrypted credentials, installed tools, and update files remain shared at the configuration root; Chromium web storage is separate from configuration profiles."
           }
         ]
       }
@@ -183,7 +226,7 @@ type BoatyardManualGlobal = typeof globalThis & {
       },
       {
         title: "Open demo project settings",
-        body: "A temporary demo project appears during the tour so you can see where repository links, project URLs, terminal environment, widget panes, and plugin configuration live.",
+        body: "A temporary demo project appears during the tour so you can see where repository links, project URLs, terminal environment, widget panes, and integration configuration live.",
         target: ".onboarding-demo-project .project-settings-button"
       },
       {
