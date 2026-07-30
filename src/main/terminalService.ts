@@ -226,7 +226,15 @@ class TerminalService {
       await configureTmuxSession(session);
       return session;
     } catch {
-      await runTmux(["new-session", "-d", "-s", session, "-n", "main", ...envArgs, "-c", getProjectCwd(project)]);
+      try {
+        await runTmux(["new-session", "-d", "-s", session, "-n", "main", ...envArgs, "-c", getProjectCwd(project)]);
+      } catch (createError) {
+        try {
+          await runTmux(["has-session", "-t", session]);
+        } catch {
+          throw createError;
+        }
+      }
       await configureTmuxSession(session);
       return session;
     }
