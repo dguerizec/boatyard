@@ -159,6 +159,58 @@ function createSnapshot() {
   };
 }
 
+function createWorkflowRun({
+  conclusion = "",
+  id = 3,
+  name = "Deploy",
+  status = "in_progress"
+}: {
+  conclusion?: string;
+  id?: number;
+  name?: string;
+  status?: string;
+} = {}) {
+  return {
+    conclusion,
+    createdAt: "2026-07-29T10:00:00Z",
+    event: "push",
+    headBranch: "main",
+    headSha: "abcdef1",
+    htmlUrl: `https://github.com/octo-org/example/actions/runs/${id}`,
+    id,
+    jobs: [],
+    name,
+    runAttempt: 1,
+    startedAt: "2026-07-29T10:00:00Z",
+    status,
+    updatedAt: "2026-07-29T10:01:00Z"
+  };
+}
+
+function createTimerHarness() {
+  const timers = new Map<number, { callback: () => void; delay: number }>();
+  let nextTimerId = 1;
+  return {
+    clearTimeout(timer: number) {
+      timers.delete(timer);
+    },
+    run(delay: number) {
+      for (const [id, timer] of [...timers]) {
+        if (timer.delay === delay) {
+          timers.delete(id);
+          timer.callback();
+        }
+      }
+    },
+    setTimeout(callback: () => void, delay = 0) {
+      const id = nextTimerId++;
+      timers.set(id, { callback, delay });
+      return id;
+    },
+    timers
+  };
+}
+
 function createPullRequestsSnapshot(pullRequests: Array<Record<string, unknown>> = []) {
   return {
     pullRequests,
@@ -189,21 +241,7 @@ test("GitHub project badges share snapshots and apply the configured status prio
     actions: 0,
     pullRequests: 0
   };
-  const activeRun = {
-    conclusion: "",
-    createdAt: "2026-07-29T10:00:00Z",
-    event: "push",
-    headBranch: "main",
-    headSha: "abcdef1",
-    htmlUrl: "https://github.com/octo-org/example/actions/runs/3",
-    id: 3,
-    jobs: [],
-    name: "Deploy",
-    runAttempt: 1,
-    startedAt: "2026-07-29T10:00:00Z",
-    status: "in_progress",
-    updatedAt: "2026-07-29T10:01:00Z"
-  };
+  const activeRun = createWorkflowRun();
   const completedRun = {
     ...activeRun,
     conclusion: "success",
@@ -273,7 +311,7 @@ test("GitHub project badges share snapshots and apply the configured status prio
   assert.ok(pullRequestFirstBadge.className.includes("pull-request"));
   assert.match(defaultBadge.title, /Workflow running: Deploy/);
   assert.match(defaultBadge.title, /Pull request: Ready for review/);
-  assert.match(defaultBadge.title, /Workflow passed: CI/);
+  assert.doesNotMatch(defaultBadge.title, /Workflow passed: CI/);
 });
 
 test("GitHub project badge distinguishes draft pull requests", async () => {
@@ -323,30 +361,18 @@ test("GitHub project badge distinguishes draft pull requests", async () => {
   assert.match(badge.title, /Draft pull request: Work in progress/);
 });
 
-test("GitHub project workflow result badge opens and acknowledges successful and failed runs", async () => {
+test("GitHub project workflow result badges require an observed running state", async () => {
   const openedUrls: string[] = [];
-  const results = new Map([
-    ["success", {
-      conclusion: "success",
-      htmlUrl: "https://github.com/octo-org/success/actions/runs/4",
-      id: 4,
-      name: "Successful CI"
-    }],
-    ["failure", {
-      conclusion: "failure",
-      htmlUrl: "https://github.com/octo-org/failure/actions/runs/5",
-      id: 5,
-      name: "Failed CI"
-    }]
-  ]);
+  const timerHarness = createTimerHarness();
+  let workflowsCompleted = false;
   const context: RendererContext = {
-    clearTimeout: () => {},
+    clearTimeout: timerHarness.clearTimeout,
     console,
     document: {
       createElement: () => new FakeElement()
     },
     queueMicrotask,
-    setTimeout: () => 1,
+    setTimeout: timerHarness.setTimeout,
     window: {
       boatyard: {
         invokePlugin: async (_pluginId, actionName, payload) => {
@@ -357,25 +383,23 @@ test("GitHub project workflow result badge opens and acknowledges successful and
             const repoUrl = String(
               (payload as { project: { repoUrl: string } }).project.repoUrl
             );
-            const key = repoUrl.endsWith("/failure") ? "failure" : "success";
-            const result = results.get(key) as Record<string, unknown>;
+            const isFailure = repoUrl.endsWith("/failure");
+            const isHistorical = repoUrl.endsWith("/historical");
+            const completed = workflowsCompleted || isHistorical;
+            const id = isFailure ? 5 : isHistorical ? 6 : 4;
+            const name = isFailure ? "Failed CI" : isHistorical ? "Old CI" : "Successful CI";
             return {
               ...createSnapshot(),
+              activeRunCount: completed ? 0 : 1,
               runs: [
                 {
-                  conclusion: result.conclusion,
-                  createdAt: "2026-07-29T10:00:00Z",
-                  event: "push",
-                  headBranch: "main",
-                  headSha: "abcdef1",
-                  htmlUrl: result.htmlUrl,
-                  id: result.id,
-                  jobs: [],
-                  name: result.name,
-                  runAttempt: 1,
-                  startedAt: "2026-07-29T10:00:00Z",
-                  status: "completed",
-                  updatedAt: "2026-07-29T10:01:00Z"
+                  ...createWorkflowRun({
+                    conclusion: completed ? (isFailure ? "failure" : "success") : "",
+                    id,
+                    name,
+                    status: completed ? "completed" : "in_progress"
+                  }),
+                  htmlUrl: `${repoUrl}/actions/runs/${id}`
                 }
               ]
             };
@@ -402,9 +426,25 @@ test("GitHub project workflow result badge opens and acknowledges successful and
       repoUrl: "https://github.com/octo-org/failure"
     }
   }) as FakeElement;
+  const historicalBadge = definition?.render({
+    project: {
+      id: "historical-project",
+      repoUrl: "https://github.com/octo-org/historical"
+    }
+  }) as FakeElement;
   successBadge.isConnected = true;
   failureBadge.isConnected = true;
+  historicalBadge.isConnected = true;
 
+  await flush();
+  await flush();
+
+  assert.ok(successBadge.className.includes("workflow-running"));
+  assert.ok(failureBadge.className.includes("workflow-running"));
+  assert.equal(historicalBadge.hidden, true);
+
+  workflowsCompleted = true;
+  timerHarness.run(5000);
   await flush();
   await flush();
 
@@ -412,18 +452,102 @@ test("GitHub project workflow result badge opens and acknowledges successful and
   assert.ok(failureBadge.className.includes("workflow-failure"));
 
   successBadge.trigger("click");
-  assert.equal(successBadge.hidden, true);
   failureBadge.trigger("click");
-  assert.equal(failureBadge.hidden, true);
+  assert.equal(successBadge.hidden, false);
+  assert.equal(failureBadge.hidden, false);
   assert.deepEqual(openedUrls, [
     "https://github.com/octo-org/success/actions/runs/4",
     "https://github.com/octo-org/failure/actions/runs/5"
   ]);
 
-  const acknowledgedBadge = definition?.render({
+  const selectedSuccessBadge = definition?.render({
+    currentView: "project",
+    isActiveProject: true,
     project: {
       id: "success-project",
       repoUrl: "https://github.com/octo-org/success"
+    }
+  }) as FakeElement;
+  selectedSuccessBadge.isConnected = true;
+  assert.equal(selectedSuccessBadge.hidden, true);
+});
+
+test("GitHub workflow result stays visible in the active project until it is selected again", async () => {
+  const timerHarness = createTimerHarness();
+  let workflowCompleted = false;
+  const context: RendererContext = {
+    clearTimeout: timerHarness.clearTimeout,
+    console,
+    document: {
+      createElement: () => new FakeElement()
+    },
+    queueMicrotask,
+    setTimeout: timerHarness.setTimeout,
+    window: {
+      boatyard: {
+        invokePlugin: async (_pluginId, actionName) => {
+          if (actionName === "pullRequestsSnapshotForProject") {
+            return createPullRequestsSnapshot();
+          }
+          if (actionName === "actionsSnapshotForProject") {
+            return {
+              ...createSnapshot(),
+              activeRunCount: workflowCompleted ? 0 : 1,
+              runs: [createWorkflowRun({
+                conclusion: workflowCompleted ? "success" : "",
+                id: 7,
+                name: "Active project CI",
+                status: workflowCompleted ? "completed" : "in_progress"
+              })]
+            };
+          }
+          throw new Error(`Unexpected action ${actionName}`);
+        },
+        openExternal: () => {}
+      }
+    }
+  };
+  activateGitHubWidgets(context);
+  const definition = getProjectStatusBadgeDefinition(context);
+  const project = {
+    id: "active-project",
+    repoUrl: "https://github.com/octo-org/example"
+  };
+  const activeBadge = definition?.render({
+    currentView: "project",
+    isActiveProject: true,
+    project
+  }) as FakeElement;
+  activeBadge.isConnected = true;
+
+  await flush();
+  await flush();
+  assert.ok(activeBadge.className.includes("workflow-running"));
+
+  workflowCompleted = true;
+  timerHarness.run(5000);
+  await flush();
+  await flush();
+  assert.ok(activeBadge.className.includes("workflow-success"));
+
+  const stillActiveBadge = definition?.render({
+    currentView: "project",
+    isActiveProject: true,
+    project
+  }) as FakeElement;
+  stillActiveBadge.isConnected = true;
+  assert.ok(stillActiveBadge.className.includes("workflow-success"));
+
+  definition?.render({
+    currentView: "global",
+    isActiveProject: false,
+    project
+  });
+  const acknowledgedBadge = definition?.render({
+    currentView: "project",
+    isActiveProject: true,
+    project: {
+      ...project
     }
   }) as FakeElement;
   acknowledgedBadge.isConnected = true;

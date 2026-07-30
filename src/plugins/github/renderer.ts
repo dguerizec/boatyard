@@ -118,8 +118,12 @@
     category: GitHubProjectStatusCategory;
     className: string;
     label: string;
-    resultSignature?: string;
     url: string;
+  };
+
+  type GitHubWorkflowNotificationState = {
+    displayedRunningRuns: Set<string>;
+    pendingResult: GitHubProjectStatusSignal | null;
   };
 
   type RefreshState<TSnapshot> = {
@@ -196,7 +200,8 @@
       label: "Workflow result > Pull request > Running workflow"
     }
   ];
-  const acknowledgedWorkflowResults = new Map<string, string>();
+  const workflowNotificationStates = new Map<string, GitHubWorkflowNotificationState>();
+  let selectedProjectKey: string | null = null;
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
@@ -425,6 +430,103 @@
     return ["in_progress", "pending", "queued", "requested", "waiting"].includes(status);
   }
 
+  function getWorkflowRunKey(run: GitHubWorkflowRun): string {
+    return `${run.id}:${run.runAttempt}`;
+  }
+
+  function getWorkflowNotificationState(projectKey: string): GitHubWorkflowNotificationState {
+    let state = workflowNotificationStates.get(projectKey);
+    if (!state) {
+      state = {
+        displayedRunningRuns: new Set(),
+        pendingResult: null
+      };
+      workflowNotificationStates.set(projectKey, state);
+    }
+    return state;
+  }
+
+  function createWorkflowResultSignal(run: GitHubWorkflowRun): GitHubProjectStatusSignal | null {
+    const failedConclusions = ["action_required", "failure", "startup_failure", "timed_out"];
+    const className = run.conclusion === "success"
+      ? "workflow-success"
+      : failedConclusions.includes(run.conclusion)
+        ? "workflow-failure"
+        : "";
+    if (!className) {
+      return null;
+    }
+    return {
+      category: "workflowResult",
+      className,
+      label: className === "workflow-success"
+        ? `Workflow passed: ${run.name}`
+        : `Workflow failed: ${run.name}`,
+      url: run.htmlUrl
+    };
+  }
+
+  function observeWorkflowTransitions(
+    projectKey: string,
+    snapshot: GitHubActionsSnapshot | null
+  ): GitHubWorkflowNotificationState {
+    const state = getWorkflowNotificationState(projectKey);
+    if (snapshot?.status.state !== "ready") {
+      return state;
+    }
+
+    const runsByKey = new Map(snapshot.runs.map((run) => [getWorkflowRunKey(run), run]));
+    const completedRun = snapshot.runs.find((run) => (
+      state.displayedRunningRuns.has(getWorkflowRunKey(run))
+      && !isActiveWorkflowStatus(run.status)
+    ));
+    const result = completedRun ? createWorkflowResultSignal(completedRun) : null;
+    if (result) {
+      state.pendingResult = result;
+    }
+
+    for (const runKey of state.displayedRunningRuns) {
+      const run = runsByKey.get(runKey);
+      if (!run || !isActiveWorkflowStatus(run.status)) {
+        state.displayedRunningRuns.delete(runKey);
+      }
+    }
+    return state;
+  }
+
+  function rememberDisplayedRunningWorkflows(
+    state: GitHubWorkflowNotificationState,
+    snapshot: GitHubActionsSnapshot | null
+  ): void {
+    if (snapshot?.status.state !== "ready") {
+      return;
+    }
+    for (const run of snapshot.runs) {
+      if (isActiveWorkflowStatus(run.status)) {
+        state.displayedRunningRuns.add(getWorkflowRunKey(run));
+      }
+    }
+  }
+
+  function observeProjectSelection(
+    projectKey: string,
+    isActiveProject = false,
+    currentView = ""
+  ): void {
+    if (currentView !== "project" && currentView !== "project-edit") {
+      selectedProjectKey = null;
+      return;
+    }
+    if (!isActiveProject || selectedProjectKey === projectKey) {
+      return;
+    }
+    selectedProjectKey = projectKey;
+    const state = workflowNotificationStates.get(projectKey);
+    if (state) {
+      state.pendingResult = null;
+    }
+  }
+
   const actionsCoordinator = createProjectRefreshCoordinator<GitHubActionsSnapshot>({
     actionName: "actionsSnapshotForProject",
     normalize: asActionsSnapshot,
@@ -470,7 +572,8 @@
 
   function getProjectStatusSignals(
     actionsSnapshot: GitHubActionsSnapshot | null,
-    pullRequestsSnapshot: GitHubPullRequestsSnapshot | null
+    pullRequestsSnapshot: GitHubPullRequestsSnapshot | null,
+    workflowResult: GitHubProjectStatusSignal | null = null
   ): Map<GitHubProjectStatusCategory, GitHubProjectStatusSignal> {
     const signals = new Map<GitHubProjectStatusCategory, GitHubProjectStatusSignal>();
     const activeRuns = actionsSnapshot?.status.state === "ready"
@@ -507,29 +610,8 @@
       });
     }
 
-    const completedRun = actionsSnapshot?.status.state === "ready"
-      ? actionsSnapshot.runs.find((run) => !isActiveWorkflowStatus(run.status))
-      : null;
-    const failedConclusions = ["action_required", "failure", "startup_failure", "timed_out"];
-    const resultClassName = completedRun?.conclusion === "success"
-      ? "workflow-success"
-      : failedConclusions.includes(completedRun?.conclusion || "")
-        ? "workflow-failure"
-        : "";
-    if (completedRun && resultClassName) {
-      signals.set("workflowResult", {
-        category: "workflowResult",
-        className: resultClassName,
-        label: resultClassName === "workflow-success"
-          ? `Workflow passed: ${completedRun.name}`
-          : `Workflow failed: ${completedRun.name}`,
-        resultSignature: [
-          completedRun.id,
-          completedRun.runAttempt,
-          completedRun.conclusion
-        ].join(":"),
-        url: completedRun.htmlUrl
-      });
+    if (workflowResult) {
+      signals.set("workflowResult", workflowResult);
     }
 
     return signals;
@@ -537,9 +619,15 @@
 
   function createProjectStatusBadge(
     project: GitHubProject,
-    globalConfig: GitHubConfig = {}
+    globalConfig: GitHubConfig = {},
+    options: Pick<PluginProjectNavBadgeRenderContext, "currentView" | "isActiveProject"> = {}
   ): HTMLElement {
     const projectKey = getProjectKey(project);
+    observeProjectSelection(
+      projectKey,
+      options.isActiveProject === true,
+      String(options.currentView || "")
+    );
     const badge = document.createElement("span");
     badge.className = "project-nav-badge project-github-status";
     badge.hidden = true;
@@ -550,17 +638,20 @@
     let connectionCheckCompleted = false;
 
     function updateBadge() {
-      const signals = getProjectStatusSignals(actionsSnapshot, pullRequestsSnapshot);
+      const notificationState = observeWorkflowTransitions(projectKey, actionsSnapshot);
+      const signals = getProjectStatusSignals(
+        actionsSnapshot,
+        pullRequestsSnapshot,
+        notificationState.pendingResult
+      );
       const priority = getProjectStatusPriority(globalConfig.githubProjectStatusPriority);
       currentSignal = priority
         .map((category) => signals.get(category) || null)
-        .find((signal) => (
-          signal
-          && (
-            signal.category !== "workflowResult"
-            || acknowledgedWorkflowResults.get(projectKey) !== signal.resultSignature
-          )
-        )) || null;
+        .find(Boolean) || null;
+
+      if (currentSignal?.category === "workflowRunning") {
+        rememberDisplayedRunningWorkflows(notificationState, actionsSnapshot);
+      }
 
       badge.hidden = !currentSignal;
       badge.className = [
@@ -586,10 +677,6 @@
       const signal = currentSignal;
       event?.preventDefault();
       event?.stopPropagation();
-      if (signal.category === "workflowResult" && signal.resultSignature) {
-        acknowledgedWorkflowResults.set(projectKey, signal.resultSignature);
-        updateBadge();
-      }
       globalScope.boatyard?.openExternal?.(signal.url);
     }
 
@@ -1262,10 +1349,19 @@
 
         ctx.projectNavBadges.register({
           id: "boatyard.github.projectStatus",
-          render({ project, globalConfig }: PluginProjectNavBadgeRenderContext) {
+          render({
+            project,
+            globalConfig,
+            isActiveProject,
+            currentView
+          }: PluginProjectNavBadgeRenderContext) {
             return createProjectStatusBadge(
               project || {},
-              globalConfig as GitHubConfig | undefined
+              globalConfig as GitHubConfig | undefined,
+              {
+                currentView,
+                isActiveProject
+              }
             );
           }
         });
@@ -1303,7 +1399,8 @@
         });
       },
       deactivate() {
-        acknowledgedWorkflowResults.clear();
+        workflowNotificationStates.clear();
+        selectedProjectKey = null;
       }
     }
   );

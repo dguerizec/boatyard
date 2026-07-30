@@ -49,8 +49,16 @@ export function createProjectSidebarGroupRows({
 
     for (const project of projects) {
       const scratch = document.createElement("div");
-      renderProjectNavBadges(project, scratch, { isActiveProject: false });
+      const viewState = getViewState();
+      const isActiveProject = (
+        (viewState.currentView === "project" || viewState.currentView === "project-edit")
+        && project.id === viewState.currentProjectId
+      );
+      renderProjectNavBadges(project, scratch, { isActiveProject });
       for (const badge of scratch.querySelectorAll<HTMLElement>(".project-nav-badge")) {
+        if (badge.hidden) {
+          continue;
+        }
         const stateName = [...badge.classList].find((className) => priority.has(className)) || "";
         const key = stateName || badge.textContent || badge.className;
         const summary = badgeSummaries.get(key) || {
