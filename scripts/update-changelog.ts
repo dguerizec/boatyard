@@ -18,7 +18,7 @@ const today = [
 
 type ReleaseCategory = typeof releaseCategories[number];
 type ReleaseType = "major" | "minor" | "patch";
-type ScriptMode = "prepare" | "agent" | "release" | "check-release";
+type ScriptMode = "prepare" | "agent" | "release" | "preflight-release" | "check-release";
 type VersionParts = [number, number, number];
 type JsonRecord = Record<string, unknown>;
 
@@ -158,6 +158,8 @@ function parseArgs(argv: string[]): ParsedArgs {
       args.mode = "agent";
     } else if (arg === "--release") {
       args.mode = "release";
+    } else if (arg === "--preflight-release") {
+      args.mode = "preflight-release";
     } else if (arg === "--check-release") {
       args.mode = "check-release";
     } else if (arg === "--codex") {
@@ -575,11 +577,11 @@ function ensureUnreleasedSection() {
   return true;
 }
 
-function promoteUnreleased(version: string) {
+function buildPromotedChangelog(version: string) {
   const current = readChangelog();
   const existingRelease = findSection(current, version);
   if (existingRelease) {
-    return false;
+    return current;
   }
 
   const unreleased = findSection(current, "Unreleased");
@@ -592,8 +594,11 @@ function promoteUnreleased(version: string) {
     .replace(/^- \*\*Unreleased:/m, `- **v${version}:`);
   const replacement = `## [${version}] - ${today}${releaseBody}`;
   const next = `${current.slice(0, unreleased.start)}${replacement}${current.slice(unreleased.end)}`;
-  fs.writeFileSync(changelogPath, `${next.trimEnd()}\n`);
-  return true;
+  return next.trimEnd();
+}
+
+function promoteUnreleased(version: string) {
+  fs.writeFileSync(changelogPath, `${buildPromotedChangelog(version)}\n`);
 }
 
 function parseFeature(line: string, category: string): ChangelogFeature {
@@ -668,12 +673,12 @@ function parseChangelog(markdown: string): ChangelogRelease[] {
   }).filter((release) => parseVersion(release.version));
 }
 
-function buildGeneratedJson(version = "") {
-  if (!fs.existsSync(changelogPath)) {
+function buildGeneratedJson(version = "", markdown?: string) {
+  if (markdown === undefined && !fs.existsSync(changelogPath)) {
     throw new Error("CHANGELOG.md is missing. Run make changelog first.");
   }
 
-  const releases = parseChangelog(fs.readFileSync(changelogPath, "utf8"));
+  const releases = parseChangelog(markdown ?? fs.readFileSync(changelogPath, "utf8"));
 
   if (version) {
     const release = releases.find((entry) => entry.version === version);
@@ -691,6 +696,10 @@ function buildGeneratedJson(version = "") {
     generatedForVersion: version || readJson<PackageJson>(packagePath).version,
     releases
   }, null, 2)}\n`;
+}
+
+function validateReleasePreflight(version: string) {
+  buildGeneratedJson(version, buildPromotedChangelog(version));
 }
 
 function generateJson(version = "") {
@@ -735,10 +744,17 @@ if (args.mode === "agent") {
   if (!targetVersion) {
     throw new Error("--release requires --type or --version.");
   }
+  validateReleasePreflight(targetVersion);
   promoteUnreleased(targetVersion);
   generateJson(targetVersion);
   console.log(`Promoted CHANGELOG.md [Unreleased] to ${targetVersion}.`);
   console.log(`Generated ${path.relative(root, generatedPath)} for ${targetVersion}.`);
+} else if (args.mode === "preflight-release") {
+  if (!targetVersion) {
+    throw new Error("--preflight-release requires --type or --version.");
+  }
+  validateReleasePreflight(targetVersion);
+  console.log(`Validated CHANGELOG.md for ${targetVersion} without modifying release files.`);
 } else if (args.mode === "check-release") {
   if (!targetVersion) {
     throw new Error("--check-release requires --type or --version.");

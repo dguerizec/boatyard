@@ -41,13 +41,15 @@ dist: check
 
 release:
 	@test -n "$(TYPE)" || (echo "TYPE is required. Use release-major, release-minor, or release-patch." >&2; exit 1)
-	@branch="$$(git branch --show-current)"; \
+	@set -eu; \
+	branch="$$(git branch --show-current)"; \
 	test -n "$$branch" || (echo "Cannot release from a detached HEAD." >&2; exit 1); \
 	test "$$branch" = "main" || (echo "Releases must be created from main, not $$branch." >&2; exit 1); \
 	dirty="$$(git status --porcelain | awk '{print $$2}' | grep -Ev '^(CHANGELOG.md|src/shared/changelog.json)$$' || true)"; \
 	test -z "$$dirty" || (echo "Release has unrelated dirty files:" >&2; echo "$$dirty" >&2; exit 1); \
 	version="$$(node -e "const p=require('./package.json'); const parts=p.version.split('.').map(Number); const t='$(TYPE)'; if(t==='major') console.log((parts[0]+1)+'.0.0'); else if(t==='minor') console.log(parts[0]+'.'+(parts[1]+1)+'.0'); else console.log(parts[0]+'.'+parts[1]+'.'+(parts[2]+1));")"; \
 	npm run build:scripts --silent; \
+	node build-scripts/scripts/update-changelog.js --preflight-release --version "$$version"; \
 	node build-scripts/scripts/update-changelog.js --release --version "$$version"; \
 	npm version "$$version" --no-git-tag-version; \
 	git add package.json package-lock.json CHANGELOG.md src/shared/changelog.json; \
