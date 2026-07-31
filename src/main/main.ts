@@ -135,6 +135,10 @@ async function captureWorkspaceDisplay(): Promise<NativeImage> {
     throw new Error("Screen capture requires an active workspace window.");
   }
 
+  workspaceWindow.moveTop();
+  workspaceWindow.focus();
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
   const contentBounds = workspaceWindow.getContentBounds();
   const display = screen.getDisplayMatching(contentBounds);
   const thumbnailSize = {
