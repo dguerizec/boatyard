@@ -1,6 +1,27 @@
 {
-  "generatedForVersion": "0.9.6",
+  "generatedForVersion": "0.9.7",
   "releases": [
+    {
+      "version": "0.9.7",
+      "date": "2026-07-31",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Telegram rich messages",
+          "body": "Telegram updates now render rich text, links, mentions, and other formatted message content in real time."
+        },
+        {
+          "category": "Fixed",
+          "title": "Telegram message decoding",
+          "body": "Formatted Telegram messages are decoded more reliably instead of losing structure or showing raw markup."
+        },
+        {
+          "category": "Fixed",
+          "title": "Terminal startup",
+          "body": "Concurrent terminal startup is handled more reliably when multiple terminal-backed actions begin at the same time."
+        }
+      ]
+    },
     {
       "version": "0.9.6",
       "date": "2026-07-30",

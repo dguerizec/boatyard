@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.7] - 2026-07-31
+
+### Summary
+
+- **v0.9.7: Richer Telegram updates** — Telegram project activity now shows formatted messages more faithfully while release and documentation tooling became safer.
+
+### Added
+
+- **Telegram rich messages** — Telegram updates now render rich text, links, mentions, and other formatted message content in real time.
+
+### Fixed
+
+- **Telegram message decoding** — Formatted Telegram messages are decoded more reliably instead of losing structure or showing raw markup.
+- **Terminal startup** — Concurrent terminal startup is handled more reliably when multiple terminal-backed actions begin at the same time.
+
+### Documentation
+
+- **Screenshot capture** — Documentation screenshot tooling can reuse authenticated capture profiles, capture native dialogs, and redact sensitive content at the final capture step.
+- **Capture reliability** — Workspace focus and redaction behavior were tightened so generated documentation screenshots are more stable.
+
+### Internal
+
+- **Release preflight** — Release commands now stop when changelog validation fails, preventing incomplete release updates.
+
 ## [0.9.6] - 2026-07-30
 
 ### Summary
