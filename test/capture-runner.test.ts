@@ -45,6 +45,9 @@ test("before-capture actions run after settling and immediately before capture",
         if (source === "capture-last-moment-action") {
           events.push("last-moment-action");
         }
+        if (source.includes("requestAnimationFrame")) {
+          events.push("paint");
+        }
         return undefined;
       }
     }
@@ -62,6 +65,7 @@ test("before-capture actions run after settling and immediately before capture",
     assert.deepEqual(events, [
       "main-action",
       "last-moment-action",
+      "paint",
       "capture-page",
       "quit"
     ]);
@@ -127,6 +131,61 @@ test("capture guards fail without exposing the rejected value", async () => {
       }
     );
     assert.equal(captureCalled, false);
+  } finally {
+    delete process.env[requestEnvName];
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("locked value replacements detach fields from live webapp URL updates", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-capture-lock-"));
+  const requestPath = path.join(tempDir, "request.json");
+  const requestEnvName = "BOATYARD_TEST_CAPTURE_LOCK_REQUEST";
+  let replacementSource = "";
+
+  fs.writeFileSync(requestPath, JSON.stringify({
+    scenario: "global",
+    output: path.join(tempDir, "capture.png"),
+    beforeCaptureActions: [
+      {
+        type: "replaceValue",
+        selector: ".webapp-url",
+        pattern: "^.+$",
+        replacement: "https://example.test",
+        lock: true
+      }
+    ],
+    settleMs: 0
+  }));
+  process.env[requestEnvName] = requestPath;
+
+  const mainWindow = {
+    capturePage: async () => ({
+      toPNG: () => Buffer.from("capture")
+    }),
+    webContents: {
+      executeJavaScript: async (source: string) => {
+        if (source.includes("#dashboard-grid")) {
+          return true;
+        }
+        if (source.includes("replacementCount")) {
+          replacementSource = source;
+        }
+        return undefined;
+      }
+    }
+  };
+  const runner = createCaptureRunner({
+    getMainWindow: () => mainWindow,
+    quitApp: () => undefined,
+    requestEnvName
+  });
+
+  try {
+    await runner.runCaptureRequest();
+    assert.match(replacementSource, /const lock = true/);
+    assert.match(replacementSource, /removeAttribute\("data-webapp-key"\)/);
+    assert.match(replacementSource, /Object\.defineProperty\(element, "value"/);
   } finally {
     delete process.env[requestEnvName];
     fs.rmSync(tempDir, { recursive: true, force: true });

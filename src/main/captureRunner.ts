@@ -6,6 +6,7 @@ const path = require("node:path");
 type CaptureAction = {
   flags?: unknown;
   key?: unknown;
+  lock?: unknown;
   ms?: unknown;
   pattern?: unknown;
   patterns?: unknown;
@@ -149,9 +150,11 @@ export function createCaptureRunner({
       const pattern = JSON.stringify(String(action.pattern || ""));
       const flags = JSON.stringify(String(action.flags || ""));
       const replacement = JSON.stringify(String(action.replacement || ""));
+      const lock = action.lock === true;
       await mainWindow.webContents.executeJavaScript(`(() => {
         const pattern = new RegExp(${pattern}, ${flags});
         const replacement = ${replacement};
+        const lock = ${JSON.stringify(lock)};
         let replacementCount = 0;
         for (const element of document.querySelectorAll(${selector})) {
           if (!("value" in element)) {
@@ -162,6 +165,14 @@ export function createCaptureRunner({
           const nextValue = currentValue.replace(pattern, replacement);
           if (nextValue !== currentValue) {
             element.value = nextValue;
+            if (lock) {
+              element.removeAttribute("data-webapp-key");
+              Object.defineProperty(element, "value", {
+                configurable: true,
+                get: () => nextValue,
+                set: () => undefined
+              });
+            }
             replacementCount += 1;
           }
         }
@@ -245,6 +256,12 @@ export function createCaptureRunner({
     }
   }
 
+  async function waitForCapturePaint() {
+    await getWindow().webContents.executeJavaScript(`new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    })`, true);
+  }
+
   async function getCaptureBounds(crop: CaptureCrop | undefined) {
     if (!crop?.selector) {
       return null;
@@ -281,6 +298,7 @@ export function createCaptureRunner({
     await applyCaptureActions(request.actions);
     await wait(Number.isFinite(request.settleMs) ? Number(request.settleMs) : 250);
     await applyCaptureActions(request.beforeCaptureActions);
+    await waitForCapturePaint();
     if (request.debug) {
       const state = await mainWindow.webContents.executeJavaScript(`(() => {
         const dialog = document.querySelector(".onboarding-dialog");
@@ -290,7 +308,22 @@ export function createCaptureRunner({
           dialogVisibility: dialog ? getComputedStyle(dialog).visibility : "",
           counter,
           menuItems: [...document.querySelectorAll(".webapp-tab-menu-item")].map((item) => item.textContent.trim()),
-          targetExists: Boolean(document.querySelector(".webapp-tab-menu-item[data-web-app-id='manual']"))
+          targetExists: Boolean(document.querySelector(".webapp-tab-menu-item[data-web-app-id='manual']")),
+          urlFields: [...document.querySelectorAll(".webapp-url")].map((input) => {
+            const pane = input.closest(".webapp-pane");
+            const value = String(input.value || "");
+            const rect = input.getBoundingClientRect();
+            return {
+              paneId: pane?.dataset.paneId || "",
+              webAppId: pane?.dataset.webAppId || "",
+              valueState: value === "http://localhost:3500/project/example"
+                ? "neutral"
+                : /(?:\\/home\\/|-home-)/i.test(value)
+                  ? "personal"
+                  : "other",
+              visible: rect.width > 0 && rect.height > 0
+            };
+          })
         };
       })()`, true);
       console.log(JSON.stringify(state, null, 2));
