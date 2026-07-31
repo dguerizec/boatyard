@@ -4,8 +4,12 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 type CaptureAction = {
+  flags?: unknown;
   key?: unknown;
   ms?: unknown;
+  pattern?: unknown;
+  patterns?: unknown;
+  replacement?: unknown;
   selector?: unknown;
   source?: unknown;
   timeoutMs?: unknown;
@@ -20,6 +24,7 @@ type CaptureCrop = {
 
 type CaptureRequest = {
   actions?: CaptureAction[];
+  beforeCaptureActions?: CaptureAction[];
   crop?: CaptureCrop;
   debug?: boolean;
   output?: string;
@@ -139,6 +144,71 @@ export function createCaptureRunner({
       return;
     }
 
+    if (type === "replaceValue") {
+      const selector = JSON.stringify(String(action.selector || ""));
+      const pattern = JSON.stringify(String(action.pattern || ""));
+      const flags = JSON.stringify(String(action.flags || ""));
+      const replacement = JSON.stringify(String(action.replacement || ""));
+      await mainWindow.webContents.executeJavaScript(`(() => {
+        const pattern = new RegExp(${pattern}, ${flags});
+        const replacement = ${replacement};
+        let replacementCount = 0;
+        for (const element of document.querySelectorAll(${selector})) {
+          if (!("value" in element)) {
+            continue;
+          }
+          const currentValue = String(element.value || "");
+          pattern.lastIndex = 0;
+          const nextValue = currentValue.replace(pattern, replacement);
+          if (nextValue !== currentValue) {
+            element.value = nextValue;
+            replacementCount += 1;
+          }
+        }
+        return replacementCount;
+      })()`, true);
+      return;
+    }
+
+    if (type === "assertNoValueMatch") {
+      const selector = JSON.stringify(String(action.selector || ""));
+      const patterns = JSON.stringify(
+        (Array.isArray(action.patterns) ? action.patterns : []).map((pattern) => String(pattern))
+      );
+      const flags = JSON.stringify(String(action.flags || ""));
+      const violations = await mainWindow.webContents.executeJavaScript(`(() => {
+        const patterns = ${patterns}.map((pattern) => new RegExp(pattern, ${flags}));
+        const violations = [];
+        [...document.querySelectorAll(${selector})].forEach((element, elementIndex) => {
+          if (!("value" in element)) {
+            return;
+          }
+          const value = String(element.value || "");
+          patterns.forEach((pattern, patternIndex) => {
+            pattern.lastIndex = 0;
+            if (pattern.test(value)) {
+              violations.push({ elementIndex, patternIndex });
+            }
+          });
+        });
+        return violations;
+      })()`, true);
+      if (Array.isArray(violations) && violations.length > 0) {
+        const patternIndexes = [
+          ...new Set(
+            violations
+              .map((violation) => Number(violation?.patternIndex))
+              .filter((patternIndex) => Number.isInteger(patternIndex) && patternIndex >= 0)
+          )
+        ];
+        throw new Error(
+          `Capture guard rejected ${violations.length} visible value match(es) for selector ${String(action.selector || "")}` +
+          `${patternIndexes.length > 0 ? ` (pattern indexes: ${patternIndexes.join(", ")})` : ""}.`
+        );
+      }
+      return;
+    }
+
     throw new Error(`Unknown capture action type: ${type}`);
   }
 
@@ -210,6 +280,7 @@ export function createCaptureRunner({
     await applyCaptureScenario(scenario);
     await applyCaptureActions(request.actions);
     await wait(Number.isFinite(request.settleMs) ? Number(request.settleMs) : 250);
+    await applyCaptureActions(request.beforeCaptureActions);
     if (request.debug) {
       const state = await mainWindow.webContents.executeJavaScript(`(() => {
         const dialog = document.querySelector(".onboarding-dialog");

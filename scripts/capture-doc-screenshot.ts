@@ -11,6 +11,7 @@ const DEFAULT_HEIGHT = 820;
 type JsonRecord = Record<string, unknown>;
 type CaptureConfig = JsonRecord & {
   actions?: unknown[];
+  beforeCaptureActions?: unknown[];
   crop?: JsonRecord & {
     padding?: unknown;
     selector?: unknown;
@@ -184,6 +185,7 @@ if (!interactive) {
     scenario,
     output,
     actions: config.actions || [],
+    beforeCaptureActions: config.beforeCaptureActions || [],
     crop,
     settleMs: Number.isFinite(config.settleMs) ? config.settleMs : 350,
     debug: hasFlag("debug") || config.debug === true
