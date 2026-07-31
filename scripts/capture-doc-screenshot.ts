@@ -12,6 +12,7 @@ type JsonRecord = Record<string, unknown>;
 type CaptureConfig = JsonRecord & {
   actions?: unknown[];
   beforeCaptureActions?: unknown[];
+  captureSurface?: unknown;
   crop?: JsonRecord & {
     padding?: unknown;
     selector?: unknown;
@@ -186,6 +187,7 @@ if (!interactive) {
     output,
     actions: config.actions || [],
     beforeCaptureActions: config.beforeCaptureActions || [],
+    captureSurface: config.captureSurface || "window",
     crop,
     settleMs: Number.isFinite(config.settleMs) ? config.settleMs : 350,
     debug: hasFlag("debug") || config.debug === true

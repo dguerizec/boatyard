@@ -26,6 +26,7 @@ type CaptureCrop = {
 type CaptureRequest = {
   actions?: CaptureAction[];
   beforeCaptureActions?: CaptureAction[];
+  captureSurface?: unknown;
   crop?: CaptureCrop;
   debug?: boolean;
   output?: string;
@@ -34,6 +35,7 @@ type CaptureRequest = {
 };
 
 type CaptureRunnerOptions = {
+  captureScreen?: () => Promise<{ toPNG: () => Buffer }>;
   getMainWindow: () => BrowserWindow | null;
   quitApp: () => void;
   requestEnvName?: string;
@@ -48,6 +50,7 @@ function wait(ms: number) {
 }
 
 export function createCaptureRunner({
+  captureScreen,
   getMainWindow,
   quitApp,
   requestEnvName = DEFAULT_CAPTURE_REQUEST_ENV
@@ -329,8 +332,20 @@ export function createCaptureRunner({
       console.log(JSON.stringify(state, null, 2));
     }
 
+    const captureSurface = String(request.captureSurface || "window").trim();
+    if (captureSurface !== "window" && captureSurface !== "screen") {
+      throw new Error(`Unknown capture surface: ${captureSurface}`);
+    }
+    if (captureSurface === "screen" && request.crop?.selector) {
+      throw new Error("Screen captures do not support renderer crop selectors.");
+    }
+
     const bounds = await getCaptureBounds(request.crop);
-    const image = await mainWindow.capturePage(bounds || undefined);
+    const image = captureSurface === "screen"
+      ? await (captureScreen || (() => {
+        throw new Error("Screen capture is unavailable.");
+      }))()
+      : await mainWindow.capturePage(bounds || undefined);
     fs.mkdirSync(path.dirname(request.output), { recursive: true });
     fs.writeFileSync(request.output, image.toPNG());
     quitApp();

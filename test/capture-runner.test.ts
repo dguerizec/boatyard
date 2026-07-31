@@ -192,4 +192,59 @@ test("locked value replacements detach fields from live webapp URL updates", asy
   }
 });
 
+test("screen capture uses the external display source instead of BrowserWindow.capturePage", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-capture-screen-"));
+  const requestPath = path.join(tempDir, "request.json");
+  const outputPath = path.join(tempDir, "capture.png");
+  const requestEnvName = "BOATYARD_TEST_CAPTURE_SCREEN_REQUEST";
+  let windowCaptureCalled = false;
+  let screenCaptureCalled = false;
+
+  fs.writeFileSync(requestPath, JSON.stringify({
+    scenario: "global",
+    output: outputPath,
+    captureSurface: "screen",
+    settleMs: 0
+  }));
+  process.env[requestEnvName] = requestPath;
+
+  const mainWindow = {
+    capturePage: async () => {
+      windowCaptureCalled = true;
+      return {
+        toPNG: () => Buffer.from("window")
+      };
+    },
+    webContents: {
+      executeJavaScript: async (source: string) => {
+        if (source.includes("#dashboard-grid")) {
+          return true;
+        }
+        return undefined;
+      }
+    }
+  };
+  const runner = createCaptureRunner({
+    captureScreen: async () => {
+      screenCaptureCalled = true;
+      return {
+        toPNG: () => Buffer.from("screen")
+      };
+    },
+    getMainWindow: () => mainWindow,
+    quitApp: () => undefined,
+    requestEnvName
+  });
+
+  try {
+    await runner.runCaptureRequest();
+    assert.equal(windowCaptureCalled, false);
+    assert.equal(screenCaptureCalled, true);
+    assert.equal(fs.readFileSync(outputPath, "utf8"), "screen");
+  } finally {
+    delete process.env[requestEnvName];
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 export {};

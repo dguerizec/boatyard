@@ -4,6 +4,7 @@ import type {
   HandlerDetails,
   IpcMainInvokeEvent,
   IpcMainEvent,
+  NativeImage,
   Rectangle,
   WebContents as ElectronWebContents
 } from "electron";
@@ -38,7 +39,7 @@ import {
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
-const { app, BrowserWindow, WebContentsView, clipboard, dialog, ipcMain, screen, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, screen, shell } = require("electron");
 const { createCaptureRunner } = require("./captureRunner");
 const { PasswordManager } = require("./passwordManager");
 const { PluginHost } = require("./pluginHost");
@@ -123,9 +124,53 @@ type WebAppFreeze = { all: boolean; keys: Set<string>; rect: Rectangle | null };
 const webAppFreezes = new Map<number, WebAppFreeze>();
 let nextWebAppFreezeToken = 1;
 const captureRunner = createCaptureRunner({
+  captureScreen: captureWorkspaceDisplay,
   getMainWindow: () => getPrimaryWorkspaceWindow()?.window || null,
   quitApp: () => app.quit()
 });
+
+async function captureWorkspaceDisplay(): Promise<NativeImage> {
+  const workspaceWindow = getPrimaryWorkspaceWindow()?.window;
+  if (!workspaceWindow) {
+    throw new Error("Screen capture requires an active workspace window.");
+  }
+
+  const contentBounds = workspaceWindow.getContentBounds();
+  const display = screen.getDisplayMatching(contentBounds);
+  const thumbnailSize = {
+    width: Math.round(display.size.width * display.scaleFactor),
+    height: Math.round(display.size.height * display.scaleFactor)
+  };
+  const sources = await desktopCapturer.getSources({
+    types: ["screen"],
+    thumbnailSize
+  });
+  const source = sources.find((candidate: { display_id?: string }) => candidate.display_id === String(display.id))
+    || sources[0];
+  if (!source || source.thumbnail.isEmpty()) {
+    throw new Error("Electron could not capture the workspace display.");
+  }
+
+  const sourceSize = source.thumbnail.getSize();
+  const scaleX = sourceSize.width / display.size.width;
+  const scaleY = sourceSize.height / display.size.height;
+  const cropX = Math.max(0, Math.round((contentBounds.x - display.bounds.x) * scaleX));
+  const cropY = Math.max(0, Math.round((contentBounds.y - display.bounds.y) * scaleY));
+  const cropped = source.thumbnail.crop({
+    x: cropX,
+    y: cropY,
+    width: Math.min(sourceSize.width - cropX, Math.round(contentBounds.width * scaleX)),
+    height: Math.min(sourceSize.height - cropY, Math.round(contentBounds.height * scaleY))
+  });
+  if (cropped.isEmpty()) {
+    throw new Error("Electron could not crop the workspace display capture.");
+  }
+  return cropped.resize({
+    width: contentBounds.width,
+    height: contentBounds.height,
+    quality: "best"
+  });
+}
 
 function finiteNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
