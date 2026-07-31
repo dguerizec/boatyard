@@ -29,12 +29,53 @@ type TelegramTarget = {
   topicTopMessageId: string;
 };
 
+type TelegramRichMark = "bold" | "code" | "italic" | "spoiler" | "strike" | "subscript" | "superscript" | "underline";
+
+type TelegramRichInline = {
+  href?: string;
+  marks?: TelegramRichMark[];
+  text: string;
+};
+
+type TelegramRichListItem = {
+  blocks: TelegramRichBlock[];
+  checked?: boolean;
+  checkbox?: boolean;
+};
+
+type TelegramRichTableCell = {
+  content: TelegramRichInline[];
+  header?: boolean;
+};
+
+type TelegramMessageEntityRange = {
+  end: number;
+  href?: string;
+  mark?: TelegramRichMark;
+  start: number;
+};
+
+type TelegramRichBlock = {
+  blocks?: TelegramRichBlock[];
+  content?: TelegramRichInline[];
+  items?: TelegramRichListItem[];
+  language?: string;
+  level?: number;
+  open?: boolean;
+  ordered?: boolean;
+  rows?: TelegramRichTableCell[][];
+  start?: number;
+  title?: TelegramRichInline[];
+  type: "blockquote" | "details" | "divider" | "heading" | "list" | "paragraph" | "preformatted" | "table";
+};
+
 type TelegramMappedMessage = {
   hasMedia: boolean;
   id: unknown;
   imagePreviewDataUrl?: string;
   isImage: boolean;
   outgoing: boolean;
+  richContent?: TelegramRichBlock[];
   senderName: string;
   sentAt: string;
   text: string;
@@ -314,25 +355,387 @@ function getSenderName(message: unknown = {}): string {
   );
 }
 
-function renderRichText(value: unknown): string {
+function mergeRichInlines(inlines: TelegramRichInline[]): TelegramRichInline[] {
+  const merged: TelegramRichInline[] = [];
+  for (const inline of inlines) {
+    if (!inline.text) {
+      continue;
+    }
+
+    const previous = merged.at(-1);
+    const href = inline.href || "";
+    const marks = inline.marks || [];
+    const previousHref = previous?.href || "";
+    const previousMarks = previous?.marks || [];
+    if (
+      previous &&
+      href === previousHref &&
+      marks.length === previousMarks.length &&
+      marks.every((mark, index) => mark === previousMarks[index])
+    ) {
+      previous.text += inline.text;
+      continue;
+    }
+
+    merged.push({
+      text: inline.text,
+      ...(href ? { href } : {}),
+      ...(marks.length ? { marks: [...marks] } : {})
+    });
+  }
+  return merged;
+}
+
+function normalizeRichText(
+  value: unknown,
+  marks: TelegramRichMark[] = [],
+  href = ""
+): TelegramRichInline[] {
   const source = getRecord(value);
   const type = normalizeText(source._);
   if (!type || type === "textEmpty" || type === "textImage") {
-    return "";
+    return [];
   }
   if (type === "textPlain") {
-    return String(source.text || "");
+    const text = String(source.text || "");
+    return text ? [{
+      text,
+      ...(href ? { href } : {}),
+      ...(marks.length ? { marks: [...marks] } : {})
+    }] : [];
   }
   if (type === "textMath") {
-    return String(source.source || "");
+    const text = String(source.source || "");
+    return text ? [{
+      text,
+      ...(href ? { href } : {}),
+      marks: [...marks, "code"]
+    }] : [];
   }
   if (type === "textCustomEmoji") {
-    return String(source.alt || "");
+    const text = String(source.alt || "");
+    return text ? [{
+      text,
+      ...(href ? { href } : {}),
+      ...(marks.length ? { marks: [...marks] } : {})
+    }] : [];
   }
   if (type === "textConcat") {
-    return Array.isArray(source.texts) ? source.texts.map(renderRichText).join("") : "";
+    return mergeRichInlines(
+      Array.isArray(source.texts)
+        ? source.texts.flatMap((part) => normalizeRichText(part, marks, href))
+        : []
+    );
   }
-  return renderRichText(source.text);
+  if (type === "textUrl") {
+    return normalizeRichText(source.text, marks, normalizeText(source.url));
+  }
+  if (type === "textEmail") {
+    const email = normalizeText(source.email);
+    return normalizeRichText(source.text, marks, email ? `mailto:${email}` : "");
+  }
+  if (type === "textPhone") {
+    const phone = normalizeText(source.phone);
+    return normalizeRichText(source.text, marks, phone ? `tel:${phone}` : "");
+  }
+  if (["textAutoUrl", "textAutoEmail", "textAutoPhone"].includes(type)) {
+    const content = normalizeRichText(source.text, marks);
+    const target = content.map((inline) => inline.text).join("").trim();
+    const prefix = type === "textAutoEmail" ? "mailto:" : type === "textAutoPhone" ? "tel:" : "";
+    return target ? content.map((inline) => ({ ...inline, href: `${prefix}${target}` })) : content;
+  }
+
+  const markByType: Partial<Record<string, TelegramRichMark>> = {
+    textBold: "bold",
+    textFixed: "code",
+    textItalic: "italic",
+    textSpoiler: "spoiler",
+    textStrike: "strike",
+    textSubscript: "subscript",
+    textSuperscript: "superscript",
+    textUnderline: "underline"
+  };
+  const mark = markByType[type];
+  return normalizeRichText(
+    source.text,
+    mark && !marks.includes(mark) ? [...marks, mark] : marks,
+    href
+  );
+}
+
+function renderRichText(value: unknown): string {
+  return normalizeRichText(value).map((inline) => inline.text).join("");
+}
+
+function richTextHasContent(content: TelegramRichInline[]): boolean {
+  return content.some((inline) => inline.text.trim());
+}
+
+function normalizePageCaption(value: unknown): TelegramRichBlock[] {
+  const caption = getRecord(value);
+  return [caption.text, caption.credit]
+    .map((part) => normalizeRichText(part))
+    .filter(richTextHasContent)
+    .map((content) => ({ type: "paragraph", content }));
+}
+
+function normalizePageListItem(value: unknown): TelegramRichListItem | null {
+  const item = getRecord(value);
+  const blocks = item.text
+    ? [{ type: "paragraph" as const, content: normalizeRichText(item.text) }]
+    : normalizePageBlocks(Array.isArray(item.blocks) ? item.blocks : []);
+  const contentBlocks = blocks.filter((block) => block.type !== "paragraph" || richTextHasContent(block.content || []));
+  if (!contentBlocks.length) {
+    return null;
+  }
+
+  return {
+    blocks: contentBlocks,
+    ...(item.checkbox === true ? { checkbox: true, checked: item.checked === true } : {})
+  };
+}
+
+function normalizeTextBlock(
+  type: "heading" | "paragraph" | "preformatted",
+  value: unknown,
+  options: Pick<TelegramRichBlock, "language" | "level"> = {}
+): TelegramRichBlock[] {
+  const content = normalizeRichText(value);
+  return richTextHasContent(content) ? [{ type, content, ...options }] : [];
+}
+
+function normalizePageBlock(value: unknown): TelegramRichBlock[] {
+  const block = getRecord(value);
+  const type = normalizeText(block._);
+
+  const headingLevels: Partial<Record<string, number>> = {
+    pageBlockTitle: 1,
+    pageBlockSubtitle: 2,
+    pageBlockHeader: 2,
+    pageBlockSubheader: 3,
+    pageBlockHeading1: 1,
+    pageBlockHeading2: 2,
+    pageBlockHeading3: 3,
+    pageBlockHeading4: 4,
+    pageBlockHeading5: 5,
+    pageBlockHeading6: 6,
+    pageBlockKicker: 4
+  };
+  const headingLevel = headingLevels[type];
+  if (headingLevel) {
+    return normalizeTextBlock("heading", block.text, { level: headingLevel });
+  }
+
+  switch (type) {
+    case "pageBlockUnsupported":
+    case "pageBlockAnchor":
+    case "pageBlockChannel":
+      return [];
+    case "pageBlockDivider":
+      return [{ type: "divider" }];
+    case "pageBlockParagraph":
+    case "pageBlockFooter":
+      return normalizeTextBlock("paragraph", block.text);
+    case "pageBlockPreformatted":
+      return normalizeTextBlock("preformatted", block.text, {
+        ...(normalizeText(block.language) ? { language: normalizeText(block.language) } : {})
+      });
+    case "pageBlockList":
+    case "pageBlockOrderedList": {
+      const sourceItems = Array.isArray(block.items) ? block.items : [];
+      const items = sourceItems
+        .map(normalizePageListItem)
+        .filter((item): item is TelegramRichListItem => item !== null);
+      if (!items.length) {
+        return [];
+      }
+
+      const ordered = type === "pageBlockOrderedList";
+      const configuredStart = Number(block.start);
+      const itemStart = Number(normalizeText(getRecord(sourceItems[0]).num));
+      const start = Number.isInteger(configuredStart) && configuredStart > 0 ? configuredStart : itemStart;
+      return [{
+        type: "list",
+        items,
+        ordered,
+        ...(Number.isInteger(start) && start > 1 ? { start } : {})
+      }];
+    }
+    case "pageBlockTable": {
+      const title = normalizeRichText(block.title);
+      const rows = Array.isArray(block.rows)
+        ? block.rows.map((row) => {
+          const cells = getRecord(row).cells;
+          return Array.isArray(cells)
+            ? cells.map((cell): TelegramRichTableCell => {
+              const source = getRecord(cell);
+              return {
+                content: normalizeRichText(source.text),
+                ...(source.header === true ? { header: true } : {})
+              };
+            })
+            : [];
+        }).filter((row) => row.length)
+        : [];
+      return rows.length ? [{
+        type: "table",
+        rows,
+        ...(richTextHasContent(title) ? { title } : {})
+      }] : [];
+    }
+    case "pageBlockBlockquote":
+    case "pageBlockPullquote": {
+      const content = normalizeRichText(block.text);
+      const blocks = normalizeTextBlock("paragraph", block.caption);
+      return richTextHasContent(content) || blocks.length
+        ? [{ type: "blockquote", ...(richTextHasContent(content) ? { content } : {}), ...(blocks.length ? { blocks } : {}) }]
+        : [];
+    }
+    case "pageBlockBlockquoteBlocks": {
+      const blocks = [
+        ...normalizePageBlocks(Array.isArray(block.blocks) ? block.blocks : []),
+        ...normalizePageCaption(block.caption)
+      ];
+      return blocks.length ? [{ type: "blockquote", blocks }] : [];
+    }
+    case "pageBlockCover":
+      return normalizePageBlock(block.cover);
+    case "pageBlockDetails": {
+      const title = normalizeRichText(block.title);
+      const blocks = normalizePageBlocks(Array.isArray(block.blocks) ? block.blocks : []);
+      return richTextHasContent(title) || blocks.length
+        ? [{
+          type: "details",
+          ...(richTextHasContent(title) ? { title } : {}),
+          ...(blocks.length ? { blocks } : {}),
+          ...(block.open === true ? { open: true } : {})
+        }]
+        : [];
+    }
+    case "pageBlockEmbedPost":
+      return [
+        ...normalizeTextBlock("paragraph", { _: "textPlain", text: normalizeText(block.author) }),
+        ...normalizePageBlocks(Array.isArray(block.blocks) ? block.blocks : []),
+        ...normalizePageCaption(block.caption)
+      ];
+    case "pageBlockCollage":
+    case "pageBlockSlideshow":
+      return [
+        ...normalizePageBlocks(Array.isArray(block.items) ? block.items : []),
+        ...normalizePageCaption(block.caption)
+      ];
+    case "pageBlockPhoto":
+    case "pageBlockVideo":
+    case "pageBlockAudio":
+    case "pageBlockEmbed":
+    case "pageBlockMap":
+      return normalizePageCaption(block.caption);
+    case "pageBlockMath":
+      return normalizeTextBlock("preformatted", {
+        _: "textFixed",
+        text: { _: "textPlain", text: normalizeText(block.source) }
+      });
+    default:
+      return normalizeTextBlock("paragraph", block.text);
+  }
+}
+
+function normalizePageBlocks(blocks: unknown[]): TelegramRichBlock[] {
+  return blocks.flatMap(normalizePageBlock);
+}
+
+function normalizeRichMessageContent(message: unknown = {}): TelegramRichBlock[] {
+  const richMessage = getRecord(getRecord(message).richMessage);
+  return normalizePageBlocks(Array.isArray(richMessage.blocks) ? richMessage.blocks : []);
+}
+
+function getMessageEntityRange(
+  value: unknown,
+  text: string,
+  offsetShift: number
+): TelegramMessageEntityRange | null {
+  const entity = getRecord(value);
+  const params = getRecord(entity.params);
+  const kind = normalizeText(entity.kind || params.kind);
+  const originalStart = Number(entity.offset);
+  const length = Number(entity.length);
+  if (!Number.isInteger(originalStart) || !Number.isInteger(length) || length <= 0) {
+    return null;
+  }
+
+  const start = originalStart - offsetShift;
+  const end = start + length;
+  if (start < 0 || start >= text.length || end <= start) {
+    return null;
+  }
+
+  const entityText = text.slice(start, Math.min(end, text.length));
+  const markByKind: Partial<Record<string, TelegramRichMark>> = {
+    bold: "bold",
+    code: "code",
+    italic: "italic",
+    pre: "code",
+    spoiler: "spoiler",
+    strikethrough: "strike",
+    underline: "underline"
+  };
+  const mark = markByKind[kind];
+  if (mark) {
+    return { start, end: Math.min(end, text.length), mark };
+  }
+
+  const href = {
+    email: entityText ? `mailto:${entityText}` : "",
+    phone_number: entityText ? `tel:${entityText}` : "",
+    text_link: normalizeText(params.url),
+    url: entityText
+  }[kind];
+  return href ? { start, end: Math.min(end, text.length), href } : null;
+}
+
+function normalizeMessageEntityContent(message: unknown = {}): TelegramRichBlock[] {
+  const source = getRecord(message);
+  const rawText = String(source.text || "");
+  const entities = Array.isArray(source.entities) ? source.entities : [];
+  if (!rawText || !entities.length) {
+    return [];
+  }
+
+  const metadataMatch = /^<boatyard-topic\b[^>]*\/>\s*\n?/.exec(rawText);
+  const withoutMetadata = rawText.slice(metadataMatch?.[0].length || 0);
+  const leadingWhitespaceLength = withoutMetadata.length - withoutMetadata.trimStart().length;
+  const text = withoutMetadata.trim();
+  const offsetShift = (metadataMatch?.[0].length || 0) + leadingWhitespaceLength;
+  const ranges = entities
+    .map((entity) => getMessageEntityRange(entity, text, offsetShift))
+    .filter((range): range is TelegramMessageEntityRange => range !== null);
+  if (!text || !ranges.length) {
+    return [];
+  }
+
+  const boundaries = [...new Set([
+    0,
+    text.length,
+    ...ranges.flatMap((range) => [range.start, range.end])
+  ])].filter((boundary) => boundary >= 0 && boundary <= text.length).sort((left, right) => left - right);
+  const content = mergeRichInlines(boundaries.slice(0, -1).flatMap((start, index): TelegramRichInline[] => {
+    const end = boundaries[index + 1];
+    const segment = text.slice(start, end);
+    if (!segment) {
+      return [];
+    }
+
+    const activeRanges = ranges.filter((range) => range.start <= start && range.end >= end);
+    const marks = [...new Set(activeRanges.flatMap((range) => range.mark ? [range.mark] : []))];
+    const href = activeRanges.find((range) => range.href)?.href || "";
+    return [{
+      text: segment,
+      ...(href ? { href } : {}),
+      ...(marks.length ? { marks } : {})
+    }];
+  }));
+
+  return richTextHasContent(content) ? [{ type: "paragraph", content }] : [];
 }
 
 function renderPageCaption(value: unknown): string {
@@ -450,6 +853,10 @@ function getMessageText(message: unknown = {}): string {
 function mapMessage(message: unknown = {}): TelegramMappedMessage {
   const source = getRecord(message);
   const isImage = Boolean(getTelegramImageMimeType(source));
+  const richMessageContent = normalizeRichMessageContent(source);
+  const richContent = richMessageContent.length
+    ? richMessageContent
+    : normalizeMessageEntityContent(source);
   return {
     id: source.id,
     text: getMessageText(source),
@@ -457,7 +864,8 @@ function mapMessage(message: unknown = {}): TelegramMappedMessage {
     senderName: getSenderName(source),
     sentAt: formatMessageDate(source.date),
     hasMedia: Boolean(source.media),
-    isImage
+    isImage,
+    ...(richContent.length ? { richContent } : {})
   };
 }
 
@@ -1204,7 +1612,9 @@ export {
   getTopicMetadataPrefix,
   getTelegramImageMimeType,
   mapMessage,
+  normalizeMessageEntityContent,
   normalizeTarget,
+  normalizeRichMessageContent,
   parseGramJsSession,
   parsePastedImage,
   renderRichMessageText

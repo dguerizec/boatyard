@@ -153,7 +153,14 @@ test("renderRichMessageText preserves structured Telegram response content", () 
             _: "textConcat",
             texts: [
               { _: "textPlain", text: "Use a " },
-              { _: "textBold", text: { _: "textPlain", text: "VL53L1X" } },
+              {
+                _: "textUrl",
+                url: "https://example.com/vl53l1x",
+                text: {
+                  _: "textBold",
+                  text: { _: "textPlain", text: "VL53L1X" }
+                }
+              },
               { _: "textPlain", text: " sensor." }
             ]
           }
@@ -174,8 +181,8 @@ test("renderRichMessageText preserves structured Telegram response content", () 
             {
               _: "pageTableRow",
               cells: [
-                { _: "pageTableCell", text: { _: "textPlain", text: "Sensor" } },
-                { _: "pageTableCell", text: { _: "textPlain", text: "Weight" } }
+                { _: "pageTableCell", header: true, text: { _: "textPlain", text: "Sensor" } },
+                { _: "pageTableCell", header: true, text: { _: "textPlain", text: "Weight" } }
               ]
             },
             {
@@ -207,8 +214,177 @@ test("renderRichMessageText preserves structured Telegram response content", () 
   ].join("\n");
 
   assert.equal(renderRichMessageText(message), expected);
-  assert.equal(mapMessage(message).text, expected);
-  assert.equal(mapMessage(message).hasMedia, false);
+  const mapped = mapMessage(message);
+  assert.equal(mapped.text, expected);
+  assert.equal(mapped.hasMedia, false);
+  assert.deepEqual(mapped.richContent, [
+    {
+      type: "heading",
+      level: 2,
+      content: [{ text: "Payload recommendation" }]
+    },
+    {
+      type: "paragraph",
+      content: [
+        { text: "Use a " },
+        {
+          text: "VL53L1X",
+          href: "https://example.com/vl53l1x",
+          marks: ["bold"]
+        },
+        { text: " sensor." }
+      ]
+    },
+    {
+      type: "list",
+      ordered: false,
+      items: [
+        {
+          blocks: [
+            {
+              type: "paragraph",
+              content: [{ text: "Keep the payload below 2 g." }]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      type: "table",
+      title: [{ text: "Candidates" }],
+      rows: [
+        [
+          { content: [{ text: "Sensor" }], header: true },
+          { content: [{ text: "Weight" }], header: true }
+        ],
+        [
+          { content: [{ text: "VL53L1X" }] },
+          { content: [{ text: "1–2 g" }] }
+        ]
+      ]
+    },
+    {
+      type: "blockquote",
+      content: [{ text: "Treat it as a tiny-drone payload." }]
+    }
+  ]);
+});
+
+test("mapMessage preserves links and formatting from standard Telegram entities", () => {
+  const text = "Open PickaTube or https://picka.tube";
+  const mapped = mapMessage({
+    text,
+    entities: [
+      {
+        kind: "text_link",
+        offset: 5,
+        length: 9,
+        params: {
+          kind: "text_link",
+          url: "https://picka.tube/"
+        }
+      },
+      {
+        kind: "bold",
+        offset: 5,
+        length: 9,
+        params: { kind: "bold" }
+      },
+      {
+        kind: "url",
+        offset: 18,
+        length: 18,
+        params: { kind: "url" }
+      }
+    ]
+  });
+
+  assert.equal(mapped.text, text);
+  assert.deepEqual(mapped.richContent, [
+    {
+      type: "paragraph",
+      content: [
+        { text: "Open " },
+        {
+          text: "PickaTube",
+          href: "https://picka.tube/",
+          marks: ["bold"]
+        },
+        { text: " or " },
+        {
+          text: "https://picka.tube",
+          href: "https://picka.tube"
+        }
+      ]
+    }
+  ]);
+});
+
+test("TelegramService emits mapped new messages through the mtcute callback", () => {
+  let callbackAttached = false;
+  let newMessageHandler: (message: unknown) => void = (_message: unknown) => {
+    throw new Error("The mtcute new-message callback was not attached.");
+  };
+  const service = new TelegramService({ sessionFilePath: "/tmp/telegram-session.json" });
+  service.attachMessageEventHandler({
+    onNewMessage: {
+      add(handler: (message: unknown) => void) {
+        callbackAttached = true;
+        newMessageHandler = handler;
+      },
+      remove() {}
+    }
+  });
+
+  let payload: unknown;
+  service.once("message", (value: unknown) => {
+    payload = value;
+  });
+  if (!callbackAttached) {
+    throw new Error("Expected the mtcute new-message callback to be attached.");
+  }
+  newMessageHandler({
+    id: 1021,
+    chat: { id: -1004341559831 },
+    replyToMessage: { id: 1020, threadId: 54 },
+    text: "PickaTube",
+    entities: [
+      {
+        kind: "text_link",
+        offset: 0,
+        length: 9,
+        params: {
+          kind: "text_link",
+          url: "https://picka.tube/"
+        }
+      }
+    ]
+  });
+
+  assert.deepEqual(payload, {
+    chatId: "-1004341559831",
+    topicIds: ["1021", "54", "1020"],
+    message: {
+      id: 1021,
+      text: "PickaTube",
+      outgoing: false,
+      senderName: "",
+      sentAt: "",
+      hasMedia: false,
+      isImage: false,
+      richContent: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              text: "PickaTube",
+              href: "https://picka.tube/"
+            }
+          ]
+        }
+      ]
+    }
+  });
 });
 
 test("parseGramJsSession converts an existing StringSession without exposing it", () => {

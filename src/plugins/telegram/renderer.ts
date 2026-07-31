@@ -32,12 +32,46 @@
     summary?: string;
   };
 
+  type TelegramRichMark = "bold" | "code" | "italic" | "spoiler" | "strike" | "subscript" | "superscript" | "underline";
+
+  type TelegramRichInline = {
+    href?: string;
+    marks?: TelegramRichMark[];
+    text?: string;
+  };
+
+  type TelegramRichListItem = {
+    blocks?: TelegramRichBlock[];
+    checked?: boolean;
+    checkbox?: boolean;
+  };
+
+  type TelegramRichTableCell = {
+    content?: TelegramRichInline[];
+    header?: boolean;
+  };
+
+  type TelegramRichBlock = {
+    blocks?: TelegramRichBlock[];
+    content?: TelegramRichInline[];
+    items?: TelegramRichListItem[];
+    language?: string;
+    level?: number;
+    open?: boolean;
+    ordered?: boolean;
+    rows?: TelegramRichTableCell[][];
+    start?: number;
+    title?: TelegramRichInline[];
+    type?: string;
+  };
+
   type TelegramMessage = {
     hasMedia?: boolean;
     id?: string | number;
     imagePreviewDataUrl?: string;
     isImage?: boolean;
     outgoing?: boolean;
+    richContent?: TelegramRichBlock[];
     senderName?: string;
     sentAt?: string;
     text?: string;
@@ -51,6 +85,7 @@
 
   type TelegramUpdate = {
     chatId?: string;
+    message?: TelegramMessage;
     topicIds?: unknown[];
   };
 
@@ -82,7 +117,9 @@
     getStatus(options?: TelegramConversationProps): Promise<TelegramStatus>;
     getTarget(project?: TelegramProject, projectConfig?: TelegramConfig, globalConfig?: TelegramConfig): TelegramTarget;
     logout(): Promise<TelegramStatus>;
+    mergeMessages(messages: TelegramMessage[], message: TelegramMessage): TelegramMessage[];
     onMessage(callback: (update: TelegramUpdate) => void): () => void;
+    renderMessageContent(message: TelegramMessage): HTMLElement | null;
     sendMessage(project: TelegramProject, text: string, image: TelegramImageAttachment | null, options?: TelegramConversationProps): Promise<unknown>;
     startLogin(globalConfig: TelegramConfig | undefined, phoneNumber: string): Promise<TelegramStatus>;
   };
@@ -140,6 +177,214 @@
 
   function stripTopicMetadataPrefix(text: unknown) {
     return String(text || "").replace(/^<boatyard-topic\b[^>]*\/>\s*\n?/, "").trim();
+  }
+
+  function getSafeRichLink(value: unknown) {
+    const candidate = String(value || "").trim();
+    if (!candidate) {
+      return "";
+    }
+
+    try {
+      const url = new URL(/^www\./i.test(candidate) ? `https://${candidate}` : candidate);
+      return ["http:", "https:", "mailto:", "tel:"].includes(url.protocol) ? url.href : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function appendRichInlines(parent: HTMLElement, inlines: TelegramRichInline[] = []) {
+    const tagByMark: Partial<Record<TelegramRichMark, string>> = {
+      bold: "strong",
+      code: "code",
+      italic: "em",
+      strike: "s",
+      subscript: "sub",
+      superscript: "sup",
+      underline: "u"
+    };
+
+    for (const inline of inlines) {
+      const text = String(inline.text || "");
+      if (!text) {
+        continue;
+      }
+
+      let node = document.createElement("span");
+      node.textContent = text;
+      for (const mark of [...(Array.isArray(inline.marks) ? inline.marks : [])].reverse()) {
+        const wrapper = document.createElement(tagByMark[mark] || "span");
+        if (mark === "spoiler") {
+          wrapper.className = "telegram-rich-spoiler";
+        }
+        wrapper.append(node);
+        node = wrapper;
+      }
+      const href = getSafeRichLink(inline.href);
+      if (href) {
+        const link = document.createElement("a");
+        link.className = "telegram-rich-link";
+        link.href = href;
+        link.title = href;
+        link.addEventListener("click", (event) => {
+          event.preventDefault();
+          globalScope.boatyard?.openExternal?.(href);
+        });
+        link.append(node);
+        node = link;
+      }
+      parent.append(node);
+    }
+  }
+
+  function renderRichBlock(block: TelegramRichBlock): HTMLElement | null {
+    switch (block.type) {
+      case "paragraph": {
+        const paragraph = document.createElement("p");
+        paragraph.className = "telegram-rich-paragraph";
+        appendRichInlines(paragraph, block.content);
+        return paragraph;
+      }
+      case "heading": {
+        const level = Math.max(1, Math.min(6, Number(block.level) || 3));
+        const heading = document.createElement(`h${level}`);
+        heading.className = `telegram-rich-heading telegram-rich-heading-${level}`;
+        appendRichInlines(heading, block.content);
+        return heading;
+      }
+      case "list": {
+        const list = document.createElement(block.ordered ? "ol" : "ul");
+        list.className = "telegram-rich-list";
+        if (block.ordered && Number.isInteger(block.start) && Number(block.start) > 1) {
+          list.setAttribute("start", String(block.start));
+        }
+        for (const item of Array.isArray(block.items) ? block.items : []) {
+          const listItem = document.createElement("li");
+          if (item.checkbox) {
+            const checkbox = document.createElement("span");
+            checkbox.className = "telegram-rich-checkbox";
+            checkbox.setAttribute("aria-hidden", "true");
+            checkbox.textContent = item.checked ? "☑" : "☐";
+            listItem.append(checkbox);
+          }
+          for (const itemBlock of Array.isArray(item.blocks) ? item.blocks : []) {
+            const content = renderRichBlock(itemBlock);
+            if (content) {
+              listItem.append(content);
+            }
+          }
+          list.append(listItem);
+        }
+        return list;
+      }
+      case "table": {
+        const tableBlock = document.createElement("div");
+        tableBlock.className = "telegram-rich-table-block";
+        if (block.title?.length) {
+          const title = document.createElement("div");
+          title.className = "telegram-rich-table-title";
+          appendRichInlines(title, block.title);
+          tableBlock.append(title);
+        }
+
+        const scroll = document.createElement("div");
+        scroll.className = "telegram-rich-table-scroll";
+        const table = document.createElement("table");
+        table.className = "telegram-rich-table";
+        const body = document.createElement("tbody");
+        for (const row of Array.isArray(block.rows) ? block.rows : []) {
+          const tableRow = document.createElement("tr");
+          for (const cell of Array.isArray(row) ? row : []) {
+            const tableCell = document.createElement(cell.header ? "th" : "td");
+            appendRichInlines(tableCell, cell.content);
+            tableRow.append(tableCell);
+          }
+          body.append(tableRow);
+        }
+        table.append(body);
+        scroll.append(table);
+        tableBlock.append(scroll);
+        return tableBlock;
+      }
+      case "blockquote": {
+        const quote = document.createElement("blockquote");
+        quote.className = "telegram-rich-blockquote";
+        if (block.content?.length) {
+          const paragraph = document.createElement("p");
+          appendRichInlines(paragraph, block.content);
+          quote.append(paragraph);
+        }
+        for (const nestedBlock of Array.isArray(block.blocks) ? block.blocks : []) {
+          const content = renderRichBlock(nestedBlock);
+          if (content) {
+            quote.append(content);
+          }
+        }
+        return quote;
+      }
+      case "preformatted": {
+        const pre = document.createElement("pre");
+        pre.className = "telegram-rich-preformatted";
+        const code = document.createElement("code");
+        if (block.language) {
+          code.className = `language-${block.language.replace(/[^a-z0-9_-]/gi, "")}`;
+        }
+        code.textContent = (block.content || []).map((inline) => inline.text || "").join("");
+        pre.append(code);
+        return pre;
+      }
+      case "divider": {
+        const divider = document.createElement("hr");
+        divider.className = "telegram-rich-divider";
+        return divider;
+      }
+      case "details": {
+        const details = document.createElement("details");
+        details.className = "telegram-rich-details";
+        if (block.open) {
+          details.setAttribute("open", "");
+        }
+        const summary = document.createElement("summary");
+        if (block.title?.length) {
+          appendRichInlines(summary, block.title);
+        } else {
+          summary.textContent = "Details";
+        }
+        details.append(summary);
+        for (const nestedBlock of Array.isArray(block.blocks) ? block.blocks : []) {
+          const content = renderRichBlock(nestedBlock);
+          if (content) {
+            details.append(content);
+          }
+        }
+        return details;
+      }
+      default:
+        return null;
+    }
+  }
+
+  function renderMessageContent(message: TelegramMessage): HTMLElement | null {
+    if (Array.isArray(message.richContent) && message.richContent.length) {
+      const content = document.createElement("div");
+      content.className = "telegram-message-content";
+      for (const block of message.richContent) {
+        const renderedBlock = renderRichBlock(block);
+        if (renderedBlock) {
+          content.append(renderedBlock);
+        }
+      }
+      return content.childElementCount ? content : null;
+    }
+
+    const text = stripTopicMetadataPrefix(message.text);
+    if (!text) {
+      return null;
+    }
+    const paragraph = document.createElement("p");
+    paragraph.className = "telegram-message-text";
+    paragraph.textContent = text;
+    return paragraph;
   }
 
   function getProjectTopicTitle(project: TelegramProject = {}, config: TelegramConfig = {}) {
@@ -207,11 +452,27 @@
     return Array.isArray(update.topicIds) && update.topicIds.some((id) => targetTopicIds.has(normalizeText(id)));
   }
 
+  function mergeTelegramMessages(messages: TelegramMessage[], message: TelegramMessage) {
+    const messageId = normalizeText(message.id);
+    const nextMessages = [...messages];
+    const existingIndex = messageId
+      ? nextMessages.findIndex((candidate) => normalizeText(candidate.id) === messageId)
+      : -1;
+    if (existingIndex >= 0) {
+      nextMessages[existingIndex] = message;
+    } else {
+      nextMessages.push(message);
+    }
+    return nextMessages.slice(-50);
+  }
+
   function createTelegramService(): TelegramRendererService {
     return Object.freeze({
       version: "0.1.0",
       getTarget,
       getWebLink: getTelegramWebLink,
+      mergeMessages: mergeTelegramMessages,
+      renderMessageContent,
       async getStatus(options: TelegramConversationProps = {}) {
         if (!globalScope.boatyard?.invokePlugin) {
           return {
@@ -313,16 +574,10 @@
         }
         imageButton.addEventListener("click", () => openImage?.(message));
         row.append(imageButton);
-      } else if (message.hasMedia) {
-        const media = document.createElement("div");
-        media.className = "telegram-message-media";
-        media.textContent = message.isImage ? "Image" : "Attachment";
-        row.append(media);
       }
 
-      const body = document.createElement("p");
-      body.textContent = stripTopicMetadataPrefix(message.text);
-      if (body.textContent) {
+      const body = renderMessageContent(message);
+      if (body) {
         row.append(body);
       }
       list.append(row);
@@ -438,6 +693,8 @@
     const project = props.project || {};
     const target = service.getTarget(project, props.projectConfig || props.pluginConfig, props.globalPluginConfig);
     const compact = options.compact === true;
+    const liveMessages = new Map<string, TelegramMessage>();
+    let currentMessages: TelegramMessage[] = [];
 
     const shell = document.createElement("section");
     shell.className = compact ? "telegram-conversation telegram-widget-conversation" : "telegram-conversation telegram-pane";
@@ -647,7 +904,11 @@
         await persistResolvedTarget(props, data.target);
         setStatusText(status, data.status || {});
         updateAuthState(data.status || {});
-        renderMessages(list, data.messages, showImagePreview);
+        currentMessages = Array.isArray(data.messages) ? data.messages : [];
+        for (const message of liveMessages.values()) {
+          currentMessages = service.mergeMessages(currentMessages, message);
+        }
+        renderMessages(list, currentMessages, showImagePreview);
         list.scrollTop = shouldScrollToBottom ? list.scrollHeight : previousScrollTop;
       } catch (error) {
         setStatusText(status, {
@@ -780,6 +1041,26 @@
         return;
       }
       if (doesTelegramUpdateMatchTarget(update, service.getTarget(project, props.projectConfig || props.pluginConfig, props.globalPluginConfig))) {
+        if (update.message) {
+          const shouldScrollToBottom = isScrolledToBottom(list);
+          const messageId = normalizeText(update.message.id);
+          if (messageId) {
+            liveMessages.set(messageId, update.message);
+            while (liveMessages.size > 50) {
+              const oldestMessageId = liveMessages.keys().next().value;
+              if (!oldestMessageId) {
+                break;
+              }
+              liveMessages.delete(oldestMessageId);
+            }
+          }
+          currentMessages = service.mergeMessages(currentMessages, update.message);
+          renderMessages(list, currentMessages, showImagePreview);
+          if (shouldScrollToBottom) {
+            list.scrollTop = list.scrollHeight;
+          }
+          return;
+        }
         load();
       }
     });
