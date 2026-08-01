@@ -19,6 +19,10 @@ export function getPaneIconInitial(label: unknown) {
   return getDisplayName(label).match(/[\p{L}\p{N}]/u)?.[0].toLocaleUpperCase() || "?";
 }
 
+export function shouldUseIconOnlyPaneTab(compactPaneTabs: unknown, paneIconOnly: unknown) {
+  return compactPaneTabs === true || paneIconOnly === true;
+}
+
 export function getPaneFaviconUrl(url: unknown) {
   try {
     const parsed = new URL(String(url || ""));

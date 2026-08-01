@@ -194,6 +194,7 @@ test("normalizeSettings keeps global settings defaults", () => {
   assert.deepEqual(normalizeSettings(), {
     projectsBasePath: "",
     blurWebAppOverlays: false,
+    compactPaneTabs: false,
     passwordManagerEnabled: false,
     passwordManagerDisclaimerAccepted: false,
     widgetRailWidth: 340,
@@ -203,6 +204,7 @@ test("normalizeSettings keeps global settings defaults", () => {
   assert.deepEqual(normalizeSettings({
     projectsBasePath: "  /workspace/projects  ",
     blurWebAppOverlays: true,
+    compactPaneTabs: true,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 120,
@@ -242,6 +244,7 @@ test("normalizeSettings keeps global settings defaults", () => {
   }), {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: true,
+    compactPaneTabs: true,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 240,

@@ -9,6 +9,7 @@ const {
   getPaneIconInitial,
   haveSamePaneOrigin,
   needsLightPaneFavicon,
+  shouldUseIconOnlyPaneTab,
   updatePaneFaviconElements
 } = require(`${process.cwd()}/build/renderer/paneIcons`);
 const { createProjectWebApps } = require(`${process.cwd()}/build/renderer/projectWebApps`);
@@ -122,6 +123,12 @@ test("pane icon fallbacks use the content name instead of its menu prefix", () =
   assert.equal(getPaneIconInitial("URL: PickATube"), "P");
   assert.equal(getPaneIconInitial("Pier"), "P");
   assert.equal(getPaneIconInitial("---"), "?");
+});
+
+test("compact pane tabs and plugin overrides both enable icon-only tabs", () => {
+  assert.equal(shouldUseIconOnlyPaneTab(false, false), false);
+  assert.equal(shouldUseIconOnlyPaneTab(true, false), true);
+  assert.equal(shouldUseIconOnlyPaneTab(false, true), true);
 });
 
 test("pane favicons resolve from HTTP origins only", () => {

@@ -41,6 +41,7 @@ export type WebAppOpenRule = {
 export type SettingsState = {
   projectsBasePath: string;
   blurWebAppOverlays: boolean;
+  compactPaneTabs: boolean;
   passwordManagerEnabled: boolean;
   passwordManagerDisclaimerAccepted: boolean;
   widgetRailWidth: number;

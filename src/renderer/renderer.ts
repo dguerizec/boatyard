@@ -360,6 +360,7 @@ const paneLayoutView = createPaneLayoutView({
     webAppRuntime.setCurrentWebAppUrl(key, url);
   },
   normalizeAddressInput,
+  isCompactPaneTabs: () => getSettings().compactPaneTabs === true,
   isGlobalWorkspace,
   getProjectPluginConfig,
   getGlobalPluginConfig,

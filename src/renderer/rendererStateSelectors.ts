@@ -67,6 +67,7 @@ export function createRendererStateSelectors({
     return {
       projectsBasePath: "",
       blurWebAppOverlays: false,
+      compactPaneTabs: false,
       passwordManagerDisclaimerAccepted: false,
       passwordManagerEnabled: false,
       webAppOpenRules: [] as UnknownRecord[],

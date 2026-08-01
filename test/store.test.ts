@@ -274,6 +274,7 @@ test("ProjectStore persists global settings", () => {
   const state = store.updateSettings({
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
+    compactPaneTabs: true,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     terminalEnv: "SSH_ASKPASS=\nSSH_ASKPASS_REQUIRE=never",
@@ -289,6 +290,7 @@ test("ProjectStore persists global settings", () => {
   assert.deepEqual(state.settings, {
     projectsBasePath: "/workspace/projects",
     blurWebAppOverlays: false,
+    compactPaneTabs: true,
     passwordManagerEnabled: true,
     passwordManagerDisclaimerAccepted: true,
     widgetRailWidth: 340,

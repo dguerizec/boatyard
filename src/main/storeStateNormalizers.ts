@@ -32,6 +32,7 @@ export function createDefaultState(): ProjectStoreState {
     settings: {
       projectsBasePath: "",
       blurWebAppOverlays: false,
+      compactPaneTabs: false,
       passwordManagerEnabled: false,
       passwordManagerDisclaimerAccepted: false,
       widgetRailWidth: 340,
@@ -136,6 +137,7 @@ export function normalizeSettings(settings: unknown = {}): SettingsState {
   return {
     projectsBasePath: normalizeText(source.projectsBasePath),
     blurWebAppOverlays: source.blurWebAppOverlays === true,
+    compactPaneTabs: source.compactPaneTabs === true,
     passwordManagerEnabled: source.passwordManagerEnabled === true && source.passwordManagerDisclaimerAccepted === true,
     passwordManagerDisclaimerAccepted: source.passwordManagerDisclaimerAccepted === true,
     widgetRailWidth: Math.max(MIN_WIDGET_RAIL_WIDTH, Number.isFinite(widgetRailWidth) ? Math.round(widgetRailWidth) : 340),

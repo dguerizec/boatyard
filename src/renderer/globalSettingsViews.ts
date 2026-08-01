@@ -199,8 +199,26 @@ export function createGlobalSettingsViews({
       headingTitle.textContent = "Presentation";
 
       const headingCopy = document.createElement("p");
-      headingCopy.textContent = "Tune how Boatyard displays webapp overlays.";
+      headingCopy.textContent = "Tune how Boatyard displays panes and webapp overlays.";
       heading.append(headingTitle, headingCopy);
+
+      const compactTabsLabel = document.createElement("label");
+      compactTabsLabel.className = "switch-row";
+
+      const compactTabsCopy = document.createElement("span");
+      compactTabsCopy.className = "switch-copy";
+      compactTabsCopy.innerHTML = "<strong>Compact pane tabs</strong><small>Show only the pane icon in the current tab. The pane selector always keeps icons and labels.</small>";
+
+      const compactTabsSwitch = document.createElement("input");
+      compactTabsSwitch.name = "compactPaneTabs";
+      compactTabsSwitch.type = "checkbox";
+      compactTabsSwitch.checked = settings.compactPaneTabs === true;
+
+      const compactTabsTrack = document.createElement("span");
+      compactTabsTrack.className = "switch-track";
+      compactTabsTrack.setAttribute("aria-hidden", "true");
+
+      compactTabsLabel.append(compactTabsCopy, compactTabsSwitch, compactTabsTrack);
 
       const blurLabel = document.createElement("label");
       blurLabel.className = "switch-row";
@@ -254,7 +272,7 @@ export function createGlobalSettingsViews({
       error.setAttribute("role", "alert");
       error.hidden = true;
 
-      form.append(heading, blurLabel, widgetRailLabel, error);
+      form.append(heading, compactTabsLabel, blurLabel, widgetRailLabel, error);
       applyFormControls(form);
 
       bindSettingsForm({
@@ -263,6 +281,7 @@ export function createGlobalSettingsViews({
         error,
         getValues: () => ({
           blurWebAppOverlays: blurSwitch.checked,
+          compactPaneTabs: compactTabsSwitch.checked,
           widgetRailWidth: Number(widgetRailInput.value)
         }),
         onSubmit

@@ -1,7 +1,7 @@
 import type { RendererPaneNode, RendererProject } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type { WidgetLayout, WidgetPane } from "./widgetSurfaceTypes.js";
-import { createPaneIconLabel } from "./paneIcons.js";
+import { createPaneIconLabel, shouldUseIconOnlyPaneTab } from "./paneIcons.js";
 
 type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
@@ -150,6 +150,7 @@ type PaneLayoutViewOptions = {
   getCurrentWebAppUrl: (webApp: PaneWebApp) => string | undefined;
   setCurrentWebAppUrl: (key: string, url: string) => void;
   normalizeAddressInput: (value: string) => string;
+  isCompactPaneTabs: () => boolean;
   isGlobalWorkspace: (project: RendererProject) => boolean;
   getProjectPluginConfig: (projectId: string | undefined, pluginId: string) => UnknownRecord;
   getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
@@ -191,6 +192,7 @@ export function createPaneLayoutView({
     getCurrentWebAppUrl,
     setCurrentWebAppUrl,
     normalizeAddressInput,
+    isCompactPaneTabs,
     isGlobalWorkspace,
     getProjectPluginConfig,
     getGlobalPluginConfig,
@@ -944,9 +946,10 @@ export function createPaneLayoutView({
       tabPickerButton.setAttribute("aria-haspopup", "menu");
       tabPickerButton.setAttribute("aria-expanded", "false");
       const tabLabel = isWidgetPane ? "Widgets" : String(selectedWebApp.label || "");
-      tabPickerButton.classList.toggle("icon-only", selectedWebApp.iconOnly === true);
+      const iconOnly = shouldUseIconOnlyPaneTab(isCompactPaneTabs(), selectedWebApp.iconOnly);
+      tabPickerButton.classList.toggle("icon-only", iconOnly);
       tabPickerButton.setAttribute("aria-label", tabLabel);
-      if (selectedWebApp.iconOnly === true) {
+      if (iconOnly) {
         tabPickerButton.title = tabLabel;
       }
       tabPickerButton.append(createPaneIconLabel(selectedWebApp, tabLabel));
