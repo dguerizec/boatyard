@@ -1,6 +1,57 @@
 {
-  "generatedForVersion": "0.9.7",
+  "generatedForVersion": "0.9.8",
   "releases": [
+    {
+      "version": "0.9.8",
+      "date": "2026-08-02",
+      "features": [
+        {
+          "category": "Added",
+          "title": "TwiCC Session Flow",
+          "body": "A new TwiCC pane and widget show sessions across In progress, Backlog, and Testing & observing lanes."
+        },
+        {
+          "category": "Added",
+          "title": "Session creation",
+          "body": "TwiCC sessions can be started directly from Boatyard, including sessions tied to a new or existing Git worktree."
+        },
+        {
+          "category": "Added",
+          "title": "Pier-assisted worktrees",
+          "body": "When Pier is available, Boatyard can use it to create and materialize the worktree before opening a TwiCC session."
+        },
+        {
+          "category": "Added",
+          "title": "Pane icons and favicons",
+          "body": "Pane tabs and picker menus now show built-in icons, plugin icons, site favicons, or a readable fallback initial."
+        },
+        {
+          "category": "Changed",
+          "title": "Compact pane tabs",
+          "body": "A new global setting can show only the current pane icon in the tab while keeping full labels in the pane selector."
+        },
+        {
+          "category": "Changed",
+          "title": "Pane picker clarity",
+          "body": "The pane selector now keeps icons and names visible, making similar URLs and plugin panes easier to distinguish."
+        },
+        {
+          "category": "Changed",
+          "title": "TwiCC session board layout",
+          "body": "The Session Flow pane can switch between vertical and horizontal layouts and remembers the choice per pane."
+        },
+        {
+          "category": "Fixed",
+          "title": "Favicon persistence",
+          "body": "Webapp favicons are saved and restored more reliably as pages load and navigate."
+        },
+        {
+          "category": "Fixed",
+          "title": "Active TwiCC session highlighting",
+          "body": "The Session Flow view tracks the currently open TwiCC session and updates as the pane URL changes."
+        }
+      ]
+    },
     {
       "version": "0.9.7",
       "date": "2026-07-31",

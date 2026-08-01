@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.8] - 2026-08-02
+
+### Summary
+
+- **v0.9.8: Session flow and sharper panes** — Boatyard adds a TwiCC session board, clearer pane identity, and a compact tab option for denser workspaces.
+
+### Added
+
+- **TwiCC Session Flow** — A new TwiCC pane and widget show sessions across In progress, Backlog, and Testing & observing lanes.
+- **Session creation** — TwiCC sessions can be started directly from Boatyard, including sessions tied to a new or existing Git worktree.
+- **Pier-assisted worktrees** — When Pier is available, Boatyard can use it to create and materialize the worktree before opening a TwiCC session.
+- **Pane icons and favicons** — Pane tabs and picker menus now show built-in icons, plugin icons, site favicons, or a readable fallback initial.
+
+### Changed
+
+- **Compact pane tabs** — A new global setting can show only the current pane icon in the tab while keeping full labels in the pane selector.
+- **Pane picker clarity** — The pane selector now keeps icons and names visible, making similar URLs and plugin panes easier to distinguish.
+- **TwiCC session board layout** — The Session Flow pane can switch between vertical and horizontal layouts and remembers the choice per pane.
+
+### Fixed
+
+- **Favicon persistence** — Webapp favicons are saved and restored more reliably as pages load and navigate.
+- **Active TwiCC session highlighting** — The Session Flow view tracks the currently open TwiCC session and updates as the pane URL changes.
+
+### Documentation
+
+- **Plugin pane icons** — Plugin API documentation now describes pane icons, icon-only tabs, favicon fallback behavior, and pane selector display.
+
 ## [0.9.7] - 2026-07-31
 
 ### Summary
