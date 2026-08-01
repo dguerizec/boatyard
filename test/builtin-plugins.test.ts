@@ -569,11 +569,16 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(styles, /\.twicc-session-flow-composer/);
   assert.match(styles, /\.twicc-session-flow-card\.current-session/);
   assert.match(styles, /\.twicc-session-flow-current-badge/);
+  assert.match(styles, /\.twicc-session-flow-insertion-placeholder/);
   assert.match(renderer, /directButton\.textContent = "\+ New session"/);
   assert.match(renderer, /worktreeButton\.textContent = "⌘ New session in worktree"/);
   assert.match(renderer, /createComposerField\("Title \(optional\)", titleInput\)/);
   assert.match(renderer, /sessionFlowLane: "in_progress"/);
   assert.match(renderer, /pendingCreatedSessions\.set\(created\.sessionId/);
+  assert.match(renderer, /draggedSessionPointerOffsetY/);
+  assert.match(renderer, /draggedSessionGhostHeight \/ 2/);
+  assert.match(renderer, /twicc-session-flow-insertion-placeholder/);
+  assert.match(renderer, /invokePlugin\("reorderSessionFlow"/);
   assert.match(renderer, /card\.setAttribute\("aria-current", "true"\)/);
   assert.match(renderer, /sessionId === activeSessionId/);
   assert.match(rendererEventBindings, /boatyard:webapp-url-changed/);

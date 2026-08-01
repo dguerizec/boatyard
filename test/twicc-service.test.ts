@@ -23,8 +23,11 @@ const {
   loadTwiccProjects,
   loadTwiccSessionsFromRpc,
   loadTwiccSessions,
+  reorderTwiccSessionFlow,
   updateTwiccSessionFlowLaneFromRpc,
-  updateTwiccSessionFlowLane
+  updateTwiccSessionFlowLane,
+  updateTwiccSessionFlowPositionFromRpc,
+  updateTwiccSessionFlowPosition
 } = require(`${process.cwd()}/build/plugins/twicc/service`);
 
 type ExecCall = {
@@ -534,6 +537,7 @@ test("getTwiccSessionFlow classifies every visible unarchived project session", 
     id: "recent",
     lane: "testing",
     lastActivityAt: "2026-08-01T11:00:00.000Z",
+    order: null,
     processState: "",
     provider: "codex",
     title: "Recently finished task",
@@ -548,7 +552,8 @@ test("getTwiccSessionFlow lets persisted annotations override inferred lanes", (
     title: "Paused active task",
     annotations: {
       boatyard: {
-        sessionFlowLane: "backlog"
+        sessionFlowLane: "backlog",
+        sessionFlowOrder: "3"
       }
     }
   }], [{
@@ -557,6 +562,7 @@ test("getTwiccSessionFlow lets persisted annotations override inferred lanes", (
   }]);
 
   assert.equal(sessions[0].lane, "backlog");
+  assert.equal(sessions[0].order, 3);
 });
 
 test("updateTwiccSessionFlowLane persists the lane through the CLI", async () => {
@@ -605,6 +611,92 @@ test("updateTwiccSessionFlowLane rejects unknown lanes", async () => {
   await assert.rejects(
     updateTwiccSessionFlowLane("session-1", "done", {}),
     /Invalid TwiCC session flow lane/
+  );
+});
+
+test("updateTwiccSessionFlowPosition persists a lane and order through the CLI", async () => {
+  const result = await updateTwiccSessionFlowPosition("session-2", "in_progress", 2, {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "twicc");
+      assert.deepEqual(args, [
+        "update-session",
+        "session-2",
+        "annotations",
+        "set:boatyard.sessionFlowLane=in_progress",
+        "set:boatyard.sessionFlowOrder=2"
+      ]);
+      return {
+        stdout: JSON.stringify({ status: "updated", session_id: "session-2" })
+      };
+    }
+  });
+
+  assert.deepEqual(result, { status: "updated", session_id: "session-2" });
+});
+
+test("reorderTwiccSessionFlow persists every ordered lane position", async () => {
+  const calls: ExecCall[] = [];
+  const result = await reorderTwiccSessionFlow(["session-2", "session-1"], "in_progress", {
+    execFileAsync: async (command: string, args: string[]) => {
+      calls.push({ command, args });
+      return {
+        stdout: JSON.stringify({ status: "updated" })
+      };
+    }
+  });
+
+  assert.deepEqual(calls.map((call) => call.args), [
+    [
+      "update-session",
+      "session-2",
+      "annotations",
+      "set:boatyard.sessionFlowLane=in_progress",
+      "set:boatyard.sessionFlowOrder=0"
+    ],
+    [
+      "update-session",
+      "session-1",
+      "annotations",
+      "set:boatyard.sessionFlowLane=in_progress",
+      "set:boatyard.sessionFlowOrder=1"
+    ]
+  ]);
+  assert.deepEqual(result, {
+    lane: "in_progress",
+    sessionIds: ["session-2", "session-1"]
+  });
+});
+
+test("updateTwiccSessionFlowPositionFromRpc persists one atomic lane position", async () => {
+  const result = await updateTwiccSessionFlowPositionFromRpc("session-2", "testing", 512, {
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/rpc/update-session/annotations");
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        session_id: "session-2",
+        operations: [
+          "set:boatyard.sessionFlowLane=testing",
+          "set:boatyard.sessionFlowOrder=512"
+        ]
+      });
+      return {
+        exit_code: 0,
+        result: { status: "updated", session_id: "session-2" },
+        error: null
+      };
+    })
+  });
+
+  assert.deepEqual(result, { status: "updated", session_id: "session-2" });
+});
+
+test("updateTwiccSessionFlowPosition rejects invalid positions", async () => {
+  await assert.rejects(
+    updateTwiccSessionFlowPosition("session-1", "testing", Number.NaN, {}),
+    /Invalid TwiCC session flow order/
   );
 });
 

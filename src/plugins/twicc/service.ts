@@ -6,6 +6,7 @@ const path = require("node:path");
 
 const DEFAULT_TWICC_BASE_URL = "http://localhost:3500";
 const TWICC_SESSION_FLOW_ANNOTATION = "sessionFlowLane";
+const TWICC_SESSION_FLOW_ORDER_ANNOTATION = "sessionFlowOrder";
 const TWICC_PROJECT_CACHE_TTL_MS = 600000;
 
 type TwiccProject = {
@@ -49,6 +50,7 @@ type TwiccSessionFlowItem = {
   id: string;
   lane: TwiccSessionFlowLane;
   lastActivityAt: string;
+  order: number | null;
   processState: string;
   provider: string;
   title: string;
@@ -454,6 +456,18 @@ function getAnnotatedSessionFlowLane(session: TwiccSession): TwiccSessionFlowLan
   );
 }
 
+function getAnnotatedSessionFlowOrder(session: TwiccSession): number | null {
+  const annotations = isRecord(session.annotations) ? session.annotations : {};
+  const boatyard = isRecord(annotations.boatyard) ? annotations.boatyard : {};
+  const value = boatyard[TWICC_SESSION_FLOW_ORDER_ANNOTATION]
+    ?? annotations[`boatyard.${TWICC_SESSION_FLOW_ORDER_ANNOTATION}`];
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const order = Number(value);
+  return Number.isInteger(order) && order >= 0 ? order : null;
+}
+
 function getSessionActivityTime(session: TwiccSession): number {
   const timestamps = [session.last_new_content_at, session.last_updated_at, session.created_at]
     .map((value) => Date.parse(String(value || "")))
@@ -499,6 +513,7 @@ function getTwiccSessionFlow(
         id: sessionId,
         lane,
         lastActivityAt: activityTime ? new Date(activityTime).toISOString() : "",
+        order: getAnnotatedSessionFlowOrder(session),
         processState,
         provider: String(session.provider || "").trim(),
         title: String(session.title || "Untitled session").trim() || "Untitled session",
@@ -569,6 +584,106 @@ async function updateTwiccSessionFlowLane(
     windowsHide: true
   });
   return JSON.parse(String(stdout || "null"));
+}
+
+async function updateTwiccSessionFlowPositionFromRpc(
+  sessionId: string,
+  lane: TwiccSessionFlowLane,
+  order: number,
+  options: TwiccCommandOptions = {}
+): Promise<unknown> {
+  return rpcCommand("update-session/annotations", {
+    session_id: sessionId,
+    operations: [
+      `set:boatyard.${TWICC_SESSION_FLOW_ANNOTATION}=${lane}`,
+      `set:boatyard.${TWICC_SESSION_FLOW_ORDER_ANNOTATION}=${order}`
+    ]
+  }, options);
+}
+
+async function updateTwiccSessionFlowPosition(
+  sessionId: unknown,
+  lane: unknown,
+  order: unknown,
+  { execFileAsync, ...options }: TwiccCommandOptions = {}
+): Promise<unknown> {
+  const normalizedSessionId = String(sessionId || "").trim();
+  const normalizedLane = asSessionFlowLane(lane);
+  const normalizedOrder = Number(order);
+  if (!normalizedSessionId) {
+    throw new Error("TwiCC session id is required.");
+  }
+  if (!normalizedLane) {
+    throw new Error(`Invalid TwiCC session flow lane: ${String(lane || "")}`);
+  }
+  if (
+    order === null
+    || order === undefined
+    || order === ""
+    || !Number.isInteger(normalizedOrder)
+    || normalizedOrder < 0
+  ) {
+    throw new Error(`Invalid TwiCC session flow order: ${String(order ?? "")}`);
+  }
+
+  if (shouldUseRpc(options)) {
+    try {
+      return await updateTwiccSessionFlowPositionFromRpc(
+        normalizedSessionId,
+        normalizedLane,
+        normalizedOrder,
+        options
+      );
+    } catch {
+      // The annotation writes are idempotent, so a local fallback is safe.
+    }
+  }
+
+  if (typeof execFileAsync !== "function") {
+    throw new Error("TwiCC command runner is required.");
+  }
+
+  const { stdout } = await execFileAsync("twicc", [
+    "update-session",
+    normalizedSessionId,
+    "annotations",
+    `set:boatyard.${TWICC_SESSION_FLOW_ANNOTATION}=${normalizedLane}`,
+    `set:boatyard.${TWICC_SESSION_FLOW_ORDER_ANNOTATION}=${normalizedOrder}`
+  ], {
+    timeout: 30000,
+    windowsHide: true
+  });
+  return JSON.parse(String(stdout || "null"));
+}
+
+async function reorderTwiccSessionFlow(
+  sessionIds: unknown,
+  lane: unknown,
+  options: TwiccCommandOptions = {}
+): Promise<{ lane: TwiccSessionFlowLane; sessionIds: string[] }> {
+  const normalizedLane = asSessionFlowLane(lane);
+  if (!normalizedLane) {
+    throw new Error(`Invalid TwiCC session flow lane: ${String(lane || "")}`);
+  }
+  if (!Array.isArray(sessionIds)) {
+    throw new Error("Ordered TwiCC session ids are required.");
+  }
+  const normalizedSessionIds = sessionIds.map((sessionId) => String(sessionId || "").trim());
+  if (
+    normalizedSessionIds.some((sessionId) => !sessionId)
+    || new Set(normalizedSessionIds).size !== normalizedSessionIds.length
+  ) {
+    throw new Error("Ordered TwiCC session ids must be non-empty and unique.");
+  }
+
+  for (const [order, sessionId] of normalizedSessionIds.entries()) {
+    await updateTwiccSessionFlowPosition(sessionId, normalizedLane, order, options);
+  }
+
+  return {
+    lane: normalizedLane,
+    sessionIds: normalizedSessionIds
+  };
 }
 
 async function archiveTwiccSessionFromRpc(
@@ -1067,9 +1182,13 @@ export {
   loadTwiccSessionFlow,
   loadTwiccSessionsFromRpc,
   loadTwiccSessions,
+  reorderTwiccSessionFlow,
   updateTwiccSessionFlowLaneFromRpc,
   updateTwiccSessionFlowLane,
+  updateTwiccSessionFlowPositionFromRpc,
+  updateTwiccSessionFlowPosition,
   parseGitWorktrees,
   TWICC_SESSION_FLOW_ANNOTATION,
+  TWICC_SESSION_FLOW_ORDER_ANNOTATION,
   TWICC_PROJECT_CACHE_TTL_MS
 };

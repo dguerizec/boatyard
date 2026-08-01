@@ -14,6 +14,7 @@ const {
   loadTwiccSessionFlow,
   loadTwiccProcesses,
   getTwiccProjectProcessStatuses,
+  reorderTwiccSessionFlow,
   updateTwiccSessionFlowLane
 } = require("./service");
 
@@ -24,6 +25,7 @@ type SourcePathPayload = { sourcePath?: unknown };
 type SessionFlowPayload = GlobalConfigPayload & { project?: unknown };
 type SessionFlowSessionPayload = GlobalConfigPayload & { sessionId?: unknown };
 type SessionFlowLanePayload = GlobalConfigPayload & { lane?: unknown; sessionId?: unknown };
+type SessionFlowOrderPayload = GlobalConfigPayload & { lane?: unknown; sessionIds?: unknown };
 type SessionCreationPayload = GlobalConfigPayload & {
   project?: unknown;
   prompt?: unknown;
@@ -79,6 +81,13 @@ function activate(ctx: TwiccPluginContext) {
 
   ctx.actions.handle<SessionFlowLanePayload>("setSessionFlowLane", async ({ sessionId, lane, globalConfig } = {}) => {
     return updateTwiccSessionFlowLane(sessionId, lane, {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    });
+  });
+
+  ctx.actions.handle<SessionFlowOrderPayload>("reorderSessionFlow", async ({ sessionIds, lane, globalConfig } = {}) => {
+    return reorderTwiccSessionFlow(sessionIds, lane, {
       execFileAsync: ctx.execFileAsync,
       globalConfig
     });

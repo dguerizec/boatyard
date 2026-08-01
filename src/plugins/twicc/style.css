@@ -442,6 +442,16 @@
   font-size: 11px;
 }
 
+.twicc-session-flow-insertion-placeholder {
+  box-sizing: border-box;
+  min-height: 58px;
+  border: 1px dashed color-mix(in srgb, var(--twicc-session-flow-color) 82%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--twicc-session-flow-color) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--twicc-session-flow-color) 14%, transparent),
+    0 0 14px color-mix(in srgb, var(--twicc-session-flow-color) 16%, transparent);
+}
+
 .twicc-session-flow-card {
   min-width: 0;
   display: grid;
@@ -466,8 +476,7 @@
 }
 
 .twicc-session-flow-card.dragging {
-  opacity: 0.35;
-  transform: scale(0.985);
+  opacity: 0.45;
 }
 
 .twicc-session-flow-card-main,
