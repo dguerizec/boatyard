@@ -108,6 +108,9 @@ export function registerPluginRegistry(globalScope: PluginRegistryWindow): Plugi
     return {
       ...definition,
       id,
+      icon: normalizeText(definition.icon),
+      iconOnly: definition.iconOnly === true,
+      iconUrl: normalizeText(definition.iconUrl),
       pluginId,
       title,
       kind: requestedKind,

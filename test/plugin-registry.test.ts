@@ -115,6 +115,9 @@ test("Plugin registry activates plugins and records contributions", () => {
           id: "vendor.preview.pane",
           webAppId: "preview",
           title: "Preview",
+          icon: "grid",
+          iconOnly: true,
+          iconUrl: "./preview.svg",
           kind: "wcv",
           resolveUrl: ({ project }: ProjectContext) => project.previewUrl,
         });
@@ -146,6 +149,9 @@ test("Plugin registry activates plugins and records contributions", () => {
   assert.equal(registry.listGlobalSettingsSections()[0].fields[0].key, "apiUrl");
   assert.equal(registry.listProjectSettingsSections()[0].fields[0].key, "previewUrl");
   assert.equal(registry.listPanes({ kind: "wcv" })[0].webAppId, "preview");
+  assert.equal(registry.listPanes({ kind: "wcv" })[0].icon, "grid");
+  assert.equal(registry.listPanes({ kind: "wcv" })[0].iconOnly, true);
+  assert.equal(registry.listPanes({ kind: "wcv" })[0].iconUrl, "./preview.svg");
   assert.equal(registry.listProjectNavBadges()[0].id, "vendor.preview.badge");
   assert.equal(widgetRegistry.get("vendor.preview.widget").name, "Preview");
   assert.equal(registry.getService("vendor.preview").ping(), "pong");

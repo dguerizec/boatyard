@@ -200,6 +200,19 @@ export class WorkspaceWindowRuntime {
     view.webContents.on("did-finish-load", () => {
       this.sendWebAppLoaded(key, view.webContents.getURL());
     });
+    view.webContents.on("page-favicon-updated", (_event: Event, favicons: string[]) => {
+      const url = view.webContents.getURL();
+      this.store.updateWorkspaceWebAppState(this.id, key, {
+        faviconPageUrl: url,
+        faviconUrl: favicons[0] || "",
+        url
+      });
+      this.sendToRenderer("webapp:favicon-changed", {
+        key,
+        favicons,
+        url
+      });
+    });
     view.webContents.on("did-fail-load", (_event: Event, errorCode: number, errorDescription: string, validatedUrl: string, isMainFrame: boolean) => {
       if (isMainFrame) {
         this.sendWebAppLoaded(key, validatedUrl || view.webContents.getURL(), `failed:${errorCode}:${errorDescription}`);

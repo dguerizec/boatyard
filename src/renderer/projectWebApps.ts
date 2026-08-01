@@ -7,6 +7,9 @@ import type {
 import type { UnknownRecord } from "./rendererRecords.js";
 
 type PluginPaneDefinition = UnknownRecord & {
+  icon?: string;
+  iconOnly?: boolean;
+  iconUrl?: string;
   key?: string;
   mobileDev?: boolean;
   pluginId?: string;
@@ -23,6 +26,7 @@ type ProjectWebAppsOptions = {
   getPluginPaneDefinitions: (filter: UnknownRecord) => PluginPaneDefinition[];
   getProjectPluginConfig: (projectId?: string, pluginId?: string) => UnknownRecord;
   getProjectWidgetPanes: (project: RendererProject) => UnknownRecord[];
+  getWebAppFavicon: (key?: string) => string;
   isGlobalWorkspace: (project: RendererProject) => boolean;
 };
 
@@ -33,11 +37,13 @@ export function createProjectWebApps({
   getPluginPaneDefinitions,
   getProjectPluginConfig,
   getProjectWidgetPanes,
+  getWebAppFavicon,
   isGlobalWorkspace
 }: ProjectWebAppsOptions) {
   function getProjectWebApps(project: RendererProject, paneId: string) {
     const paneNode = findPaneNode(getPaneLayout(project), paneId);
     const webApps: WebAppDefinition[] = getProjectWidgetPanes(project).map((widgetPane, index) => ({
+      icon: "grid",
       id: `widgets:${widgetPane.id}`,
       label: widgetPane.label || `Widgets ${index + 1}`,
       key: `${paneId}:widgets:${widgetPane.id}`,
@@ -74,6 +80,7 @@ export function createProjectWebApps({
 
     if (isGlobalWorkspace(project) || project.sourcePath) {
       webApps.push({
+        icon: "terminal",
         id: "terminal",
         label: "Terminal",
         key: `${paneId}:terminal`,
@@ -82,6 +89,7 @@ export function createProjectWebApps({
     }
 
     webApps.push({
+      icon: "info",
       id: "manual",
       label: "Manual",
       key: `${paneId}:manual`,
@@ -91,6 +99,9 @@ export function createProjectWebApps({
 
     for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "dom" })) {
       webApps.push({
+        icon: pluginPane.icon,
+        iconOnly: pluginPane.iconOnly,
+        iconUrl: pluginPane.iconUrl,
         id: pluginPane.webAppId,
         label: pluginPane.title,
         key: `${paneId}:${pluginPane.key}`,
@@ -113,6 +124,9 @@ export function createProjectWebApps({
             continue;
           }
           webApps.push({
+            icon: webApp.icon || pluginPane.icon,
+            iconOnly: Boolean(webApp.iconOnly ?? pluginPane.iconOnly),
+            iconUrl: webApp.iconUrl || pluginPane.iconUrl,
             id: webApp.id || `${pluginPane.webAppId}:${webApp.key || webApp.url}`,
             label: webApp.label || pluginPane.title,
             key: `${paneId}:${pluginPane.key}:${webApp.key || webApp.id || webApp.url}`,
@@ -130,6 +144,9 @@ export function createProjectWebApps({
       }
 
       webApps.push({
+        icon: pluginPane.icon,
+        iconOnly: pluginPane.iconOnly,
+        iconUrl: pluginPane.iconUrl,
         id: pluginPane.webAppId,
         label: pluginPane.title,
         key: `${paneId}:${pluginPane.key}`,
@@ -160,7 +177,10 @@ export function createProjectWebApps({
       });
     }
 
-    return webApps;
+    return webApps.map((webApp) => ({
+      ...webApp,
+      faviconUrl: getWebAppFavicon(webApp.key)
+    }));
   }
 
   return Object.freeze({

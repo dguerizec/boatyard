@@ -515,7 +515,12 @@ test("ProjectStore persists webapp urls", () => {
 
   store.load();
   store.updateWebAppState("project:twicc", {
+    faviconPageUrl: "http://localhost:3500/projects/demo/sessions/123",
+    faviconUrl: "http://localhost:3500/assets/favicon.svg",
     url: "http://localhost:3500/projects/demo/sessions/123"
+  });
+  store.updateWebAppState("project:twicc", {
+    url: "http://localhost:3500/projects/demo/sessions/456"
   });
 
   const reloaded = new ProjectStore(filePath);
@@ -523,11 +528,15 @@ test("ProjectStore persists webapp urls", () => {
 
   assert.equal(
     state.webApps["project:twicc"].url,
-    "http://localhost:3500/projects/demo/sessions/123"
+    "http://localhost:3500/projects/demo/sessions/456"
+  );
+  assert.equal(
+    state.webApps["project:twicc"].faviconUrl,
+    "http://localhost:3500/assets/favicon.svg"
   );
   assert.equal(
     reloaded.getWebAppUrl("project:twicc"),
-    "http://localhost:3500/projects/demo/sessions/123"
+    "http://localhost:3500/projects/demo/sessions/456"
   );
 });
 

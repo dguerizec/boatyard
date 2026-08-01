@@ -114,6 +114,15 @@ contextBridge.exposeInMainWorld("boatyard", {
    * @param {BridgeCallback} callback
    * @returns {Unsubscribe}
    */
+  onWebAppFaviconChanged: (callback: BridgeCallback): Unsubscribe => {
+    const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("webapp:favicon-changed", listener);
+    return () => ipcRenderer.removeListener("webapp:favicon-changed", listener);
+  },
+  /**
+   * @param {BridgeCallback} callback
+   * @returns {Unsubscribe}
+   */
   onWebAppAutofillChanged: (callback: BridgeCallback): Unsubscribe => {
     const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("webapp:autofill-changed", listener);

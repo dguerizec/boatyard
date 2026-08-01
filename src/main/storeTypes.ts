@@ -74,6 +74,8 @@ export type PasswordCredentialState = {
 };
 
 export type WebAppState = {
+  faviconPageUrl?: string;
+  faviconUrl?: string;
   url: string;
 };
 

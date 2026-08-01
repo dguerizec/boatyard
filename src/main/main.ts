@@ -734,6 +734,21 @@ function ensureWebAppView(key: string): WebAppItem {
   view.webContents.on("did-finish-load", () => {
     sendWebAppLoaded(key, view.webContents.getURL());
   });
+  view.webContents.on("page-favicon-updated", (_event: Event, favicons: string[]) => {
+    const url = view.webContents.getURL();
+    store.updateWebAppState(key, {
+      faviconPageUrl: url,
+      faviconUrl: favicons[0] || "",
+      url
+    });
+    if (mainWindow && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send("webapp:favicon-changed", {
+        key,
+        favicons,
+        url
+      });
+    }
+  });
   view.webContents.on("did-fail-load", (_event: Event, errorCode: number, errorDescription: string, validatedUrl: string, isMainFrame: boolean) => {
     if (isMainFrame) {
       sendWebAppLoaded(key, validatedUrl || view.webContents.getURL(), `failed:${errorCode}:${errorDescription}`);

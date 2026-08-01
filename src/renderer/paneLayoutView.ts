@@ -1,6 +1,7 @@
 import type { RendererPaneNode, RendererProject } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type { WidgetLayout, WidgetPane } from "./widgetSurfaceTypes.js";
+import { createPaneIconLabel } from "./paneIcons.js";
 
 type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
@@ -53,6 +54,9 @@ type PaneLayoutStateApi = {
 };
 
 type PaneWebApp = UnknownRecord & {
+  icon?: string;
+  iconOnly?: boolean;
+  iconUrl?: string;
   id: string;
   key?: string;
   kind?: string;
@@ -939,7 +943,13 @@ export function createPaneLayoutView({
       tabPickerButton.setAttribute("aria-selected", "true");
       tabPickerButton.setAttribute("aria-haspopup", "menu");
       tabPickerButton.setAttribute("aria-expanded", "false");
-      tabPickerButton.textContent = isWidgetPane ? "Widgets" : selectedWebApp.label || "";
+      const tabLabel = isWidgetPane ? "Widgets" : String(selectedWebApp.label || "");
+      tabPickerButton.classList.toggle("icon-only", selectedWebApp.iconOnly === true);
+      tabPickerButton.setAttribute("aria-label", tabLabel);
+      if (selectedWebApp.iconOnly === true) {
+        tabPickerButton.title = tabLabel;
+      }
+      tabPickerButton.append(createPaneIconLabel(selectedWebApp, tabLabel));
       tabPickerButton.addEventListener("click", () => {
         const isOpen = isWebAppTabMenuOpen();
         tabPickerButton.setAttribute("aria-expanded", String(!isOpen));

@@ -499,6 +499,7 @@ const webAppMenus = createWebAppMenus({
   getSettings,
   getProjectById,
   getProjectWidgetPanes,
+  getWebAppFavicon: (key) => webAppRuntime.getWebAppFavicon(key),
   getVisibleWebAppEntryByKey: (key) => key ? visibleWebApps.getEntryByKey(key) : null,
   getVisibleWebAppEntryByUrl: (url) => url ? visibleWebApps.getEntryByUrl(url) : null,
   getVisibleWebAppEntries: () => visibleWebApps.getEntries(),
@@ -1066,6 +1067,9 @@ registerRendererEventBindings({
   selectCreateProject,
   selectGlobal,
   selectGlobalSettings,
+  setCurrentWebAppFavicons: (key, favicons, url) => {
+    webAppRuntime.setCurrentWebAppFavicons(key, favicons, url);
+  },
   setCurrentWebAppUrl: (key, url) => {
     webAppRuntime.setCurrentWebAppUrl(key, url);
   },

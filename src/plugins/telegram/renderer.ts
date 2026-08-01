@@ -1,6 +1,9 @@
 "use strict";
 
 (function registerTelegramPlugin(globalScope: BoatyardPluginRendererGlobal) {
+  const rendererScriptUrl = (document.currentScript as HTMLScriptElement | null)?.src || "";
+  const telegramIconUrl = rendererScriptUrl ? new URL("telegram-icon.svg", rendererScriptUrl).href : "";
+
   type TelegramProject = {
     id?: string;
     name?: string;
@@ -1239,6 +1242,7 @@
           webAppId: "telegram",
           key: "telegram",
           title: "Telegram",
+          iconUrl: telegramIconUrl,
           kind: "dom",
           scope: "project",
           render(container: HTMLElement, props: TelegramConversationProps) {

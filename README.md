@@ -128,7 +128,7 @@ Plugins are registered in the renderer through `window.BoatyardPluginRegistry.re
 The manifest must provide a namespaced `id`, `name`, `version`, and `apiVersion`. Contribution ids must be prefixed by the plugin id. Runtime activation receives a `ctx` object with these capabilities:
 
 - `ctx.status.set(status)`: reports plugin state, summary, details, and optional actions.
-- `ctx.panes.register(definition)`: contributes project panes. `kind: "wcv"` panes provide `resolveUrl`; `kind: "dom"` panes provide `render`.
+- `ctx.panes.register(definition)`: contributes project panes. `kind: "wcv"` panes provide `resolveUrl`; `kind: "dom"` panes provide `render`. Pane definitions can provide a built-in `icon`, an `iconUrl`, and `iconOnly: true` for a compact current tab. The pane selector always keeps the icon and name visible; URL-backed panes use their origin favicon when no explicit icon is configured and fall back to a name initial.
 - `ctx.widgets.register(definition)`: contributes one or more project widgets through the widget registry.
 - `ctx.settings.registerGlobalSection(section)`: contributes global plugin settings. Global settings are edited from the plugin card cog dialog.
 - `ctx.settings.registerProjectSection(section)`: contributes project plugin settings in the project settings form.

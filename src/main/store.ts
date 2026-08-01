@@ -844,7 +844,12 @@ class ProjectStore {
     if (!workspaceWindow) {
       return this.updateWebAppState(String(key), webAppState) as WebAppState | null;
     }
-    const normalized = normalizeWebAppState({ [String(key)]: webAppState });
+    const normalized = normalizeWebAppState({
+      [String(key)]: {
+        ...(workspaceWindow.webApps[String(key)] || {}),
+        ...toRecord(webAppState)
+      }
+    });
     if (!normalized[String(key)]) {
       delete workspaceWindow.webApps[String(key)];
     } else {
@@ -940,7 +945,10 @@ class ProjectStore {
 
   updateWebAppState(key: unknown, webAppState: unknown): WebAppState | null {
     const normalized = normalizeWebAppState({
-      [String(key)]: webAppState
+      [String(key)]: {
+        ...(this.state.webApps[String(key)] || {}),
+        ...toRecord(webAppState)
+      }
     });
 
     if (!normalized[String(key)]) {

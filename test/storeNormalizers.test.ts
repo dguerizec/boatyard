@@ -361,17 +361,29 @@ test("normalizeNavigationState keeps restorable app pages", () => {
 test("normalizeWebAppState keeps valid urls and drops invalid urls", () => {
   assert.deepEqual(normalizeWebAppState({
     "project:twicc": {
+      faviconPageUrl: "http://localhost:3500/projects/example",
+      faviconUrl: "http://localhost:3500/assets/favicon.svg",
       url: "http://localhost:3500/projects/example"
     },
     "project:file": {
       url: "file:///tmp/example.html"
+    },
+    "project:invalid-favicon": {
+      faviconPageUrl: "file:///tmp/example.html",
+      faviconUrl: "javascript:alert(1)",
+      url: "https://example.test/dashboard"
     },
     "project:empty": {
       url: ""
     }
   }), {
     "project:twicc": {
+      faviconPageUrl: "http://localhost:3500/projects/example",
+      faviconUrl: "http://localhost:3500/assets/favicon.svg",
       url: "http://localhost:3500/projects/example"
+    },
+    "project:invalid-favicon": {
+      url: "https://example.test/dashboard"
     }
   });
 });

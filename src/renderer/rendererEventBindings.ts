@@ -29,6 +29,7 @@ type RendererEventBindingsOptions = {
   selectCreateProject: () => void;
   selectGlobal: () => void;
   selectGlobalSettings: () => void;
+  setCurrentWebAppFavicons: (key: string, favicons: unknown, url?: string) => unknown;
   setCurrentWebAppUrl: (key: string, url: string) => void;
   syncWebAppAutofillButton: (button: HTMLButtonElement, enabled: boolean) => void;
   windowObject: Window;
@@ -61,6 +62,7 @@ export function registerRendererEventBindings({
   selectCreateProject,
   selectGlobal,
   selectGlobalSettings,
+  setCurrentWebAppFavicons,
   setCurrentWebAppUrl,
   syncWebAppAutofillButton,
   windowObject,
@@ -89,6 +91,13 @@ export function registerRendererEventBindings({
     }
 
     markWebAppLoaded({ key, url });
+  });
+
+  boatyard.onWebAppFaviconChanged?.(({ key, favicons, url }) => {
+    if (!key || !favicons?.length) {
+      return;
+    }
+    setCurrentWebAppFavicons(key, favicons, url);
   });
 
   boatyard.onWebAppAutofillChanged?.(({ key, enabled }) => {

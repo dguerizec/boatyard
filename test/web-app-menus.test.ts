@@ -89,6 +89,7 @@ test("opening successive external links in an existing pane reuses its transient
     getSettings: () => ({ webAppOpenRules: [] }),
     getProjectById: () => project,
     getProjectWidgetPanes: () => [],
+    getWebAppFavicon: () => "",
     getVisibleWebAppEntryByKey: (key?: string) => key === sourceEntry.webApp.key ? sourceEntry : null,
     getVisibleWebAppEntryByUrl: () => null,
     getVisibleWebAppEntries: () => [sourceEntry],

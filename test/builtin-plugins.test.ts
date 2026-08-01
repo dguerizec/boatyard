@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
+const { pathToFileURL } = require("node:url");
 const vm = require("node:vm");
 const { resolveFieldDefault } = require(`${process.cwd()}/build/renderer/pluginSettingsFields`);
 const { registerPluginRegistry } = require(`${process.cwd()}/build/renderer/pluginRegistry`);
@@ -20,6 +21,7 @@ type LooseVmValue = ((...args: unknown[]) => LooseVmValue) & {
 
 type PluginPane = {
   id: string;
+  iconUrl?: string;
   key?: string;
   resolveUrl(context: unknown): string;
   resolveWebApps(context: unknown): unknown[];
@@ -71,6 +73,7 @@ type BuiltinRendererContext = {
       classList: { add(): void; remove(): void; toggle(): void };
       setAttribute(): void;
     };
+    currentScript: { src: string } | null;
   };
   fetch: MockFetch;
   queueMicrotask(callback: () => void): void;
@@ -198,7 +201,8 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
         addEventListener() {},
         setAttribute() {},
         classList: { add() {}, remove() {}, toggle() {} }
-      })
+      }),
+      currentScript: null as { src: string } | null
     },
     fetch: mockFetch
   };
@@ -215,8 +219,10 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
   for (const file of [
     ...builtinPluginDirs.map(readBuiltinPluginRendererPath)
   ]) {
+    context.document.currentScript = { src: pathToFileURL(file).href };
     vm.runInContext(fs.readFileSync(file, "utf8"), context);
   }
+  context.document.currentScript = null;
 
   return {
     registry,
@@ -256,6 +262,22 @@ test("Built-in plugins register project integrations and widgets", () => {
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane: PluginPane) => pane.key).sort()),
     ["hawser", "pier", "twicc-plugin"]
+  );
+  const twiccPane = registry
+    .listPanes({ scope: "project", kind: "wcv" })
+    .find((pane: PluginPane) => pane.id === "boatyard.twicc.pane");
+  assert.match(twiccPane.iconUrl || "", /\/plugins\/twicc\/twicc-icon\.svg$/);
+  assert.match(
+    fs.readFileSync(path.join(process.cwd(), "src", "plugins", "twicc", "twicc-icon.svg"), "utf8"),
+    /fill="#3178c0"/
+  );
+  const telegramPane = registry
+    .listPanes({ scope: "project", kind: "dom" })
+    .find((pane: PluginPane) => pane.id === "boatyard.telegram.pane");
+  assert.match(telegramPane.iconUrl || "", /\/plugins\/telegram\/telegram-icon\.svg$/);
+  assert.match(
+    fs.readFileSync(path.join(process.cwd(), "src", "plugins", "telegram", "telegram-icon.svg"), "utf8"),
+    /#2AABEE[\s\S]*#229ED9/
   );
   assert.deepEqual(
     plain(registry.listProjectNavBadges().map((badge: PluginBadge) => badge.id).sort()),

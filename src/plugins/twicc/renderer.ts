@@ -1,6 +1,9 @@
 "use strict";
 
 (function registerTwiccPlugin(globalScope: BoatyardPluginRendererGlobal) {
+  const rendererScriptUrl = (document.currentScript as HTMLScriptElement | null)?.src || "";
+  const twiccIconUrl = rendererScriptUrl ? new URL("twicc-icon.svg", rendererScriptUrl).href : "";
+
   type TwiccProject = PluginRegistryRecord & {
     id?: unknown;
   };
@@ -1071,6 +1074,7 @@
           webAppId: "twicc-plugin",
           key: "twicc-plugin",
           title: "Twicc",
+          iconUrl: twiccIconUrl,
           kind: "wcv",
           scope: "project",
           resolveUrl({ project, projectConfig }: PluginPaneResolveContext) {

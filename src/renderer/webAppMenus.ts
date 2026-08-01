@@ -11,6 +11,7 @@ import type {
 } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type { WidgetPane } from "./widgetSurfaceTypes.js";
+import { createPaneIconLabel } from "./paneIcons.js";
 
 type WebAppMenuElement = HTMLDivElement & {
   cleanup?: () => void;
@@ -28,6 +29,9 @@ type WebAppMenuElement = HTMLDivElement & {
   type MenuSplitNode = SplitNode;
 
   type MenuWebApp = WebAppDefinition & {
+    icon?: string;
+    iconOnly?: boolean;
+    iconUrl?: string;
     homeTab?: boolean;
     homeTabId?: string;
     id?: string;
@@ -111,6 +115,7 @@ type WebAppMenuElement = HTMLDivElement & {
     getSettings: () => UnknownRecord & { webAppOpenRules?: WebAppOpenRule[] };
     getProjectById: (projectId?: string) => RendererProject | null;
     getProjectWidgetPanes: (project: RendererProject) => UnknownRecord[];
+    getWebAppFavicon: (key?: string) => string;
     getVisibleWebAppEntryByKey: (key?: string) => VisibleWebAppEntry | null;
     getVisibleWebAppEntryByUrl: (url?: string) => VisibleWebAppEntry | null;
     getVisibleWebAppEntries: () => Iterable<VisibleWebAppEntry>;
@@ -176,6 +181,7 @@ export function createWebAppMenus({
     getSettings,
     getProjectById,
     getProjectWidgetPanes,
+    getWebAppFavicon,
     getVisibleWebAppEntryByKey,
     getVisibleWebAppEntryByUrl,
     getVisibleWebAppEntries,
@@ -1177,6 +1183,7 @@ export function createWebAppMenus({
               groups.push({
                 label: virtualPrefix,
                 webApp: {
+                  icon: virtualPrefix === "URL" ? "link" : undefined,
                   id: `menu:${virtualPrefix.toLowerCase()}`,
                   label: virtualPrefix,
                   menuOnly: true
@@ -1236,7 +1243,11 @@ export function createWebAppMenus({
         item.setAttribute("role", "menuitem");
         item.setAttribute("aria-current", String(webApp.id === selectedWebApp.id));
         item.setAttribute("data-load-state", !webApp.menuOnly && isWebAppLoaded(webApp.key) ? "Loaded" : "Not loaded");
-        item.textContent = label;
+        const currentFaviconUrl = getWebAppFavicon(webApp.key);
+        item.append(createPaneIconLabel({
+          ...webApp,
+          faviconUrl: currentFaviconUrl || webApp.faviconUrl
+        }, label));
         item.addEventListener("click", () => {
           if (webApp.menuOnly) {
             return;

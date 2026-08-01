@@ -1,6 +1,7 @@
 import {
   DEFAULT_WINDOW_BOUNDS,
   normalizeMultilineText,
+  normalizeOptionalUrl,
   normalizeText,
   normalizeUrl,
   normalizeWindowBounds,
@@ -236,15 +237,48 @@ export function normalizeWebAppState(webApps: unknown = {}): Record<string, WebA
     }
 
     try {
-      normalized[String(key)] = {
+      const normalizedWebApp: WebAppState = {
         url: normalizeUrl(source.url)
       };
+      const faviconUrl = normalizeStoredFaviconUrl(source.faviconUrl);
+      let faviconPageUrl = "";
+      try {
+        faviconPageUrl = normalizeOptionalUrl(source.faviconPageUrl);
+      } catch {
+        // Ignore invalid favicon metadata without dropping the restored webapp URL.
+      }
+      if (faviconUrl && faviconPageUrl) {
+        normalizedWebApp.faviconUrl = faviconUrl;
+        normalizedWebApp.faviconPageUrl = faviconPageUrl;
+      }
+      normalized[String(key)] = normalizedWebApp;
     } catch {
       // Ignore invalid restored webapp URLs.
     }
   }
 
   return normalized;
+}
+
+function normalizeStoredFaviconUrl(value: unknown) {
+  const normalized = normalizeText(value);
+  if (!normalized || normalized.length > 131072) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    if (["http:", "https:"].includes(parsed.protocol)) {
+      return parsed.href;
+    }
+    if (parsed.protocol === "data:" && parsed.href.startsWith("data:image/")) {
+      return parsed.href;
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
 }
 
 export function normalizeWebAppHomeTabs(homeTabs: unknown = {}, projects: StoredProject[] = []): Record<string, WebAppHomeTab[]> {

@@ -1,4 +1,10 @@
 import { createProjectWebApps } from "./projectWebApps.js";
+import {
+  getPaneFaviconUrl,
+  getSafePaneIconUrl,
+  haveSamePaneOrigin,
+  updatePaneFaviconElements
+} from "./paneIcons.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type {
   BoatyardBridge,
@@ -40,6 +46,11 @@ type WebAppBridgeActionName =
   | "showWebApp"
   | "updateWebAppAutofill";
 
+type CurrentWebAppFavicon = {
+  iconUrl: string;
+  pageUrl: string;
+};
+
 const WEB_APP_BRIDGE_ACTIONS: readonly WebAppBridgeActionName[] = [
   "hideWebApp",
   "navigateWebApp",
@@ -73,7 +84,13 @@ export function createRendererWebAppRuntime({
   renderWorkspacePaneArea
 }: RendererWebAppRuntimeOptions) {
   const currentWebAppUrlsByKey = new Map<string, string>();
+  const currentWebAppFaviconsByKey = new Map<string, CurrentWebAppFavicon>();
   const webAppAutofillEnabledByKey = new Map<string, boolean>();
+
+  function getWebAppFavicon(key = "") {
+    return currentWebAppFaviconsByKey.get(key)?.iconUrl || "";
+  }
+
   const projectWebApps = createProjectWebApps({
     findPaneNode,
     getGlobalPluginConfig,
@@ -81,14 +98,27 @@ export function createRendererWebAppRuntime({
     getPluginPaneDefinitions,
     getProjectPluginConfig,
     getProjectWidgetPanes,
+    getWebAppFavicon,
     isGlobalWorkspace
   });
 
   function hydrateCurrentWebAppUrls(webApps: RendererState["webApps"] = {}) {
     currentWebAppUrlsByKey.clear();
+    currentWebAppFaviconsByKey.clear();
     for (const [key, webApp] of Object.entries(webApps || {})) {
       if (webApp.url) {
         currentWebAppUrlsByKey.set(key, webApp.url);
+      }
+      const faviconUrl = getSafePaneIconUrl(webApp.faviconUrl);
+      if (
+        faviconUrl &&
+        webApp.url &&
+        haveSamePaneOrigin(webApp.faviconPageUrl, webApp.url)
+      ) {
+        currentWebAppFaviconsByKey.set(key, {
+          iconUrl: faviconUrl,
+          pageUrl: webApp.faviconPageUrl || webApp.url
+        });
       }
     }
   }
@@ -189,6 +219,7 @@ export function createRendererWebAppRuntime({
   return Object.freeze({
     getCurrentWebAppUrl,
     getProjectWebApps: projectWebApps.getProjectWebApps,
+    getWebAppFavicon,
     getVisibleWebAppProject,
     hydrateCurrentWebAppUrls,
     invokeWebApp,
@@ -198,8 +229,33 @@ export function createRendererWebAppRuntime({
       webAppAutofillEnabledByKey.set(key, enabled);
     },
     openProjectWebApp,
+    setCurrentWebAppFavicons: (key: string, favicons: unknown, url = "") => {
+      const faviconUrl = (Array.isArray(favicons) ? favicons : [])
+        .map((candidate) => getSafePaneIconUrl(candidate))
+        .find(Boolean) || "";
+      if (!key || !faviconUrl) {
+        return "";
+      }
+      currentWebAppFaviconsByKey.set(key, {
+        iconUrl: faviconUrl,
+        pageUrl: String(url || currentWebAppUrlsByKey.get(key) || "")
+      });
+      updatePaneFaviconElements(key, faviconUrl, url);
+      return faviconUrl;
+    },
     setCurrentWebAppUrl: (key: string, url: string) => {
+      const previousUrl = currentWebAppUrlsByKey.get(key) || "";
+      const currentFavicon = currentWebAppFaviconsByKey.get(key);
       currentWebAppUrlsByKey.set(key, url);
+
+      if (currentFavicon && haveSamePaneOrigin(currentFavicon.pageUrl || previousUrl, url)) {
+        currentFavicon.pageUrl = url;
+        updatePaneFaviconElements(key, currentFavicon.iconUrl, url);
+        return;
+      }
+
+      currentWebAppFaviconsByKey.delete(key);
+      updatePaneFaviconElements(key, getPaneFaviconUrl(url), url);
     },
     syncWebAppAutofillButton,
     toggleWebAppAutofill

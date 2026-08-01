@@ -41,11 +41,15 @@ export type RendererState = UnknownRecord & {
   topbarWidgets?: {
     order?: string[];
   };
-  webApps?: Record<string, { url?: string }>;
+  webApps?: Record<string, { faviconPageUrl?: string; faviconUrl?: string; url?: string }>;
 };
 
 export type WebAppDefinition = UnknownRecord & {
   backgroundColor?: string;
+  faviconUrl?: string;
+  icon?: string;
+  iconOnly?: boolean;
+  iconUrl?: string;
   id?: string;
   key?: string;
   label?: unknown;
@@ -151,6 +155,7 @@ export type BoatyardBridge = {
   onTerminalData(callback: (payload: { terminalId: unknown; data: unknown }) => void): void;
   onTerminalExit(callback: (payload: { terminalId: unknown; projectId: unknown; windowId: unknown }) => void): void;
   onWebAppAutofillChanged?: (callback: (payload: { enabled?: boolean; key?: string }) => void) => void;
+  onWebAppFaviconChanged?: (callback: (payload: { favicons?: string[]; key?: string; url?: string }) => void) => void;
   onWebAppLoaded?: (callback: (payload: { key?: string; url?: string }) => void) => void;
   onWebAppOpenUrlRequested?: (callback: (payload: UnknownRecord & { target?: string }) => void) => void;
   onWorkspaceNavigationChanged?: (callback: (navigation: RendererState["navigation"]) => void) => void;

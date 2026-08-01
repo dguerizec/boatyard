@@ -188,6 +188,9 @@ declare global {
   };
 
   type PluginPaneWebApp = {
+    icon?: string;
+    iconOnly?: boolean;
+    iconUrl?: string;
     id: string;
     key: string;
     label: string;
@@ -203,6 +206,9 @@ declare global {
 
   type PluginPaneDefinitionInput = PluginRegistryRecord & {
     id?: unknown;
+    icon?: unknown;
+    iconOnly?: unknown;
+    iconUrl?: unknown;
     key?: unknown;
     kind?: unknown;
     mobileDev?: unknown;
