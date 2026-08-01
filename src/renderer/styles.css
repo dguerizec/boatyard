@@ -2885,6 +2885,13 @@ body.sidebar-collapsed .workspace {
   overflow: hidden;
 }
 
+.plugin-pane-header-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .webapp-pane.widget-pane.editing .webapp-tabs {
   flex: 0 1 auto;
 }

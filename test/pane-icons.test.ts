@@ -262,6 +262,78 @@ test("same-origin URL updates preserve the cached page favicon", () => {
   });
 });
 
+test("opening an already selected webapp preserves the other pane surfaces", async () => {
+  const project = {
+    id: "project-1",
+    sourcePath: "/workspace/example",
+    urls: [{ id: "app", label: "App", url: "https://app.example.test/" }]
+  };
+  const paneNode = { type: "pane", id: "pane-1", selectedWebAppId: "url:app" };
+  const navigations: unknown[][] = [];
+  let renderCount = 0;
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  }) as typeof requestAnimationFrame;
+
+  try {
+    const runtime = createRendererWebAppRuntime({
+      boatyard: {
+        navigateWebApp: async (...args: unknown[]) => {
+          navigations.push(args);
+        }
+      } as never,
+      findFirstPaneNode: () => paneNode,
+      findPaneNode: () => paneNode,
+      findPaneNodeBySelectedWebApp: (_layout: unknown, webAppId: string) => (
+        webAppId === paneNode.selectedWebAppId ? paneNode : null
+      ),
+      getCurrentProject: () => project,
+      getCurrentView: () => "project",
+      getGlobalPluginConfig: () => ({}),
+      getGlobalWorkspace: () => project,
+      getPaneLayout: () => paneNode,
+      getPluginPaneDefinitions: () => [],
+      getProjectPluginConfig: () => ({}),
+      getProjectWidgetPanes: () => [],
+      getProjects: () => [project],
+      getSettings: () => ({}),
+      isGlobalWorkspace: () => false,
+      paneLayoutState: {
+        setSelectedWebAppForPane: () => undefined,
+        setSelectedWebAppForProject: () => undefined
+      },
+      persistPaneLayout: () => undefined,
+      renderWorkspacePaneArea: () => {
+        renderCount += 1;
+      }
+    });
+
+    assert.equal(runtime.openProjectWebApp(
+      project.id,
+      "url:app",
+      "https://app.example.test/session/new"
+    ), true);
+    assert.equal(renderCount, 0);
+    assert.deepEqual(navigations, [[
+      "pane-1:url:app",
+      "open",
+      "https://app.example.test/session/new"
+    ]]);
+
+    assert.equal(runtime.openProjectWebApp(
+      project.id,
+      "url:app",
+      "https://app.example.test/session/new"
+    ), true);
+    assert.equal(renderCount, 0);
+    assert.equal(navigations.length, 1);
+  } finally {
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+  }
+});
+
 test("persisted same-origin favicons are restored before a webapp is selected", () => {
   withFakeDocument(() => {
     const project = {
@@ -351,8 +423,26 @@ test("project webapps expose built-in icons and leave URL panes eligible for fav
           resolveUrl: () => "https://pier.example.test/project",
           title: "Pier",
           webAppId: "pier"
+        }, {
+          key: "twicc-plugin",
+          kind: "wcv",
+          pluginId: "boatyard.twicc",
+          resolveUrl: () => "https://twicc.example.test/project/example",
+          title: "Twicc",
+          webAppId: "twicc-plugin"
         }]
-      : [],
+      : kind === "dom"
+        ? [{
+            key: "twicc-session-flow",
+            kind: "dom",
+            parentLabel: "Twicc",
+            parentWebAppId: "twicc-plugin",
+            pluginId: "boatyard.twicc",
+            render: () => {},
+            title: "Session Flow",
+            webAppId: "twicc-session-flow"
+          }]
+        : [],
     getProjectPluginConfig: () => ({}),
     getProjectWidgetPanes: () => [{ id: "primary", label: "Widgets" }],
     getWebAppFavicon: () => "",
@@ -367,6 +457,27 @@ test("project webapps expose built-in icons and leave URL panes eligible for fav
   assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "widgets:primary")?.icon, "grid");
   assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "terminal")?.icon, "terminal");
   assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "manual")?.icon, "info");
+  assert.deepEqual(
+    webApps
+      .filter((webApp: { id?: string }) => ["twicc-plugin", "twicc-session-flow"].includes(webApp.id || ""))
+      .map((webApp: { id?: string; label?: string; parentLabel?: string; parentWebAppId?: string }) => ({
+        id: webApp.id,
+        label: webApp.label,
+        parentLabel: webApp.parentLabel || "",
+        parentWebAppId: webApp.parentWebAppId || ""
+      })),
+    [{
+      id: "twicc-session-flow",
+      label: "Session Flow",
+      parentLabel: "Twicc",
+      parentWebAppId: "twicc-plugin"
+    }, {
+      id: "twicc-plugin",
+      label: "Twicc",
+      parentLabel: "",
+      parentWebAppId: ""
+    }]
+  );
   assert.equal(
     getPaneFaviconUrl(webApps.find((webApp: { id?: string }) => webApp.id === "pier")?.url),
     "https://pier.example.test/favicon.ico"

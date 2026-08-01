@@ -5,6 +5,7 @@ import type { ExecFileAsync } from "../../shared/pluginTypes";
 const path = require("node:path");
 
 const DEFAULT_TWICC_BASE_URL = "http://localhost:3500";
+const TWICC_SESSION_FLOW_ANNOTATION = "sessionFlowLane";
 const TWICC_PROJECT_CACHE_TTL_MS = 600000;
 
 type TwiccProject = {
@@ -21,6 +22,38 @@ type TwiccProcess = {
   session_id?: string;
   session_title?: string;
   state?: string;
+};
+
+type TwiccSession = {
+  annotations?: Record<string, unknown>;
+  archived?: unknown;
+  context_usage?: number;
+  created_at?: string;
+  git_branch?: string;
+  id?: string;
+  last_new_content_at?: string;
+  last_updated_at?: string;
+  mtime?: number;
+  pinned?: unknown;
+  project_id?: string;
+  provider?: string;
+  title?: string;
+  total_cost?: number;
+  user_message_count?: number;
+};
+
+type TwiccSessionFlowLane = "backlog" | "in_progress" | "testing";
+type TwiccSessionFlowItem = {
+  branch: string;
+  contextUsage: number;
+  id: string;
+  lane: TwiccSessionFlowLane;
+  lastActivityAt: string;
+  processState: string;
+  provider: string;
+  title: string;
+  totalCost: number;
+  userMessageCount: number;
 };
 
 type TwiccNormalizedProcessState = "input" | "working" | "done";
@@ -61,6 +94,34 @@ type TwiccProjectCacheOptions = {
 type TwiccProjectCacheGetOptions = { force?: boolean; projectIds?: string[] };
 type TwiccProjectInspection = { id: string; matchType: "exact" | "parent"; url: string };
 type BoatyardProject = { id?: string; sourcePath?: string };
+type TwiccSessionCreationInput = {
+  project?: unknown;
+  prompt?: unknown;
+  sessionFlowLane?: unknown;
+  title?: unknown;
+  worktreeBranch?: unknown;
+  worktreePath?: unknown;
+  worktreeStartFrom?: unknown;
+};
+type TwiccCreatedSession = {
+  projectId: string;
+  provider: string;
+  sessionId: string;
+  status: string;
+  title: string;
+};
+type GitWorktreeEntry = {
+  branch: string;
+  detached: boolean;
+  path: string;
+  usable: boolean;
+};
+type GitSessionCreationOptions = {
+  branches: Array<{ checkedOut: boolean; name: string }>;
+  defaultWorktreeBase: string;
+  gitRoot: string;
+  worktrees: GitWorktreeEntry[];
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -72,6 +133,10 @@ function isTwiccProject(value: unknown): value is TwiccProject {
 
 function isTwiccProcess(value: unknown): value is TwiccProcess {
   return isRecord(value);
+}
+
+function isTwiccSession(value: unknown): value is TwiccSession {
+  return isRecord(value) && typeof value.id === "string" && value.id.trim() !== "";
 }
 
 function normalizePathForMatch(value: unknown): string {
@@ -146,6 +211,18 @@ function buildTwiccProjectUrl(projectId: unknown, baseUrl = DEFAULT_TWICC_BASE_U
 
 function normalizeBaseUrl(value: unknown): string {
   return String(value || DEFAULT_TWICC_BASE_URL).replace(/\/+$/g, "");
+}
+
+function normalizeText(value: unknown): string {
+  return String(value || "").trim();
+}
+
+function normalizeCommandError(error: unknown, fallback: string): string {
+  const commandError = isRecord(error) ? error : {};
+  return normalizeText(commandError.stderr)
+    || normalizeText(commandError.stdout)
+    || normalizeText(commandError.message)
+    || fallback;
 }
 
 function getFetch(fetchOverride?: TwiccFetch): TwiccFetch | null {
@@ -304,6 +381,459 @@ async function loadTwiccProcesses({ execFileAsync, ...options }: TwiccCommandOpt
     return Array.isArray(processes) ? processes.filter(isTwiccProcess) : [];
   } catch {
     return [];
+  }
+}
+
+async function loadTwiccSessionsFromRpc(
+  project: unknown,
+  options: TwiccCommandOptions = {}
+): Promise<TwiccSession[]> {
+  const projectReference = String(project || "").trim();
+  if (!projectReference) {
+    return [];
+  }
+
+  const sessions = await rpcCommand("sessions", {
+    project: projectReference,
+    limit: 1000
+  }, options);
+  return Array.isArray(sessions) ? sessions.filter(isTwiccSession) : [];
+}
+
+async function loadTwiccSessions(
+  project: unknown,
+  { execFileAsync, ...options }: TwiccCommandOptions = {}
+): Promise<TwiccSession[]> {
+  const projectReference = String(project || "").trim();
+  if (!projectReference) {
+    return [];
+  }
+
+  if (shouldUseRpc(options)) {
+    try {
+      return await loadTwiccSessionsFromRpc(projectReference, options);
+    } catch {
+      // Fall back for older/local setups where only the CLI is available.
+    }
+  }
+
+  if (typeof execFileAsync !== "function") {
+    return [];
+  }
+
+  try {
+    const { stdout } = await execFileAsync("twicc", [
+      "sessions",
+      "--project",
+      projectReference,
+      "--limit",
+      "1000"
+    ], {
+      timeout: 10000,
+      windowsHide: true
+    });
+    const sessions = JSON.parse(String(stdout || "[]"));
+    return Array.isArray(sessions) ? sessions.filter(isTwiccSession) : [];
+  } catch {
+    return [];
+  }
+}
+
+function asSessionFlowLane(value: unknown): TwiccSessionFlowLane | "" {
+  return value === "backlog" || value === "in_progress" || value === "testing"
+    ? value
+    : "";
+}
+
+function getAnnotatedSessionFlowLane(session: TwiccSession): TwiccSessionFlowLane | "" {
+  const annotations = isRecord(session.annotations) ? session.annotations : {};
+  const boatyard = isRecord(annotations.boatyard) ? annotations.boatyard : {};
+  return asSessionFlowLane(
+    boatyard[TWICC_SESSION_FLOW_ANNOTATION]
+      ?? annotations[`boatyard.${TWICC_SESSION_FLOW_ANNOTATION}`]
+  );
+}
+
+function getSessionActivityTime(session: TwiccSession): number {
+  const timestamps = [session.last_new_content_at, session.last_updated_at, session.created_at]
+    .map((value) => Date.parse(String(value || "")))
+    .filter(Number.isFinite);
+  const mtime = Number(session.mtime);
+  if (Number.isFinite(mtime)) {
+    timestamps.push(mtime * 1000);
+  }
+  return timestamps.length ? Math.max(...timestamps) : 0;
+}
+
+function getTwiccSessionFlow(
+  sessions: unknown,
+  processes: unknown
+): TwiccSessionFlowItem[] {
+  const processBySessionId = new Map(
+    (Array.isArray(processes) ? processes : [])
+      .filter(isTwiccProcess)
+      .map((process) => [String(process.session_id || "").trim(), process] as const)
+      .filter(([sessionId]) => sessionId)
+  );
+  const activeStates = new Set(["assistant_turn", "awaiting_user_input", "starting"]);
+
+  return (Array.isArray(sessions) ? sessions : [])
+    .filter(isTwiccSession)
+    .filter((session) => session.archived !== true)
+    .map((session) => {
+      const sessionId = String(session.id || "").trim();
+      const process = processBySessionId.get(sessionId);
+      const processState = String(process?.state || "").trim();
+      const annotatedLane = getAnnotatedSessionFlowLane(session);
+      const activityTime = getSessionActivityTime(session);
+      const lane = annotatedLane
+        || (activeStates.has(processState)
+          ? "in_progress"
+          : session.pinned
+            ? "backlog"
+            : "testing");
+
+      return {
+        branch: String(session.git_branch || "").trim(),
+        contextUsage: Number(session.context_usage) || 0,
+        id: sessionId,
+        lane,
+        lastActivityAt: activityTime ? new Date(activityTime).toISOString() : "",
+        processState,
+        provider: String(session.provider || "").trim(),
+        title: String(session.title || "Untitled session").trim() || "Untitled session",
+        totalCost: Number(session.total_cost) || 0,
+        userMessageCount: Number(session.user_message_count) || 0,
+        activityTime
+      };
+    })
+    .sort((left, right) => right.activityTime - left.activityTime)
+    .map(({ activityTime: _activityTime, ...session }) => session);
+}
+
+async function loadTwiccSessionFlow(
+  project: unknown,
+  options: TwiccCommandOptions = {}
+): Promise<TwiccSessionFlowItem[]> {
+  const [sessions, processes] = await Promise.all([
+    loadTwiccSessions(project, options),
+    loadTwiccProcesses(options)
+  ]);
+  return getTwiccSessionFlow(sessions, processes);
+}
+
+async function updateTwiccSessionFlowLaneFromRpc(
+  sessionId: string,
+  lane: TwiccSessionFlowLane,
+  options: TwiccCommandOptions = {}
+): Promise<unknown> {
+  return rpcCommand("update-session/annotations", {
+    session_id: sessionId,
+    operations: [`set:boatyard.${TWICC_SESSION_FLOW_ANNOTATION}=${lane}`]
+  }, options);
+}
+
+async function updateTwiccSessionFlowLane(
+  sessionId: unknown,
+  lane: unknown,
+  { execFileAsync, ...options }: TwiccCommandOptions = {}
+): Promise<unknown> {
+  const normalizedSessionId = String(sessionId || "").trim();
+  const normalizedLane = asSessionFlowLane(lane);
+  if (!normalizedSessionId) {
+    throw new Error("TwiCC session id is required.");
+  }
+  if (!normalizedLane) {
+    throw new Error(`Invalid TwiCC session flow lane: ${String(lane || "")}`);
+  }
+
+  if (shouldUseRpc(options)) {
+    try {
+      return await updateTwiccSessionFlowLaneFromRpc(normalizedSessionId, normalizedLane, options);
+    } catch {
+      // The annotation write is idempotent, so a local fallback is safe.
+    }
+  }
+
+  if (typeof execFileAsync !== "function") {
+    throw new Error("TwiCC command runner is required.");
+  }
+
+  const { stdout } = await execFileAsync("twicc", [
+    "update-session",
+    normalizedSessionId,
+    "annotations",
+    `set:boatyard.${TWICC_SESSION_FLOW_ANNOTATION}=${normalizedLane}`
+  ], {
+    timeout: 30000,
+    windowsHide: true
+  });
+  return JSON.parse(String(stdout || "null"));
+}
+
+async function archiveTwiccSessionFromRpc(
+  sessionId: string,
+  options: TwiccCommandOptions = {}
+): Promise<unknown> {
+  return rpcCommand("update-session/archive", {
+    session_id: sessionId
+  }, options);
+}
+
+async function archiveTwiccSession(
+  sessionId: unknown,
+  { execFileAsync, ...options }: TwiccCommandOptions = {}
+): Promise<unknown> {
+  const normalizedSessionId = String(sessionId || "").trim();
+  if (!normalizedSessionId) {
+    throw new Error("TwiCC session id is required.");
+  }
+
+  if (shouldUseRpc(options)) {
+    try {
+      return await archiveTwiccSessionFromRpc(normalizedSessionId, options);
+    } catch {
+      // Archiving is idempotent, so a local fallback is safe.
+    }
+  }
+
+  if (typeof execFileAsync !== "function") {
+    throw new Error("TwiCC command runner is required.");
+  }
+
+  const { stdout } = await execFileAsync("twicc", [
+    "update-session",
+    normalizedSessionId,
+    "archive"
+  ], {
+    timeout: 30000,
+    windowsHide: true
+  });
+  return JSON.parse(String(stdout || "null"));
+}
+
+function normalizeCreatedSession(value: unknown, title: string): TwiccCreatedSession {
+  const source = isRecord(value) ? value : {};
+  const sessionId = normalizeText(source.session_id || source.sessionId);
+  if (!sessionId) {
+    throw new Error("TwiCC did not return the created session id.");
+  }
+
+  return {
+    projectId: normalizeText(source.project_id || source.projectId),
+    provider: normalizeText(source.provider),
+    sessionId,
+    status: normalizeText(source.status) || "created",
+    title: normalizeText(source.title) || title
+  };
+}
+
+function deriveSessionTitle(prompt: string): string {
+  return prompt.split(/\s+/).slice(0, 7).join(" ").slice(0, 200);
+}
+
+function normalizeSessionCreationInput(input: TwiccSessionCreationInput = {}) {
+  const project = normalizeText(input.project);
+  const prompt = normalizeText(input.prompt);
+  const title = normalizeText(input.title) || deriveSessionTitle(prompt);
+  const requestedSessionFlowLane = normalizeText(input.sessionFlowLane);
+  const sessionFlowLane = asSessionFlowLane(requestedSessionFlowLane);
+  const worktreeBranch = normalizeText(input.worktreeBranch);
+  const worktreePath = normalizeText(input.worktreePath);
+  const worktreeStartFrom = normalizeText(input.worktreeStartFrom);
+
+  if (!project) {
+    throw new Error("TwiCC project is required.");
+  }
+  if (!prompt) {
+    throw new Error("Session prompt is required.");
+  }
+  if (requestedSessionFlowLane && !sessionFlowLane) {
+    throw new Error(`Invalid TwiCC session flow lane: ${requestedSessionFlowLane}`);
+  }
+  if (worktreeBranch && !worktreePath) {
+    throw new Error("Worktree path is required for a new worktree.");
+  }
+  if (worktreeStartFrom && !worktreeBranch) {
+    throw new Error("Worktree start ref requires a new worktree branch.");
+  }
+
+  return {
+    project,
+    prompt,
+    sessionFlowLane,
+    title,
+    worktreeBranch,
+    worktreePath,
+    worktreeStartFrom
+  };
+}
+
+async function createTwiccSessionFromRpc(
+  input: TwiccSessionCreationInput,
+  options: TwiccCommandOptions = {}
+): Promise<TwiccCreatedSession> {
+  const normalized = normalizeSessionCreationInput(input);
+  const body: Record<string, unknown> = {
+    project: normalized.project,
+    prompt: normalized.prompt,
+    title: normalized.title
+  };
+  if (normalized.sessionFlowLane) {
+    body.annotation = [`boatyard.${TWICC_SESSION_FLOW_ANNOTATION}=${normalized.sessionFlowLane}`];
+  }
+  if (normalized.worktreeBranch) {
+    body.worktree_branch = normalized.worktreeBranch;
+    body.worktree_path = normalized.worktreePath;
+    if (normalized.worktreeStartFrom) {
+      body.worktree_start_from = normalized.worktreeStartFrom;
+    }
+  } else if (normalized.worktreePath) {
+    body.worktree_path = normalized.worktreePath;
+  }
+
+  return normalizeCreatedSession(await rpcCommand("create-session", body, options), normalized.title);
+}
+
+async function createTwiccSession(
+  input: TwiccSessionCreationInput,
+  { execFileAsync, ...options }: TwiccCommandOptions = {}
+): Promise<TwiccCreatedSession> {
+  const normalized = normalizeSessionCreationInput(input);
+  if (shouldUseRpc(options)) {
+    // Session creation is not idempotent. Never retry through the CLI after an
+    // ambiguous RPC failure, because that could create a duplicate session.
+    return createTwiccSessionFromRpc(normalized, options);
+  }
+  if (typeof execFileAsync !== "function") {
+    throw new Error("TwiCC command runner is required.");
+  }
+
+  const args = [
+    "create-session",
+    "--title",
+    normalized.title,
+    "--project",
+    normalized.project
+  ];
+  if (normalized.sessionFlowLane) {
+    args.push(
+      "--annotation",
+      `boatyard.${TWICC_SESSION_FLOW_ANNOTATION}=${normalized.sessionFlowLane}`
+    );
+  }
+  if (normalized.worktreeBranch) {
+    args.push("--worktree-branch", normalized.worktreeBranch, "--worktree-path", normalized.worktreePath);
+    if (normalized.worktreeStartFrom) {
+      args.push("--worktree-start-from", normalized.worktreeStartFrom);
+    }
+  } else if (normalized.worktreePath) {
+    args.push("--worktree-path", normalized.worktreePath);
+  }
+  args.push("--", normalized.prompt);
+
+  try {
+    const { stdout } = await execFileAsync("twicc", args, {
+      timeout: 120000,
+      windowsHide: true
+    });
+    return normalizeCreatedSession(JSON.parse(String(stdout || "null")), normalized.title);
+  } catch (error) {
+    throw new Error(normalizeCommandError(error, "Could not create the TwiCC session."));
+  }
+}
+
+function parseGitWorktrees(output: unknown): GitWorktreeEntry[] {
+  const entries: GitWorktreeEntry[] = [];
+  let current: Partial<GitWorktreeEntry> | null = null;
+
+  function flush(): void {
+    if (current?.path) {
+      entries.push({
+        branch: current.branch || "",
+        detached: current.detached === true,
+        path: current.path,
+        usable: current.usable !== false
+      });
+    }
+    current = null;
+  }
+
+  for (const line of String(output || "").split(/\r?\n/)) {
+    if (!line.trim()) {
+      flush();
+      continue;
+    }
+    const [key, ...rest] = line.split(" ");
+    const value = rest.join(" ").trim();
+    if (key === "worktree") {
+      flush();
+      current = { path: value, usable: true };
+    } else if (current && key === "branch") {
+      current.branch = value.replace(/^refs\/heads\//, "");
+    } else if (current && key === "detached") {
+      current.detached = true;
+    } else if (current && key === "prunable") {
+      current.usable = false;
+    }
+  }
+  flush();
+  return entries;
+}
+
+async function loadGitSessionCreationOptions(
+  sourcePath: unknown,
+  { execFileAsync }: TwiccCommandOptions = {}
+): Promise<GitSessionCreationOptions> {
+  const source = normalizePathForMatch(sourcePath);
+  if (!source) {
+    throw new Error("Project source path is required.");
+  }
+  if (typeof execFileAsync !== "function") {
+    throw new Error("Git command runner is required.");
+  }
+
+  try {
+    const { stdout: rootOutput } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: source,
+      timeout: 10000,
+      windowsHide: true
+    });
+    const gitRoot = normalizePathForMatch(rootOutput);
+    if (!gitRoot) {
+      throw new Error("Project is not a Git repository.");
+    }
+
+    const [{ stdout: branchOutput }, { stdout: worktreeOutput }] = await Promise.all([
+      execFileAsync("git", ["branch", "--format=%(refname:short)"], {
+        cwd: gitRoot,
+        timeout: 10000,
+        windowsHide: true
+      }),
+      execFileAsync("git", ["worktree", "list", "--porcelain"], {
+        cwd: gitRoot,
+        timeout: 10000,
+        windowsHide: true
+      })
+    ]);
+    const allWorktrees = parseGitWorktrees(worktreeOutput);
+    const checkedOut = new Set(allWorktrees.map((entry) => entry.branch).filter(Boolean));
+    const currentPath = gitRoot;
+    const currentBranch = allWorktrees.find((entry) => normalizePathForMatch(entry.path) === currentPath)?.branch || "";
+    const branchNames = String(branchOutput || "")
+      .split(/\r?\n/)
+      .map(normalizeText)
+      .filter(Boolean)
+      .sort((left, right) => left === currentBranch ? -1 : right === currentBranch ? 1 : left.localeCompare(right));
+
+    return {
+      branches: branchNames.map((name) => ({ checkedOut: checkedOut.has(name), name })),
+      defaultWorktreeBase: path.join(gitRoot, "worktrees"),
+      gitRoot,
+      worktrees: allWorktrees.filter((entry) => normalizePathForMatch(entry.path) !== currentPath)
+    };
+  } catch (error) {
+    throw new Error(normalizeCommandError(error, "Could not inspect Git worktrees."));
   }
 }
 
@@ -515,12 +1045,17 @@ async function createTwiccProject(sourcePath: unknown, { execFileAsync, ...optio
 
 export {
   aliasTwiccProjectProcessStatuses,
+  archiveTwiccSession,
+  archiveTwiccSessionFromRpc,
   buildTwiccProjectUrl,
+  createTwiccSession,
+  createTwiccSessionFromRpc,
   createTwiccProjectCache,
   createTwiccProject,
   findTwiccProjectForPath,
   findTwiccProjectMatchForPath,
   getTwiccProjectProcessStatuses,
+  getTwiccSessionFlow,
   inspectTwiccProjectFromProjects,
   inspectTwiccProject,
   loadTwiccProcessesFromRpc,
@@ -528,5 +1063,13 @@ export {
   loadTwiccProjectProcessStatuses,
   loadTwiccProjectsFromRpc,
   loadTwiccProjects,
+  loadGitSessionCreationOptions,
+  loadTwiccSessionFlow,
+  loadTwiccSessionsFromRpc,
+  loadTwiccSessions,
+  updateTwiccSessionFlowLaneFromRpc,
+  updateTwiccSessionFlowLane,
+  parseGitWorktrees,
+  TWICC_SESSION_FLOW_ANNOTATION,
   TWICC_PROJECT_CACHE_TTL_MS
 };

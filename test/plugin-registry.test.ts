@@ -32,6 +32,7 @@ type ProjectContext = {
   };
 };
 type RenderContainer = {
+  headerRendered?: boolean;
   rendered?: boolean;
 };
 type ProjectFormInspectedEvent = {
@@ -312,6 +313,9 @@ test("Plugin registry accepts DOM pane renderers", () => {
           id: "vendor.dom.pane",
           title: "DOM",
           kind: "dom",
+          renderHeaderActions(container: RenderContainer) {
+            container.headerRendered = true;
+          },
           render(container: RenderContainer) {
             container.rendered = true;
           }
@@ -322,11 +326,13 @@ test("Plugin registry accepts DOM pane renderers", () => {
 
   registry.setEnabled("vendor.dom", true);
   const pane = registry.listPanes({ kind: "dom" })[0];
-  const container: { rendered?: boolean } = {};
+  const container: { headerRendered?: boolean; rendered?: boolean } = {};
 
+  pane.renderHeaderActions(container);
   pane.render(container);
 
   assert.equal(pane.webAppId, "vendor.dom.pane");
+  assert.equal(container.headerRendered, true);
   assert.equal(container.rendered, true);
 });
 

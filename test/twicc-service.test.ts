@@ -4,17 +4,27 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   aliasTwiccProjectProcessStatuses,
+  archiveTwiccSession,
+  archiveTwiccSessionFromRpc,
   buildTwiccProjectUrl,
+  createTwiccSession,
+  createTwiccSessionFromRpc,
   createTwiccProject,
   createTwiccProjectCache,
   findTwiccProjectForPath,
   findTwiccProjectMatchForPath,
   getTwiccProjectProcessStatuses,
+  getTwiccSessionFlow,
+  loadGitSessionCreationOptions,
   loadTwiccProcessesFromRpc,
   loadTwiccProcesses,
   loadTwiccProjectProcessStatuses,
   loadTwiccProjectsFromRpc,
-  loadTwiccProjects
+  loadTwiccProjects,
+  loadTwiccSessionsFromRpc,
+  loadTwiccSessions,
+  updateTwiccSessionFlowLaneFromRpc,
+  updateTwiccSessionFlowLane
 } = require(`${process.cwd()}/build/plugins/twicc/service`);
 
 type ExecCall = {
@@ -233,6 +243,409 @@ test("loadTwiccProcessesFromRpc returns JSON processes from configured Twicc URL
   });
 
   assert.deepEqual(processes, [{ project_id: "project", state: "assistant_turn" }]);
+});
+
+test("loadTwiccSessions returns project sessions from the CLI", async () => {
+  const sessions = await loadTwiccSessions("/workspace/project", {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "twicc");
+      assert.deepEqual(args, [
+        "sessions",
+        "--project",
+        "/workspace/project",
+        "--limit",
+        "1000"
+      ]);
+      return {
+        stdout: JSON.stringify([{ id: "session-1", title: "Implement feature" }])
+      };
+    }
+  });
+
+  assert.deepEqual(sessions, [{ id: "session-1", title: "Implement feature" }]);
+});
+
+test("loadTwiccSessionsFromRpc returns project sessions from configured Twicc URL", async () => {
+  const sessions = await loadTwiccSessionsFromRpc("/workspace/project", {
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/rpc/sessions");
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        project: "/workspace/project",
+        limit: 1000
+      });
+      return {
+        exit_code: 0,
+        result: [{ id: "session-1", title: "Implement feature" }],
+        error: null
+      };
+    })
+  });
+
+  assert.deepEqual(sessions, [{ id: "session-1", title: "Implement feature" }]);
+});
+
+test("createTwiccSession creates a session in a new worktree through the CLI", async () => {
+  const result = await createTwiccSession({
+    project: "/workspace/project",
+    prompt: "Implement the worktree feature",
+    sessionFlowLane: "in_progress",
+    title: "Worktree feature",
+    worktreeBranch: "feature/worktree",
+    worktreePath: "/workspace/project/worktrees/feature-worktree",
+    worktreeStartFrom: "main"
+  }, {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "twicc");
+      assert.deepEqual(args, [
+        "create-session",
+        "--title",
+        "Worktree feature",
+        "--project",
+        "/workspace/project",
+        "--annotation",
+        "boatyard.sessionFlowLane=in_progress",
+        "--worktree-branch",
+        "feature/worktree",
+        "--worktree-path",
+        "/workspace/project/worktrees/feature-worktree",
+        "--worktree-start-from",
+        "main",
+        "--",
+        "Implement the worktree feature"
+      ]);
+      return {
+        stdout: JSON.stringify({
+          status: "created",
+          session_id: "session-1",
+          project_id: "worktree-project",
+          provider: "codex"
+        })
+      };
+    }
+  });
+
+  assert.deepEqual(result, {
+    projectId: "worktree-project",
+    provider: "codex",
+    sessionId: "session-1",
+    status: "created",
+    title: "Worktree feature"
+  });
+});
+
+test("createTwiccSession derives an optional title from the first message", async () => {
+  const result = await createTwiccSession({
+    project: "/workspace/project",
+    prompt: "Implement session creation without requiring a custom title from the user",
+    title: ""
+  }, {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "twicc");
+      assert.deepEqual(args, [
+        "create-session",
+        "--title",
+        "Implement session creation without requiring a custom",
+        "--project",
+        "/workspace/project",
+        "--",
+        "Implement session creation without requiring a custom title from the user"
+      ]);
+      return {
+        stdout: JSON.stringify({
+          status: "created",
+          session_id: "session-1",
+          project_id: "project-1",
+          provider: "codex"
+        })
+      };
+    }
+  });
+
+  assert.equal(result.title, "Implement session creation without requiring a custom");
+});
+
+test("createTwiccSessionFromRpc adopts an existing worktree", async () => {
+  const result = await createTwiccSessionFromRpc({
+    project: "/workspace/project",
+    prompt: "Continue the existing worktree",
+    sessionFlowLane: "in_progress",
+    title: "Existing worktree",
+    worktreePath: "/workspace/project/worktrees/existing"
+  }, {
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/rpc/create-session");
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        project: "/workspace/project",
+        prompt: "Continue the existing worktree",
+        annotation: ["boatyard.sessionFlowLane=in_progress"],
+        title: "Existing worktree",
+        worktree_path: "/workspace/project/worktrees/existing"
+      });
+      return {
+        exit_code: 0,
+        result: {
+          status: "created",
+          session_id: "session-existing",
+          project_id: "existing-project",
+          provider: "claude_code"
+        },
+        error: null
+      };
+    })
+  });
+
+  assert.deepEqual(result, {
+    projectId: "existing-project",
+    provider: "claude_code",
+    sessionId: "session-existing",
+    status: "created",
+    title: "Existing worktree"
+  });
+});
+
+test("loadGitSessionCreationOptions lists branches and other worktrees from a nested project path", async () => {
+  const result = await loadGitSessionCreationOptions("/workspace/project/packages/app", {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "git");
+      if (args[0] === "rev-parse") {
+        return { stdout: "/workspace/project\n" };
+      }
+      if (args[0] === "branch") {
+        return { stdout: "feature/existing\nmain\nfeature/new\n" };
+      }
+      assert.deepEqual(args, ["worktree", "list", "--porcelain"]);
+      return {
+        stdout: [
+          "worktree /workspace/project",
+          "HEAD abc",
+          "branch refs/heads/main",
+          "",
+          "worktree /workspace/project/worktrees/feature-existing",
+          "HEAD def",
+          "branch refs/heads/feature/existing",
+          "",
+          "worktree /workspace/project/worktrees/stale",
+          "HEAD 123",
+          "detached",
+          "prunable gitdir file points to non-existent location",
+          ""
+        ].join("\n")
+      };
+    }
+  });
+
+  assert.deepEqual(result, {
+    branches: [
+      { checkedOut: true, name: "main" },
+      { checkedOut: true, name: "feature/existing" },
+      { checkedOut: false, name: "feature/new" }
+    ],
+    defaultWorktreeBase: "/workspace/project/worktrees",
+    gitRoot: "/workspace/project",
+    worktrees: [
+      {
+        branch: "feature/existing",
+        detached: false,
+        path: "/workspace/project/worktrees/feature-existing",
+        usable: true
+      },
+      {
+        branch: "",
+        detached: true,
+        path: "/workspace/project/worktrees/stale",
+        usable: false
+      }
+    ]
+  });
+});
+
+test("getTwiccSessionFlow classifies every visible unarchived project session", () => {
+  const sessions = getTwiccSessionFlow([
+    {
+      id: "active",
+      title: "Active task",
+      last_new_content_at: "2026-07-20T12:00:00Z"
+    },
+    {
+      id: "pinned",
+      title: "Planned task",
+      pinned: "project",
+      last_new_content_at: "2026-07-21T12:00:00Z"
+    },
+    {
+      id: "recent",
+      title: "Recently finished task",
+      provider: "codex",
+      git_branch: "feature/session-flow",
+      context_usage: 42000,
+      total_cost: 1.25,
+      user_message_count: 7,
+      last_new_content_at: "2026-08-01T11:00:00Z"
+    },
+    {
+      id: "annotated",
+      title: "Observed task",
+      annotations: {
+        boatyard: {
+          sessionFlowLane: "testing"
+        }
+      },
+      last_new_content_at: "2026-07-01T12:00:00Z"
+    },
+    {
+      id: "old",
+      title: "Older finished task",
+      last_new_content_at: "2026-07-01T12:00:00Z"
+    },
+    {
+      id: "archived",
+      title: "Archived task",
+      archived: true,
+      last_new_content_at: "2026-08-01T11:30:00Z"
+    }
+  ], [
+    {
+      session_id: "active",
+      state: "assistant_turn"
+    }
+  ]);
+
+  assert.deepEqual(
+    sessions.map((session: { id: string; lane: string }) => [session.id, session.lane]),
+    [
+      ["recent", "testing"],
+      ["pinned", "backlog"],
+      ["active", "in_progress"],
+      ["annotated", "testing"],
+      ["old", "testing"]
+    ]
+  );
+  assert.deepEqual(sessions[0], {
+    branch: "feature/session-flow",
+    contextUsage: 42000,
+    id: "recent",
+    lane: "testing",
+    lastActivityAt: "2026-08-01T11:00:00.000Z",
+    processState: "",
+    provider: "codex",
+    title: "Recently finished task",
+    totalCost: 1.25,
+    userMessageCount: 7
+  });
+});
+
+test("getTwiccSessionFlow lets persisted annotations override inferred lanes", () => {
+  const sessions = getTwiccSessionFlow([{
+    id: "active-backlog",
+    title: "Paused active task",
+    annotations: {
+      boatyard: {
+        sessionFlowLane: "backlog"
+      }
+    }
+  }], [{
+    session_id: "active-backlog",
+    state: "assistant_turn"
+  }]);
+
+  assert.equal(sessions[0].lane, "backlog");
+});
+
+test("updateTwiccSessionFlowLane persists the lane through the CLI", async () => {
+  const result = await updateTwiccSessionFlowLane("session-1", "backlog", {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "twicc");
+      assert.deepEqual(args, [
+        "update-session",
+        "session-1",
+        "annotations",
+        "set:boatyard.sessionFlowLane=backlog"
+      ]);
+      return {
+        stdout: JSON.stringify({ status: "updated", session_id: "session-1" })
+      };
+    }
+  });
+
+  assert.deepEqual(result, { status: "updated", session_id: "session-1" });
+});
+
+test("updateTwiccSessionFlowLaneFromRpc persists the lane through Twicc RPC", async () => {
+  const result = await updateTwiccSessionFlowLaneFromRpc("session-1", "testing", {
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/rpc/update-session/annotations");
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        session_id: "session-1",
+        operations: ["set:boatyard.sessionFlowLane=testing"]
+      });
+      return {
+        exit_code: 0,
+        result: { status: "updated", session_id: "session-1" },
+        error: null
+      };
+    })
+  });
+
+  assert.deepEqual(result, { status: "updated", session_id: "session-1" });
+});
+
+test("updateTwiccSessionFlowLane rejects unknown lanes", async () => {
+  await assert.rejects(
+    updateTwiccSessionFlowLane("session-1", "done", {}),
+    /Invalid TwiCC session flow lane/
+  );
+});
+
+test("archiveTwiccSession archives the session through the CLI", async () => {
+  const result = await archiveTwiccSession("session-1", {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "twicc");
+      assert.deepEqual(args, ["update-session", "session-1", "archive"]);
+      return {
+        stdout: JSON.stringify({ status: "updated", session_id: "session-1" })
+      };
+    }
+  });
+
+  assert.deepEqual(result, { status: "updated", session_id: "session-1" });
+});
+
+test("archiveTwiccSessionFromRpc archives the session through Twicc RPC", async () => {
+  const result = await archiveTwiccSessionFromRpc("session-1", {
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/rpc/update-session/archive");
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        session_id: "session-1"
+      });
+      return {
+        exit_code: 0,
+        result: { status: "updated", session_id: "session-1" },
+        error: null
+      };
+    })
+  });
+
+  assert.deepEqual(result, { status: "updated", session_id: "session-1" });
+});
+
+test("archiveTwiccSession requires a session id", async () => {
+  await assert.rejects(archiveTwiccSession("", {}), /TwiCC session id is required/);
 });
 
 test("getTwiccProjectProcessStatuses groups processes by project with state priority", () => {

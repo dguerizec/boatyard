@@ -247,8 +247,30 @@
   }
 
   function createPierService() {
+    async function getProjectAvailability(project: PierProject) {
+      if (typeof globalScope.boatyard?.invokePlugin !== "function") {
+        return { available: false, worktreePattern: "" };
+      }
+      try {
+        const result = await invokePlugin("projectAvailability", {
+          cwd: project?.sourcePath || ""
+        });
+        return {
+          available: isRecord(result) && result.available === true,
+          worktreePattern: isRecord(result) ? String(result.worktreePattern || "").trim() : ""
+        };
+      } catch {
+        return { available: false, worktreePattern: "" };
+      }
+    }
+
     return Object.freeze({
       listProjectWorkloads,
+      getDefaultWorktreePath,
+      getProjectAvailability,
+      async isProjectEnabled(project: PierProject) {
+        return (await getProjectAvailability(project)).available;
+      },
       down(workload: PierWorkload, options: PierOptions = {}) {
         return fetchPierJson(
           `/api/v1/workloads/${encodeURIComponent(workload.project || "")}/${encodeURIComponent(workload.slug || "")}/down`,

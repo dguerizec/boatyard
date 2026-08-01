@@ -6,6 +6,9 @@
 
   type TwiccProject = PluginRegistryRecord & {
     id?: unknown;
+    name?: unknown;
+    slug?: unknown;
+    sourcePath?: unknown;
   };
 
   type TwiccConfig = {
@@ -19,9 +22,77 @@
   type TwiccPluginOptions = {
     closeContextMenu?: () => void;
     globalPluginConfig?: TwiccConfig;
+    getProjectWebAppState?: (webAppId: string) => { key?: string; url?: string } | null;
     isActiveProject?: boolean;
     openContextMenu?: (menu: HTMLElement, event: MouseEvent) => void;
+    openProjectWebApp?: (webAppId: string, url?: string) => unknown;
     pluginConfig?: TwiccConfig;
+    projectConfig?: TwiccConfig;
+  };
+
+  type TwiccSessionFlowOrientation = "horizontal" | "vertical";
+  type TwiccSessionFlowLane = "backlog" | "in_progress" | "testing";
+  type TwiccSessionFlowItem = {
+    branch?: string;
+    contextUsage?: number;
+    id: string;
+    lane: TwiccSessionFlowLane;
+    lastActivityAt?: string;
+    processState?: string;
+    provider?: string;
+    title: string;
+    totalCost?: number;
+    userMessageCount?: number;
+  };
+  type TwiccSessionFlowSurface = HTMLElement & {
+    cleanup?: () => void;
+    setOrientation?: (orientation: TwiccSessionFlowOrientation) => void;
+  };
+  type TwiccSessionFlowPaneOptions = TwiccPluginOptions & {
+    host?: HTMLElement;
+    paneId?: string;
+    project?: TwiccProject;
+  };
+  type TwiccCreatedSession = {
+    projectId: string;
+    provider: string;
+    sessionId: string;
+    status: string;
+    title: string;
+  };
+  type TwiccGitBranch = {
+    checkedOut: boolean;
+    name: string;
+  };
+  type TwiccGitWorktree = {
+    branch: string;
+    detached: boolean;
+    path: string;
+    usable: boolean;
+  };
+  type TwiccSessionCreationOptions = {
+    branches: TwiccGitBranch[];
+    defaultWorktreeBase: string;
+    gitRoot: string;
+    worktrees: TwiccGitWorktree[];
+  };
+  type TwiccSessionComposerMode = "" | "direct" | "worktree";
+  type TwiccWorktreeMode = "existing" | "new";
+  type TwiccSessionCreationDraft = {
+    branch: string;
+    path: string;
+    pathEdited: boolean;
+    prompt: string;
+    startFrom: string;
+    title: string;
+    usePier: boolean;
+    worktreeMode: TwiccWorktreeMode;
+  };
+  type PierSessionFlowService = PluginRegistryRecord & {
+    createWorktree(project: TwiccProject, payload?: Record<string, unknown>): Promise<unknown> | undefined;
+    getDefaultWorktreePath(project: TwiccProject, branchName?: unknown, options?: PluginRegistryRecord): string;
+    getProjectAvailability(project: TwiccProject): Promise<{ available: boolean; worktreePattern: string }>;
+    isProjectEnabled(project: TwiccProject): Promise<boolean>;
   };
 
   type TwiccProjectSession = {
@@ -112,6 +183,16 @@
   const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_TWICC_URL = "http://localhost:3500";
   const TWICC_PROJECT_STATUS_REFRESH_MS = 5000;
+  const TWICC_SESSION_FLOW_REFRESH_MS = 15000;
+  const TWICC_SESSION_FLOW_OPTIMISTIC_TTL_MS = 60000;
+  const WEBAPP_URL_CHANGED_EVENT = "boatyard:webapp-url-changed";
+  const TWICC_SESSION_FLOW_ORIENTATION_EVENT = "boatyard:twicc-session-flow-orientation";
+  const TWICC_SESSION_FLOW_ORIENTATION_STORAGE_PREFIX = "boatyard:twicc-session-flow-orientation:";
+  const TWICC_SESSION_FLOW_LANES: Array<{ id: TwiccSessionFlowLane; label: string }> = [
+    { id: "in_progress", label: "In progress" },
+    { id: "backlog", label: "Backlog" },
+    { id: "testing", label: "Testing & observing" }
+  ];
   const TWICC_PROJECT_STATUS_LABELS = {
     working: "Working",
     input: "Input",
@@ -130,6 +211,7 @@
     { value: "chartsWithValues", label: "Charts with values" }
   ];
   let projectProcessStatuses: Record<string, TwiccProjectStatus> = {};
+  let nextSessionFlowSurfaceId = 0;
   const retainedDoneProjectStatuses = new Map<string, TwiccProjectStatus>();
   const acknowledgedDoneProjectSignatures = new Map<string, string>();
   let projectStatusRefreshTimer: number | null = null;
@@ -259,6 +341,34 @@
       parsed.search = "";
       parsed.hash = "";
       return parsed.toString();
+    } catch {
+      return "";
+    }
+  }
+
+  function resolveSessionUrlForProjectId(projectId: unknown, sessionId: unknown, options: TwiccPluginOptions = {}) {
+    const normalizedProjectId = String(projectId || "").trim();
+    const normalizedSessionId = String(sessionId || "").trim();
+    if (!normalizedProjectId || !normalizedSessionId) {
+      return "";
+    }
+
+    try {
+      const parsed = new URL(normalizeBaseUrl(options.globalPluginConfig?.twiccBaseUrl));
+      parsed.pathname = `/project/${encodeURIComponent(normalizedProjectId)}/session/${encodeURIComponent(normalizedSessionId)}`;
+      parsed.search = "";
+      parsed.hash = "";
+      return parsed.toString();
+    } catch {
+      return "";
+    }
+  }
+
+  function getSessionIdFromUrl(value: unknown): string {
+    try {
+      const pathname = new URL(String(value || ""), DEFAULT_TWICC_URL).pathname;
+      const match = pathname.match(/\/session\/([^/]+)/);
+      return match ? decodeURIComponent(match[1]) : "";
     } catch {
       return "";
     }
@@ -396,6 +506,7 @@
         return normalizeBaseUrl(options.globalPluginConfig?.twiccBaseUrl);
       },
       getProjectUrl: resolveProjectUrl,
+      getSessionIdFromUrl,
       getSessionUrl: resolveSessionUrl,
       openProject(project: TwiccProject, options: TwiccPluginOptions = {}) {
         const url = resolveProjectUrl(project, options);
@@ -940,6 +1051,1240 @@
     ctx.widgets.registerAlias("boatyard.twicc.projectUsage", "boatyard.twicc.usage");
   }
 
+  function normalizeSessionFlowItem(value: unknown): TwiccSessionFlowItem | null {
+    if (!isRecord(value)) {
+      return null;
+    }
+    const id = String(value.id || "").trim();
+    const lane = String(value.lane || "").trim();
+    if (!id || !TWICC_SESSION_FLOW_LANES.some((candidate) => candidate.id === lane)) {
+      return null;
+    }
+    return {
+      branch: String(value.branch || "").trim(),
+      contextUsage: normalizeOptionalNumber(value.contextUsage) || 0,
+      id,
+      lane: lane as TwiccSessionFlowLane,
+      lastActivityAt: String(value.lastActivityAt || "").trim(),
+      processState: String(value.processState || "").trim(),
+      provider: String(value.provider || "").trim(),
+      title: String(value.title || "Untitled session").trim() || "Untitled session",
+      totalCost: normalizeOptionalNumber(value.totalCost) || 0,
+      userMessageCount: normalizeOptionalNumber(value.userMessageCount) || 0
+    };
+  }
+
+  function normalizeSessionFlow(value: unknown): TwiccSessionFlowItem[] {
+    return Array.isArray(value)
+      ? value.map(normalizeSessionFlowItem).filter((session): session is TwiccSessionFlowItem => Boolean(session))
+      : [];
+  }
+
+  function normalizeCreatedSession(value: unknown): TwiccCreatedSession | null {
+    if (!isRecord(value)) {
+      return null;
+    }
+    const sessionId = String(value.sessionId || value.session_id || "").trim();
+    if (!sessionId) {
+      return null;
+    }
+    return {
+      projectId: String(value.projectId || value.project_id || "").trim(),
+      provider: String(value.provider || "").trim(),
+      sessionId,
+      status: String(value.status || "created").trim() || "created",
+      title: String(value.title || "Untitled session").trim() || "Untitled session"
+    };
+  }
+
+  function normalizeSessionCreationOptions(value: unknown): TwiccSessionCreationOptions {
+    const source = isRecord(value) ? value : {};
+    const branches = Array.isArray(source.branches)
+      ? source.branches.flatMap((entry) => {
+          if (!isRecord(entry)) {
+            return [];
+          }
+          const name = String(entry.name || "").trim();
+          return name ? [{ checkedOut: entry.checkedOut === true, name }] : [];
+        })
+      : [];
+    const worktrees = Array.isArray(source.worktrees)
+      ? source.worktrees.flatMap((entry) => {
+          if (!isRecord(entry)) {
+            return [];
+          }
+          const worktreePath = String(entry.path || "").trim();
+          return worktreePath
+            ? [{
+                branch: String(entry.branch || "").trim(),
+                detached: entry.detached === true,
+                path: worktreePath,
+                usable: entry.usable !== false
+              }]
+            : [];
+        })
+      : [];
+    return {
+      branches,
+      defaultWorktreeBase: String(source.defaultWorktreeBase || "").trim(),
+      gitRoot: String(source.gitRoot || "").trim(),
+      worktrees
+    };
+  }
+
+  function getWorktreeFolderName(branch: unknown): string {
+    return String(branch || "")
+      .trim()
+      .replace(/[/\s]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^[-.]+|[-.]+$/g, "");
+  }
+
+  function joinWorktreePath(base: unknown, branch: unknown): string {
+    const normalizedBase = String(base || "").replace(/\/+$/g, "");
+    const folder = getWorktreeFolderName(branch);
+    return normalizedBase && folder ? `${normalizedBase}/${folder}` : normalizedBase;
+  }
+
+  function formatSessionFlowContextUsage(value: unknown): string {
+    const count = Number(value);
+    if (!Number.isFinite(count) || count <= 0) {
+      return "";
+    }
+    if (count >= 1000000) {
+      return `${(count / 1000000).toFixed(1)}m`;
+    }
+    if (count >= 1000) {
+      return `${Math.round(count / 1000)}k`;
+    }
+    return String(Math.round(count));
+  }
+
+  function formatSessionFlowCost(value: unknown): string {
+    const cost = Number(value);
+    return Number.isFinite(cost) ? `$${cost.toFixed(2)}` : "$0.00";
+  }
+
+  function formatSessionFlowTime(value: unknown): string {
+    const date = new Date(String(value || ""));
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+    const now = new Date();
+    return date.toDateString() === now.toDateString()
+      ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : date.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  function getSessionFlowProjectReference(project: TwiccProject, options: TwiccPluginOptions): string {
+    return String(project.sourcePath || "").trim()
+      || getProjectIdFromUrl(options.pluginConfig?.twiccProjectUrl);
+  }
+
+  function getSessionFlowOrientationStorageKey(project: TwiccProject, paneId: unknown): string {
+    const projectId = String(project.id || project.sourcePath || "default").trim() || "default";
+    const normalizedPaneId = String(paneId || "default").trim() || "default";
+    return [
+      TWICC_SESSION_FLOW_ORIENTATION_STORAGE_PREFIX,
+      encodeURIComponent(projectId),
+      ":",
+      encodeURIComponent(normalizedPaneId)
+    ].join("");
+  }
+
+  function readSessionFlowOrientation(project: TwiccProject, paneId: unknown): TwiccSessionFlowOrientation {
+    try {
+      return globalScope.localStorage?.getItem(getSessionFlowOrientationStorageKey(project, paneId)) === "horizontal"
+        ? "horizontal"
+        : "vertical";
+    } catch {
+      return "vertical";
+    }
+  }
+
+  function persistSessionFlowOrientation(
+    project: TwiccProject,
+    paneId: unknown,
+    orientation: TwiccSessionFlowOrientation
+  ): void {
+    try {
+      globalScope.localStorage?.setItem(getSessionFlowOrientationStorageKey(project, paneId), orientation);
+    } catch {
+      // Keep the in-memory layout when browser storage is unavailable.
+    }
+  }
+
+  function createSessionFlowSurface(
+    project: TwiccProject,
+    props: TwiccPluginOptions = {},
+    initialOrientation: TwiccSessionFlowOrientation = "vertical"
+  ): TwiccSessionFlowSurface {
+    const widget = document.createElement("article") as TwiccSessionFlowSurface;
+    const surfaceId = ++nextSessionFlowSurfaceId;
+    widget.className = "widget-card twicc-session-flow-widget";
+    widget.dataset.orientation = initialOrientation;
+    const board = document.createElement("div");
+    board.className = "twicc-session-flow-board";
+    const message = document.createElement("p");
+    message.className = "twicc-session-flow-message";
+    message.textContent = "Loading TwiCC sessions…";
+    const archiveDropzone = document.createElement("div");
+    archiveDropzone.className = "twicc-session-flow-archive-dropzone";
+    archiveDropzone.hidden = true;
+    archiveDropzone.setAttribute("role", "region");
+    archiveDropzone.setAttribute("aria-label", "Archive session drop zone");
+    const archiveIcon = document.createElement("span");
+    archiveIcon.className = "twicc-session-flow-archive-icon";
+    archiveIcon.textContent = "↓";
+    archiveIcon.setAttribute("aria-hidden", "true");
+    const archiveCopy = document.createElement("span");
+    const archiveTitle = document.createElement("strong");
+    archiveTitle.textContent = "Archive session";
+    const archiveHint = document.createElement("small");
+    archiveHint.textContent = "Stops its agent and removes it from this board";
+    archiveCopy.append(archiveTitle, archiveHint);
+    archiveDropzone.append(archiveIcon, archiveCopy);
+    widget.append(board, message, archiveDropzone);
+
+    const projectReference = getSessionFlowProjectReference(project, props);
+    const twiccWebAppState = props.getProjectWebAppState?.("twicc-plugin");
+    const twiccWebAppKey = String(twiccWebAppState?.key || "");
+    let activeSessionId = getSessionIdFromUrl(twiccWebAppState?.url);
+    let sessions: TwiccSessionFlowItem[] = [];
+    const pendingCreatedSessions = new Map<string, { createdAt: number; item: TwiccSessionFlowItem }>();
+    let draggedSessionId = "";
+    let moveMenu: HTMLElement | null = null;
+    let wasConnected = false;
+    let composerMode: TwiccSessionComposerMode = "";
+    let creationOptions: TwiccSessionCreationOptions | null = null;
+    let creationOptionsLoading = false;
+    let creationError = "";
+    let pierAvailable = false;
+    let pierWorktreePattern = "";
+    let creationRequestId = 0;
+    let creationDraft: TwiccSessionCreationDraft = {
+      branch: "",
+      path: "",
+      pathEdited: false,
+      prompt: "",
+      startFrom: "",
+      title: "",
+      usePier: false,
+      worktreeMode: "new"
+    };
+
+    function isAlive(): boolean {
+      if (widget.isConnected) {
+        wasConnected = true;
+      }
+      return !wasConnected || widget.isConnected;
+    }
+
+    function closeMoveMenu(): void {
+      moveMenu?.remove();
+      moveMenu = null;
+    }
+
+    function resetDragState(): void {
+      draggedSessionId = "";
+      delete widget.dataset.dragging;
+      archiveDropzone.hidden = true;
+      archiveDropzone.classList.remove("drop-target");
+      widget.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
+    }
+
+    function beginDrag(sessionId: string): void {
+      draggedSessionId = sessionId;
+      widget.dataset.dragging = "true";
+      archiveDropzone.hidden = !widget.classList.contains("twicc-session-flow-pane");
+    }
+
+    function syncActiveSession(url: unknown): void {
+      const sessionId = getSessionIdFromUrl(url);
+      if (sessionId === activeSessionId) {
+        return;
+      }
+      activeSessionId = sessionId;
+      render();
+    }
+
+    function handleWebAppUrlChanged(event: Event): void {
+      const detail = (event as CustomEvent<{ key?: unknown; url?: unknown }>).detail || {};
+      const key = String(detail.key || "");
+      if (twiccWebAppKey ? key !== twiccWebAppKey : !key.endsWith(":twicc-plugin")) {
+        return;
+      }
+      syncActiveSession(detail.url);
+    }
+
+    function getSessionUrl(sessionId: string): string {
+      return resolveSessionUrl(project, sessionId, props);
+    }
+
+    function getCreatedSessionUrl(created: TwiccCreatedSession): string {
+      return resolveSessionUrlForProjectId(created.projectId, created.sessionId, props)
+        || getSessionUrl(created.sessionId);
+    }
+
+    function mergePendingCreatedSessions(loadedSessions: TwiccSessionFlowItem[]): TwiccSessionFlowItem[] {
+      const loadedIds = new Set(loadedSessions.map((session) => session.id));
+      const now = Date.now();
+      for (const [sessionId, pending] of pendingCreatedSessions) {
+        if (loadedIds.has(sessionId) || now - pending.createdAt >= TWICC_SESSION_FLOW_OPTIMISTIC_TTL_MS) {
+          pendingCreatedSessions.delete(sessionId);
+        }
+      }
+      const pending = [...pendingCreatedSessions.values()]
+        .sort((left, right) => right.createdAt - left.createdAt)
+        .map((entry) => entry.item);
+      return [...pending, ...loadedSessions];
+    }
+
+    widget.setOrientation = (orientation) => {
+      widget.dataset.orientation = orientation;
+    };
+
+    function openSession(sessionId: string): void {
+      if (sessionId === activeSessionId) {
+        return;
+      }
+      const url = getSessionUrl(sessionId);
+      if (!url) {
+        return;
+      }
+      if (typeof props.openProjectWebApp === "function") {
+        props.openProjectWebApp("twicc-plugin", url);
+      } else {
+        globalScope.boatyard?.openExternal?.(url);
+      }
+    }
+
+    function openCreatedSession(created: TwiccCreatedSession): void {
+      const url = getCreatedSessionUrl(created);
+      if (!url) {
+        return;
+      }
+      if (typeof props.openProjectWebApp === "function") {
+        props.openProjectWebApp("twicc-plugin", url);
+      } else {
+        globalScope.boatyard?.openExternal?.(url);
+      }
+    }
+
+    function resetCreationDraft(mode: TwiccSessionComposerMode): void {
+      composerMode = mode;
+      creationError = "";
+      creationDraft = {
+        branch: "",
+        path: "",
+        pathEdited: false,
+        prompt: "",
+        startFrom: "",
+        title: "",
+        usePier: false,
+        worktreeMode: "new"
+      };
+    }
+
+    function focusCreationComposer(): void {
+      globalScope.queueMicrotask?.(() => {
+        widget.querySelector<HTMLInputElement>(".twicc-session-flow-composer input")?.focus();
+      });
+    }
+
+    function openDirectComposer(): void {
+      resetCreationDraft("direct");
+      creationOptions = null;
+      creationOptionsLoading = false;
+      pierAvailable = false;
+      pierWorktreePattern = "";
+      creationRequestId += 1;
+      render();
+      focusCreationComposer();
+    }
+
+    async function openWorktreeComposer(): Promise<void> {
+      resetCreationDraft("worktree");
+      creationOptions = null;
+      creationOptionsLoading = true;
+      pierAvailable = false;
+      pierWorktreePattern = "";
+      const requestId = ++creationRequestId;
+      render();
+
+      try {
+        const pierService = registry.getService<PierSessionFlowService>("boatyard.pier");
+        const [rawOptions, pierAvailability] = await Promise.all([
+          invokePlugin("sessionCreationOptions", {
+            sourcePath: project.sourcePath || ""
+          }),
+          typeof pierService?.getProjectAvailability === "function"
+            ? pierService.getProjectAvailability(project).catch(() => ({ available: false, worktreePattern: "" }))
+            : Promise.resolve({ available: false, worktreePattern: "" })
+        ]);
+        if (requestId !== creationRequestId || composerMode !== "worktree") {
+          return;
+        }
+        creationOptions = normalizeSessionCreationOptions(rawOptions);
+        pierAvailable = pierAvailability.available && Boolean(pierService);
+        pierWorktreePattern = pierAvailability.worktreePattern;
+        creationDraft.usePier = pierAvailable;
+        creationDraft.path = joinWorktreePath(creationOptions.defaultWorktreeBase, creationDraft.branch);
+      } catch (error) {
+        if (requestId === creationRequestId && composerMode === "worktree") {
+          creationError = error instanceof Error ? error.message : String(error);
+        }
+      } finally {
+        if (requestId === creationRequestId && composerMode === "worktree") {
+          creationOptionsLoading = false;
+          render();
+          focusCreationComposer();
+        }
+      }
+    }
+
+    function closeCreationComposer(): void {
+      creationRequestId += 1;
+      composerMode = "";
+      creationOptionsLoading = false;
+      creationError = "";
+      delete widget.dataset.creating;
+      render();
+    }
+
+    async function moveSession(sessionId: string, lane: TwiccSessionFlowLane): Promise<void> {
+      const session = sessions.find((candidate) => candidate.id === sessionId);
+      if (!session || session.lane === lane || widget.dataset.moving === "true") {
+        return;
+      }
+      const previousLane = session.lane;
+      session.lane = lane;
+      widget.dataset.moving = "true";
+      render();
+      try {
+        await invokePlugin("setSessionFlowLane", {
+          globalConfig: props.globalPluginConfig || {},
+          lane,
+          sessionId
+        });
+        message.hidden = true;
+        message.textContent = "";
+      } catch (error) {
+        session.lane = previousLane;
+        message.hidden = false;
+        message.textContent = error instanceof Error ? error.message : String(error);
+        render();
+      } finally {
+        delete widget.dataset.moving;
+      }
+    }
+
+    async function archiveSession(sessionId: string): Promise<void> {
+      const session = sessions.find((candidate) => candidate.id === sessionId);
+      if (
+        !session
+        || widget.dataset.archiving === "true"
+        || widget.dataset.moving === "true"
+      ) {
+        return;
+      }
+
+      const previousSessions = sessions;
+      sessions = sessions.filter((candidate) => candidate.id !== sessionId);
+      widget.dataset.archiving = "true";
+      resetDragState();
+      render();
+      try {
+        await invokePlugin("archiveSession", {
+          globalConfig: props.globalPluginConfig || {},
+          sessionId
+        });
+        message.hidden = sessions.length > 0;
+        message.textContent = sessions.length ? "" : "No current TwiCC sessions.";
+      } catch (error) {
+        sessions = previousSessions;
+        message.hidden = false;
+        message.textContent = error instanceof Error ? error.message : String(error);
+        render();
+      } finally {
+        delete widget.dataset.archiving;
+      }
+    }
+
+    archiveDropzone.addEventListener("dragover", (event) => {
+      if (!draggedSessionId) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = "move";
+      }
+      archiveDropzone.classList.add("drop-target");
+    });
+    archiveDropzone.addEventListener("dragleave", (event) => {
+      if (!archiveDropzone.contains(event.relatedTarget as Node | null)) {
+        archiveDropzone.classList.remove("drop-target");
+      }
+    });
+    archiveDropzone.addEventListener("drop", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const sessionId = event.dataTransfer?.getData("application/x-twicc-session") || draggedSessionId;
+      resetDragState();
+      if (sessionId) {
+        void archiveSession(sessionId);
+      }
+    });
+
+    function openMoveMenu(event: MouseEvent, session: TwiccSessionFlowItem): void {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMoveMenu();
+      const anchor = event.currentTarget as HTMLElement;
+      const menu = document.createElement("div");
+      menu.className = "twicc-session-flow-menu";
+      menu.setAttribute("role", "menu");
+      const label = document.createElement("span");
+      label.className = "twicc-session-flow-menu-label";
+      label.textContent = "Move session to";
+      menu.append(label);
+
+      for (const lane of TWICC_SESSION_FLOW_LANES) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("role", "menuitem");
+        button.setAttribute("aria-current", String(session.lane === lane.id));
+        const dot = document.createElement("span");
+        dot.className = `twicc-session-flow-lane-dot ${lane.id}`;
+        const copy = document.createElement("span");
+        copy.textContent = `${lane.label}${session.lane === lane.id ? " ✓" : ""}`;
+        button.append(dot, copy);
+        button.addEventListener("click", () => {
+          closeMoveMenu();
+          void moveSession(session.id, lane.id);
+        });
+        menu.append(button);
+      }
+
+      document.body.append(menu);
+      const anchorRect = anchor.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      menu.style.left = `${Math.max(8, Math.min(globalScope.innerWidth - menuRect.width - 8, anchorRect.right - menuRect.width))}px`;
+      menu.style.top = `${Math.max(8, Math.min(globalScope.innerHeight - menuRect.height - 8, anchorRect.bottom + 4))}px`;
+      moveMenu = menu;
+      menu.querySelector<HTMLButtonElement>("button")?.focus();
+      globalScope.setTimeout?.(() => document.addEventListener("click", closeMoveMenu, { once: true }), 0);
+    }
+
+    function createComposerField(
+      labelText: string,
+      control: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
+      hintText = ""
+    ): HTMLElement {
+      const label = document.createElement("label");
+      label.className = "twicc-session-flow-composer-field";
+      const copy = document.createElement("span");
+      copy.textContent = labelText;
+      label.append(copy, control);
+      if (hintText) {
+        const hint = document.createElement("small");
+        hint.textContent = hintText;
+        label.append(hint);
+      }
+      return label;
+    }
+
+    function createSessionFields(): HTMLElement[] {
+      const titleInput = document.createElement("input");
+      titleInput.type = "text";
+      titleInput.maxLength = 200;
+      titleInput.placeholder = "Derived from the first message when empty";
+      titleInput.value = creationDraft.title;
+      titleInput.addEventListener("input", () => {
+        creationDraft.title = titleInput.value;
+      });
+
+      const promptInput = document.createElement("textarea");
+      promptInput.required = true;
+      promptInput.rows = 4;
+      promptInput.placeholder = "What should the agent do?";
+      promptInput.value = creationDraft.prompt;
+      promptInput.addEventListener("input", () => {
+        creationDraft.prompt = promptInput.value;
+      });
+
+      return [
+        createComposerField("Title (optional)", titleInput),
+        createComposerField("First message", promptInput)
+      ];
+    }
+
+    function isNewWorktreeBranch(): boolean {
+      const branch = creationDraft.branch.trim();
+      return Boolean(branch) && !creationOptions?.branches.some((candidate) => candidate.name === branch);
+    }
+
+    function getDefaultNewWorktreePath(branch: unknown): string {
+      const pierService = registry.getService<PierSessionFlowService>("boatyard.pier");
+      if (creationDraft.usePier && typeof pierService?.getDefaultWorktreePath === "function" && String(branch || "").trim()) {
+        return pierService.getDefaultWorktreePath(project, branch, {
+          globalPluginConfig: pierWorktreePattern ? { pierWorktreePattern } : {}
+        });
+      }
+      return joinWorktreePath(creationOptions?.defaultWorktreeBase, branch);
+    }
+
+    function createWorktreeModeTabs(): HTMLElement {
+      const tabs = document.createElement("div");
+      tabs.className = "twicc-session-flow-composer-tabs";
+      tabs.setAttribute("role", "tablist");
+      for (const [mode, label] of [["new", "New worktree"], ["existing", "Existing worktree"]] as const) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.setAttribute("role", "tab");
+        button.setAttribute("aria-selected", String(creationDraft.worktreeMode === mode));
+        button.addEventListener("click", () => {
+          creationDraft.worktreeMode = mode;
+          creationDraft.pathEdited = false;
+          creationDraft.path = mode === "new"
+            ? getDefaultNewWorktreePath(creationDraft.branch)
+            : "";
+          creationError = "";
+          render();
+        });
+        tabs.append(button);
+      }
+      return tabs;
+    }
+
+    function createNewWorktreeFields(): HTMLElement[] {
+      const branchInput = document.createElement("input");
+      branchInput.type = "text";
+      branchInput.required = true;
+      branchInput.autocomplete = "off";
+      branchInput.placeholder = "feature/my-branch";
+      branchInput.value = creationDraft.branch;
+      const branchList = document.createElement("datalist");
+      branchList.id = `twicc-session-flow-branches-${surfaceId}`;
+      for (const branch of creationOptions?.branches || []) {
+        const option = document.createElement("option");
+        option.value = branch.name;
+        option.label = branch.checkedOut ? `${branch.name} (in use)` : branch.name;
+        branchList.append(option);
+      }
+      branchInput.setAttribute("list", branchList.id);
+
+      const pathInput = document.createElement("input");
+      pathInput.type = "text";
+      pathInput.required = true;
+      pathInput.autocomplete = "off";
+      pathInput.placeholder = "/workspace/project/worktrees/feature-branch";
+      pathInput.value = creationDraft.path;
+
+      branchInput.addEventListener("input", () => {
+        creationDraft.branch = branchInput.value;
+        if (!creationDraft.pathEdited) {
+          creationDraft.path = getDefaultNewWorktreePath(creationDraft.branch);
+          pathInput.value = creationDraft.path;
+        }
+      });
+      pathInput.addEventListener("input", () => {
+        creationDraft.path = pathInput.value;
+        creationDraft.pathEdited = true;
+      });
+
+      const fields: HTMLElement[] = [
+        createComposerField(
+          "New or existing branch",
+          branchInput,
+          "An existing branch is checked out; an unknown name creates a new branch."
+        ),
+        branchList,
+        createComposerField("Path", pathInput, "Absolute path where the worktree will be created.")
+      ];
+
+      const startFrom = document.createElement("select");
+      const headOption = document.createElement("option");
+      headOption.value = "";
+      headOption.textContent = "Current HEAD";
+      startFrom.append(headOption);
+      for (const branch of creationOptions?.branches || []) {
+        const option = document.createElement("option");
+        option.value = branch.name;
+        option.textContent = branch.name;
+        startFrom.append(option);
+      }
+      startFrom.value = creationDraft.startFrom;
+      startFrom.addEventListener("change", () => {
+        creationDraft.startFrom = startFrom.value;
+      });
+      const startField = createComposerField("Start from", startFrom, "Only used when creating a new branch.");
+      startField.hidden = !isNewWorktreeBranch();
+      branchInput.addEventListener("input", () => {
+        startField.hidden = !isNewWorktreeBranch();
+      });
+      fields.push(startField);
+
+      if (pierAvailable) {
+        const pierNotice = document.createElement("div");
+        pierNotice.className = "twicc-session-flow-pier-notice";
+        const badge = document.createElement("strong");
+        badge.textContent = "Pier lifecycle";
+        const hint = document.createElement("span");
+        hint.textContent = "Pier will create and materialize this worktree before TwiCC opens the session.";
+        pierNotice.append(badge, hint);
+        fields.push(pierNotice);
+      }
+
+      return fields;
+    }
+
+    function createExistingWorktreeFields(): HTMLElement[] {
+      const select = document.createElement("select");
+      select.required = true;
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = creationOptions?.worktrees.length
+        ? "Select a worktree…"
+        : "No other worktrees found";
+      select.append(placeholder);
+      for (const worktree of creationOptions?.worktrees || []) {
+        const option = document.createElement("option");
+        option.value = worktree.path;
+        option.disabled = !worktree.usable;
+        option.textContent = worktree.branch
+          ? `${worktree.branch} — ${worktree.path}`
+          : `${worktree.path} (detached)`;
+        select.append(option);
+      }
+      select.value = creationDraft.path;
+      select.addEventListener("change", () => {
+        creationDraft.path = select.value;
+      });
+      return [createComposerField(
+        "Worktree",
+        select,
+        "TwiCC adopts the existing Git worktree and starts the session there."
+      )];
+    }
+
+    async function submitCreation(): Promise<void> {
+      if (widget.dataset.creating === "true") {
+        return;
+      }
+      const title = creationDraft.title.trim();
+      const prompt = creationDraft.prompt.trim();
+      if (!prompt) {
+        creationError = "A first message is required.";
+        render();
+        return;
+      }
+
+      const input: Record<string, unknown> = {
+        globalConfig: props.globalPluginConfig || {},
+        project: projectReference,
+        prompt,
+        sessionFlowLane: "in_progress",
+        title
+      };
+      let createdPierWorktree = false;
+      if (composerMode === "worktree") {
+        const worktreePath = creationDraft.path.trim();
+        if (!worktreePath) {
+          creationError = creationDraft.worktreeMode === "new"
+            ? "A worktree path is required."
+            : "Select an existing worktree.";
+          render();
+          return;
+        }
+        input.worktreePath = worktreePath;
+
+        if (creationDraft.worktreeMode === "new") {
+          const branch = creationDraft.branch.trim();
+          if (!branch) {
+            creationError = "A branch is required.";
+            render();
+            return;
+          }
+          const checkedOutBranch = creationOptions?.branches.find((candidate) => candidate.name === branch && candidate.checkedOut);
+          if (checkedOutBranch) {
+            creationError = `Branch ${branch} is already checked out. Use the Existing worktree tab.`;
+            render();
+            return;
+          }
+
+          const startFrom = isNewWorktreeBranch() ? creationDraft.startFrom.trim() : "";
+          if (creationDraft.usePier) {
+            const pierService = registry.getService<PierSessionFlowService>("boatyard.pier");
+            if (!pierService) {
+              creationError = "The Pier plugin is no longer available. Close and reopen this form to use standard worktree creation.";
+              render();
+              return;
+            }
+            widget.dataset.creating = "true";
+            creationError = "";
+            render();
+            try {
+              await pierService.createWorktree(project, {
+                branchName: branch,
+                fromRef: startFrom,
+                startAfterCreate: false,
+                worktreePath
+              });
+              createdPierWorktree = true;
+            } catch (error) {
+              creationError = error instanceof Error ? error.message : String(error);
+              delete widget.dataset.creating;
+              render();
+              return;
+            }
+          } else {
+            input.worktreeBranch = branch;
+            if (startFrom) {
+              input.worktreeStartFrom = startFrom;
+            }
+          }
+        }
+      }
+
+      widget.dataset.creating = "true";
+      creationError = "";
+      render();
+      try {
+        const created = normalizeCreatedSession(await invokePlugin("createSession", input));
+        if (!created) {
+          throw new Error("TwiCC did not return the created session.");
+        }
+        const createdAt = Date.now();
+        const createdBranch = composerMode === "worktree"
+          ? creationDraft.worktreeMode === "new"
+            ? creationDraft.branch.trim()
+            : creationOptions?.worktrees.find((worktree) => worktree.path === creationDraft.path.trim())?.branch || ""
+          : "";
+        const createdItem: TwiccSessionFlowItem = {
+          branch: createdBranch,
+          contextUsage: 0,
+          id: created.sessionId,
+          lane: "in_progress",
+          lastActivityAt: new Date(createdAt).toISOString(),
+          processState: "starting",
+          provider: created.provider,
+          title: created.title,
+          totalCost: 0,
+          userMessageCount: 1
+        };
+        pendingCreatedSessions.set(created.sessionId, { createdAt, item: createdItem });
+        sessions = [createdItem, ...sessions.filter((session) => session.id !== created.sessionId)];
+        composerMode = "";
+        creationRequestId += 1;
+        delete widget.dataset.creating;
+        render();
+        message.hidden = true;
+        message.textContent = "";
+        openCreatedSession(created);
+        void load();
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        if (createdPierWorktree && creationOptions) {
+          const worktreePath = creationDraft.path.trim();
+          creationOptions.worktrees = [
+            {
+              branch: creationDraft.branch.trim(),
+              detached: false,
+              path: worktreePath,
+              usable: true
+            },
+            ...creationOptions.worktrees.filter((entry) => entry.path !== worktreePath)
+          ];
+          creationDraft.worktreeMode = "existing";
+          creationDraft.path = worktreePath;
+          creationError = `Pier created the worktree, but TwiCC could not create the session: ${detail}. Retry from Existing worktree.`;
+        } else {
+          creationError = detail;
+        }
+        delete widget.dataset.creating;
+        render();
+      }
+    }
+
+    function createCreationActions(): HTMLElement {
+      const actions = document.createElement("div");
+      actions.className = "twicc-session-flow-create-actions";
+      const directButton = document.createElement("button");
+      directButton.type = "button";
+      directButton.textContent = "+ New session";
+      directButton.addEventListener("click", openDirectComposer);
+      const worktreeButton = document.createElement("button");
+      worktreeButton.type = "button";
+      worktreeButton.textContent = "⌘ New session in worktree";
+      worktreeButton.disabled = !String(project.sourcePath || "").trim();
+      worktreeButton.addEventListener("click", () => {
+        void openWorktreeComposer();
+      });
+      actions.append(directButton, worktreeButton);
+      return actions;
+    }
+
+    function createSessionComposer(): HTMLElement {
+      const card = document.createElement("form");
+      card.className = "twicc-session-flow-composer";
+      const header = document.createElement("header");
+      const title = document.createElement("strong");
+      title.textContent = composerMode === "worktree" ? "New session in worktree" : "New session";
+      const closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.title = "Cancel";
+      closeButton.setAttribute("aria-label", "Cancel session creation");
+      closeButton.textContent = "×";
+      closeButton.addEventListener("click", closeCreationComposer);
+      header.append(title, closeButton);
+      card.append(header);
+
+      if (composerMode === "worktree") {
+        card.append(createWorktreeModeTabs());
+        if (creationOptionsLoading) {
+          const loading = document.createElement("p");
+          loading.className = "twicc-session-flow-composer-status";
+          loading.textContent = "Loading branches and worktrees…";
+          card.append(loading);
+        } else if (creationOptions) {
+          card.append(...(
+            creationDraft.worktreeMode === "new"
+              ? createNewWorktreeFields()
+              : createExistingWorktreeFields()
+          ));
+        }
+      }
+
+      if (composerMode === "direct" || creationOptions) {
+        card.append(...createSessionFields());
+      }
+      if (creationError) {
+        const error = document.createElement("p");
+        error.className = "twicc-session-flow-composer-error";
+        error.setAttribute("role", "alert");
+        error.textContent = creationError;
+        card.append(error);
+      }
+
+      const actions = document.createElement("div");
+      actions.className = "twicc-session-flow-composer-actions";
+      const cancelButton = document.createElement("button");
+      cancelButton.type = "button";
+      cancelButton.textContent = "Cancel";
+      cancelButton.addEventListener("click", closeCreationComposer);
+      const submitButton = document.createElement("button");
+      submitButton.type = "submit";
+      submitButton.className = "primary";
+      submitButton.disabled = creationOptionsLoading
+        || (composerMode === "worktree" && !creationOptions)
+        || widget.dataset.creating === "true";
+      submitButton.textContent = widget.dataset.creating === "true" ? "Creating…" : "Create session";
+      actions.append(cancelButton, submitButton);
+      card.append(actions);
+      card.addEventListener("submit", (event) => {
+        event.preventDefault();
+        void submitCreation();
+      });
+      return card;
+    }
+
+    function createSessionCard(session: TwiccSessionFlowItem): HTMLElement {
+      const card = document.createElement("article");
+      card.className = "twicc-session-flow-card";
+      const isCurrentSession = session.id === activeSessionId;
+      card.classList.toggle("current-session", isCurrentSession);
+      card.draggable = true;
+      card.dataset.sessionId = session.id;
+      card.dataset.processState = session.processState || "idle";
+      if (isCurrentSession) {
+        card.setAttribute("aria-current", "true");
+      }
+
+      const main = document.createElement("div");
+      main.className = "twicc-session-flow-card-main";
+      const provider = document.createElement("span");
+      provider.className = `twicc-session-flow-provider ${session.provider === "claude_code" ? "claude" : "openai"}`;
+      provider.setAttribute("aria-label", session.provider || "TwiCC provider");
+      if (!session.provider || !["claude_code", "codex"].includes(session.provider)) {
+        provider.textContent = String(session.provider || "?").slice(0, 1).toUpperCase();
+      }
+      const title = document.createElement("button");
+      title.type = "button";
+      title.className = "twicc-session-flow-title";
+      title.textContent = session.title;
+      title.title = isCurrentSession
+        ? `${session.title} is currently open in TwiCC`
+        : `Open ${session.title} in TwiCC`;
+      title.addEventListener("click", () => openSession(session.id));
+      const currentBadge = document.createElement("span");
+      currentBadge.className = "twicc-session-flow-current-badge";
+      currentBadge.textContent = "Open";
+      currentBadge.hidden = !isCurrentSession;
+      const move = document.createElement("button");
+      move.type = "button";
+      move.className = "twicc-session-flow-move";
+      move.textContent = "⋮";
+      move.title = `Move ${session.title}`;
+      move.setAttribute("aria-label", move.title);
+      move.addEventListener("click", (event) => openMoveMenu(event, session));
+      main.append(provider, title, currentBadge, move);
+
+      const meta = document.createElement("div");
+      meta.className = "twicc-session-flow-meta";
+      const activity = document.createElement("span");
+      activity.className = "twicc-session-flow-activity";
+      activity.setAttribute("aria-hidden", "true");
+      const branch = document.createElement("span");
+      branch.className = "twicc-session-flow-branch";
+      branch.textContent = session.branch ? `⌘ ${session.branch}` : "TwiCC";
+      meta.append(activity, branch);
+
+      const stats = document.createElement("div");
+      stats.className = "twicc-session-flow-stats";
+      const statsValues = [
+        [`◯ ${session.userMessageCount || 0}`, "Messages"],
+        [formatSessionFlowContextUsage(session.contextUsage), "Context usage"],
+        [formatSessionFlowCost(session.totalCost), "Cost"],
+        [formatSessionFlowTime(session.lastActivityAt), "Last activity"]
+      ].filter(([value]) => value);
+      for (const [value, label] of statsValues) {
+        const stat = document.createElement("span");
+        stat.textContent = value;
+        stat.title = label;
+        stats.append(stat);
+      }
+
+      card.append(main, meta, stats);
+      card.addEventListener("dragstart", (event) => {
+        event.stopPropagation();
+        beginDrag(session.id);
+        card.classList.add("dragging");
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("application/x-twicc-session", session.id);
+        }
+      });
+      card.addEventListener("dragend", (event) => {
+        event.stopPropagation();
+        resetDragState();
+        card.classList.remove("dragging");
+      });
+      return card;
+    }
+
+    function createLane(lane: typeof TWICC_SESSION_FLOW_LANES[number]): HTMLElement {
+      const section = document.createElement("section");
+      section.className = `twicc-session-flow-lane ${lane.id}`;
+      section.dataset.lane = lane.id;
+      const heading = document.createElement("button");
+      heading.type = "button";
+      heading.className = "twicc-session-flow-heading";
+      heading.setAttribute("aria-expanded", "true");
+      const label = document.createElement("span");
+      label.className = "twicc-session-flow-heading-label";
+      const dot = document.createElement("span");
+      dot.className = `twicc-session-flow-lane-dot ${lane.id}`;
+      const count = document.createElement("span");
+      count.className = "twicc-session-flow-count";
+      const laneSessions = sessions.filter((session) => session.lane === lane.id);
+      count.textContent = String(laneSessions.length);
+      label.append(dot, document.createTextNode(lane.label), count);
+      const chevron = document.createElement("span");
+      chevron.className = "twicc-session-flow-chevron";
+      chevron.textContent = "⌄";
+      heading.append(label, chevron);
+
+      const list = document.createElement("div");
+      list.className = "twicc-session-flow-list";
+      if (lane.id === "in_progress" && widget.classList.contains("twicc-session-flow-pane")) {
+        list.append(createCreationActions());
+        if (composerMode) {
+          list.append(createSessionComposer());
+        }
+      }
+      if (laneSessions.length) {
+        list.append(...laneSessions.map(createSessionCard));
+      } else {
+        const empty = document.createElement("span");
+        empty.className = "twicc-session-flow-empty";
+        empty.textContent = "Drop sessions here";
+        list.append(empty);
+      }
+      heading.addEventListener("click", () => {
+        const collapsed = section.classList.toggle("collapsed");
+        heading.setAttribute("aria-expanded", String(!collapsed));
+      });
+      section.addEventListener("dragover", (event) => {
+        if (!draggedSessionId) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        section.classList.add("drop-target");
+      });
+      section.addEventListener("dragleave", (event) => {
+        if (!section.contains(event.relatedTarget as Node | null)) {
+          section.classList.remove("drop-target");
+        }
+      });
+      section.addEventListener("drop", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const sessionId = event.dataTransfer?.getData("application/x-twicc-session") || draggedSessionId;
+        resetDragState();
+        if (sessionId) {
+          void moveSession(sessionId, lane.id);
+        }
+      });
+      section.append(heading, list);
+      return section;
+    }
+
+    function render(): void {
+      closeMoveMenu();
+      board.replaceChildren(...TWICC_SESSION_FLOW_LANES.map(createLane));
+      board.hidden = false;
+    }
+
+    async function load(): Promise<void> {
+      if (!isAlive()) {
+        return;
+      }
+      if (!projectReference) {
+        board.hidden = true;
+        message.hidden = false;
+        message.textContent = "Configure this project’s TwiCC URL to load sessions.";
+        return;
+      }
+      try {
+        const loadedSessions = normalizeSessionFlow(await invokePlugin("sessionFlow", {
+          globalConfig: props.globalPluginConfig || {},
+          project: projectReference
+        }));
+        sessions = mergePendingCreatedSessions(loadedSessions);
+        render();
+        message.hidden = sessions.length > 0;
+        message.textContent = sessions.length ? "" : "No current TwiCC sessions.";
+      } catch (error) {
+        board.hidden = true;
+        message.hidden = false;
+        message.textContent = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    globalScope.addEventListener?.(WEBAPP_URL_CHANGED_EVENT, handleWebAppUrlChanged);
+    void load();
+    const refreshInterval = globalScope.setInterval?.(() => {
+      if (!isAlive()) {
+        globalScope.clearInterval?.(refreshInterval);
+        closeMoveMenu();
+        return;
+      }
+      if (
+        !composerMode
+        && widget.dataset.moving !== "true"
+        && widget.dataset.archiving !== "true"
+        && widget.dataset.creating !== "true"
+      ) {
+        void load();
+      }
+    }, TWICC_SESSION_FLOW_REFRESH_MS);
+
+    widget.cleanup = () => {
+      globalScope.clearInterval?.(refreshInterval);
+      globalScope.removeEventListener?.(WEBAPP_URL_CHANGED_EVENT, handleWebAppUrlChanged);
+      closeMoveMenu();
+    };
+
+    return widget;
+  }
+
+  function createSessionFlowWidget(project: TwiccProject, props: TwiccPluginOptions = {}): HTMLElement {
+    return createSessionFlowSurface(project, props);
+  }
+
+  function createSessionFlowPane(container: HTMLElement, props: TwiccSessionFlowPaneOptions = {}): () => void {
+    const project = props.project || {};
+    const surface = createSessionFlowSurface(project, {
+      ...props,
+      pluginConfig: props.pluginConfig || props.projectConfig
+    }, readSessionFlowOrientation(project, props.paneId));
+    surface.classList.add("twicc-session-flow-pane");
+    container.append(surface);
+    const handleOrientation = (event: Event) => {
+      const orientation = (event as CustomEvent<{ orientation?: unknown }>).detail?.orientation;
+      if (orientation === "horizontal" || orientation === "vertical") {
+        surface.setOrientation?.(orientation);
+      }
+    };
+    container.addEventListener(TWICC_SESSION_FLOW_ORIENTATION_EVENT, handleOrientation);
+    return () => {
+      container.removeEventListener(TWICC_SESSION_FLOW_ORIENTATION_EVENT, handleOrientation);
+      surface.cleanup?.();
+      surface.remove();
+    };
+  }
+
+  function renderSessionFlowHeaderActions(
+    container: HTMLElement,
+    props: TwiccSessionFlowPaneOptions = {}
+  ): () => void {
+    const project = props.project || {};
+    let orientation = readSessionFlowOrientation(project, props.paneId);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "webapp-tool-button twicc-session-flow-orientation";
+    const icon = document.createElement("span");
+    icon.className = "twicc-session-flow-orientation-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.append(document.createElement("span"), document.createElement("span"), document.createElement("span"));
+    button.append(icon);
+
+    function syncButton(): void {
+      const nextOrientation = orientation === "vertical" ? "horizontal" : "vertical";
+      const label = `Switch to ${nextOrientation} layout`;
+      button.dataset.orientation = orientation;
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.setAttribute("aria-pressed", String(orientation === "horizontal"));
+    }
+
+    const handleClick = () => {
+      orientation = orientation === "vertical" ? "horizontal" : "vertical";
+      persistSessionFlowOrientation(project, props.paneId, orientation);
+      syncButton();
+      props.host?.dispatchEvent(new CustomEvent(TWICC_SESSION_FLOW_ORIENTATION_EVENT, {
+        detail: { orientation }
+      }));
+    };
+
+    syncButton();
+    button.addEventListener("click", handleClick);
+    container.append(button);
+    return () => button.removeEventListener("click", handleClick);
+  }
+
+  function registerSessionFlowWidget(ctx: TwiccPluginContext): void {
+    ctx.widgets.register({
+      id: "boatyard.twicc.sessionFlow",
+      name: "TwiCC Session Flow",
+      title: "TwiCC Session Flow",
+      scope: "project",
+      category: "Developer tools",
+      status: "experimental",
+      defaultVisible: false,
+      description: "Organizes current TwiCC sessions into in-progress, backlog, and testing lanes.",
+      layout: {
+        default: { columns: 3, rows: 7 },
+        min: { columns: 2, rows: 4 }
+      },
+      createElement: createSessionFlowWidget
+    });
+  }
+
   function syncProjectUrlField(event: TwiccSourcePathInspectedEvent) {
     const fields = event.fields;
     const inspected = event.inspected?.plugins?.["boatyard.twicc"] || {};
@@ -965,8 +2310,8 @@
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
-        widgets: ["boatyard.twicc.usage"],
-        panes: ["boatyard.twicc.pane"],
+        widgets: ["boatyard.twicc.sessionFlow", "boatyard.twicc.usage"],
+        panes: ["boatyard.twicc.pane", "boatyard.twicc.sessionFlowPane"],
         projectNavBadges: ["boatyard.twicc.projectStatus"],
         globalSettings: ["boatyard.twicc.global"],
         projectSettings: ["boatyard.twicc.project"],
@@ -1082,6 +2427,25 @@
           }
         });
 
+        ctx.panes.register({
+          id: "boatyard.twicc.sessionFlowPane",
+          webAppId: "twicc-session-flow",
+          key: "twicc-session-flow",
+          title: "Session Flow",
+          iconUrl: twiccIconUrl,
+          kind: "dom",
+          parentLabel: "Twicc",
+          parentWebAppId: "twicc-plugin",
+          scope: "project",
+          renderHeaderActions: renderSessionFlowHeaderActions,
+          render(container: HTMLElement, paneProps: PluginRegistryRecord = {}) {
+            return createSessionFlowPane(
+              container,
+              paneProps as TwiccPluginOptions & { project?: TwiccProject }
+            );
+          }
+        });
+
         ctx.projectNavBadges.register({
           id: "boatyard.twicc.projectStatus",
           render({ project, projectConfig, globalConfig, isActiveProject }: PluginProjectNavBadgeRenderContext) {
@@ -1094,6 +2458,7 @@
         });
 
         registerUsageWidget(ctx);
+        registerSessionFlowWidget(ctx);
       },
       deactivate() {
         stopProjectStatusRefresh();

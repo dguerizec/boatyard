@@ -42,6 +42,7 @@ type PaneLayoutStateApi = {
   ): unknown;
   deleteSelectedWebAppForPane(paneId: string): unknown;
   findPaneNode(node: unknown, paneId: string): unknown;
+  findPaneNodeBySelectedWebApp(node: unknown, webAppId: string): unknown;
   getPaneAncestorPath(node: unknown, paneId: string): unknown;
   getPaneExpansionState(project: RendererProject, paneId: string): { canExpand: boolean; canShrink: boolean };
   getPaneExpansionTarget(project: RendererProject, paneId: string): unknown;
@@ -65,6 +66,7 @@ type PaneWebApp = UnknownRecord & {
   pluginPane?: {
     pluginId: string;
     render(host: HTMLElement, props: UnknownRecord): unknown;
+    renderHeaderActions?(container: HTMLElement, props: UnknownRecord): unknown;
   };
   url?: string;
   widgetPane?: WidgetPane;
@@ -215,6 +217,25 @@ export function createPaneLayoutView({
 
     function getMobileDevViewportKey(webApp: PaneWebApp) {
       return webApp.id || webApp.key || "";
+    }
+
+    function getProjectWebAppState(project: RendererProject, webAppId: string) {
+      const paneNode = paneLayoutState.findPaneNodeBySelectedWebApp(
+        getProjectPaneLayout(project),
+        webAppId
+      ) as PaneNode | null;
+      if (!paneNode) {
+        return null;
+      }
+      const webApp = (getProjectWebApps(project, paneNode.id) as PaneWebApp[])
+        .find((candidate) => candidate.id === webAppId);
+      if (!webApp) {
+        return null;
+      }
+      return {
+        key: webApp.key || "",
+        url: getCurrentWebAppUrl(webApp) || webApp.url || ""
+      };
     }
 
     function normalizeMobileDevBookmark(value: unknown): MobileDevViewportBookmark | null {
@@ -909,6 +930,7 @@ export function createPaneLayoutView({
       const isTerminalPane = selectedWebApp.kind === "terminal";
       const isWidgetPane = selectedWebApp.kind === "widgets";
       const isDomPane = selectedWebApp.kind === "dom";
+      const pluginPane = isDomPane ? selectedWebApp.pluginPane : undefined;
       const widgetPane = isWidgetPane ? selectedWebApp.widgetPane : undefined;
       const widgetFallbackWidth = isWidgetPane
         ? Math.max(minWidgetRailWidth, Math.round((dashboardGrid.getBoundingClientRect().width || window.innerWidth) / 2))
@@ -929,6 +951,27 @@ export function createPaneLayoutView({
       }
       pane.dataset.mobileDev = String(isMobileDevViewportEnabled(selectedWebApp));
       pane.dataset.webAppMenuSignature = getWebAppMenuSignature(webApps);
+
+      const host = document.createElement("div") as PaneLayoutHost;
+      host.className = `webapp-host${isTerminalPane ? " terminal-pane-host" : ""}`;
+      host.setAttribute("role", "region");
+      host.setAttribute("aria-label", `${project.name} ${selectedWebApp.label}`);
+      const pluginPaneProps = pluginPane ? {
+        project,
+        projectId: project.id,
+        paneId: paneNode.id,
+        projectConfig: isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId),
+        globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId),
+        allProjectPluginConfig: getAllProjectPluginConfig(project),
+        getProjectWebAppState(webAppId: string) {
+          return getProjectWebAppState(project, webAppId);
+        },
+        host,
+        openProjectWebApp(webAppId: string, url = "") {
+          return openProjectWebApp(project.id, webAppId, url);
+        }
+      } : null;
+      const pluginPaneCleanupCallbacks: Array<() => void> = [];
 
       const header = document.createElement("div");
       header.className = "webapp-pane-header";
@@ -965,6 +1008,18 @@ export function createPaneLayoutView({
       });
 
       tabs.append(tabPickerButton);
+
+      if (pluginPane?.renderHeaderActions && pluginPaneProps) {
+        const headerActions = document.createElement("div");
+        headerActions.className = "plugin-pane-header-actions";
+        const cleanup = pluginPane.renderHeaderActions(headerActions, pluginPaneProps);
+        if (typeof cleanup === "function") {
+          pluginPaneCleanupCallbacks.push(cleanup as () => void);
+        }
+        if (headerActions.childNodes.length) {
+          tabs.append(headerActions);
+        }
+      }
 
       if (isWidgetPane) {
         tabs.append(createWidgetPaneTabs(project, paneNode, selectedWebApp, webApps, {
@@ -1157,11 +1212,6 @@ export function createPaneLayoutView({
       actions.append(expandPaneButton, shrinkPaneButton, verticalSplitButton, horizontalSplitButton, closePaneButton);
       header.append(tabs, actions);
 
-      const host = document.createElement("div") as PaneLayoutHost;
-      host.className = `webapp-host${isTerminalPane ? " terminal-pane-host" : ""}`;
-      host.setAttribute("role", "region");
-      host.setAttribute("aria-label", `${project.name} ${selectedWebApp.label}`);
-
       pane.append(header, host);
 
       if (isTerminalPane) {
@@ -1174,24 +1224,21 @@ export function createPaneLayoutView({
       } else if (widgetPane) {
         host.append(createWidgetPaneSurface(project, widgetPane));
       } else if (isDomPane) {
-        const pluginPane = selectedWebApp.pluginPane;
-        if (!pluginPane) {
+        if (!pluginPane || !pluginPaneProps) {
           host.textContent = "Plugin pane is unavailable.";
           queueWebAppSync();
           return pane;
         }
-        const cleanup = pluginPane.render(host, {
-          project,
-          projectId: project.id,
-          projectConfig: isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId),
-          globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId),
-          allProjectPluginConfig: getAllProjectPluginConfig(project),
-          openProjectWebApp(webAppId: string, url = "") {
-            return openProjectWebApp(project.id, webAppId, url);
-          }
-        });
+        const cleanup = pluginPane.render(host, pluginPaneProps);
         if (typeof cleanup === "function") {
-          host.boatyardCleanup = cleanup as () => void;
+          pluginPaneCleanupCallbacks.push(cleanup as () => void);
+        }
+        if (pluginPaneCleanupCallbacks.length) {
+          host.boatyardCleanup = () => {
+            for (const callback of pluginPaneCleanupCallbacks) {
+              callback();
+            }
+          };
         }
       } else {
         const visibleHost = isMobileDevViewportEnabled(selectedWebApp)

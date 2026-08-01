@@ -213,10 +213,13 @@ declare global {
     kind?: unknown;
     mobileDev?: unknown;
     name?: unknown;
+    parentLabel?: unknown;
+    parentWebAppId?: unknown;
     scope?: unknown;
     title?: unknown;
     webAppId?: unknown;
     render?: (container: HTMLElement, props?: PluginRegistryRecord) => unknown;
+    renderHeaderActions?: (container: HTMLElement, props?: PluginRegistryRecord) => unknown;
     resolveUrl?: (context: PluginPaneResolveContext) => string;
     resolveWebApps?: (context: PluginPaneResolveContext) => PluginPaneWebApp[];
   };
@@ -226,6 +229,8 @@ declare global {
     pluginId: string;
     title: string;
     kind: "wcv" | "dom";
+    parentLabel: string;
+    parentWebAppId: string;
     scope: string;
     webAppId: string;
     key: string;

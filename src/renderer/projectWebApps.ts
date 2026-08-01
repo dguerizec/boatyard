@@ -12,6 +12,8 @@ type PluginPaneDefinition = UnknownRecord & {
   iconUrl?: string;
   key?: string;
   mobileDev?: boolean;
+  parentLabel?: string;
+  parentWebAppId?: string;
   pluginId?: string;
   resolveUrl?: (context: UnknownRecord) => string;
   resolveWebApps?: (context: UnknownRecord) => WebAppDefinition[];
@@ -106,6 +108,8 @@ export function createProjectWebApps({
         label: pluginPane.title,
         key: `${paneId}:${pluginPane.key}`,
         kind: "dom",
+        parentLabel: pluginPane.parentLabel || "",
+        parentWebAppId: pluginPane.parentWebAppId || "",
         pluginPane
       });
     }

@@ -186,7 +186,8 @@ export function createRendererWebAppRuntime({
     }
 
     const layout = getPaneLayout(project);
-    const paneNode = findPaneNodeBySelectedWebApp(layout, webAppId) || findFirstPaneNode(layout);
+    const selectedPaneNode = findPaneNodeBySelectedWebApp(layout, webAppId);
+    const paneNode = selectedPaneNode || findFirstPaneNode(layout);
     if (!paneNode) {
       return false;
     }
@@ -195,6 +196,7 @@ export function createRendererWebAppRuntime({
     if (!webApp) {
       return false;
     }
+    const shouldNavigate = Boolean(url && getCurrentWebAppUrl(webApp) !== url);
 
     paneLayoutState.setSelectedWebAppForPane(paneNode.id || "", webApp.id);
     paneNode.selectedWebAppId = webApp.id;
@@ -205,9 +207,12 @@ export function createRendererWebAppRuntime({
     }
 
     persistPaneLayout(project);
-    renderWorkspacePaneArea(project);
+    const selectedPaneIsMounted = selectedPaneNode && getVisibleWebAppProject()?.id === project.id;
+    if (!selectedPaneIsMounted) {
+      renderWorkspacePaneArea(project);
+    }
 
-    if (url) {
+    if (shouldNavigate) {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => invokeWebApp("navigateWebApp", webApp.key, "open", url));
       });

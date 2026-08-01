@@ -78,6 +78,653 @@
   }
 }
 
+.twicc-session-flow-widget {
+  --twicc-session-flow-color: #22d3ee;
+  justify-content: flex-start;
+  gap: 0;
+  padding: 8px;
+  overflow: hidden;
+  background: rgba(10, 15, 23, 0.96);
+}
+
+.twicc-session-flow-widget.twicc-session-flow-pane {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 12px;
+  box-shadow: none;
+}
+
+.twicc-session-flow-board {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.twicc-session-flow-pane[data-orientation="horizontal"] .twicc-session-flow-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(240px, 1fr));
+  align-items: stretch;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.twicc-session-flow-pane[data-orientation="horizontal"] .twicc-session-flow-lane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.twicc-session-flow-pane[data-orientation="horizontal"] .twicc-session-flow-heading {
+  position: static;
+  flex: 0 0 auto;
+}
+
+.twicc-session-flow-pane[data-orientation="horizontal"] .twicc-session-flow-list {
+  min-height: 0;
+  flex: 1;
+  align-content: start;
+  overflow-y: auto;
+}
+
+.twicc-session-flow-pane[data-orientation="horizontal"] .twicc-session-flow-lane.collapsed {
+  align-self: start;
+}
+
+.twicc-session-flow-orientation-icon {
+  width: 14px;
+  height: 14px;
+  display: grid;
+  grid-template-rows: repeat(3, 1fr);
+  gap: 2px;
+}
+
+.twicc-session-flow-orientation-icon span {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+}
+
+.twicc-session-flow-orientation[data-orientation="horizontal"] .twicc-session-flow-orientation-icon {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: 1fr;
+}
+
+.twicc-session-flow-lane {
+  --twicc-session-flow-color: #22d3ee;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.twicc-session-flow-lane.backlog {
+  --twicc-session-flow-color: #a78bfa;
+}
+
+.twicc-session-flow-lane.testing {
+  --twicc-session-flow-color: #35d59a;
+}
+
+.twicc-session-flow-lane.drop-target {
+  border-color: color-mix(in srgb, var(--twicc-session-flow-color) 58%, transparent);
+  background: color-mix(in srgb, var(--twicc-session-flow-color) 6%, transparent);
+}
+
+.twicc-session-flow-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 5px;
+  border: 0;
+  background: rgba(10, 15, 23, 0.96);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.twicc-session-flow-heading::before,
+.twicc-session-flow-heading::after {
+  height: 1px;
+  flex: 1;
+  content: "";
+  background: var(--line);
+}
+
+.twicc-session-flow-heading-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.twicc-session-flow-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(74, 87, 107, 0.25);
+  color: var(--muted);
+  font-size: 10px;
+  text-align: center;
+}
+
+.twicc-session-flow-chevron {
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.twicc-session-flow-lane.collapsed .twicc-session-flow-list {
+  display: none;
+}
+
+.twicc-session-flow-lane.collapsed .twicc-session-flow-chevron {
+  transform: rotate(-90deg);
+}
+
+.twicc-session-flow-lane-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #22d3ee;
+  box-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
+}
+
+.twicc-session-flow-lane-dot.backlog {
+  background: #a78bfa;
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.4);
+}
+
+.twicc-session-flow-lane-dot.testing {
+  background: #35d59a;
+  box-shadow: 0 0 8px rgba(53, 213, 154, 0.4);
+}
+
+.twicc-session-flow-list {
+  min-height: 34px;
+  display: grid;
+  gap: 6px;
+  padding: 0 2px 3px;
+}
+
+.twicc-session-flow-create-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 5px;
+}
+
+.twicc-session-flow-create-actions button,
+.twicc-session-flow-composer button {
+  min-height: 29px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(17, 24, 35, 0.88);
+  color: #aebbd2;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.twicc-session-flow-create-actions button:hover:not(:disabled),
+.twicc-session-flow-create-actions button:focus-visible,
+.twicc-session-flow-composer button:hover:not(:disabled),
+.twicc-session-flow-composer button:focus-visible {
+  border-color: color-mix(in srgb, var(--twicc-session-flow-color) 50%, var(--line));
+  color: var(--text);
+  outline: none;
+}
+
+.twicc-session-flow-create-actions button:disabled,
+.twicc-session-flow-composer button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.twicc-session-flow-composer {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--twicc-session-flow-color) 48%, var(--line));
+  border-left: 2px solid var(--twicc-session-flow-color);
+  border-radius: 7px;
+  background: linear-gradient(145deg, rgba(18, 28, 40, 0.98), rgba(11, 17, 26, 0.98));
+}
+
+.twicc-session-flow-composer > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.twicc-session-flow-composer > header button {
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.twicc-session-flow-composer-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+}
+
+.twicc-session-flow-composer-tabs button {
+  min-height: 28px;
+  padding: 4px 7px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.twicc-session-flow-composer-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--twicc-session-flow-color);
+  color: var(--twicc-session-flow-color);
+}
+
+.twicc-session-flow-composer-field {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  color: #b9c3d4;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.twicc-session-flow-composer-field[hidden] {
+  display: none;
+}
+
+.twicc-session-flow-composer-field input,
+.twicc-session-flow-composer-field select,
+.twicc-session-flow-composer-field textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  border: 1px solid #3a4658;
+  border-radius: 6px;
+  background: rgba(9, 14, 22, 0.86);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.twicc-session-flow-composer-field textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.twicc-session-flow-composer-field input:focus,
+.twicc-session-flow-composer-field select:focus,
+.twicc-session-flow-composer-field textarea:focus {
+  border-color: var(--twicc-session-flow-color);
+  outline: 1px solid color-mix(in srgb, var(--twicc-session-flow-color) 35%, transparent);
+}
+
+.twicc-session-flow-composer-field small,
+.twicc-session-flow-composer-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.twicc-session-flow-pier-notice {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid rgba(53, 213, 154, 0.28);
+  border-radius: 6px;
+  background: rgba(53, 213, 154, 0.07);
+  color: #8ee7c2;
+  font-size: 9px;
+}
+
+.twicc-session-flow-pier-notice span {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.twicc-session-flow-composer-error {
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(251, 113, 133, 0.38);
+  border-radius: 6px;
+  background: rgba(127, 29, 29, 0.15);
+  color: #fda4af;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.twicc-session-flow-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.twicc-session-flow-composer-actions button.primary {
+  border-color: color-mix(in srgb, var(--twicc-session-flow-color) 65%, #0b1220);
+  background: color-mix(in srgb, var(--twicc-session-flow-color) 62%, #0b1220);
+  color: #f8fbff;
+}
+
+.twicc-session-flow-empty {
+  min-height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.twicc-session-flow-card {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--twicc-session-flow-color);
+  border-radius: 7px;
+  background: linear-gradient(110deg, rgba(21, 28, 39, 0.96), rgba(13, 19, 28, 0.96));
+  cursor: grab;
+  transition: border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+
+.twicc-session-flow-card:hover {
+  border-color: color-mix(in srgb, var(--twicc-session-flow-color) 35%, var(--line));
+}
+
+.twicc-session-flow-card.current-session {
+  border-color: #22d3ee;
+  background: linear-gradient(110deg, rgba(15, 46, 60, 0.98), rgba(12, 25, 36, 0.98));
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.22), 0 0 14px rgba(34, 211, 238, 0.1);
+}
+
+.twicc-session-flow-card.dragging {
+  opacity: 0.35;
+  transform: scale(0.985);
+}
+
+.twicc-session-flow-card-main,
+.twicc-session-flow-meta,
+.twicc-session-flow-stats {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.twicc-session-flow-card-main {
+  gap: 7px;
+}
+
+.twicc-session-flow-provider {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.twicc-session-flow-provider.claude,
+.twicc-session-flow-provider.openai {
+  background: currentColor;
+  -webkit-mask: center / 14px 14px no-repeat;
+  mask: center / 14px 14px no-repeat;
+}
+
+.twicc-session-flow-provider.claude {
+  color: #d99a72;
+  -webkit-mask-image: url("../../renderer/assets/fontawesome-brands-claude.svg");
+  mask-image: url("../../renderer/assets/fontawesome-brands-claude.svg");
+}
+
+.twicc-session-flow-provider.openai {
+  color: #aeb8c9;
+  -webkit-mask-image: url("../../renderer/assets/fontawesome-brands-openai.svg");
+  mask-image: url("../../renderer/assets/fontawesome-brands-openai.svg");
+}
+
+.twicc-session-flow-title {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #aebbd2;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.twicc-session-flow-card[data-process-state="assistant_turn"] .twicc-session-flow-title,
+.twicc-session-flow-card[data-process-state="starting"] .twicc-session-flow-title {
+  color: #22d3ee;
+}
+
+.twicc-session-flow-title:hover,
+.twicc-session-flow-title:focus-visible {
+  color: var(--text);
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.twicc-session-flow-current-badge {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid rgba(34, 211, 238, 0.4);
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.1);
+  color: #67e8f9;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 14px;
+  text-transform: uppercase;
+}
+
+.twicc-session-flow-current-badge[hidden] {
+  display: none;
+}
+
+.twicc-session-flow-move {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #637087;
+  font-size: 15px;
+}
+
+.twicc-session-flow-move:hover,
+.twicc-session-flow-move:focus-visible {
+  color: var(--text);
+  outline: none;
+}
+
+.twicc-session-flow-meta {
+  gap: 6px;
+  padding-left: 23px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.twicc-session-flow-activity {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50% 50% 50% 0;
+  background: #ff476f;
+  transform: rotate(-45deg);
+}
+
+.twicc-session-flow-branch {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.twicc-session-flow-stats {
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.twicc-session-flow-stats span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.twicc-session-flow-stats span:nth-child(2) {
+  color: var(--twicc-session-flow-color);
+}
+
+.twicc-session-flow-message {
+  margin: auto;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.twicc-session-flow-archive-dropzone {
+  min-height: 58px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+  padding: 8px 14px;
+  border: 1px dashed rgba(251, 113, 133, 0.72);
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.12);
+  color: #fda4af;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.twicc-session-flow-archive-dropzone[hidden] {
+  display: none;
+}
+
+.twicc-session-flow-widget:not(.twicc-session-flow-pane) .twicc-session-flow-archive-dropzone {
+  display: none;
+}
+
+.twicc-session-flow-archive-dropzone.drop-target {
+  border-color: #fb7185;
+  background: rgba(190, 24, 93, 0.22);
+  color: #ffe4e6;
+}
+
+.twicc-session-flow-archive-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.twicc-session-flow-archive-dropzone > span:last-child {
+  display: grid;
+  gap: 1px;
+}
+
+.twicc-session-flow-archive-dropzone strong {
+  font-size: 11px;
+}
+
+.twicc-session-flow-archive-dropzone small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.twicc-session-flow-menu {
+  position: fixed;
+  z-index: 90;
+  min-width: 180px;
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(23, 29, 36, 0.99);
+  box-shadow: var(--shadow);
+}
+
+.twicc-session-flow-menu-label {
+  padding: 5px 8px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.twicc-session-flow-menu button {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-size: 11px;
+  text-align: left;
+}
+
+.twicc-session-flow-menu button:hover,
+.twicc-session-flow-menu button:focus-visible {
+  background: var(--panel-strong);
+  outline: none;
+}
+
+.twicc-session-flow-menu button[aria-current="true"] {
+  color: var(--muted);
+}
+
 .twicc-usage-widget {
   gap: 4px;
   padding: 6px;

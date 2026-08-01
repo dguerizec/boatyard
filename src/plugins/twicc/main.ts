@@ -4,18 +4,35 @@ import type { ExecFileAsync, PluginActions, PluginProjectInspectors } from "../.
 
 const {
   aliasTwiccProjectProcessStatuses,
+  archiveTwiccSession,
+  createTwiccSession,
   createTwiccProject,
   createTwiccProjectCache,
   inspectTwiccProject,
   inspectTwiccProjectFromProjects,
+  loadGitSessionCreationOptions,
+  loadTwiccSessionFlow,
   loadTwiccProcesses,
-  getTwiccProjectProcessStatuses
+  getTwiccProjectProcessStatuses,
+  updateTwiccSessionFlowLane
 } = require("./service");
 
 type BoatyardProject = { id: string; sourcePath?: string };
 type TwiccState = { projects?: BoatyardProject[] };
 type GlobalConfigPayload = { globalConfig?: Record<string, unknown> };
 type SourcePathPayload = { sourcePath?: unknown };
+type SessionFlowPayload = GlobalConfigPayload & { project?: unknown };
+type SessionFlowSessionPayload = GlobalConfigPayload & { sessionId?: unknown };
+type SessionFlowLanePayload = GlobalConfigPayload & { lane?: unknown; sessionId?: unknown };
+type SessionCreationPayload = GlobalConfigPayload & {
+  project?: unknown;
+  prompt?: unknown;
+  sessionFlowLane?: unknown;
+  title?: unknown;
+  worktreeBranch?: unknown;
+  worktreePath?: unknown;
+  worktreeStartFrom?: unknown;
+};
 type TwiccPluginContext = {
   actions: PluginActions;
   execFileAsync: ExecFileAsync;
@@ -51,6 +68,40 @@ function activate(ctx: TwiccPluginContext) {
       twiccProjects,
       ctx.getState()?.projects || []
     );
+  });
+
+  ctx.actions.handle<SessionFlowPayload>("sessionFlow", async ({ project, globalConfig } = {}) => {
+    return loadTwiccSessionFlow(project, {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    });
+  });
+
+  ctx.actions.handle<SessionFlowLanePayload>("setSessionFlowLane", async ({ sessionId, lane, globalConfig } = {}) => {
+    return updateTwiccSessionFlowLane(sessionId, lane, {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    });
+  });
+
+  ctx.actions.handle<SessionFlowSessionPayload>("archiveSession", async ({ sessionId, globalConfig } = {}) => {
+    return archiveTwiccSession(sessionId, {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    });
+  });
+
+  ctx.actions.handle<SessionCreationPayload>("createSession", async ({ globalConfig, ...input } = {}) => {
+    return createTwiccSession(input, {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    });
+  });
+
+  ctx.actions.handle<SourcePathPayload>("sessionCreationOptions", async ({ sourcePath } = {}) => {
+    return loadGitSessionCreationOptions(sourcePath, {
+      execFileAsync: ctx.execFileAsync
+    });
   });
 
   ctx.projectInspectors.register(async ({ sourcePath, globalConfig }: SourcePathPayload & GlobalConfigPayload = {}) => {

@@ -23,6 +23,10 @@ type PluginPane = {
   id: string;
   iconUrl?: string;
   key?: string;
+  parentLabel?: string;
+  parentWebAppId?: string;
+  renderHeaderActions?: (container: unknown, props?: Record<string, unknown>) => unknown;
+  title?: string;
   resolveUrl(context: unknown): string;
   resolveWebApps(context: unknown): unknown[];
 };
@@ -60,6 +64,7 @@ type PluginSummary = {
 };
 
 type BuiltinRendererContext = {
+  CustomEvent: typeof CustomEvent;
   URL: typeof URL;
   console: Console;
   clearInterval(): void;
@@ -130,6 +135,15 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
 }, mockFetch: MockFetch = async () => ({ ok: true, json: async (): Promise<unknown[]> => [] })) {
   const intervalCallbacks: Array<() => void | Promise<void>> = [];
   const context: BuiltinRendererContext = {
+    CustomEvent: class MockCustomEvent {
+      detail: unknown;
+      type: string;
+
+      constructor(type: string, init: { detail?: unknown } = {}) {
+        this.type = type;
+        this.detail = init.detail;
+      }
+    } as unknown as typeof CustomEvent,
     clearInterval: () => {},
     console,
     queueMicrotask: (callback) => callback(),
@@ -225,7 +239,9 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
   context.document.currentScript = null;
 
   return {
+    context,
     registry,
+    widgetRegistry: context.window.BoatyardWidgetRegistry,
     async refreshIntervals() {
       for (const callback of intervalCallbacks) {
         await callback();
@@ -249,6 +265,7 @@ test("Built-in plugins register project integrations and widgets", () => {
 
   assert.equal(registry.getService("boatyard.twicc.api").version, "0.1.0");
   assert.equal(typeof registry.getService("boatyard.pier").listProjectWorkloads, "function");
+  assert.equal(typeof registry.getService("boatyard.pier").getProjectAvailability, "function");
   assert.equal(registry.getService("boatyard.hawser.api").version, "0.1.0");
   assert.equal(registry.getService("boatyard.telegram").version, "0.1.0");
   assert.deepEqual(
@@ -257,7 +274,7 @@ test("Built-in plugins register project integrations and widgets", () => {
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "dom" }).map((pane: PluginPane) => pane.id).sort()),
-    ["boatyard.telegram.pane"]
+    ["boatyard.telegram.pane", "boatyard.twicc.sessionFlowPane"]
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane: PluginPane) => pane.key).sort()),
@@ -271,6 +288,15 @@ test("Built-in plugins register project integrations and widgets", () => {
     fs.readFileSync(path.join(process.cwd(), "src", "plugins", "twicc", "twicc-icon.svg"), "utf8"),
     /fill="#3178c0"/
   );
+  const twiccSessionFlowPane = registry
+    .listPanes({ scope: "project", kind: "dom" })
+    .find((pane: PluginPane) => pane.id === "boatyard.twicc.sessionFlowPane");
+  assert.equal(twiccSessionFlowPane.key, "twicc-session-flow");
+  assert.equal(twiccSessionFlowPane.title, "Session Flow");
+  assert.equal(twiccSessionFlowPane.parentLabel, "Twicc");
+  assert.equal(twiccSessionFlowPane.parentWebAppId, "twicc-plugin");
+  assert.equal(typeof twiccSessionFlowPane.renderHeaderActions, "function");
+  assert.match(twiccSessionFlowPane.iconUrl || "", /\/plugins\/twicc\/twicc-icon\.svg$/);
   const telegramPane = registry
     .listPanes({ scope: "project", kind: "dom" })
     .find((pane: PluginPane) => pane.id === "boatyard.telegram.pane");
@@ -296,7 +322,7 @@ test("Built-in plugins register project integrations and widgets", () => {
   const twiccPlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.twicc");
   assert.deepEqual(
     plain(twiccPlugin.contributes.widgets),
-    ["boatyard.twicc.usage"]
+    ["boatyard.twicc.sessionFlow", "boatyard.twicc.usage"]
   );
   const colorPalettePlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.colorPalette");
   assert.deepEqual(plain(colorPalettePlugin.contributes.widgets), ["boatyard.colorPalette.widget"]);
@@ -313,6 +339,18 @@ test("Built-in plugins register project integrations and widgets", () => {
     plain(githubPlugin.contributes.globalSettings),
     ["boatyard.github.global"]
   );
+});
+
+test("Twicc service extracts the current session id from a pane URL", () => {
+  const registry = loadRendererPluginEnvironment();
+  registry.applyEnabledState({});
+  const service = registry.getService("boatyard.twicc.api");
+
+  assert.equal(
+    service.getSessionIdFromUrl("http://localhost:3500/project/project-1/session/session-123/files"),
+    "session-123"
+  );
+  assert.equal(service.getSessionIdFromUrl("http://localhost:3500/project/project-1"), "");
 });
 
 test("Telegram plugin defaults project topic titles to the project slug", () => {
@@ -501,6 +539,117 @@ test("Twicc working and input icons use distinct status animations", () => {
     styles,
     /\.project-twicc-status\.done\.needs-attention\s*\{\s*animation: twicc-status-done-pulse 1\.4s ease-in-out infinite/
   );
+});
+
+test("Twicc session flow widget exposes three draggable lanes and an archive target", () => {
+  const { registry, widgetRegistry } = loadRendererPluginContext();
+  if (!widgetRegistry) {
+    throw new Error("Widget registry test environment was not initialized.");
+  }
+  registry.applyEnabledState({});
+  const widget = widgetRegistry.list({ scope: "project" })
+    .find((candidate: { id: string }) => candidate.id === "boatyard.twicc.sessionFlow");
+  const renderer = fs.readFileSync(`${process.cwd()}/src/plugins/twicc/renderer.ts`, "utf8");
+  const styles = fs.readFileSync(`${process.cwd()}/src/plugins/twicc/style.css`, "utf8");
+  const rendererEventBindings = fs.readFileSync(`${process.cwd()}/src/renderer/rendererEventBindings.ts`, "utf8");
+
+  assert.equal(widget.name, "TwiCC Session Flow");
+  assert.deepEqual(plain(widget.layout), {
+    default: { columns: 3, rows: 7 },
+    min: { columns: 2, rows: 4 }
+  });
+  assert.match(styles, /\.twicc-session-flow-lane\.backlog/);
+  assert.match(styles, /\.twicc-session-flow-lane\.testing/);
+  assert.match(styles, /\.twicc-session-flow-lane\.drop-target/);
+  assert.match(styles, /\.twicc-session-flow-widget\.twicc-session-flow-pane/);
+  assert.match(styles, /data-orientation="horizontal"/);
+  assert.match(styles, /\.twicc-session-flow-orientation-icon/);
+  assert.match(styles, /\.twicc-session-flow-archive-dropzone/);
+  assert.match(styles, /\.twicc-session-flow-archive-dropzone\.drop-target/);
+  assert.match(styles, /\.twicc-session-flow-composer/);
+  assert.match(styles, /\.twicc-session-flow-card\.current-session/);
+  assert.match(styles, /\.twicc-session-flow-current-badge/);
+  assert.match(renderer, /directButton\.textContent = "\+ New session"/);
+  assert.match(renderer, /worktreeButton\.textContent = "⌘ New session in worktree"/);
+  assert.match(renderer, /createComposerField\("Title \(optional\)", titleInput\)/);
+  assert.match(renderer, /sessionFlowLane: "in_progress"/);
+  assert.match(renderer, /pendingCreatedSessions\.set\(created\.sessionId/);
+  assert.match(renderer, /card\.setAttribute\("aria-current", "true"\)/);
+  assert.match(renderer, /sessionId === activeSessionId/);
+  assert.match(rendererEventBindings, /boatyard:webapp-url-changed/);
+  assert.match(renderer, /badge\.textContent = "Pier lifecycle"/);
+});
+
+test("Twicc session flow orientation is stored independently for each pane", () => {
+  const { context, registry } = loadRendererPluginContext();
+  registry.applyEnabledState({});
+  const pane = registry
+    .listPanes({ scope: "project", kind: "dom" })
+    .find((candidate: PluginPane) => candidate.id === "boatyard.twicc.sessionFlowPane");
+  if (!pane?.renderHeaderActions) {
+    throw new Error("TwiCC session flow header action was not registered.");
+  }
+
+  const storedValues = new Map<string, string>();
+  context.window.localStorage = {
+    getItem(key: string) {
+      return storedValues.get(key) || null;
+    },
+    setItem(key: string, value: string) {
+      storedValues.set(key, value);
+    }
+  };
+
+  type MockElement = {
+    childNodes: MockElement[];
+    dataset: Record<string, string>;
+    addEventListener(type: string, listener: () => void): void;
+    append(...children: MockElement[]): void;
+    click(): void;
+    removeEventListener(type: string, listener: () => void): void;
+    setAttribute(name: string, value: string): void;
+  };
+  function createMockElement(): MockElement {
+    const listeners = new Map<string, () => void>();
+    return {
+      childNodes: [],
+      dataset: {},
+      addEventListener(type, listener) {
+        listeners.set(type, listener);
+      },
+      append(...children) {
+        this.childNodes.push(...children);
+      },
+      click() {
+        listeners.get("click")?.();
+      },
+      removeEventListener(type, listener) {
+        if (listeners.get(type) === listener) {
+          listeners.delete(type);
+        }
+      },
+      setAttribute() {}
+    };
+  }
+  context.document.createElement = (() => createMockElement()) as unknown as
+    BuiltinRendererContext["document"]["createElement"];
+  const host = { dispatchEvent() {} };
+  const renderForPane = (paneId: string) => {
+    const container = createMockElement();
+    pane.renderHeaderActions?.(container, {
+      host,
+      paneId,
+      project: { id: "project-1" }
+    });
+    return container.childNodes[0];
+  };
+
+  const firstPaneButton = renderForPane("pane-a");
+  assert.equal(firstPaneButton.dataset.orientation, "vertical");
+  firstPaneButton.click();
+  assert.equal(firstPaneButton.dataset.orientation, "horizontal");
+  assert.equal(renderForPane("pane-b").dataset.orientation, "vertical");
+  assert.equal(renderForPane("pane-a").dataset.orientation, "horizontal");
 });
 
 test("Twicc done project nav badge stops requesting attention after the project is opened", async () => {
@@ -876,6 +1025,26 @@ test("Pier pane resolves the project dashboard URL", () => {
       globalPluginConfig: { pierUrl: "http://pier.internal/" }
     }),
     "http://custom.test/#/pier"
+  );
+});
+
+test("Pier service resolves configured worktree path patterns", () => {
+  const registry = loadRendererPluginEnvironment();
+
+  registry.applyEnabledState({});
+  const service = registry.getService("boatyard.pier");
+
+  assert.equal(
+    service.getDefaultWorktreePath({
+      name: "Boatyard",
+      slug: "boatyard",
+      sourcePath: "/workspace/boatyard"
+    }, "feature/session-flow", {
+      globalPluginConfig: {
+        pierWorktreePattern: "<repo>/../<project>-<worktree>"
+      }
+    }),
+    "/workspace/boatyard/../boatyard-feature-session-flow"
   );
 });
 

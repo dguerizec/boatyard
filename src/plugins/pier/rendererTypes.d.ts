@@ -58,6 +58,9 @@ type PierUrlRow = HTMLDivElement & {
 type PierService = {
   createWorktree(project: PierProject, payload?: PierWorktreePayload): Promise<unknown> | undefined;
   down(workload: PierWorkload, options?: PierOptions): Promise<unknown>;
+  getDefaultWorktreePath(project: PierProject, branchName?: unknown, options?: PierOptions): string;
+  getProjectAvailability(project: PierProject): Promise<{ available: boolean; worktreePattern: string }>;
+  isProjectEnabled(project: PierProject): Promise<boolean>;
   listProjectWorkloads(project: PierProject, options?: PierOptions): Promise<PierWorkload[]>;
   openUrl(entry: PierWorkload | string, options?: PierOptions): unknown;
   removeWorktree(project: PierProject, payload?: PierWorktreePayload): Promise<unknown> | undefined;

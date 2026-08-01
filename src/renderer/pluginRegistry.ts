@@ -105,6 +105,10 @@ export function registerPluginRegistry(globalScope: PluginRegistryWindow): Plugi
       throw new Error(`DOM pane ${id} must provide render.`);
     }
 
+    if (definition.renderHeaderActions !== undefined && typeof definition.renderHeaderActions !== "function") {
+      throw new Error(`Pane ${id} renderHeaderActions must be a function.`);
+    }
+
     return {
       ...definition,
       id,
@@ -114,6 +118,8 @@ export function registerPluginRegistry(globalScope: PluginRegistryWindow): Plugi
       pluginId,
       title,
       kind: requestedKind,
+      parentLabel: normalizeText(definition.parentLabel),
+      parentWebAppId: normalizeText(definition.parentWebAppId),
       scope: normalizeText(definition.scope || "project"),
       webAppId: normalizeText(definition.webAppId || id),
       key: normalizeText(definition.key || definition.webAppId || id)

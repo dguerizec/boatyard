@@ -3,6 +3,8 @@ import { hasActiveSettingsInteraction } from "./settingsFormController.js";
 import type { BoatyardBridge, RendererProject } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 
+const WEBAPP_URL_CHANGED_EVENT = "boatyard:webapp-url-changed";
+
 type RendererEventBindingsOptions = {
   addProjectButton: HTMLElement;
   applyMatchingWebAppOpenRule: (payload: UnknownRecord) => Promise<boolean>;
@@ -77,6 +79,9 @@ export function registerRendererEventBindings({
 
     setCurrentWebAppUrl(key, url);
     persistVisibleWebAppPaneLayout(key, url);
+    windowObject.dispatchEvent(new CustomEvent(WEBAPP_URL_CHANGED_EVENT, {
+      detail: { key, url }
+    }));
     for (const input of document.querySelectorAll<HTMLInputElement>(".webapp-url")) {
       if (input.dataset.webappKey === key && input !== document.activeElement) {
         input.value = url;

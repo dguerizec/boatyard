@@ -2,13 +2,27 @@
 
 import type { ExecFileAsync, PluginActions, PluginMetadata } from "../../shared/pluginTypes";
 
+const fs = require("node:fs");
+const path = require("node:path");
+
 type WorktreeCommandOptions = { cwd?: unknown; execFileAsync: ExecFileAsync };
 type WorktreeAddInput = { worktreePath?: unknown; branchName?: unknown; fromRef?: unknown; startAfterCreate?: unknown };
 type WorktreeRemoveInput = { worktreePath?: unknown; force?: unknown; purge?: unknown; skipDown?: unknown };
+type PierAvailabilityOptions = {
+  execFileAsync: ExecFileAsync;
+  existsSync?: (path: string) => boolean;
+};
 type PierProject = { id: string; previewUrl?: string };
 type PierProjectConfig = { pierPreviewUrl?: unknown };
 type PluginProjectConfig = { projects?: Record<string, Record<string, PierProjectConfig>> };
-type PierState = { projects?: PierProject[]; pluginConfig?: { projects?: PluginProjectConfig["projects"] } };
+type PierGlobalConfig = { pierWorktreePattern?: unknown };
+type PierState = {
+  projects?: PierProject[];
+  pluginConfig?: {
+    global?: Record<string, PierGlobalConfig>;
+    projects?: PluginProjectConfig["projects"];
+  };
+};
 type PierProjectConfigMigration = { projectId: string; config: { pierPreviewUrl: string } };
 type PierStateMigrationResult = { projectPluginConfig: PierProjectConfigMigration[] };
 type PierPluginContext = {
@@ -16,6 +30,7 @@ type PierPluginContext = {
   stateMigrations: { register(handler: (payload: { state: PierState }) => PierStateMigrationResult): void };
   plugin: PluginMetadata;
   execFileAsync: ExecFileAsync;
+  getState(): PierState;
 };
 
 function normalizeText(value: unknown): string {
@@ -92,6 +107,37 @@ function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }: Workt
   return args;
 }
 
+async function inspectPierProjectAvailability(
+  cwd: unknown,
+  { execFileAsync, existsSync = fs.existsSync }: PierAvailabilityOptions
+): Promise<{ available: boolean }> {
+  const sourcePath = normalizeText(cwd);
+  if (!sourcePath) {
+    return { available: false };
+  }
+
+  try {
+    const { stdout = "" } = await execFileAsync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: sourcePath,
+      timeout: 5000,
+      windowsHide: true
+    });
+    const gitRoot = normalizeText(stdout);
+    if (!gitRoot || !existsSync(path.join(gitRoot, ".pier.toml"))) {
+      return { available: false };
+    }
+
+    await execFileAsync("pier", ["--version"], {
+      cwd: gitRoot,
+      timeout: 5000,
+      windowsHide: true
+    });
+    return { available: true };
+  } catch {
+    return { available: false };
+  }
+}
+
 function activate(ctx: PierPluginContext) {
   ctx.actions.handle<WorktreeAddInput & { cwd?: unknown }>("createWorktree", ({ cwd, worktreePath, branchName, fromRef, startAfterCreate } = {}) => {
     return runPierWorktreeCommand(
@@ -105,6 +151,15 @@ function activate(ctx: PierPluginContext) {
       buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }),
       { cwd, execFileAsync: ctx.execFileAsync }
     );
+  });
+
+  ctx.actions.handle<{ cwd?: unknown }>("projectAvailability", async ({ cwd } = {}) => {
+    return {
+      ...await inspectPierProjectAvailability(cwd, { execFileAsync: ctx.execFileAsync }),
+      worktreePattern: normalizeText(
+        ctx.getState()?.pluginConfig?.global?.[ctx.plugin.id]?.pierWorktreePattern
+      )
+    };
   });
 
   ctx.stateMigrations.register(({ state }) => {
@@ -132,4 +187,4 @@ function activate(ctx: PierPluginContext) {
   });
 }
 
-export { activate };
+export { activate, inspectPierProjectAvailability };
