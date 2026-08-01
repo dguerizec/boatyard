@@ -1,6 +1,17 @@
 {
-  "generatedForVersion": "0.9.8",
+  "generatedForVersion": "0.9.9",
   "releases": [
+    {
+      "version": "0.9.9",
+      "date": "2026-08-02",
+      "features": [
+        {
+          "category": "Changed",
+          "title": "Reorderable session cards",
+          "body": "TwiCC Session Flow cards can be moved within their lanes, making it easier to prioritize and organize active work."
+        }
+      ]
+    },
     {
       "version": "0.9.8",
       "date": "2026-08-02",

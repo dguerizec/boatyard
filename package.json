@@ -1,6 +1,6 @@
 {
   "name": "boatyard",
-  "version": "0.9.8",
+  "version": "0.9.9",
   "description": "Electron project dock prototype for dashboards and development workflows.",
   "main": "build/main/main.js",
   "desktopName": "boatyard",
