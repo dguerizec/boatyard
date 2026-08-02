@@ -1,6 +1,32 @@
 {
-  "generatedForVersion": "0.9.9",
+  "generatedForVersion": "0.9.10",
   "releases": [
+    {
+      "version": "0.9.10",
+      "date": "2026-08-02",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Archive all done sessions",
+          "body": "The Done lane now includes an Archive all action with a confirmation dialog, making it faster to clear completed sessions from the board."
+        },
+        {
+          "category": "Added",
+          "title": "Session creation controls in widgets",
+          "body": "TwiCC Session Flow controls for starting sessions and worktree sessions are now available directly from the widget."
+        },
+        {
+          "category": "Changed",
+          "title": "Done lane naming",
+          "body": "The former Testing & observing lane is now labeled Done, making the session flow easier to scan."
+        },
+        {
+          "category": "Changed",
+          "title": "Cleaner lane headers",
+          "body": "Session Flow lane headers now use compact, accessible controls that leave more room for session cards."
+        }
+      ]
+    },
     {
       "version": "0.9.9",
       "date": "2026-08-02",

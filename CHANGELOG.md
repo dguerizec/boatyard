@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.10] - 2026-08-02
+
+### Summary
+
+- **v0.9.10: Session Flow Controls** — TwiCC Session Flow is easier to clean up and manage, with clearer lane naming, compact creation controls, and bulk archiving for completed work.
+
+### Added
+
+- **Archive all done sessions** — The Done lane now includes an Archive all action with a confirmation dialog, making it faster to clear completed sessions from the board.
+- **Session creation controls in widgets** — TwiCC Session Flow controls for starting sessions and worktree sessions are now available directly from the widget.
+
+### Changed
+
+- **Done lane naming** — The former Testing & observing lane is now labeled Done, making the session flow easier to scan.
+- **Cleaner lane headers** — Session Flow lane headers now use compact, accessible controls that leave more room for session cards.
+
 ## [0.9.9] - 2026-08-02
 
 ### Summary
