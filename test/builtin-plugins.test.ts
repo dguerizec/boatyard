@@ -572,8 +572,15 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(styles, /\.twicc-session-flow-card\.current-session/);
   assert.match(styles, /\.twicc-session-flow-current-badge/);
   assert.match(styles, /\.twicc-session-flow-insertion-placeholder/);
-  assert.match(renderer, /directButton\.textContent = "\+ New session"/);
-  assert.match(renderer, /worktreeButton\.textContent = "⌘ New session in worktree"/);
+  assert.doesNotMatch(styles, /\.twicc-session-flow-heading::before/);
+  assert.match(styles, /\.twicc-session-flow-heading::after/);
+  assert.match(renderer, /directButton\.title = "New session"/);
+  assert.match(renderer, /directButton\.textContent = "\+"/);
+  assert.match(renderer, /worktreeButton\.title = "New session in worktree"/);
+  assert.match(renderer, /worktreeIcon\.className = "twicc-session-flow-worktree-icon"/);
+  assert.match(renderer, /actions\.append\(directButton, worktreeButton\)/);
+  assert.match(styles, /\.twicc-session-flow-worktree-icon/);
+  assert.match(renderer, /laneHeader\.append\(createCreationActions\(\)\)/);
   assert.match(renderer, /createComposerField\("Title \(optional\)", titleInput\)/);
   assert.match(renderer, /sessionFlowLane: "in_progress"/);
   assert.match(renderer, /pendingCreatedSessions\.set\(created\.sessionId/);

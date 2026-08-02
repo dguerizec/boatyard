@@ -2238,11 +2238,18 @@
       actions.className = "twicc-session-flow-create-actions";
       const directButton = document.createElement("button");
       directButton.type = "button";
-      directButton.textContent = "+ New session";
+      directButton.title = "New session";
+      directButton.setAttribute("aria-label", "New session");
+      directButton.textContent = "+";
       directButton.addEventListener("click", openDirectComposer);
       const worktreeButton = document.createElement("button");
       worktreeButton.type = "button";
-      worktreeButton.textContent = "⌘ New session in worktree";
+      worktreeButton.title = "New session in worktree";
+      worktreeButton.setAttribute("aria-label", "New session in worktree");
+      const worktreeIcon = document.createElement("span");
+      worktreeIcon.className = "twicc-session-flow-worktree-icon";
+      worktreeIcon.setAttribute("aria-hidden", "true");
+      worktreeButton.append(worktreeIcon);
       worktreeButton.disabled = !String(project.sourcePath || "").trim();
       worktreeButton.addEventListener("click", () => {
         void openWorktreeComposer();
@@ -2423,6 +2430,9 @@
       chevron.textContent = "⌄";
       heading.append(label, chevron);
       laneHeader.append(heading);
+      if (lane.id === "in_progress" && widget.classList.contains("twicc-session-flow-pane")) {
+        laneHeader.append(createCreationActions());
+      }
       if (lane.id === "testing" && widget.classList.contains("twicc-session-flow-pane")) {
         const archiveAllButton = document.createElement("button");
         archiveAllButton.type = "button";
@@ -2436,7 +2446,6 @@
       const list = document.createElement("div");
       list.className = "twicc-session-flow-list";
       if (lane.id === "in_progress" && widget.classList.contains("twicc-session-flow-pane")) {
-        list.append(createCreationActions());
         if (composerMode) {
           list.append(createSessionComposer());
         }
