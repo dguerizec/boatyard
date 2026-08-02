@@ -566,6 +566,8 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(styles, /\.twicc-session-flow-orientation-icon/);
   assert.match(styles, /\.twicc-session-flow-archive-dropzone/);
   assert.match(styles, /\.twicc-session-flow-archive-dropzone\.drop-target/);
+  assert.match(styles, /\.twicc-session-flow-archive-all/);
+  assert.match(styles, /\.twicc-session-flow-archive-dialog/);
   assert.match(styles, /\.twicc-session-flow-composer/);
   assert.match(styles, /\.twicc-session-flow-card\.current-session/);
   assert.match(styles, /\.twicc-session-flow-current-badge/);
@@ -579,6 +581,10 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /draggedSessionGhostHeight \/ 2/);
   assert.match(renderer, /twicc-session-flow-insertion-placeholder/);
   assert.match(renderer, /invokePlugin\("reorderSessionFlow"/);
+  assert.match(renderer, /archiveAllButton\.textContent = "Archive all"/);
+  assert.match(renderer, /lane\.id === "testing" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
+  assert.match(renderer, /title\.textContent = "Archive all testing sessions"/);
+  assert.match(renderer, /BoatyardOverlayDialog\?\.show/);
   assert.match(renderer, /card\.setAttribute\("aria-current", "true"\)/);
   assert.match(renderer, /sessionId === activeSessionId/);
   assert.match(rendererEventBindings, /boatyard:webapp-url-changed/);

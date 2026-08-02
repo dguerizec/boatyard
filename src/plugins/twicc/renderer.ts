@@ -54,6 +54,10 @@
     beforeSessionId: string | null;
     lane: TwiccSessionFlowLane;
   };
+  type TwiccSessionArchiveResult = {
+    archivedCount: number;
+    failures: string[];
+  };
   type TwiccSessionFlowPaneOptions = TwiccPluginOptions & {
     host?: HTMLElement;
     paneId?: string;
@@ -1267,6 +1271,7 @@
     let draggedSessionGhostHeight = 0;
     let sessionInsertionTarget: TwiccSessionFlowInsertionTarget | null = null;
     let sessionInsertionPlaceholder: HTMLElement | null = null;
+    let archiveAllDialog: HTMLDialogElement | null = null;
     let moveMenu: HTMLElement | null = null;
     let wasConnected = false;
     let composerMode: TwiccSessionComposerMode = "";
@@ -1648,35 +1653,184 @@
       }
     }
 
+    async function archiveSessions(sessionIds: string[]): Promise<TwiccSessionArchiveResult> {
+      const requestedIds = [...new Set(sessionIds)];
+      const targets = requestedIds
+        .map((sessionId) => sessions.find((candidate) => candidate.id === sessionId))
+        .filter((session): session is TwiccSessionFlowItem => Boolean(session));
+      if (!targets.length) {
+        return { archivedCount: 0, failures: [] };
+      }
+      if (widget.dataset.archiving === "true" || widget.dataset.moving === "true") {
+        return { archivedCount: 0, failures: ["Another session update is already in progress."] };
+      }
+
+      widget.dataset.archiving = "true";
+      resetDragState();
+      const failures: string[] = [];
+      let archivedCount = 0;
+      try {
+        for (const session of targets) {
+          try {
+            await invokePlugin("archiveSession", {
+              globalConfig: props.globalPluginConfig || {},
+              sessionId: session.id
+            });
+            sessions = sessions.filter((candidate) => candidate.id !== session.id);
+            pendingCreatedSessions.delete(session.id);
+            archivedCount += 1;
+            render();
+          } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            failures.push(`${session.title}: ${detail}`);
+          }
+        }
+      } finally {
+        delete widget.dataset.archiving;
+      }
+      render();
+      message.hidden = failures.length === 0 && sessions.length > 0;
+      message.textContent = failures.length
+        ? `Could not archive ${failures.length} ${failures.length === 1 ? "session" : "sessions"}.`
+        : sessions.length
+          ? ""
+          : "No current TwiCC sessions.";
+      return { archivedCount, failures };
+    }
+
     async function archiveSession(sessionId: string): Promise<void> {
-      const session = sessions.find((candidate) => candidate.id === sessionId);
-      if (
-        !session
-        || widget.dataset.archiving === "true"
-        || widget.dataset.moving === "true"
-      ) {
+      const result = await archiveSessions([sessionId]);
+      if (result.failures.length) {
+        message.hidden = false;
+        message.textContent = result.failures[0];
+      }
+    }
+
+    function openArchiveAllDialog(): void {
+      if (archiveAllDialog) {
+        archiveAllDialog.focus();
         return;
       }
 
-      const previousSessions = sessions;
-      sessions = sessions.filter((candidate) => candidate.id !== sessionId);
-      widget.dataset.archiving = "true";
-      resetDragState();
-      render();
-      try {
-        await invokePlugin("archiveSession", {
-          globalConfig: props.globalPluginConfig || {},
-          sessionId
+      const dialog = document.createElement("dialog");
+      dialog.className = "plugin-settings-dialog twicc-session-flow-archive-dialog";
+      archiveAllDialog = dialog;
+
+      const form = document.createElement("form");
+      form.className = "plugin-settings-dialog-panel danger-zone";
+      const header = document.createElement("header");
+      header.className = "plugin-settings-dialog-header";
+      const title = document.createElement("h3");
+      title.textContent = "Archive all testing sessions";
+      const closeButton = document.createElement("button");
+      closeButton.className = "icon-button";
+      closeButton.type = "button";
+      closeButton.title = "Close";
+      closeButton.setAttribute("aria-label", "Close");
+      closeButton.textContent = "X";
+      closeButton.addEventListener("click", () => dialog.close());
+      header.append(title, closeButton);
+
+      const confirmation = document.createElement("div");
+      confirmation.className = "danger-confirmation";
+      const copy = document.createElement("p");
+      confirmation.append(copy);
+      const error = document.createElement("p");
+      error.className = "form-error";
+      error.setAttribute("role", "alert");
+      error.hidden = true;
+      const actions = document.createElement("div");
+      actions.className = "form-actions";
+      const cancelButton = document.createElement("button");
+      cancelButton.className = "secondary-button";
+      cancelButton.type = "button";
+      cancelButton.textContent = "Cancel";
+      cancelButton.addEventListener("click", () => dialog.close());
+      const submitButton = document.createElement("button");
+      submitButton.className = "danger-button";
+      submitButton.type = "submit";
+      submitButton.textContent = "Archive all";
+      actions.append(cancelButton, submitButton);
+
+      function updateConfirmation(): string[] {
+        const testingSessionIds = getOrderedLaneSessions("testing").map((session) => session.id);
+        const count = testingSessionIds.length;
+        copy.textContent = count
+          ? `Archive all ${count} ${count === 1 ? "session" : "sessions"} from Testing & observing? This stops any running agents and removes ${count === 1 ? "it" : "them"} from this board.`
+          : "There are no sessions left to archive in Testing & observing.";
+        submitButton.disabled = count === 0;
+        return testingSessionIds;
+      }
+
+      form.append(header, confirmation, error, actions);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const sessionIds = updateConfirmation();
+        if (!sessionIds.length) {
+          dialog.close();
+          return;
+        }
+        error.hidden = true;
+        error.textContent = "";
+        closeButton.disabled = true;
+        cancelButton.disabled = true;
+        submitButton.disabled = true;
+        submitButton.textContent = "Archiving…";
+        try {
+          const result = await archiveSessions(sessionIds);
+          if (!result.failures.length) {
+            dialog.close();
+            return;
+          }
+          error.textContent = `${result.archivedCount} archived; ${result.failures.length} failed. ${result.failures[0]}`;
+          error.hidden = false;
+          updateConfirmation();
+        } catch (archiveError) {
+          error.textContent = archiveError instanceof Error ? archiveError.message : String(archiveError);
+          error.hidden = false;
+        } finally {
+          closeButton.disabled = false;
+          cancelButton.disabled = false;
+          submitButton.textContent = "Archive all";
+          if (dialog.open) {
+            updateConfirmation();
+          }
+        }
+      });
+      dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        if (widget.dataset.archiving !== "true") {
+          dialog.close();
+        }
+      });
+      dialog.addEventListener("close", () => {
+        if (archiveAllDialog === dialog) {
+          archiveAllDialog = null;
+        }
+        dialog.remove();
+      });
+      dialog.append(form);
+      updateConfirmation();
+
+      if (typeof globalScope.BoatyardOverlayDialog?.show === "function") {
+        void globalScope.BoatyardOverlayDialog.show(dialog, {
+          freeze: "overlap",
+          freezeMargin: 16,
+          removeOnClose: true
+        }).then((shown) => {
+          if (shown) {
+            submitButton.focus();
+          } else {
+            if (archiveAllDialog === dialog) {
+              archiveAllDialog = null;
+            }
+            dialog.remove();
+          }
         });
-        message.hidden = sessions.length > 0;
-        message.textContent = sessions.length ? "" : "No current TwiCC sessions.";
-      } catch (error) {
-        sessions = previousSessions;
-        message.hidden = false;
-        message.textContent = error instanceof Error ? error.message : String(error);
-        render();
-      } finally {
-        delete widget.dataset.archiving;
+      } else {
+        document.body.append(dialog);
+        dialog.showModal();
+        globalScope.requestAnimationFrame?.(() => submitButton.focus());
       }
     }
 
@@ -2249,6 +2403,8 @@
       const section = document.createElement("section");
       section.className = `twicc-session-flow-lane ${lane.id}`;
       section.dataset.lane = lane.id;
+      const laneHeader = document.createElement("header");
+      laneHeader.className = "twicc-session-flow-lane-header";
       const heading = document.createElement("button");
       heading.type = "button";
       heading.className = "twicc-session-flow-heading";
@@ -2266,6 +2422,16 @@
       chevron.className = "twicc-session-flow-chevron";
       chevron.textContent = "⌄";
       heading.append(label, chevron);
+      laneHeader.append(heading);
+      if (lane.id === "testing" && widget.classList.contains("twicc-session-flow-pane")) {
+        const archiveAllButton = document.createElement("button");
+        archiveAllButton.type = "button";
+        archiveAllButton.className = "twicc-session-flow-archive-all";
+        archiveAllButton.textContent = "Archive all";
+        archiveAllButton.disabled = laneSessions.length === 0 || widget.dataset.archiving === "true";
+        archiveAllButton.addEventListener("click", openArchiveAllDialog);
+        laneHeader.append(archiveAllButton);
+      }
 
       const list = document.createElement("div");
       list.className = "twicc-session-flow-list";
@@ -2310,7 +2476,7 @@
       section.addEventListener("drop", (event) => {
         dropSessionAtInsertion(event, lane.id);
       });
-      section.append(heading, list);
+      section.append(laneHeader, list);
       return section;
     }
 
@@ -2371,6 +2537,11 @@
     widget.cleanup = () => {
       globalScope.clearInterval?.(refreshInterval);
       globalScope.removeEventListener?.(WEBAPP_URL_CHANGED_EVENT, handleWebAppUrlChanged);
+      if (archiveAllDialog?.open) {
+        archiveAllDialog.close();
+      }
+      archiveAllDialog?.remove();
+      archiveAllDialog = null;
       closeMoveMenu();
     };
 
