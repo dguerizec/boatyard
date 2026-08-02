@@ -201,7 +201,7 @@
   const TWICC_SESSION_FLOW_LANES: Array<{ id: TwiccSessionFlowLane; label: string }> = [
     { id: "in_progress", label: "In progress" },
     { id: "backlog", label: "Backlog" },
-    { id: "testing", label: "Testing & observing" }
+    { id: "testing", label: "Done" }
   ];
   const TWICC_PROJECT_STATUS_LABELS = {
     working: "Working",
@@ -1721,7 +1721,7 @@
       const header = document.createElement("header");
       header.className = "plugin-settings-dialog-header";
       const title = document.createElement("h3");
-      title.textContent = "Archive all testing sessions";
+      title.textContent = "Archive all done sessions";
       const closeButton = document.createElement("button");
       closeButton.className = "icon-button";
       closeButton.type = "button";
@@ -1753,13 +1753,13 @@
       actions.append(cancelButton, submitButton);
 
       function updateConfirmation(): string[] {
-        const testingSessionIds = getOrderedLaneSessions("testing").map((session) => session.id);
-        const count = testingSessionIds.length;
+        const doneSessionIds = getOrderedLaneSessions("testing").map((session) => session.id);
+        const count = doneSessionIds.length;
         copy.textContent = count
-          ? `Archive all ${count} ${count === 1 ? "session" : "sessions"} from Testing & observing? This stops any running agents and removes ${count === 1 ? "it" : "them"} from this board.`
-          : "There are no sessions left to archive in Testing & observing.";
+          ? `Archive all ${count} ${count === 1 ? "session" : "sessions"} in Done? This stops any running agents and removes ${count === 1 ? "it" : "them"} from this board.`
+          : "There are no sessions left to archive in Done.";
         submitButton.disabled = count === 0;
-        return testingSessionIds;
+        return doneSessionIds;
       }
 
       form.append(header, confirmation, error, actions);
@@ -2631,7 +2631,7 @@
       category: "Developer tools",
       status: "experimental",
       defaultVisible: false,
-      description: "Organizes current TwiCC sessions into in-progress, backlog, and testing lanes.",
+      description: "Organizes current TwiCC sessions into in-progress, backlog, and done lanes.",
       layout: {
         default: { columns: 3, rows: 7 },
         min: { columns: 2, rows: 4 }

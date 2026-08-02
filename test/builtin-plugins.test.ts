@@ -594,7 +594,10 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /invokePlugin\("reorderSessionFlow"/);
   assert.match(renderer, /archiveAllButton\.textContent = "Archive all"/);
   assert.doesNotMatch(renderer, /lane\.id === "testing" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
-  assert.match(renderer, /title\.textContent = "Archive all testing sessions"/);
+  assert.match(renderer, /\{ id: "testing", label: "Done" \}/);
+  assert.match(renderer, /title\.textContent = "Archive all done sessions"/);
+  assert.match(renderer, /in-progress, backlog, and done lanes/);
+  assert.doesNotMatch(renderer, /Testing & observing/);
   assert.match(renderer, /BoatyardOverlayDialog\?\.show/);
   assert.match(renderer, /card\.setAttribute\("aria-current", "true"\)/);
   assert.match(renderer, /sessionId === activeSessionId/);
