@@ -714,10 +714,6 @@
   display: none;
 }
 
-.twicc-session-flow-widget:not(.twicc-session-flow-pane) .twicc-session-flow-archive-dropzone {
-  display: none;
-}
-
 .twicc-session-flow-archive-dropzone.drop-target {
   border-color: #fb7185;
   background: rgba(190, 24, 93, 0.22);

@@ -1331,7 +1331,7 @@
       draggedSessionPointerOffsetY = event.clientY - rect.top;
       draggedSessionGhostHeight = rect.height;
       widget.dataset.dragging = "true";
-      archiveDropzone.hidden = !widget.classList.contains("twicc-session-flow-pane");
+      archiveDropzone.hidden = false;
     }
 
     function syncActiveSession(url: unknown): void {
@@ -2430,10 +2430,10 @@
       chevron.textContent = "⌄";
       heading.append(label, chevron);
       laneHeader.append(heading);
-      if (lane.id === "in_progress" && widget.classList.contains("twicc-session-flow-pane")) {
+      if (lane.id === "in_progress") {
         laneHeader.append(createCreationActions());
       }
-      if (lane.id === "testing" && widget.classList.contains("twicc-session-flow-pane")) {
+      if (lane.id === "testing") {
         const archiveAllButton = document.createElement("button");
         archiveAllButton.type = "button";
         archiveAllButton.className = "twicc-session-flow-archive-all";
@@ -2445,7 +2445,7 @@
 
       const list = document.createElement("div");
       list.className = "twicc-session-flow-list";
-      if (lane.id === "in_progress" && widget.classList.contains("twicc-session-flow-pane")) {
+      if (lane.id === "in_progress") {
         if (composerMode) {
           list.append(createSessionComposer());
         }

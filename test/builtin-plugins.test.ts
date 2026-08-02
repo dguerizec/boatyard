@@ -566,6 +566,7 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(styles, /\.twicc-session-flow-orientation-icon/);
   assert.match(styles, /\.twicc-session-flow-archive-dropzone/);
   assert.match(styles, /\.twicc-session-flow-archive-dropzone\.drop-target/);
+  assert.doesNotMatch(styles, /\.twicc-session-flow-widget:not\(\.twicc-session-flow-pane\) \.twicc-session-flow-archive-dropzone/);
   assert.match(styles, /\.twicc-session-flow-archive-all/);
   assert.match(styles, /\.twicc-session-flow-archive-dialog/);
   assert.match(styles, /\.twicc-session-flow-composer/);
@@ -581,6 +582,9 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /actions\.append\(directButton, worktreeButton\)/);
   assert.match(styles, /\.twicc-session-flow-worktree-icon/);
   assert.match(renderer, /laneHeader\.append\(createCreationActions\(\)\)/);
+  assert.match(renderer, /archiveDropzone\.hidden = false/);
+  assert.match(renderer, /list\.append\(createSessionComposer\(\)\)/);
+  assert.doesNotMatch(renderer, /lane\.id === "in_progress" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
   assert.match(renderer, /createComposerField\("Title \(optional\)", titleInput\)/);
   assert.match(renderer, /sessionFlowLane: "in_progress"/);
   assert.match(renderer, /pendingCreatedSessions\.set\(created\.sessionId/);
@@ -589,7 +593,7 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /twicc-session-flow-insertion-placeholder/);
   assert.match(renderer, /invokePlugin\("reorderSessionFlow"/);
   assert.match(renderer, /archiveAllButton\.textContent = "Archive all"/);
-  assert.match(renderer, /lane\.id === "testing" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
+  assert.doesNotMatch(renderer, /lane\.id === "testing" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
   assert.match(renderer, /title\.textContent = "Archive all testing sessions"/);
   assert.match(renderer, /BoatyardOverlayDialog\?\.show/);
   assert.match(renderer, /card\.setAttribute\("aria-current", "true"\)/);
