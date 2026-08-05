@@ -12,7 +12,6 @@ type RendererEventBindingsOptions = {
   boatyard: BoatyardBridge;
   globalNav: HTMLElement;
   globalSettingsButton: HTMLElement;
-  globalViewButton: HTMLElement;
   getCurrentProject: () => RendererProject;
   getCurrentView: () => string;
   handleTerminalData: (payload: { terminalId: unknown; data: unknown }) => void;
@@ -45,7 +44,6 @@ export function registerRendererEventBindings({
   boatyard,
   globalNav,
   globalSettingsButton,
-  globalViewButton,
   getCurrentProject,
   getCurrentView,
   handleTerminalData,
@@ -173,7 +171,6 @@ export function registerRendererEventBindings({
 
   globalNav.addEventListener("click", selectGlobal);
   globalSettingsButton.addEventListener("click", selectGlobalSettings);
-  globalViewButton.addEventListener("click", selectGlobal);
   manualTourButton.addEventListener("click", () => openOnboardingTour({ force: true }));
   addProjectButton.addEventListener("click", selectCreateProject);
   windowObject.addEventListener("keydown", (event) => {

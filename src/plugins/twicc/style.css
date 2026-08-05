@@ -10,12 +10,12 @@
 
 .project-twicc-status.input {
   border-color: rgba(250, 204, 21, 0.58);
-  color: #fde68a;
+  color: var(--warning-text);
   animation: twicc-status-input-pulse 1s linear infinite;
 }
 
 .project-twicc-status.done {
-  border-color: rgba(65, 184, 131, 0.42);
+  border-color: rgba(var(--accent-rgb), 0.42);
   color: #6fcf9f;
 }
 
@@ -84,7 +84,7 @@
   gap: 0;
   padding: 8px;
   overflow: hidden;
-  background: rgba(10, 15, 23, 0.96);
+  background: rgba(var(--canvas-rgb), 0.96);
 }
 
 .twicc-session-flow-widget.twicc-session-flow-pane {
@@ -184,7 +184,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  background: rgba(10, 15, 23, 0.96);
+  background: rgba(var(--canvas-rgb), 0.96);
 }
 
 .twicc-session-flow-heading {
@@ -308,8 +308,8 @@
 .twicc-session-flow-composer button {
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: rgba(17, 24, 35, 0.88);
-  color: #aebbd2;
+  background: rgba(var(--deep-rgb), 0.88);
+  color: var(--text-subtle);
   font: inherit;
   font-weight: 800;
 }
@@ -362,7 +362,7 @@
   border: 1px solid color-mix(in srgb, var(--twicc-session-flow-color) 48%, var(--line));
   border-left: 2px solid var(--twicc-session-flow-color);
   border-radius: 7px;
-  background: linear-gradient(145deg, rgba(18, 28, 40, 0.98), rgba(11, 17, 26, 0.98));
+  background: linear-gradient(145deg, rgba(var(--panel-rgb), 0.98), rgba(var(--deep-rgb), 0.98));
 }
 
 .twicc-session-flow-composer > header {
@@ -409,7 +409,7 @@
   min-width: 0;
   display: grid;
   gap: 4px;
-  color: #b9c3d4;
+  color: var(--text-soft);
   font-size: 10px;
   font-weight: 800;
 }
@@ -425,9 +425,9 @@
   min-width: 0;
   box-sizing: border-box;
   padding: 7px 8px;
-  border: 1px solid #3a4658;
+  border: 1px solid var(--line);
   border-radius: 6px;
-  background: rgba(9, 14, 22, 0.86);
+  background: rgba(var(--canvas-rgb), 0.86);
   color: var(--text);
   font: inherit;
   font-size: 11px;
@@ -522,7 +522,7 @@
   border: 1px solid var(--line);
   border-left: 2px solid var(--twicc-session-flow-color);
   border-radius: 7px;
-  background: linear-gradient(110deg, rgba(21, 28, 39, 0.96), rgba(13, 19, 28, 0.96));
+  background: linear-gradient(110deg, rgba(var(--panel-rgb), 0.96), rgba(var(--deep-rgb), 0.96));
   cursor: grab;
   transition: border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
 }
@@ -587,7 +587,7 @@
 }
 
 .twicc-session-flow-provider.openai {
-  color: #aeb8c9;
+  color: var(--text-subtle);
   -webkit-mask-image: url("../../renderer/assets/fontawesome-brands-openai.svg");
   mask-image: url("../../renderer/assets/fontawesome-brands-openai.svg");
 }
@@ -599,7 +599,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: #aebbd2;
+  color: var(--text-subtle);
   font-size: 12px;
   font-weight: 800;
   line-height: 18px;
@@ -783,7 +783,7 @@
   padding: 5px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(23, 29, 36, 0.99);
+  background: rgba(var(--panel-rgb), 0.99);
   box-shadow: var(--shadow);
 }
 
@@ -852,7 +852,7 @@
   gap: 7px;
   padding: 3px 5px;
   border-radius: 6px;
-  background: rgba(7, 13, 18, 0.34);
+  background: rgba(var(--canvas-rgb), 0.34);
 }
 
 .twicc-usage-provider-icon {
@@ -861,7 +861,7 @@
   flex: 0 0 auto;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(148, 163, 184, 0.3);
+  border: 1px solid rgba(var(--line-rgb), 0.3);
   border-radius: 999px;
   color: var(--text);
   font-size: 10px;
@@ -925,8 +925,8 @@
   place-items: center;
   border-radius: 999px;
   background:
-    radial-gradient(circle at center, #111823 0 58%, transparent 60%),
-    conic-gradient(var(--twicc-usage-color) var(--twicc-usage-percent), rgba(148, 163, 184, 0.2) 0);
+    radial-gradient(circle at center, var(--panel) 0 58%, transparent 60%),
+    conic-gradient(var(--twicc-usage-color) var(--twicc-usage-percent), rgba(var(--line-rgb), 0.2) 0);
   color: var(--text);
   font-size: 8px;
   font-weight: 900;
@@ -1026,7 +1026,7 @@
       from 270deg,
       #41b883 0 var(--twicc-burn-safe-arc),
       #f87171 var(--twicc-burn-safe-arc) var(--twicc-burn-danger-arc),
-      rgba(148, 163, 184, 0.22) var(--twicc-burn-danger-arc) 50%,
+      rgba(var(--line-rgb), 0.22) var(--twicc-burn-danger-arc) 50%,
       transparent 50%
     );
   -webkit-mask: radial-gradient(circle at center, transparent 0 53%, #000 55%);
@@ -1083,4 +1083,44 @@
 
 .twicc-usage-compact-metric.unknown {
   color: var(--muted);
+}
+
+:root[data-theme="light"] .twicc-session-flow-widget,
+:root[data-theme="light"] .twicc-session-flow-lane {
+  --twicc-session-flow-color: #08778c;
+}
+
+:root[data-theme="light"] .twicc-session-flow-lane.backlog {
+  --twicc-session-flow-color: #6c47ad;
+}
+
+:root[data-theme="light"] .twicc-session-flow-lane.testing {
+  --twicc-session-flow-color: var(--accent);
+}
+
+:root[data-theme="light"] .twicc-session-flow-card.current-session {
+  border-color: #08778c;
+  background: linear-gradient(110deg, color-mix(in srgb, #22d3ee 12%, var(--panel)), var(--panel));
+}
+
+:root[data-theme="light"] .twicc-session-flow-card[data-process-state="assistant_turn"] .twicc-session-flow-title,
+:root[data-theme="light"] .twicc-session-flow-card[data-process-state="starting"] .twicc-session-flow-title,
+:root[data-theme="light"] .twicc-session-flow-current-badge {
+  color: #08778c;
+}
+
+:root[data-theme="light"] .twicc-session-flow-title-input {
+  background: color-mix(in srgb, #22d3ee 7%, var(--input));
+}
+
+:root[data-theme="light"] .twicc-usage-compact-metric {
+  color: var(--success-text);
+}
+
+:root[data-theme="light"] .twicc-usage-compact-metric.warn {
+  color: var(--warning-text);
+}
+
+:root[data-theme="light"] .twicc-usage-compact-metric.danger {
+  color: var(--danger-text);
 }

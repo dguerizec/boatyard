@@ -41,7 +41,6 @@ export function createProjectSidebar({
       addProjectButton,
       globalNav,
       globalNavRow,
-      globalViewButton,
       pinnedProjects,
       projectCount,
       projectList,
@@ -1105,7 +1104,6 @@ export function createProjectSidebar({
 
       globalNav.classList.toggle("active", getViewState().currentView === "global" || getViewState().currentView === "global-settings");
       globalNavRow.classList.toggle("active", getViewState().currentView === "global" || getViewState().currentView === "global-settings");
-      globalViewButton.classList.toggle("active", getViewState().currentView === "global");
       addProjectButton.classList.toggle("active", getViewState().currentView === "project-create");
 
       if (projects.length === 0) {

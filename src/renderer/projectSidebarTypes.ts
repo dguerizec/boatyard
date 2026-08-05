@@ -14,7 +14,6 @@ export type ProjectSidebarElements = {
   addProjectButton: HTMLButtonElement;
   globalNav: HTMLElement;
   globalNavRow: HTMLElement;
-  globalViewButton: HTMLButtonElement;
   pinnedProjects: HTMLElement;
   projectCount: HTMLElement;
   projectList: HTMLElement;

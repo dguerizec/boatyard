@@ -36,6 +36,7 @@ import type {
 } from "./rendererTypes.js";
 import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createToolIcon } from "./toolIcons.js";
+import { createThemeToggle } from "./themeController.js";
 import { createUpdateViews } from "./updateViews.js";
 import { createWebAppMenus } from "./webAppMenus.js";
 import { createWebAppLoadTracker } from "./webAppLoadTracker.js";
@@ -55,9 +56,14 @@ registerPluginRegistry(window);
 registerPluginSettingsFields(window);
 
 const {
-  addProjectButton, appShell, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, globalViewButton, manualTourButton, pinnedProjects,
-  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, splitScreenButton, workspace, workspaceKicker, workspaceSummary, workspaceTitle
+  addProjectButton, appShell, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, manualTourButton, pinnedProjects,
+  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, splitScreenButton, themeToggleButton, workspace, workspaceKicker, workspaceSummary, workspaceTitle
 } = rendererDomElements;
+
+createThemeToggle({
+  button: themeToggleButton,
+  createIcon: createToolIcon
+});
 
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
 
@@ -739,7 +745,6 @@ const projectSidebar = createProjectSidebar({
     addProjectButton,
     globalNav,
     globalNavRow,
-    globalViewButton,
     pinnedProjects,
     projectCount,
     projectList,
@@ -1040,7 +1045,6 @@ registerRendererEventBindings({
   boatyard: boatyardWindow.boatyard,
   globalNav,
   globalSettingsButton,
-  globalViewButton,
   getCurrentProject: () => getCurrentProject() || getGlobalWorkspace() || ({
     id: GLOBAL_WORKSPACE_ID,
     isGlobalWorkspace: true,

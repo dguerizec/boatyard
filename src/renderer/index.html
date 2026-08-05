@@ -1,9 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Boatyard</title>
+    <script>
+      try {
+        document.documentElement.dataset.theme = localStorage.getItem("boatyard.theme") === "light" ? "light" : "dark";
+      } catch {
+        document.documentElement.dataset.theme = "dark";
+      }
+    </script>
     <link rel="icon" href="./assets/boatyard-icon.svg" type="image/svg+xml">
     <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
     <link rel="stylesheet" href="./styles.css">
@@ -23,7 +30,7 @@
       <div class="topbar-actions">
         <button id="split-screen" class="secondary-button" type="button">Split screen</button>
         <button id="manual-tour" class="secondary-button" type="button">Tour</button>
-        <button id="global-view" class="secondary-button" type="button">Global</button>
+        <button id="theme-toggle" class="icon-button theme-toggle" type="button" aria-label="Switch to light theme" title="Switch to light theme"></button>
       </div>
     </header>
 
