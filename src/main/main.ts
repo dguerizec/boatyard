@@ -23,6 +23,7 @@ import type {
   WebAppOpenOptions
 } from "./mainTypes.js";
 import { createWebAppContextMenu } from "./webAppContextMenu.js";
+import { createAppThemeManager, getAppBackgroundColor } from "./appTheme.js";
 import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
 import {
   DEFAULT_PROFILE_NAME,
@@ -39,7 +40,7 @@ import {
 const { execFile } = require("node:child_process");
 const path = require("node:path");
 const { promisify } = require("node:util");
-const { app, BrowserWindow, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, screen, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, nativeTheme, screen, shell } = require("electron");
 const { createCaptureRunner } = require("./captureRunner");
 const { PasswordManager } = require("./passwordManager");
 const { PluginHost } = require("./pluginHost");
@@ -115,6 +116,10 @@ type WorkspaceWindowRecord = {
   window: ElectronBrowserWindow;
 };
 const workspaceWindows = new Map<string, WorkspaceWindowRecord>();
+const appThemeManager = createAppThemeManager({
+  getTargets: () => [...workspaceWindows.values()].map((workspaceWindow) => workspaceWindow.runtime),
+  nativeTheme
+});
 const individuallyClosingWindowIds = new Set<string>();
 let isQuitting = false;
 const webAppViews = new Map<string, WebAppItem>();
@@ -289,7 +294,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     minHeight: 620,
     title: "Boatyard",
     icon: path.join(__dirname, "../renderer/assets/boatyard-icon.png"),
-    backgroundColor: "#101418",
+    backgroundColor: getAppBackgroundColor(appThemeManager.getTheme()),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -307,6 +312,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       id: workspaceWindowId,
       window,
       store: configuration.store,
+      theme: appThemeManager.getTheme(),
       openExternalUrl
     }),
     saveStateTimer: null
@@ -1140,6 +1146,13 @@ function registerIpcHandlers() {
     return workspaceWindow ? configuration.store.getStateForWorkspaceWindow(workspaceWindow.id) : configuration.store.getState();
   });
 
+  ipcMain.handle("theme:set", (event: IpcMainInvokeEvent, theme: unknown) => {
+    if (!getWorkspaceWindowForWebContents(event.sender)) {
+      throw new Error("Application theme changes may only originate from a workspace window.");
+    }
+    return appThemeManager.setTheme(theme);
+  });
+
   ipcMain.handle("settings:update", (event: IpcMainInvokeEvent, patch: UnknownRecord) => {
     const configuration = getConfigurationForEvent(event);
     if (
@@ -1475,6 +1488,7 @@ if (isPrimaryInstance) {
 }
 
 if (isPrimaryInstance) app.whenReady().then(async () => {
+  appThemeManager.setTheme("dark");
   migrateConfigurationRootToProfiles(initialLaunchDescriptor.configurationRoot);
   secretStore = new SecretStore(path.join(initialLaunchDescriptor.configurationRoot, "secrets.json"));
   secretStore.load();

@@ -166,6 +166,7 @@ export type BoatyardBridge = {
   reorderProjects(projectIds: string[]): Promise<RendererState>;
   restoreWebApps(token?: unknown): Promise<unknown>;
   restartToUpdate(update: UnknownRecord): Promise<unknown>;
+  setTheme?: (theme: "dark" | "light") => Promise<unknown>;
   setVisibleWebApps(...payload: unknown[]): Promise<unknown>;
   showWebApp(...payload: unknown[]): Promise<unknown>;
   updateGlobalPluginConfig(pluginId: string, values: UnknownRecord): Promise<RendererState>;

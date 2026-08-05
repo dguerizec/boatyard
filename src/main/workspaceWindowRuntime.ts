@@ -15,13 +15,18 @@ import type {
   WebAppOpenOptions
 } from "./mainTypes.js";
 import { createWebAppContextMenu } from "./webAppContextMenu.js";
+import {
+  getAppBackgroundColor,
+  getWebAppBackgroundColor,
+  normalizeAppTheme,
+  type AppTheme
+} from "./appTheme.js";
 
 const { WebContentsView } = require("electron");
 const path = require("node:path");
 
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
-const DEFAULT_WEBAPP_BACKGROUND_COLOR = "#0b0f14";
 
 type WebAppFreeze = { all: boolean; keys: Set<string>; rect: Rectangle | null };
 
@@ -29,6 +34,7 @@ type WorkspaceWindowRuntimeOptions = {
   id: string;
   openExternalUrl(url: unknown): unknown;
   store: ProjectStoreInstance;
+  theme?: unknown;
   window: ElectronBrowserWindow;
 };
 
@@ -44,10 +50,6 @@ function normalizeWebAppBounds(bounds: unknown): Rectangle {
     width: Math.max(1, Math.round(finiteNumber(source.width, 1))),
     height: Math.max(1, Math.round(finiteNumber(source.height, 1)))
   };
-}
-
-function normalizeWebAppBackgroundColor(backgroundColor: unknown) {
-  return backgroundColor === "#ffffff" ? "#ffffff" : DEFAULT_WEBAPP_BACKGROUND_COLOR;
 }
 
 function webAppRectsIntersect(left: Rectangle, right: Rectangle) {
@@ -76,16 +78,18 @@ export class WorkspaceWindowRuntime {
   readonly window: ElectronBrowserWindow;
   private readonly openExternalUrl: WorkspaceWindowRuntimeOptions["openExternalUrl"];
   private readonly store: ProjectStoreInstance;
+  private theme: AppTheme;
   private readonly webAppViews = new Map<string, WebAppItem>();
   private activeWebAppKey: string | null = null;
   private visibleWebAppKeys = new Set<string>();
   private readonly webAppFreezes = new Map<number, WebAppFreeze>();
   private nextWebAppFreezeToken = 1;
 
-  constructor({ id, openExternalUrl, store, window }: WorkspaceWindowRuntimeOptions) {
+  constructor({ id, openExternalUrl, store, theme, window }: WorkspaceWindowRuntimeOptions) {
     this.id = id;
     this.openExternalUrl = openExternalUrl;
     this.store = store;
+    this.theme = normalizeAppTheme(theme);
     this.window = window;
   }
 
@@ -176,7 +180,7 @@ export class WorkspaceWindowRuntime {
         sandbox: true
       }
     });
-    view.setBackgroundColor(DEFAULT_WEBAPP_BACKGROUND_COLOR);
+    view.setBackgroundColor(getWebAppBackgroundColor(null, this.theme));
     view.webContents.setWindowOpenHandler((details: HandlerDetails) => this.handleWebAppWindowOpen(key, details));
     view.webContents.on("context-menu", (_event: Event, params: ContextMenuParams) => {
       void createWebAppContextMenu(view.webContents, params, {
@@ -227,6 +231,7 @@ export class WorkspaceWindowRuntime {
     const item: WebAppItem = {
       view,
       url: null,
+      backgroundColor: null,
       bounds: null,
       autofillEnabled: false
     };
@@ -275,7 +280,8 @@ export class WorkspaceWindowRuntime {
     if (typeof autofillEnabled === "boolean") {
       webApp.autofillEnabled = autofillEnabled;
     }
-    webApp.view.setBackgroundColor(normalizeWebAppBackgroundColor(backgroundColor));
+    webApp.backgroundColor = backgroundColor;
+    webApp.view.setBackgroundColor(getWebAppBackgroundColor(webApp.backgroundColor, this.theme));
     webApp.bounds = normalizeWebAppBounds(bounds);
     webApp.view.setBounds(webApp.bounds);
     webApp.view.setVisible(this.visibleWebAppKeys.has(String(key)) && !this.isWebAppKeyFrozen(String(key)));
@@ -287,6 +293,14 @@ export class WorkspaceWindowRuntime {
       this.loadWebAppUrl(webApp, requestedUrl);
     } else if (!webApp.view.webContents.isLoadingMainFrame()) {
       this.sendWebAppLoaded(key, webApp.view.webContents.getURL());
+    }
+  }
+
+  setTheme(theme: unknown) {
+    this.theme = normalizeAppTheme(theme);
+    this.window.setBackgroundColor(getAppBackgroundColor(this.theme));
+    for (const item of this.webAppViews.values()) {
+      item.view.setBackgroundColor(getWebAppBackgroundColor(item.backgroundColor, this.theme));
     }
   }
 

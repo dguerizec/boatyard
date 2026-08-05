@@ -5,6 +5,7 @@ type ThemeStorage = Pick<Storage, "getItem" | "setItem">;
 type ThemeToggleOptions = {
   button: HTMLButtonElement;
   createIcon: (name: "moon" | "sun") => SVGElement;
+  onThemeChange?: (theme: AppTheme) => unknown;
   root?: HTMLElement;
   storage?: ThemeStorage;
   windowObject?: Window;
@@ -33,6 +34,7 @@ function readTheme(storage: ThemeStorage): AppTheme {
 export function createThemeToggle({
   button,
   createIcon,
+  onThemeChange,
   root = document.documentElement,
   storage = window.localStorage,
   windowObject = window
@@ -47,6 +49,14 @@ export function createThemeToggle({
     button.replaceChildren(createIcon(presentation.icon));
     button.setAttribute("aria-label", presentation.label);
     button.title = presentation.label;
+
+    try {
+      void Promise.resolve(onThemeChange?.(theme)).catch((error) => {
+        console.error("Could not synchronize the application theme:", error);
+      });
+    } catch (error) {
+      console.error("Could not synchronize the application theme:", error);
+    }
   }
 
   function persist(nextTheme: AppTheme) {

@@ -108,6 +108,7 @@ export type UpdateManagerInstance = {
 
 export type WebAppItem = {
   autofillEnabled: boolean;
+  backgroundColor?: unknown;
   bounds: Rectangle | null;
   url: string | null;
   view: ElectronWebContentsView;

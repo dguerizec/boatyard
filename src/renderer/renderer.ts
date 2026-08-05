@@ -62,7 +62,8 @@ const {
 
 createThemeToggle({
   button: themeToggleButton,
-  createIcon: createToolIcon
+  createIcon: createToolIcon,
+  onThemeChange: (theme) => boatyardWindow.boatyard.setTheme?.(theme)
 });
 
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;

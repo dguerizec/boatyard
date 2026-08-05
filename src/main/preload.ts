@@ -10,6 +10,7 @@ type Unsubscribe = () => void;
 contextBridge.exposeInMainWorld("boatyard", {
   getState: () => ipcRenderer.invoke("state:get"),
   createWorkspaceWindow: () => ipcRenderer.invoke("workspace:create-window"),
+  setTheme: (theme: unknown) => ipcRenderer.invoke("theme:set", theme),
   updateSettings: (patch: unknown) => ipcRenderer.invoke("settings:update", patch),
   updateNavigation: (navigation: unknown) => ipcRenderer.invoke("navigation:update", navigation),
   updateOnboarding: (onboarding: unknown) => ipcRenderer.invoke("onboarding:update", onboarding),

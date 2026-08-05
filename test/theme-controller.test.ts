@@ -28,6 +28,7 @@ test("theme toggle presentation describes the available action", () => {
 
 test("theme toggle persists clicks and follows changes from other windows", () => {
   const storedValues = new Map([[THEME_STORAGE_KEY, "light"]]);
+  const synchronizedThemes: string[] = [];
   const root = { dataset: {} } as unknown as HTMLElement;
   const attributes = new Map<string, string>();
   let clickListener: (() => void) | null = null;
@@ -63,6 +64,9 @@ test("theme toggle persists clicks and follows changes from other windows", () =
   const toggle = createThemeToggle({
     button,
     createIcon: () => ({}) as SVGElement,
+    onThemeChange(theme: string) {
+      synchronizedThemes.push(theme);
+    },
     root,
     storage,
     windowObject
@@ -71,11 +75,13 @@ test("theme toggle persists clicks and follows changes from other windows", () =
   assert.equal(toggle.getTheme(), "light");
   assert.equal(root.dataset.theme, "light");
   assert.equal(attributes.get("aria-label"), "Switch to dark theme");
+  assert.deepEqual(synchronizedThemes, ["light"]);
 
   assert.ok(clickListener);
   (clickListener as () => void)();
   assert.equal(toggle.getTheme(), "dark");
   assert.equal(storedValues.get(THEME_STORAGE_KEY), "dark");
+  assert.deepEqual(synchronizedThemes, ["light", "dark"]);
 
   assert.ok(storageListener);
   (storageListener as (event: { key: string; newValue: string | null }) => void)({
@@ -84,4 +90,5 @@ test("theme toggle persists clicks and follows changes from other windows", () =
   });
   assert.equal(toggle.getTheme(), "light");
   assert.equal(root.dataset.theme, "light");
+  assert.deepEqual(synchronizedThemes, ["light", "dark", "light"]);
 });
