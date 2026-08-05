@@ -523,7 +523,7 @@
   border-left: 2px solid var(--twicc-session-flow-color);
   border-radius: 7px;
   background: linear-gradient(110deg, rgba(var(--panel-rgb), 0.96), rgba(var(--deep-rgb), 0.96));
-  cursor: grab;
+  cursor: pointer;
   transition: border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
 }
 
@@ -538,6 +538,7 @@
 }
 
 .twicc-session-flow-card.dragging {
+  cursor: grabbing;
   opacity: 0.45;
 }
 
@@ -611,14 +612,6 @@
 .twicc-session-flow-card[data-process-state="assistant_turn"] .twicc-session-flow-title,
 .twicc-session-flow-card[data-process-state="starting"] .twicc-session-flow-title {
   color: #22d3ee;
-}
-
-.twicc-session-flow-title:hover,
-.twicc-session-flow-title:focus-visible {
-  color: var(--text);
-  outline: none;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 .twicc-session-flow-title-input {

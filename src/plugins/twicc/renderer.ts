@@ -195,6 +195,7 @@
   const TWICC_PROJECT_STATUS_REFRESH_MS = 5000;
   const TWICC_SESSION_FLOW_REFRESH_MS = 15000;
   const TWICC_SESSION_FLOW_OPTIMISTIC_TTL_MS = 60000;
+  const TWICC_SESSION_FLOW_SINGLE_CLICK_DELAY_MS = 300;
   const WEBAPP_URL_CHANGED_EVENT = "boatyard:webapp-url-changed";
   const TWICC_SESSION_FLOW_ORIENTATION_EVENT = "boatyard:twicc-session-flow-orientation";
   const TWICC_SESSION_FLOW_ORIENTATION_STORAGE_PREFIX = "boatyard:twicc-session-flow-orientation:";
@@ -2423,13 +2424,29 @@
       const isCurrentSession = session.id === activeSessionId;
       const isEditingTitle = session.id === editingSessionId;
       let dragStarted = false;
+      let pendingOpenTimer: number | null = null;
+      const cancelPendingOpen = (): void => {
+        if (pendingOpenTimer === null) {
+          return;
+        }
+        globalScope.clearTimeout(pendingOpenTimer);
+        pendingOpenTimer = null;
+      };
+      const isInteractiveTarget = (target: EventTarget | null): boolean => {
+        return Boolean((target as Element | null)?.closest?.("button, input, select, textarea, a"));
+      };
       card.classList.toggle("current-session", isCurrentSession);
       card.classList.toggle("editing-title", isEditingTitle);
       card.draggable = !isEditingTitle;
       card.tabIndex = isEditingTitle ? -1 : 0;
       card.dataset.sessionId = session.id;
       card.dataset.processState = session.processState || "idle";
-      card.setAttribute("aria-label", `Open ${session.title} in TwiCC`);
+      card.title = `Open ${session.title}; double-click to rename`;
+      card.setAttribute(
+        "aria-label",
+        `${session.title}. Open in TwiCC; double-click or press F2 to rename.`
+      );
+      card.setAttribute("aria-keyshortcuts", "F2");
       if (isCurrentSession) {
         card.setAttribute("aria-current", "true");
       }
@@ -2442,7 +2459,7 @@
       if (!session.provider || !["claude_code", "codex"].includes(session.provider)) {
         provider.textContent = String(session.provider || "?").slice(0, 1).toUpperCase();
       }
-      let title: HTMLInputElement | HTMLButtonElement;
+      let title: HTMLInputElement | HTMLSpanElement;
       if (isEditingTitle) {
         const titleInput = document.createElement("input");
         title = titleInput;
@@ -2471,18 +2488,10 @@
           void saveSessionTitle(session, titleInput);
         });
       } else {
-        const titleButton = document.createElement("button");
-        title = titleButton;
-        titleButton.className = "twicc-session-flow-title";
-        titleButton.type = "button";
-        titleButton.textContent = session.title;
-        titleButton.title = `Rename ${session.title}`;
-        titleButton.setAttribute("aria-label", titleButton.title);
-        titleButton.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          startSessionTitleEditing(session);
-        });
+        const titleLabel = document.createElement("span");
+        title = titleLabel;
+        titleLabel.className = "twicc-session-flow-title";
+        titleLabel.textContent = session.title;
       }
       const currentBadge = document.createElement("span");
       currentBadge.className = "twicc-session-flow-current-badge";
@@ -2524,27 +2533,47 @@
 
       card.append(main, meta, stats);
       card.addEventListener("click", (event) => {
-        if (dragStarted || isEditingTitle) {
+        if (dragStarted || isEditingTitle || isInteractiveTarget(event.target)) {
           return;
         }
-        const target = event.target as Element | null;
-        if (target?.closest?.("button, input, select, textarea, a")) {
+        if (event.detail > 1) {
+          cancelPendingOpen();
           return;
         }
-        openSession(session.id);
+        cancelPendingOpen();
+        pendingOpenTimer = globalScope.setTimeout(() => {
+          pendingOpenTimer = null;
+          if (card.isConnected) {
+            openSession(session.id);
+          }
+        }, TWICC_SESSION_FLOW_SINGLE_CLICK_DELAY_MS);
+      });
+      card.addEventListener("dblclick", (event) => {
+        if (dragStarted || isEditingTitle || isInteractiveTarget(event.target)) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        cancelPendingOpen();
+        startSessionTitleEditing(session);
       });
       card.addEventListener("keydown", (event) => {
-        if (
-          event.target === card
-          && !isEditingTitle
-          && (event.key === "Enter" || event.key === " ")
-        ) {
+        if (event.target !== card || isEditingTitle) {
+          return;
+        }
+        if (event.key === "F2") {
           event.preventDefault();
+          cancelPendingOpen();
+          startSessionTitleEditing(session);
+        } else if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          cancelPendingOpen();
           openSession(session.id);
         }
       });
       card.addEventListener("dragstart", (event) => {
         event.stopPropagation();
+        cancelPendingOpen();
         dragStarted = true;
         beginDrag(session.id, card, event);
         card.classList.add("dragging");
