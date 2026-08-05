@@ -592,6 +592,12 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /draggedSessionGhostHeight \/ 2/);
   assert.match(renderer, /twicc-session-flow-insertion-placeholder/);
   assert.match(renderer, /invokePlugin\("reorderSessionFlow"/);
+  assert.match(renderer, /invokePlugin\("renameSession"/);
+  assert.match(renderer, /card\.draggable = !isEditingTitle/);
+  assert.match(renderer, /card\.addEventListener\("click"/);
+  assert.match(renderer, /startSessionTitleEditing\(session\)/);
+  assert.match(renderer, /event\.key === "Escape"/);
+  assert.match(styles, /\.twicc-session-flow-title-input/);
   assert.match(renderer, /archiveAllButton\.textContent = "Archive all"/);
   assert.doesNotMatch(renderer, /lane\.id === "testing" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
   assert.match(renderer, /\{ id: "testing", label: "Done" \}/);

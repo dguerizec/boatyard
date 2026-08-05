@@ -15,6 +15,7 @@ const {
   loadTwiccProcesses,
   getTwiccProjectProcessStatuses,
   reorderTwiccSessionFlow,
+  updateTwiccSessionTitle,
   updateTwiccSessionFlowLane
 } = require("./service");
 
@@ -24,6 +25,7 @@ type GlobalConfigPayload = { globalConfig?: Record<string, unknown> };
 type SourcePathPayload = { sourcePath?: unknown };
 type SessionFlowPayload = GlobalConfigPayload & { project?: unknown };
 type SessionFlowSessionPayload = GlobalConfigPayload & { sessionId?: unknown };
+type SessionTitlePayload = SessionFlowSessionPayload & { title?: unknown };
 type SessionFlowLanePayload = GlobalConfigPayload & { lane?: unknown; sessionId?: unknown };
 type SessionFlowOrderPayload = GlobalConfigPayload & { lane?: unknown; sessionIds?: unknown };
 type SessionCreationPayload = GlobalConfigPayload & {
@@ -95,6 +97,13 @@ function activate(ctx: TwiccPluginContext) {
 
   ctx.actions.handle<SessionFlowSessionPayload>("archiveSession", async ({ sessionId, globalConfig } = {}) => {
     return archiveTwiccSession(sessionId, {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    });
+  });
+
+  ctx.actions.handle<SessionTitlePayload>("renameSession", async ({ sessionId, title, globalConfig } = {}) => {
+    return updateTwiccSessionTitle(sessionId, title, {
       execFileAsync: ctx.execFileAsync,
       globalConfig
     });

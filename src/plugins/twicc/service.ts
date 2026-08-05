@@ -537,6 +537,58 @@ async function loadTwiccSessionFlow(
   return getTwiccSessionFlow(sessions, processes);
 }
 
+async function updateTwiccSessionTitleFromRpc(
+  sessionId: string,
+  title: string,
+  options: TwiccCommandOptions = {}
+): Promise<unknown> {
+  return rpcCommand("update-session/title", {
+    session_id: sessionId,
+    title
+  }, options);
+}
+
+async function updateTwiccSessionTitle(
+  sessionId: unknown,
+  title: unknown,
+  { execFileAsync, ...options }: TwiccCommandOptions = {}
+): Promise<unknown> {
+  const normalizedSessionId = normalizeText(sessionId);
+  const normalizedTitle = normalizeText(title);
+  if (!normalizedSessionId) {
+    throw new Error("TwiCC session id is required.");
+  }
+  if (!normalizedTitle) {
+    throw new Error("TwiCC session title is required.");
+  }
+  if (normalizedTitle.length > 200) {
+    throw new Error("TwiCC session title must be 200 characters or fewer.");
+  }
+
+  if (shouldUseRpc(options)) {
+    try {
+      return await updateTwiccSessionTitleFromRpc(normalizedSessionId, normalizedTitle, options);
+    } catch {
+      // Setting the same title repeatedly is safe, so a local fallback is allowed.
+    }
+  }
+
+  if (typeof execFileAsync !== "function") {
+    throw new Error("TwiCC command runner is required.");
+  }
+
+  const { stdout } = await execFileAsync("twicc", [
+    "update-session",
+    normalizedSessionId,
+    "title",
+    normalizedTitle
+  ], {
+    timeout: 30000,
+    windowsHide: true
+  });
+  return JSON.parse(String(stdout || "null"));
+}
+
 async function updateTwiccSessionFlowLaneFromRpc(
   sessionId: string,
   lane: TwiccSessionFlowLane,
@@ -1187,6 +1239,8 @@ export {
   updateTwiccSessionFlowLane,
   updateTwiccSessionFlowPositionFromRpc,
   updateTwiccSessionFlowPosition,
+  updateTwiccSessionTitleFromRpc,
+  updateTwiccSessionTitle,
   parseGitWorktrees,
   TWICC_SESSION_FLOW_ANNOTATION,
   TWICC_SESSION_FLOW_ORDER_ANNOTATION,

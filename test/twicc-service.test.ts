@@ -27,7 +27,9 @@ const {
   updateTwiccSessionFlowLaneFromRpc,
   updateTwiccSessionFlowLane,
   updateTwiccSessionFlowPositionFromRpc,
-  updateTwiccSessionFlowPosition
+  updateTwiccSessionFlowPosition,
+  updateTwiccSessionTitleFromRpc,
+  updateTwiccSessionTitle
 } = require(`${process.cwd()}/build/plugins/twicc/service`);
 
 type ExecCall = {
@@ -563,6 +565,53 @@ test("getTwiccSessionFlow lets persisted annotations override inferred lanes", (
 
   assert.equal(sessions[0].lane, "backlog");
   assert.equal(sessions[0].order, 3);
+});
+
+test("updateTwiccSessionTitle persists a trimmed title through the CLI", async () => {
+  const result = await updateTwiccSessionTitle("session-1", "  Clear session title  ", {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "twicc");
+      assert.deepEqual(args, [
+        "update-session",
+        "session-1",
+        "title",
+        "Clear session title"
+      ]);
+      return {
+        stdout: JSON.stringify({ status: "updated", session_id: "session-1" })
+      };
+    }
+  });
+
+  assert.deepEqual(result, { status: "updated", session_id: "session-1" });
+});
+
+test("updateTwiccSessionTitleFromRpc persists the title through Twicc RPC", async () => {
+  const result = await updateTwiccSessionTitleFromRpc("session-1", "Clear session title", {
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/rpc/update-session/title");
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        session_id: "session-1",
+        title: "Clear session title"
+      });
+      return {
+        exit_code: 0,
+        result: { status: "updated", session_id: "session-1" },
+        error: null
+      };
+    })
+  });
+
+  assert.deepEqual(result, { status: "updated", session_id: "session-1" });
+});
+
+test("updateTwiccSessionTitle rejects empty and overlong titles", async () => {
+  await assert.rejects(updateTwiccSessionTitle("session-1", "   ", {}), /title is required/);
+  await assert.rejects(updateTwiccSessionTitle("session-1", "x".repeat(201), {}), /200 characters or fewer/);
 });
 
 test("updateTwiccSessionFlowLane persists the lane through the CLI", async () => {

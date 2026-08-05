@@ -541,6 +541,15 @@
   opacity: 0.45;
 }
 
+.twicc-session-flow-card.editing-title {
+  cursor: default;
+}
+
+.twicc-session-flow-card:not(.editing-title):focus-visible {
+  outline: 1px solid rgba(103, 232, 249, 0.7);
+  outline-offset: 1px;
+}
+
 .twicc-session-flow-card-main,
 .twicc-session-flow-meta,
 .twicc-session-flow-stats {
@@ -610,6 +619,25 @@
   outline: none;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.twicc-session-flow-title-input {
+  min-width: 0;
+  flex: 1;
+  height: 22px;
+  padding: 1px 5px;
+  border: 1px solid rgba(103, 232, 249, 0.65);
+  border-radius: 4px;
+  outline: none;
+  background: rgba(8, 18, 34, 0.95);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.twicc-session-flow-title-input[aria-invalid="true"] {
+  border-color: #fb7185;
 }
 
 .twicc-session-flow-current-badge {

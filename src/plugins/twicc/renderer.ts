@@ -1274,6 +1274,9 @@
     let archiveAllDialog: HTMLDialogElement | null = null;
     let moveMenu: HTMLElement | null = null;
     let wasConnected = false;
+    let editingSessionId = "";
+    let editingSessionDraft = "";
+    let renamingSessionId = "";
     let composerMode: TwiccSessionComposerMode = "";
     let creationOptions: TwiccSessionCreationOptions | null = null;
     let creationOptionsLoading = false;
@@ -1340,6 +1343,9 @@
         return;
       }
       activeSessionId = sessionId;
+      if (editingSessionId || renamingSessionId) {
+        return;
+      }
       render();
     }
 
@@ -1505,6 +1511,95 @@
         props.openProjectWebApp("twicc-plugin", url);
       } else {
         globalScope.boatyard?.openExternal?.(url);
+      }
+    }
+
+    function focusSessionTitleEditor(): void {
+      globalScope.queueMicrotask?.(() => {
+        const input = widget.querySelector<HTMLInputElement>(".twicc-session-flow-title-input");
+        input?.focus();
+        input?.select();
+      });
+    }
+
+    function startSessionTitleEditing(session: TwiccSessionFlowItem): void {
+      if (
+        renamingSessionId
+        || widget.dataset.moving === "true"
+        || widget.dataset.archiving === "true"
+      ) {
+        return;
+      }
+      editingSessionId = session.id;
+      editingSessionDraft = session.title;
+      message.hidden = true;
+      message.textContent = "";
+      render();
+      focusSessionTitleEditor();
+    }
+
+    function cancelSessionTitleEditing(sessionId: string): void {
+      if (editingSessionId !== sessionId || renamingSessionId === sessionId) {
+        return;
+      }
+      editingSessionId = "";
+      editingSessionDraft = "";
+      render();
+    }
+
+    async function saveSessionTitle(session: TwiccSessionFlowItem, input: HTMLInputElement): Promise<void> {
+      if (editingSessionId !== session.id || renamingSessionId) {
+        return;
+      }
+      const nextTitle = editingSessionDraft.trim();
+      if (!nextTitle) {
+        message.hidden = false;
+        message.textContent = "Session title is required.";
+        input.setAttribute("aria-invalid", "true");
+        globalScope.queueMicrotask?.(() => input.focus());
+        return;
+      }
+      if (nextTitle === session.title) {
+        cancelSessionTitleEditing(session.id);
+        return;
+      }
+
+      renamingSessionId = session.id;
+      widget.dataset.renaming = "true";
+      input.disabled = true;
+      input.removeAttribute("aria-invalid");
+      try {
+        await invokePlugin("renameSession", {
+          globalConfig: props.globalPluginConfig || {},
+          sessionId: session.id,
+          title: nextTitle
+        });
+        sessions = sessions.map((candidate) => candidate.id === session.id
+          ? { ...candidate, title: nextTitle }
+          : candidate);
+        const pendingSession = pendingCreatedSessions.get(session.id);
+        if (pendingSession) {
+          pendingSession.item = { ...pendingSession.item, title: nextTitle };
+        }
+        editingSessionId = "";
+        editingSessionDraft = "";
+        message.hidden = true;
+        message.textContent = "";
+        render();
+      } catch (error) {
+        message.hidden = false;
+        message.textContent = error instanceof Error ? error.message : String(error);
+        renamingSessionId = "";
+        delete widget.dataset.renaming;
+        render();
+        const currentInput = widget.querySelector<HTMLInputElement>(".twicc-session-flow-title-input");
+        currentInput?.setAttribute("aria-invalid", "true");
+        focusSessionTitleEditor();
+      } finally {
+        if (renamingSessionId === session.id) {
+          renamingSessionId = "";
+          delete widget.dataset.renaming;
+        }
       }
     }
 
@@ -2326,10 +2421,15 @@
       const card = document.createElement("article");
       card.className = "twicc-session-flow-card";
       const isCurrentSession = session.id === activeSessionId;
+      const isEditingTitle = session.id === editingSessionId;
+      let dragStarted = false;
       card.classList.toggle("current-session", isCurrentSession);
-      card.draggable = true;
+      card.classList.toggle("editing-title", isEditingTitle);
+      card.draggable = !isEditingTitle;
+      card.tabIndex = isEditingTitle ? -1 : 0;
       card.dataset.sessionId = session.id;
       card.dataset.processState = session.processState || "idle";
+      card.setAttribute("aria-label", `Open ${session.title} in TwiCC`);
       if (isCurrentSession) {
         card.setAttribute("aria-current", "true");
       }
@@ -2342,14 +2442,48 @@
       if (!session.provider || !["claude_code", "codex"].includes(session.provider)) {
         provider.textContent = String(session.provider || "?").slice(0, 1).toUpperCase();
       }
-      const title = document.createElement("button");
-      title.type = "button";
-      title.className = "twicc-session-flow-title";
-      title.textContent = session.title;
-      title.title = isCurrentSession
-        ? `${session.title} is currently open in TwiCC`
-        : `Open ${session.title} in TwiCC`;
-      title.addEventListener("click", () => openSession(session.id));
+      let title: HTMLInputElement | HTMLButtonElement;
+      if (isEditingTitle) {
+        const titleInput = document.createElement("input");
+        title = titleInput;
+        titleInput.className = "twicc-session-flow-title-input";
+        titleInput.type = "text";
+        titleInput.maxLength = 200;
+        titleInput.value = editingSessionDraft;
+        titleInput.disabled = renamingSessionId === session.id;
+        titleInput.setAttribute("aria-label", `Rename ${session.title}`);
+        titleInput.addEventListener("click", (event) => event.stopPropagation());
+        titleInput.addEventListener("input", () => {
+          editingSessionDraft = titleInput.value;
+          titleInput.removeAttribute("aria-invalid");
+        });
+        titleInput.addEventListener("keydown", (event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") {
+            event.preventDefault();
+            titleInput.blur();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            cancelSessionTitleEditing(session.id);
+          }
+        });
+        titleInput.addEventListener("blur", () => {
+          void saveSessionTitle(session, titleInput);
+        });
+      } else {
+        const titleButton = document.createElement("button");
+        title = titleButton;
+        titleButton.className = "twicc-session-flow-title";
+        titleButton.type = "button";
+        titleButton.textContent = session.title;
+        titleButton.title = `Rename ${session.title}`;
+        titleButton.setAttribute("aria-label", titleButton.title);
+        titleButton.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          startSessionTitleEditing(session);
+        });
+      }
       const currentBadge = document.createElement("span");
       currentBadge.className = "twicc-session-flow-current-badge";
       currentBadge.textContent = "Open";
@@ -2389,8 +2523,29 @@
       }
 
       card.append(main, meta, stats);
+      card.addEventListener("click", (event) => {
+        if (dragStarted || isEditingTitle) {
+          return;
+        }
+        const target = event.target as Element | null;
+        if (target?.closest?.("button, input, select, textarea, a")) {
+          return;
+        }
+        openSession(session.id);
+      });
+      card.addEventListener("keydown", (event) => {
+        if (
+          event.target === card
+          && !isEditingTitle
+          && (event.key === "Enter" || event.key === " ")
+        ) {
+          event.preventDefault();
+          openSession(session.id);
+        }
+      });
       card.addEventListener("dragstart", (event) => {
         event.stopPropagation();
+        dragStarted = true;
         beginDrag(session.id, card, event);
         card.classList.add("dragging");
         if (event.dataTransfer) {
@@ -2402,6 +2557,9 @@
         event.stopPropagation();
         resetDragState();
         card.classList.remove("dragging");
+        globalScope.setTimeout?.(() => {
+          dragStarted = false;
+        }, 0);
       });
       return card;
     }
@@ -2500,6 +2658,8 @@
         !isAlive()
         || widget.dataset.moving === "true"
         || widget.dataset.archiving === "true"
+        || Boolean(editingSessionId)
+        || widget.dataset.renaming === "true"
       ) {
         return;
       }
@@ -2535,9 +2695,11 @@
       }
       if (
         !composerMode
+        && !editingSessionId
         && widget.dataset.moving !== "true"
         && widget.dataset.archiving !== "true"
         && widget.dataset.creating !== "true"
+        && widget.dataset.renaming !== "true"
       ) {
         void load();
       }
