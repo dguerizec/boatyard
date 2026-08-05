@@ -15,6 +15,7 @@ import type {
   WebAppOpenOptions
 } from "./mainTypes.js";
 import { createWebAppContextMenu } from "./webAppContextMenu.js";
+import { applyDefaultWebAppScrollbarStyle } from "./webAppScrollbars.js";
 import {
   getAppBackgroundColor,
   getWebAppBackgroundColor,
@@ -224,6 +225,7 @@ export class WorkspaceWindowRuntime {
     });
     view.webContents.on("dom-ready", () => {
       const item = this.webAppViews.get(key);
+      void applyDefaultWebAppScrollbarStyle(view.webContents);
       view.webContents.send("webapp:autofill-enabled", item?.autofillEnabled === true);
     });
 
