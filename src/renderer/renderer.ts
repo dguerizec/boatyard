@@ -60,12 +60,6 @@ const {
   projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, splitScreenButton, themeToggleButton, workspace, workspaceKicker, workspaceSummary, workspaceTitle
 } = rendererDomElements;
 
-createThemeToggle({
-  button: themeToggleButton,
-  createIcon: createToolIcon,
-  onThemeChange: (theme) => boatyardWindow.boatyard.setTheme?.(theme)
-});
-
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
 
 let state: RendererState = { projects: [] };
@@ -178,6 +172,15 @@ const terminalSurfaces = createTerminalSurfaces({
   createToolIcon,
   clamp,
   defaultWidgetPaneId: DEFAULT_WIDGET_PANE_ID
+});
+
+createThemeToggle({
+  button: themeToggleButton,
+  createIcon: createToolIcon,
+  onThemeChange: (theme) => {
+    terminalSurfaces.setTheme(theme);
+    return boatyardWindow.boatyard.setTheme?.(theme);
+  }
 });
 
 function closeTerminalTabMenu() {

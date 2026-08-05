@@ -2,15 +2,18 @@ import { createTerminalTabDom } from "./terminalTabDom.js";
 import { createTerminalTabMenuController } from "./terminalTabMenu.js";
 import { createTerminalSelectionBridge } from "./terminalSelectionBridge.js";
 import {
+  applyTerminalTheme,
   fitTerminal,
   getFitAddonConstructor,
   getTerminalFitSize,
+  getTerminalTheme,
   getXtermConstructor
 } from "./terminalXtermRuntime.js";
 import type { TerminalCard, TerminalTab } from "./terminalTypes.js";
 import type { RendererProject } from "./rendererTypes.js";
 import type { TerminalCloseFocus, TerminalDataPayload, TerminalExitPayload, TerminalOutputSession, TerminalSurfaceOptions, TerminalSurfaceSession, TerminalSurfacesOptions, TerminalTabSyncTimer } from "./terminalSurfaceTypes.js";
 import { createTerminalSelectionStore } from "./terminalSelectionStore.js";
+import type { AppTheme } from "./themeController.js";
 
 const globalScope: TerminalSurfacesGlobal = window;
 
@@ -32,6 +35,7 @@ export function createTerminalSurfaces({
     const terminalTabOrdersByProject = new Map<string, string[]>();
     let nextTerminalSurfaceId = 1;
     let pendingTerminalCloseFocus: TerminalCloseFocus | null = null;
+    let theme: AppTheme = "dark";
     const TERMINAL_TAB_SYNC_DELAY_MS = 150;
     const TERMINAL_TAB_SYNC_FOLLOWUP_DELAY_MS = 250;
     const TERMINAL_OUTPUT_TAB_SYNC_THROTTLE_MS = 2000;
@@ -152,6 +156,15 @@ export function createTerminalSurfaces({
       for (const [surfaceId, session] of terminalWidgetsBySurface.entries()) {
         if (session.projectId !== activeProjectId) {
           detachTerminalSurface(surfaceId);
+        }
+      }
+    }
+
+    function setTheme(nextTheme: AppTheme) {
+      theme = nextTheme;
+      for (const session of terminalWidgetsBySurface.values()) {
+        if (session.term) {
+          applyTerminalTheme(session.term, theme);
         }
       }
     }
@@ -763,11 +776,7 @@ export function createTerminalSurfaces({
         convertEol: true,
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
         fontSize: 12,
-        theme: {
-          background: "#080c11",
-          foreground: "#d7dde5",
-          cursor: "#41b883"
-        }
+        theme: getTerminalTheme(theme)
       });
       const fitAddon = new FitAddonConstructor();
       term.loadAddon(fitAddon);
@@ -989,6 +998,7 @@ export function createTerminalSurfaces({
       detachProjectTerminal,
       handleTerminalData,
       handleTerminalExit,
-      hydrateTerminalTabOrders
+      hydrateTerminalTabOrders,
+      setTheme
     };
 }

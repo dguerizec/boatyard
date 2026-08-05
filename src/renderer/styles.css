@@ -31,6 +31,7 @@
   --warning-text: #fde68a;
   --danger: #e06c75;
   --danger-text: #ffd7db;
+  --terminal-background: #080c11;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
 }
 
@@ -67,6 +68,7 @@
   --warning-text: #765000;
   --danger: #b3263b;
   --danger-text: #941f32;
+  --terminal-background: #ffffff;
   --shadow: 0 18px 50px rgba(31, 48, 39, 0.16);
 }
 
@@ -2838,7 +2840,7 @@ body.sidebar-collapsed .workspace {
   padding: 0;
   border: 1px solid rgba(var(--line-rgb), 0.7);
   border-radius: 6px;
-  background: #080c11;
+  background: var(--terminal-background);
   overflow: hidden;
 }
 
@@ -2849,6 +2851,7 @@ body.sidebar-collapsed .workspace {
 }
 
 .terminal-viewport .xterm .xterm-viewport {
+  background-color: var(--terminal-background);
   scrollbar-width: none;
 }
 

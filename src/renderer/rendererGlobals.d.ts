@@ -108,6 +108,8 @@ type OnboardingTourGlobal = Window & {
   BoatyardOnboardingTour?: RendererModuleFactory;
 };
 
+type XtermTheme = import("@xterm/xterm").ITheme;
+
 type XtermTerminal = {
   clear(): void;
   clearSelection(): void;
@@ -123,6 +125,9 @@ type XtermTerminal = {
   onData(callback: (data: string) => void): { dispose(): void };
   onSelectionChange(callback: () => void): { dispose(): void };
   open(container: Element | null): void;
+  options: {
+    theme?: XtermTheme;
+  };
   resize(cols: number, rows: number): void;
   rows?: number;
   write(data: string): void;
