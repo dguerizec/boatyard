@@ -1,6 +1,27 @@
 {
-  "generatedForVersion": "0.9.10",
+  "generatedForVersion": "0.9.11",
   "releases": [
+    {
+      "version": "0.9.11",
+      "date": "2026-08-05",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Persistent light theme",
+          "body": "Switch between light and dark appearances, with your choice remembered across launches and applied throughout built-in widgets."
+        },
+        {
+          "category": "Added",
+          "title": "Session renaming from Flow",
+          "body": "Rename TwiCC sessions directly from their Session Flow cards."
+        },
+        {
+          "category": "Changed",
+          "title": "Web view theme synchronization",
+          "body": "Embedded web views now follow Boatyard’s selected appearance for a more consistent workspace."
+        }
+      ]
+    },
     {
       "version": "0.9.10",
       "date": "2026-08-02",

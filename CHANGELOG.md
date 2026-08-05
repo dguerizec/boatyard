@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.11] - 2026-08-05
+
+### Summary
+
+- **v0.9.11: Light Theme & Session Renaming** — Choose a persistent light appearance across Boatyard and embedded web views, and rename TwiCC sessions directly from Session Flow.
+
+### Added
+
+- **Persistent light theme** — Switch between light and dark appearances, with your choice remembered across launches and applied throughout built-in widgets.
+- **Session renaming from Flow** — Rename TwiCC sessions directly from their Session Flow cards.
+
+### Changed
+
+- **Web view theme synchronization** — Embedded web views now follow Boatyard’s selected appearance for a more consistent workspace.
+
 ## [0.9.10] - 2026-08-02
 
 ### Summary
