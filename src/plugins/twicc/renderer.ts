@@ -2030,8 +2030,20 @@
       promptInput.rows = 4;
       promptInput.placeholder = "What should the agent do?";
       promptInput.value = creationDraft.prompt;
+      promptInput.setAttribute("aria-keyshortcuts", "Control+Enter");
       promptInput.addEventListener("input", () => {
         creationDraft.prompt = promptInput.value;
+      });
+      promptInput.addEventListener("keydown", (event) => {
+        if (
+          event.key === "Enter"
+          && event.ctrlKey
+          && !event.repeat
+          && !event.isComposing
+        ) {
+          event.preventDefault();
+          promptInput.form?.requestSubmit();
+        }
       });
 
       return [

@@ -586,6 +586,8 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /list\.append\(createSessionComposer\(\)\)/);
   assert.doesNotMatch(renderer, /lane\.id === "in_progress" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
   assert.match(renderer, /createComposerField\("Title \(optional\)", titleInput\)/);
+  assert.match(renderer, /promptInput\.setAttribute\("aria-keyshortcuts", "Control\+Enter"\)/);
+  assert.match(renderer, /event\.key === "Enter"[\s\S]*?event\.ctrlKey[\s\S]*?promptInput\.form\?\.requestSubmit\(\)/);
   assert.match(renderer, /sessionFlowLane: "in_progress"/);
   assert.match(renderer, /pendingCreatedSessions\.set\(created\.sessionId/);
   assert.match(renderer, /draggedSessionPointerOffsetY/);
