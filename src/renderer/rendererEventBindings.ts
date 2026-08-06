@@ -25,8 +25,8 @@ type RendererEventBindingsOptions = {
   persistVisibleWebAppPaneLayout: (key: string, url: string) => void;
   queueWebAppSync: () => void;
   renderGlobalSettingsPage: () => void;
+  renderPaneLayoutPreservingPanes: (project: RendererProject, options?: UnknownRecord) => void;
   renderProjectList: () => void;
-  renderWorkspacePaneArea: (project: RendererProject) => void;
   selectCreateProject: () => void;
   selectGlobal: () => void;
   selectGlobalSettings: () => void;
@@ -57,8 +57,8 @@ export function registerRendererEventBindings({
   persistVisibleWebAppPaneLayout,
   queueWebAppSync,
   renderGlobalSettingsPage,
+  renderPaneLayoutPreservingPanes,
   renderProjectList,
-  renderWorkspacePaneArea,
   selectCreateProject,
   selectGlobal,
   selectGlobalSettings,
@@ -68,8 +68,6 @@ export function registerRendererEventBindings({
   windowObject,
   workspace
 }: RendererEventBindingsOptions) {
-  let pierWorkloadPaneRefreshFrame: number | null = null;
-
   boatyard.onWebAppUrlChanged(({ key, url }) => {
     if (!key || !url) {
       return;
@@ -158,16 +156,12 @@ export function registerRendererEventBindings({
 
   windowObject.addEventListener("boatyard:project-nav-badges-changed", renderProjectList);
 
-  windowObject.addEventListener("boatyard:pier-workloads-changed", () => {
-    if (getCurrentView() !== "project" || pierWorkloadPaneRefreshFrame) {
-      return;
-    }
-
-    pierWorkloadPaneRefreshFrame = requestAnimationFrame(() => {
-      pierWorkloadPaneRefreshFrame = null;
-      renderWorkspacePaneArea(getCurrentProject());
-    });
-  });
+  windowObject.addEventListener("boatyard:pier-workloads-changed", createPierPaneRefreshHandler({
+    getCurrentProject,
+    getCurrentView,
+    renderPaneLayoutPreservingPanes,
+    requestFrame: (callback) => windowObject.requestAnimationFrame(callback)
+  }));
 
   globalNav.addEventListener("click", selectGlobal);
   globalSettingsButton.addEventListener("click", selectGlobalSettings);
@@ -194,4 +188,32 @@ export function registerRendererEventBindings({
       console.error("Could not load plugins:", error);
     })
     .finally(loadState);
+}
+
+type PierPaneRefreshHandlerOptions = {
+  getCurrentProject: () => RendererProject;
+  getCurrentView: () => string;
+  renderPaneLayoutPreservingPanes: (project: RendererProject, options?: UnknownRecord) => void;
+  requestFrame: (callback: FrameRequestCallback) => number;
+};
+
+export function createPierPaneRefreshHandler({
+  getCurrentProject,
+  getCurrentView,
+  renderPaneLayoutPreservingPanes,
+  requestFrame
+}: PierPaneRefreshHandlerOptions) {
+  let refreshFrame: number | null = null;
+  return () => {
+    if (getCurrentView() !== "project" || refreshFrame !== null) {
+      return;
+    }
+
+    refreshFrame = requestFrame(() => {
+      refreshFrame = null;
+      renderPaneLayoutPreservingPanes(getCurrentProject(), {
+        allowWebAppMenuChanges: true
+      });
+    });
+  };
 }

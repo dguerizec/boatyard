@@ -7,6 +7,7 @@ type PierProject = PluginRegistryRecord & {
 
 type PierConfig = {
   pierApiUrl?: string;
+  pierEnabledEntryPoints?: string;
   pierPreviewUrl?: string;
   pierProjectName?: string;
   pierUrl?: string;
@@ -26,8 +27,21 @@ type PierWorkload = {
   slug?: string;
   status?: string;
   url?: string;
-  urls?: Array<{ default?: boolean; url?: string }>;
+  urls?: PierWorkloadUrl[];
   worktreePath?: string;
+};
+
+type PierWorkloadUrl = {
+  default?: boolean;
+  label?: string;
+  url?: string;
+};
+
+type PierEntryPoint = {
+  default?: boolean;
+  key: string;
+  label: string;
+  title: string;
 };
 
 type PierProjectEntry = {

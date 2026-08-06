@@ -392,8 +392,8 @@ function createPaneLayout(project: RendererProject, node: RendererPaneLayoutNode
   return paneLayoutView.createPaneLayout(project, node as Parameters<typeof paneLayoutView.createPaneLayout>[1]);
 }
 
-function renderPaneLayoutPreservingPanes(project: RendererProject) {
-  paneLayoutView.renderPaneLayoutPreservingPanes(project);
+function renderPaneLayoutPreservingPanes(project: RendererProject, options: UnknownRecord = {}) {
+  paneLayoutView.renderPaneLayoutPreservingPanes(project, options);
 }
 
 function persistPaneLayout(project: RendererProject) {
@@ -1072,7 +1072,7 @@ registerRendererEventBindings({
   queueWebAppSync,
   renderGlobalSettingsPage,
   renderProjectList,
-  renderWorkspacePaneArea,
+  renderPaneLayoutPreservingPanes,
   selectCreateProject,
   selectGlobal,
   selectGlobalSettings,

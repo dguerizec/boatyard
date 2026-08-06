@@ -83,6 +83,17 @@ type VisiblePaneWebAppEntry = {
 
 type PaneElementReuseMap = Map<string, HTMLElement>;
 
+type PaneReuseOptions = {
+  allowWebAppMenuChanges?: boolean;
+};
+
+type PaneReuseState = {
+  mobileDev?: string;
+  webAppId?: string;
+  webAppKind?: string;
+  webAppMenuSignature?: string;
+};
+
 type MobileDevViewportBookmark = {
   height: number;
   width: number;
@@ -163,6 +174,20 @@ type PaneLayoutViewOptions = {
   queueWebAppSync: () => void;
   persistPaneLayout: (project: RendererProject) => void;
 };
+
+export function canReusePaneElement(
+  current: PaneReuseState,
+  next: PaneReuseState,
+  options: PaneReuseOptions = {}
+) {
+  return current.webAppId === next.webAppId &&
+    current.webAppKind === next.webAppKind &&
+    current.mobileDev === next.mobileDev &&
+    (
+      options.allowWebAppMenuChanges === true ||
+      current.webAppMenuSignature === next.webAppMenuSignature
+    );
+}
 
 export function createPaneLayoutView({
     minWidgetRailWidth,
@@ -600,7 +625,12 @@ export function createPaneLayoutView({
       }
     }
 
-    function reuseWebAppPane(project: RendererProject, paneNode: PaneNode, reusablePanes?: PaneElementReuseMap) {
+    function reuseWebAppPane(
+      project: RendererProject,
+      paneNode: PaneNode,
+      reusablePanes?: PaneElementReuseMap,
+      options: PaneReuseOptions = {}
+    ) {
       if (!reusablePanes) {
         return null;
       }
@@ -612,16 +642,18 @@ export function createPaneLayoutView({
 
       const webApps = getProjectWebApps(project, paneNode.id).map((webApp) => webApp as PaneWebApp);
       const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps) as PaneWebApp;
-      if (
-        pane.dataset.webAppId !== selectedWebApp.id ||
-        pane.dataset.webAppKind !== selectedWebApp.kind ||
-        pane.dataset.mobileDev !== String(isMobileDevViewportEnabled(selectedWebApp)) ||
-        pane.dataset.webAppMenuSignature !== getWebAppMenuSignature(webApps)
-      ) {
+      const nextMenuSignature = getWebAppMenuSignature(webApps);
+      if (!canReusePaneElement(pane.dataset, {
+        mobileDev: String(isMobileDevViewportEnabled(selectedWebApp)),
+        webAppId: selectedWebApp.id,
+        webAppKind: selectedWebApp.kind,
+        webAppMenuSignature: nextMenuSignature
+      }, options)) {
         return null;
       }
 
       reusablePanes.delete(paneNode.id);
+      pane.dataset.webAppMenuSignature = nextMenuSignature;
       syncReusedPaneActions(project, paneNode, pane);
       if (!["dom", "terminal", "widgets"].includes(selectedWebApp.kind || "")) {
         const host = getVisiblePaneHost(pane, selectedWebApp);
@@ -636,10 +668,15 @@ export function createPaneLayoutView({
       return pane;
     }
 
-    function renderPaneLayoutPreservingPanes(project: RendererProject) {
+    function renderPaneLayoutPreservingPanes(project: RendererProject, options: PaneReuseOptions = {}) {
       const reusablePanes = collectReusablePaneElements();
       resetVisibleWebAppHosts();
-      const paneLayoutElement = createPaneLayout(project, getProjectPaneLayout(project) as PaneLayoutNode, reusablePanes);
+      const paneLayoutElement = createPaneLayout(
+        project,
+        getProjectPaneLayout(project) as PaneLayoutNode,
+        reusablePanes,
+        options
+      );
       const currentPaneLayoutElement = dashboardGrid.lastElementChild;
       if (!currentPaneLayoutElement) {
         dashboardGrid.append(paneLayoutElement);
@@ -1003,7 +1040,16 @@ export function createPaneLayoutView({
         if (isOpen) {
           closeWebAppTabMenu();
         } else {
-          openWebAppTabMenuFromButton(tabPickerButton, project, paneNode, selectedWebApp, webApps);
+          const currentWebApps = getProjectWebApps(project, paneNode.id)
+            .map((webApp) => webApp as PaneWebApp);
+          const currentSelectedWebApp = getSelectedWebApp(project, paneNode.id, currentWebApps) as PaneWebApp;
+          openWebAppTabMenuFromButton(
+            tabPickerButton,
+            project,
+            paneNode,
+            currentSelectedWebApp,
+            currentWebApps
+          );
         }
       });
 
@@ -1254,13 +1300,18 @@ export function createPaneLayoutView({
       return pane;
     }
 
-    function createPaneLayout(project: RendererProject, node: PaneLayoutNode, reusablePanes?: PaneElementReuseMap): HTMLElement {
+    function createPaneLayout(
+      project: RendererProject,
+      node: PaneLayoutNode,
+      reusablePanes?: PaneElementReuseMap,
+      options: PaneReuseOptions = {}
+    ): HTMLElement {
       if (node.type === "pane") {
-        return reuseWebAppPane(project, node, reusablePanes) || createWebAppPane(project, node);
+        return reuseWebAppPane(project, node, reusablePanes, options) || createWebAppPane(project, node);
       }
 
       if (node.expandedChild === "first" || node.expandedChild === "second") {
-        return createPaneLayout(project, node[node.expandedChild], reusablePanes);
+        return createPaneLayout(project, node[node.expandedChild], reusablePanes, options);
       }
 
       const split = document.createElement("div");
@@ -1268,9 +1319,9 @@ export function createPaneLayoutView({
       split.dataset.splitId = node.id;
       applySplitRatio(split, node);
       split.append(
-        createPaneLayout(project, node.first, reusablePanes),
+        createPaneLayout(project, node.first, reusablePanes, options),
         createSplitResizer(project, node),
-        createPaneLayout(project, node.second, reusablePanes)
+        createPaneLayout(project, node.second, reusablePanes, options)
       );
       return split;
     }

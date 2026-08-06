@@ -1127,8 +1127,13 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
               status: "running",
               urls: [
                 {
+                  label: "v1.sshadow.test",
                   url: "http://v1.sshadow.test",
                   default: true
+                },
+                {
+                  label: "admin.v1.sshadow.test",
+                  url: "http://admin.v1.sshadow.test"
                 }
               ],
               worktree_path: worktreePath
@@ -1164,7 +1169,19 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
       url: "http://v1.sshadow.test",
       worktreePath,
       status: "running",
-      running: true
+      running: true,
+      urls: [
+        {
+          default: true,
+          label: "v1.sshadow.test",
+          url: "http://v1.sshadow.test"
+        },
+        {
+          default: false,
+          label: "admin.v1.sshadow.test",
+          url: "http://admin.v1.sshadow.test"
+        }
+      ]
     },
     {
       project: "sshadow",
@@ -1202,6 +1219,45 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
         key: "v1",
         label: "Pier: v1",
         url: "http://v1.sshadow.test",
+        mobileDev: true,
+        restoreUrl: false
+      }
+    ]
+  );
+
+  assert.deepEqual(
+    plain(pane.resolveWebApps({
+      project: {
+        id: "project-id",
+        slug: "sshadow",
+        sourcePath
+      },
+      projectConfig: {
+        pierEnabledEntryPoints: "[\"default\",\"admin\"]"
+      },
+      globalPluginConfig: {}
+    })),
+    [
+      {
+        id: "pier",
+        key: "dashboard",
+        label: "Pier",
+        url: "http://pier.test/#/projects/sshadow",
+        restoreUrl: false
+      },
+      {
+        id: "pier:v1",
+        key: "v1",
+        label: "Pier: v1",
+        url: "http://v1.sshadow.test",
+        mobileDev: true,
+        restoreUrl: false
+      },
+      {
+        id: "pier:v1:admin",
+        key: "v1:admin",
+        label: "Pier: v1 · Admin",
+        url: "http://admin.v1.sshadow.test",
         mobileDev: true,
         restoreUrl: false
       }

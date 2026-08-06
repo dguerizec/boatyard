@@ -71,6 +71,46 @@
   white-space: nowrap;
 }
 
+.pier-entry-point-selector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pier-entry-point-selector[hidden] {
+  display: none;
+}
+
+.pier-entry-point-button {
+  min-height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(var(--panel-strong-rgb), 0.5);
+  color: var(--muted);
+  padding: 0 9px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.pier-entry-point-button:hover,
+.pier-entry-point-button:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.7);
+  color: var(--text);
+  outline: none;
+}
+
+.pier-entry-point-button[aria-pressed="true"] {
+  border-color: rgba(var(--accent-rgb), 0.65);
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--success-text);
+}
+
+.pier-entry-point-button:disabled {
+  opacity: 0.55;
+}
+
 .pier-url-list {
   display: grid;
   gap: 10px;

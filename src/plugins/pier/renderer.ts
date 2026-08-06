@@ -4,7 +4,9 @@
   const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_PIER_URL = "http://pier.test";
   const DEFAULT_PIER_WORKTREE_PATTERN = "<repo>/worktrees/<worktree>";
+  const ENABLED_ENTRY_POINTS_CONFIG_KEY = "pierEnabledEntryPoints";
   const workloadCacheByProject = new Map<string, PierWorkload[]>();
+  const selectedEntryPointsByProject = new Map<string, Set<string>>();
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
@@ -38,10 +40,11 @@
     };
   }
 
-  function normalizePierWorkloadUrl(value: unknown): { default?: boolean; url?: string } {
+  function normalizePierWorkloadUrl(value: unknown): PierWorkloadUrl {
     const source = isRecord(value) ? value : {};
     return {
       default: source.default === true,
+      label: String(source.label || "").trim() || undefined,
       url: String(source.url || "").trim() || undefined
     };
   }
@@ -81,6 +84,113 @@
   function getDefaultWorkloadUrl(workload: PierWorkload) {
     const urls = Array.isArray(workload.urls) ? workload.urls : [];
     return urls.find((entry) => entry.default)?.url || urls[0]?.url || workload.url || "";
+  }
+
+  function getWorkloadUrlHostname(entry: PierWorkloadUrl = {}) {
+    try {
+      return new URL(entry.url || "").hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  }
+
+  function normalizeEntryPointKey(value: unknown) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  function getWorkloadEntryPointKey(workload: PierWorkload, entry: PierWorkloadUrl) {
+    if (entry.default) {
+      return "default";
+    }
+
+    const hostname = getWorkloadUrlHostname(entry);
+    const defaultHostname = getWorkloadUrlHostname(
+      (workload.urls || []).find((candidate) => candidate.default)
+    );
+    if (hostname && defaultHostname && hostname.endsWith(`.${defaultHostname}`)) {
+      return normalizeEntryPointKey(hostname.slice(0, -(defaultHostname.length + 1)));
+    }
+
+    const slug = normalizeHostnameLabel(workload.slug);
+    const slugMarker = slug ? `.${slug}.` : "";
+    const slugIndex = slugMarker ? hostname.indexOf(slugMarker) : -1;
+    if (slugIndex > 0) {
+      return normalizeEntryPointKey(hostname.slice(0, slugIndex));
+    }
+
+    return normalizeEntryPointKey(entry.label || hostname || entry.url);
+  }
+
+  function formatEntryPointLabel(key: string) {
+    if (key === "default") {
+      return "Default";
+    }
+    if (key === "api") {
+      return "API";
+    }
+    if (key === "oauth-relay") {
+      return "OAuth relay";
+    }
+    return key
+      .replace(/[-_]+/g, " ")
+      .replace(/^./, (character) => character.toUpperCase());
+  }
+
+  function listPierEntryPoints(workloads: PierWorkload[]) {
+    const entryPoints = new Map<string, PierEntryPoint>();
+    for (const workload of workloads) {
+      for (const entry of workload.urls || []) {
+        const key = getWorkloadEntryPointKey(workload, entry);
+        if (!key || entryPoints.has(key)) {
+          continue;
+        }
+        entryPoints.set(key, {
+          default: entry.default === true,
+          key,
+          label: formatEntryPointLabel(key),
+          title: entry.label || getWorkloadUrlHostname(entry) || entry.url || key
+        });
+      }
+    }
+    return [...entryPoints.values()];
+  }
+
+  function parseConfiguredEntryPoints(value: unknown): Set<string> | null {
+    const serialized = String(value || "").trim();
+    if (!serialized) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(serialized);
+      if (!Array.isArray(parsed)) {
+        return null;
+      }
+      return new Set(parsed.map(normalizeEntryPointKey).filter(Boolean));
+    } catch {
+      return null;
+    }
+  }
+
+  function getSelectedEntryPoints(project: PierProject, options: PierOptions, workloads: PierWorkload[]) {
+    const cacheKey = getWorkloadCacheKey(project, options);
+    const runtimeSelection = selectedEntryPointsByProject.get(cacheKey);
+    if (runtimeSelection) {
+      return new Set(runtimeSelection);
+    }
+
+    const configuredSelection = parseConfiguredEntryPoints(options.pluginConfig?.[ENABLED_ENTRY_POINTS_CONFIG_KEY]);
+    if (configuredSelection) {
+      selectedEntryPointsByProject.set(cacheKey, configuredSelection);
+      return new Set(configuredSelection);
+    }
+
+    const entryPoints = listPierEntryPoints(workloads);
+    const initialEntryPoint = entryPoints.find((entryPoint) => entryPoint.default) || entryPoints[0];
+    return new Set(initialEntryPoint ? [initialEntryPoint.key] : []);
   }
 
   function isWorkloadRunning(workload: PierWorkload) {
@@ -163,18 +273,21 @@
     const next = Array.isArray(workloads) ? workloads : [];
     workloadCacheByProject.set(key, next);
 
-    if (
-      previous !== JSON.stringify(next) &&
-      typeof globalScope.dispatchEvent === "function" &&
-      typeof globalScope.CustomEvent === "function"
-    ) {
-      globalScope.dispatchEvent(new globalScope.CustomEvent("boatyard:pier-workloads-changed", {
-        detail: {
-          projectId: project?.id || "",
-          pierProjectName: next[0]?.project || ""
-        }
-      }));
+    if (previous !== JSON.stringify(next)) {
+      notifyPierWorkloadsChanged(project, next);
     }
+  }
+
+  function notifyPierWorkloadsChanged(project: PierProject, workloads: PierWorkload[]) {
+    if (typeof globalScope.dispatchEvent !== "function" || typeof globalScope.CustomEvent !== "function") {
+      return;
+    }
+    globalScope.dispatchEvent(new globalScope.CustomEvent("boatyard:pier-workloads-changed", {
+      detail: {
+        projectId: project?.id || "",
+        pierProjectName: workloads[0]?.project || ""
+      }
+    }));
   }
 
   async function fetchPierJson(path: string, options: PierOptions = {}, fetchOptions: RequestInit = {}) {
@@ -190,13 +303,18 @@
   function normalizeWorktreeEntry(pierProjectName: string, worktree: unknown): PierWorkload {
     const source = isRecord(worktree) ? worktree : {};
     const workload = normalizePierWorkload(source.workload);
+    const defaultUrl = getDefaultWorkloadUrl(workload);
+    const urls = workload.urls?.length
+      ? workload.urls
+      : defaultUrl ? [{ default: true, url: defaultUrl }] : undefined;
     return {
       project: workload.project || pierProjectName,
       slug: workload.slug || String(source.slug || source.branch || "main"),
-      url: getDefaultWorkloadUrl(workload),
+      url: defaultUrl,
       worktreePath: String(source.path || workload.worktreePath || ""),
       status: workload.status || (source.has_workload ? "" : "stopped"),
-      running: source.has_workload === true && isWorkloadRunning(workload)
+      running: source.has_workload === true && isWorkloadRunning(workload),
+      urls
     };
   }
 
@@ -234,16 +352,35 @@
   }
 
   function listCachedProjectWorkloadWebApps(project: PierProject, options: PierOptions = {}) {
-    return (workloadCacheByProject.get(getWorkloadCacheKey(project, options)) || [])
-      .filter((entry: PierWorkload) => entry.running && entry.url)
-      .map((entry) => ({
-        id: `pier:${entry.slug}`,
-        key: entry.slug,
-        label: `Pier: ${entry.slug}`,
-        url: entry.url,
-        mobileDev: true,
-        restoreUrl: false
-      }));
+    const workloads = workloadCacheByProject.get(getWorkloadCacheKey(project, options)) || [];
+    const selectedEntryPoints = getSelectedEntryPoints(project, options, workloads);
+    return workloads
+      .filter((workload) => workload.running)
+      .flatMap((workload) => {
+        const seenEntryPoints = new Set<string>();
+        return (workload.urls || [])
+          .map((entry) => ({ entry, entryPointKey: getWorkloadEntryPointKey(workload, entry) }))
+          .filter(({ entry, entryPointKey }) => {
+            if (!entry.url || !selectedEntryPoints.has(entryPointKey) || seenEntryPoints.has(entryPointKey)) {
+              return false;
+            }
+            seenEntryPoints.add(entryPointKey);
+            return true;
+          })
+          .map(({ entry, entryPointKey }) => {
+            const isDefault = entryPointKey === "default";
+            return {
+              id: isDefault ? `pier:${workload.slug}` : `pier:${workload.slug}:${entryPointKey}`,
+              key: isDefault ? workload.slug : `${workload.slug}:${entryPointKey}`,
+              label: isDefault
+                ? `Pier: ${workload.slug}`
+                : `Pier: ${workload.slug} · ${formatEntryPointLabel(entryPointKey)}`,
+              url: entry.url,
+              mobileDev: true,
+              restoreUrl: false
+            };
+          });
+      });
   }
 
   function createPierService() {
@@ -483,6 +620,79 @@
       if (!nextKeys.has(key)) {
         row.remove();
       }
+    }
+  }
+
+  function serializeSelectedEntryPoints(selectedEntryPoints: Set<string>, workloads: PierWorkload[]) {
+    const availableKeys = listPierEntryPoints(workloads).map((entryPoint) => entryPoint.key);
+    const orderedSelection = [
+      ...availableKeys.filter((key) => selectedEntryPoints.has(key)),
+      ...[...selectedEntryPoints].filter((key) => !availableKeys.includes(key)).sort()
+    ];
+    return JSON.stringify(orderedSelection);
+  }
+
+  function renderPierEntryPointButtons(
+    selector: HTMLElement,
+    workloads: PierWorkload[],
+    project: PierProject,
+    props: PierOptions,
+    onError: (error: Error) => void
+  ) {
+    const entryPoints = listPierEntryPoints(workloads);
+    const selectedEntryPoints = getSelectedEntryPoints(project, props, workloads);
+    selector.replaceChildren();
+    selector.hidden = entryPoints.length === 0;
+
+    for (const entryPoint of entryPoints) {
+      const button = document.createElement("button");
+      const isSelected = selectedEntryPoints.has(entryPoint.key);
+      button.className = "pier-entry-point-button";
+      button.type = "button";
+      button.textContent = entryPoint.label;
+      button.title = `${isSelected ? "Hide" : "Show"} ${entryPoint.title} in pane tabs`;
+      button.setAttribute("aria-pressed", String(isSelected));
+      button.addEventListener("click", async () => {
+        const previousSelection = getSelectedEntryPoints(project, props, workloads);
+        const nextSelection = new Set(previousSelection);
+        if (nextSelection.has(entryPoint.key)) {
+          nextSelection.delete(entryPoint.key);
+        } else {
+          nextSelection.add(entryPoint.key);
+        }
+
+        const cacheKey = getWorkloadCacheKey(project, props);
+        const serializedSelection = serializeSelectedEntryPoints(nextSelection, workloads);
+        const previousSerializedSelection = props.pluginConfig?.[ENABLED_ENTRY_POINTS_CONFIG_KEY];
+        selectedEntryPointsByProject.set(cacheKey, nextSelection);
+        selector.querySelectorAll<HTMLButtonElement>(".pier-entry-point-button")
+          .forEach((candidate) => { candidate.disabled = true; });
+        notifyPierWorkloadsChanged(project, workloads);
+
+        try {
+          const projectId = String(project.id || "").trim();
+          if (projectId && typeof globalScope.boatyard?.updateProjectPluginConfig === "function") {
+            await globalScope.boatyard.updateProjectPluginConfig(projectId, "boatyard.pier", {
+              [ENABLED_ENTRY_POINTS_CONFIG_KEY]: serializedSelection
+            });
+          }
+          props.pluginConfig = {
+            ...props.pluginConfig,
+            [ENABLED_ENTRY_POINTS_CONFIG_KEY]: serializedSelection
+          };
+        } catch (error) {
+          selectedEntryPointsByProject.set(cacheKey, previousSelection);
+          props.pluginConfig = {
+            ...props.pluginConfig,
+            [ENABLED_ENTRY_POINTS_CONFIG_KEY]: previousSerializedSelection
+          };
+          notifyPierWorkloadsChanged(project, workloads);
+          onError(asError(error));
+        } finally {
+          renderPierEntryPointButtons(selector, workloads, project, props, onError);
+        }
+      });
+      selector.append(button);
     }
   }
 
@@ -788,7 +998,13 @@
     body.className = "pier-widget-status";
     body.textContent = "Loading.";
 
-    content.append(header, body);
+    const entryPointSelector = document.createElement("div");
+    entryPointSelector.className = "pier-entry-point-selector";
+    entryPointSelector.setAttribute("role", "group");
+    entryPointSelector.setAttribute("aria-label", "Pier pane entry points");
+    entryPointSelector.hidden = true;
+
+    content.append(header, entryPointSelector, body);
 
     const list = document.createElement("div");
     list.className = "pier-url-list";
@@ -809,6 +1025,10 @@
         const urls = await service.listProjectWorkloads(project, props);
         body.hidden = urls.length > 0;
         body.textContent = urls.length ? "" : "No Pier worktree.";
+        renderPierEntryPointButtons(entryPointSelector, urls, project, props, (error: Error) => {
+          body.hidden = false;
+          body.textContent = error.message;
+        });
         renderPierUrlRows(list, urls, project, props, service, load, (error: Error) => {
           body.hidden = false;
           body.textContent = error.message;
