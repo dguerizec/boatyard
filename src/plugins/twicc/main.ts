@@ -29,6 +29,7 @@ type SessionTitlePayload = SessionFlowSessionPayload & { title?: unknown };
 type SessionFlowLanePayload = GlobalConfigPayload & { lane?: unknown; sessionId?: unknown };
 type SessionFlowOrderPayload = GlobalConfigPayload & { lane?: unknown; sessionIds?: unknown };
 type SessionCreationPayload = GlobalConfigPayload & {
+  attachments?: unknown;
   project?: unknown;
   prompt?: unknown;
   sessionFlowLane?: unknown;

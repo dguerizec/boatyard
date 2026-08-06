@@ -88,7 +88,13 @@
   };
   type TwiccSessionComposerMode = "" | "direct" | "worktree";
   type TwiccWorktreeMode = "existing" | "new";
+  type TwiccSessionImageAttachment = {
+    dataUrl: string;
+    name: string;
+  };
   type TwiccSessionCreationDraft = {
+    attachments: TwiccSessionImageAttachment[];
+    attachmentsLoading: number;
     branch: string;
     path: string;
     pathEdited: boolean;
@@ -1161,6 +1167,52 @@
     return normalizedBase && folder ? `${normalizedBase}/${folder}` : normalizedBase;
   }
 
+  function isSupportedPastedImage(file: File): boolean {
+    return /^image\/(gif|jpeg|png|webp)$/i.test(file.type);
+  }
+
+  function getPastedImageFiles(clipboardData: DataTransfer | null): File[] {
+    if (!clipboardData) {
+      return [];
+    }
+    const files = Array.from(clipboardData.files || []).filter(isSupportedPastedImage);
+    if (files.length) {
+      return files;
+    }
+    return Array.from(clipboardData.items || []).flatMap((item) => {
+      const file = item.kind === "file" ? item.getAsFile() : null;
+      return file && isSupportedPastedImage(file) ? [file] : [];
+    });
+  }
+
+  function getPastedImageExtension(mimeType: string): string {
+    return {
+      "image/gif": "gif",
+      "image/jpeg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp"
+    }[mimeType.toLowerCase()] || "png";
+  }
+
+  function readPastedImage(file: File): Promise<TwiccSessionImageAttachment> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.addEventListener("error", () => reject(reader.error || new Error("Could not read the pasted image.")));
+      reader.addEventListener("load", () => {
+        const dataUrl = typeof reader.result === "string" ? reader.result : "";
+        if (!dataUrl.startsWith("data:image/")) {
+          reject(new Error("The pasted clipboard item is not an image."));
+          return;
+        }
+        resolve({
+          dataUrl,
+          name: file.name || `pasted-image.${getPastedImageExtension(file.type)}`
+        });
+      });
+      reader.readAsDataURL(file);
+    });
+  }
+
   function formatSessionFlowContextUsage(value: unknown): string {
     const count = Number(value);
     if (!Number.isFinite(count) || count <= 0) {
@@ -1286,6 +1338,8 @@
     let pierWorktreePattern = "";
     let creationRequestId = 0;
     let creationDraft: TwiccSessionCreationDraft = {
+      attachments: [],
+      attachmentsLoading: 0,
       branch: "",
       path: "",
       pathEdited: false,
@@ -1608,6 +1662,8 @@
       composerMode = mode;
       creationError = "";
       creationDraft = {
+        attachments: [],
+        attachmentsLoading: 0,
         branch: "",
         path: "",
         pathEdited: false,
@@ -2046,10 +2102,81 @@
         }
       });
 
-      return [
+      promptInput.addEventListener("paste", (event) => {
+        const imageFiles = getPastedImageFiles(event.clipboardData);
+        if (!imageFiles.length) {
+          return;
+        }
+        event.preventDefault();
+        const draft = creationDraft;
+        draft.attachmentsLoading += imageFiles.length;
+        creationError = "";
+        render();
+        void Promise.all(imageFiles.map(readPastedImage))
+          .then((attachments) => {
+            if (creationDraft === draft && composerMode) {
+              draft.attachments.push(...attachments);
+            }
+          })
+          .catch((error) => {
+            if (creationDraft === draft && composerMode) {
+              creationError = error instanceof Error ? error.message : String(error);
+            }
+          })
+          .finally(() => {
+            draft.attachmentsLoading = Math.max(0, draft.attachmentsLoading - imageFiles.length);
+            if (creationDraft === draft && composerMode) {
+              render();
+              globalScope.queueMicrotask?.(() => {
+                widget.querySelector<HTMLTextAreaElement>(".twicc-session-flow-composer textarea")?.focus();
+              });
+            }
+          });
+      });
+
+      const fields = [
         createComposerField("Title (optional)", titleInput),
-        createComposerField("First message", promptInput)
+        createComposerField(
+          "First message",
+          promptInput,
+          "Paste PNG, JPEG, GIF, or WebP images here. Ctrl+Enter creates the session."
+        )
       ];
+      if (creationDraft.attachments.length) {
+        const attachmentList = document.createElement("div");
+        attachmentList.className = "twicc-session-flow-attachments";
+        attachmentList.setAttribute("role", "list");
+        creationDraft.attachments.forEach((attachment, index) => {
+          const attachmentItem = document.createElement("div");
+          attachmentItem.className = "twicc-session-flow-attachment";
+          attachmentItem.setAttribute("role", "listitem");
+          const preview = document.createElement("img");
+          preview.src = attachment.dataUrl;
+          preview.alt = attachment.name;
+          const removeButton = document.createElement("button");
+          removeButton.type = "button";
+          removeButton.className = "twicc-session-flow-remove-attachment";
+          removeButton.textContent = "×";
+          removeButton.title = `Remove ${attachment.name}`;
+          removeButton.setAttribute("aria-label", `Remove ${attachment.name}`);
+          removeButton.addEventListener("click", () => {
+            creationDraft.attachments.splice(index, 1);
+            render();
+          });
+          attachmentItem.append(preview, removeButton);
+          attachmentList.append(attachmentItem);
+        });
+        fields.push(attachmentList);
+      }
+      if (creationDraft.attachmentsLoading) {
+        const loading = document.createElement("small");
+        loading.className = "twicc-session-flow-attachment-status";
+        loading.setAttribute("role", "status");
+        loading.textContent = "Reading pasted images…";
+        fields.push(loading);
+      }
+
+      return fields;
     }
 
     function isNewWorktreeBranch(): boolean {
@@ -2208,6 +2335,11 @@
       }
       const title = creationDraft.title.trim();
       const prompt = creationDraft.prompt.trim();
+      if (creationDraft.attachmentsLoading) {
+        creationError = "Wait for the pasted images to finish loading.";
+        render();
+        return;
+      }
       if (!prompt) {
         creationError = "A first message is required.";
         render();
@@ -2216,6 +2348,7 @@
 
       const input: Record<string, unknown> = {
         globalConfig: props.globalPluginConfig || {},
+        attachments: creationDraft.attachments.map((attachment) => attachment.dataUrl),
         project: projectReference,
         prompt,
         sessionFlowLane: "in_progress",
@@ -2419,6 +2552,7 @@
       submitButton.className = "primary";
       submitButton.disabled = creationOptionsLoading
         || (composerMode === "worktree" && !creationOptions)
+        || creationDraft.attachmentsLoading > 0
         || widget.dataset.creating === "true";
       submitButton.textContent = widget.dataset.creating === "true" ? "Creating…" : "Create session";
       actions.append(cancelButton, submitButton);

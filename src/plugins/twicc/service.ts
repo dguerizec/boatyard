@@ -2,6 +2,8 @@
 
 import type { ExecFileAsync } from "../../shared/pluginTypes";
 
+const fs = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
 
 const DEFAULT_TWICC_BASE_URL = "http://localhost:3500";
@@ -97,6 +99,7 @@ type TwiccProjectCacheGetOptions = { force?: boolean; projectIds?: string[] };
 type TwiccProjectInspection = { id: string; matchType: "exact" | "parent"; url: string };
 type BoatyardProject = { id?: string; sourcePath?: string };
 type TwiccSessionCreationInput = {
+  attachments?: unknown;
   project?: unknown;
   prompt?: unknown;
   sessionFlowLane?: unknown;
@@ -799,7 +802,55 @@ function deriveSessionTitle(prompt: string): string {
   return prompt.split(/\s+/).slice(0, 7).join(" ").slice(0, 200);
 }
 
+function normalizeSessionAttachments(value: unknown): string[] {
+  if (value === undefined || value === null) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw new Error("Session attachments must be an array.");
+  }
+  if (value.length > 100) {
+    throw new Error("A TwiCC session can have at most 100 attachments.");
+  }
+  return value.map((attachment, index) => {
+    if (typeof attachment !== "string" || !/^data:image\/(gif|jpeg|png|webp);base64,[a-z0-9+/]*={0,2}$/i.test(attachment)) {
+      throw new Error(`Session attachment ${index + 1} must be a pasted PNG, JPEG, GIF, or WebP image.`);
+    }
+    return attachment;
+  });
+}
+
+function getAttachmentExtension(dataUrl: string): string {
+  const mimeType = dataUrl.slice(5, dataUrl.indexOf(";base64")).toLowerCase();
+  return {
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp"
+  }[mimeType] || "png";
+}
+
+async function materializeSessionAttachments(attachments: string[]): Promise<{ directory: string; paths: string[] }> {
+  if (!attachments.length) {
+    return { directory: "", paths: [] };
+  }
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "boatyard-twicc-attachments-"));
+  try {
+    const paths = await Promise.all(attachments.map(async (attachment, index) => {
+      const filePath = path.join(directory, `pasted-image-${index + 1}.${getAttachmentExtension(attachment)}`);
+      const base64 = attachment.slice(attachment.indexOf(",") + 1);
+      await fs.writeFile(filePath, Buffer.from(base64, "base64"));
+      return filePath;
+    }));
+    return { directory, paths };
+  } catch (error) {
+    await fs.rm(directory, { force: true, recursive: true });
+    throw error;
+  }
+}
+
 function normalizeSessionCreationInput(input: TwiccSessionCreationInput = {}) {
+  const attachments = normalizeSessionAttachments(input.attachments);
   const project = normalizeText(input.project);
   const prompt = normalizeText(input.prompt);
   const title = normalizeText(input.title) || deriveSessionTitle(prompt);
@@ -826,6 +877,7 @@ function normalizeSessionCreationInput(input: TwiccSessionCreationInput = {}) {
   }
 
   return {
+    attachments,
     project,
     prompt,
     sessionFlowLane,
@@ -846,6 +898,9 @@ async function createTwiccSessionFromRpc(
     prompt: normalized.prompt,
     title: normalized.title
   };
+  if (normalized.attachments.length) {
+    body.attach = normalized.attachments;
+  }
   if (normalized.sessionFlowLane) {
     body.annotation = [`boatyard.${TWICC_SESSION_FLOW_ANNOTATION}=${normalized.sessionFlowLane}`];
   }
@@ -897,9 +952,12 @@ async function createTwiccSession(
   } else if (normalized.worktreePath) {
     args.push("--worktree-path", normalized.worktreePath);
   }
-  args.push("--", normalized.prompt);
-
+  const materializedAttachments = await materializeSessionAttachments(normalized.attachments);
   try {
+    for (const attachmentPath of materializedAttachments.paths) {
+      args.push("--attach", attachmentPath);
+    }
+    args.push("--", normalized.prompt);
     const { stdout } = await execFileAsync("twicc", args, {
       timeout: 120000,
       windowsHide: true
@@ -907,6 +965,10 @@ async function createTwiccSession(
     return normalizeCreatedSession(JSON.parse(String(stdout || "null")), normalized.title);
   } catch (error) {
     throw new Error(normalizeCommandError(error, "Could not create the TwiCC session."));
+  } finally {
+    if (materializedAttachments.directory) {
+      await fs.rm(materializedAttachments.directory, { force: true, recursive: true }).catch(() => undefined);
+    }
   }
 }
 

@@ -588,6 +588,13 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /createComposerField\("Title \(optional\)", titleInput\)/);
   assert.match(renderer, /promptInput\.setAttribute\("aria-keyshortcuts", "Control\+Enter"\)/);
   assert.match(renderer, /event\.key === "Enter"[\s\S]*?event\.ctrlKey[\s\S]*?promptInput\.form\?\.requestSubmit\(\)/);
+  assert.match(renderer, /promptInput\.addEventListener\("paste"/);
+  assert.match(renderer, /Array\.from\(clipboardData\.files \|\| \[\]\)/);
+  assert.match(renderer, /Array\.from\(clipboardData\.items \|\| \[\]\)/);
+  assert.match(renderer, /attachments: creationDraft\.attachments\.map\(\(attachment\) => attachment\.dataUrl\)/);
+  assert.match(renderer, /className = "twicc-session-flow-remove-attachment"/);
+  assert.match(styles, /\.twicc-session-flow-attachments/);
+  assert.match(styles, /\.twicc-session-flow-attachment img/);
   assert.match(renderer, /sessionFlowLane: "in_progress"/);
   assert.match(renderer, /pendingCreatedSessions\.set\(created\.sessionId/);
   assert.match(renderer, /draggedSessionPointerOffsetY/);

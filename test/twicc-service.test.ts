@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
 const test = require("node:test");
 const {
   aliasTwiccProjectProcessStatuses,
@@ -340,6 +341,96 @@ test("createTwiccSession creates a session in a new worktree through the CLI", a
     status: "created",
     title: "Worktree feature"
   });
+});
+
+test("createTwiccSession materializes pasted images for the local CLI and removes them afterward", async () => {
+  const imageBytes = [Buffer.from("first clipboard image"), Buffer.from("second clipboard image")];
+  const dataUrls = [
+    `data:image/png;base64,${imageBytes[0].toString("base64")}`,
+    `data:image/jpeg;base64,${imageBytes[1].toString("base64")}`
+  ];
+  let attachmentPaths: string[] = [];
+
+  await createTwiccSession({
+    attachments: dataUrls,
+    project: "/workspace/project",
+    prompt: "Inspect this screenshot"
+  }, {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "twicc");
+      attachmentPaths = args.flatMap((argument, index) => argument === "--attach" ? [args[index + 1]] : []);
+      assert.equal(attachmentPaths.length, 2);
+      assert.match(attachmentPaths[0], /pasted-image-1\.png$/);
+      assert.match(attachmentPaths[1], /pasted-image-2\.jpg$/);
+      assert.deepEqual(fs.readFileSync(attachmentPaths[0]), imageBytes[0]);
+      assert.deepEqual(fs.readFileSync(attachmentPaths[1]), imageBytes[1]);
+      assert.deepEqual(args.slice(-2), ["--", "Inspect this screenshot"]);
+      return {
+        stdout: JSON.stringify({
+          status: "created",
+          session_id: "session-with-image",
+          project_id: "project-1",
+          provider: "codex"
+        })
+      };
+    }
+  });
+
+  assert.equal(attachmentPaths.length, 2);
+  assert.deepEqual(attachmentPaths.map((attachmentPath) => fs.existsSync(attachmentPath)), [false, false]);
+});
+
+test("createTwiccSessionFromRpc forwards pasted images when adopting another worktree", async () => {
+  const dataUrl = `data:image/webp;base64,${Buffer.from("clipboard image").toString("base64")}`;
+
+  await createTwiccSessionFromRpc({
+    attachments: [dataUrl],
+    project: "/workspace/project",
+    prompt: "Inspect this screenshot",
+    worktreePath: "/workspace/project/worktrees/existing"
+  }, {
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/rpc/create-session");
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        project: "/workspace/project",
+        prompt: "Inspect this screenshot",
+        title: "Inspect this screenshot",
+        attach: [dataUrl],
+        worktree_path: "/workspace/project/worktrees/existing"
+      });
+      return {
+        exit_code: 0,
+        result: {
+          status: "created",
+          session_id: "session-with-image",
+          project_id: "project-1",
+          provider: "codex"
+        },
+        error: null
+      };
+    })
+  });
+});
+
+test("createTwiccSession rejects non-image attachment payloads before invoking TwiCC", async () => {
+  let invoked = false;
+  await assert.rejects(
+    createTwiccSession({
+      attachments: ["data:text/plain;base64,SGVsbG8="],
+      project: "/workspace/project",
+      prompt: "Inspect this file"
+    }, {
+      execFileAsync: async () => {
+        invoked = true;
+        return { stdout: "" };
+      }
+    }),
+    /must be a pasted PNG, JPEG, GIF, or WebP image/
+  );
+  assert.equal(invoked, false);
 });
 
 test("createTwiccSession derives an optional title from the first message", async () => {
