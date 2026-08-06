@@ -1,6 +1,42 @@
 {
-  "generatedForVersion": "0.9.11",
+  "generatedForVersion": "0.9.12",
   "releases": [
+    {
+      "version": "0.9.12",
+      "date": "2026-08-07",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Selectable Pier pane entry points",
+          "body": "Open Pier views directly from the pane picker so workspace layouts can include the Pier tools you need."
+        },
+        {
+          "category": "Added",
+          "title": "Image paste for TwiCC prompts",
+          "body": "Paste images into TwiCC session prompts and send them with your message."
+        },
+        {
+          "category": "Added",
+          "title": "Ctrl+Enter prompt submit",
+          "body": "Submit TwiCC session prompts with `Ctrl+Enter` for faster keyboard-driven creation."
+        },
+        {
+          "category": "Changed",
+          "title": "Compact scrollbars",
+          "body": "Web content now uses slimmer default scrollbars that take up less space."
+        },
+        {
+          "category": "Changed",
+          "title": "Terminal theme sync",
+          "body": "Terminal surfaces now follow the selected Boatyard appearance more consistently."
+        },
+        {
+          "category": "Fixed",
+          "title": "TwiCC card renaming",
+          "body": "Double-clicking a TwiCC session card reliably starts renaming again."
+        }
+      ]
+    },
     {
       "version": "0.9.11",
       "date": "2026-08-05",

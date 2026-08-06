@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.12] - 2026-08-07
+
+### Summary
+
+- **v0.9.12: Pane Controls & Prompt Attachments** — Adds richer Pier and TwiCC workflows while polishing scrolling, terminal theming, and session-card editing.
+
+### Added
+
+- **Selectable Pier pane entry points** — Open Pier views directly from the pane picker so workspace layouts can include the Pier tools you need.
+- **Image paste for TwiCC prompts** — Paste images into TwiCC session prompts and send them with your message.
+- **Ctrl+Enter prompt submit** — Submit TwiCC session prompts with `Ctrl+Enter` for faster keyboard-driven creation.
+
+### Changed
+
+- **Compact scrollbars** — Web content now uses slimmer default scrollbars that take up less space.
+- **Terminal theme sync** — Terminal surfaces now follow the selected Boatyard appearance more consistently.
+
+### Fixed
+
+- **TwiCC card renaming** — Double-clicking a TwiCC session card reliably starts renaming again.
+
 ## [0.9.11] - 2026-08-05
 
 ### Summary
