@@ -93,6 +93,10 @@ export type PaneWebApp = WebAppHomeTab;
 export type PaneLayoutNode = {
   type: "pane";
   id: string;
+  expansion?: {
+    active?: boolean;
+    paneIds: string[];
+  };
   selectedWebAppId?: string;
   transientWebApp?: PaneWebApp;
 } | {

@@ -61,7 +61,55 @@ const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
 type UnknownRecord = Record<string, unknown>;
 
-function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()): PaneLayoutNode | null {
+function collectNormalizedPaneNodes(
+  node: PaneLayoutNode,
+  panes: Array<Extract<PaneLayoutNode, { type: "pane" }>> = []
+) {
+  if (node.type === "pane") {
+    panes.push(node);
+    return panes;
+  }
+
+  collectNormalizedPaneNodes(node.first, panes);
+  collectNormalizedPaneNodes(node.second, panes);
+  return panes;
+}
+
+function sanitizeNormalizedPaneExpansions(node: PaneLayoutNode) {
+  const panes = collectNormalizedPaneNodes(node);
+  const paneIds = new Set(panes.map((pane) => pane.id));
+  const activePaneIds = new Set<string>();
+  for (const pane of panes) {
+    if (!pane.expansion) {
+      continue;
+    }
+
+    pane.expansion.paneIds = [...new Set([pane.id, ...pane.expansion.paneIds])]
+      .filter((paneId) => paneIds.has(paneId));
+    if (pane.expansion.paneIds.length <= 1) {
+      delete pane.expansion;
+      continue;
+    }
+
+    if (!pane.expansion.active) {
+      continue;
+    }
+    if (pane.expansion.paneIds.some((paneId) => activePaneIds.has(paneId))) {
+      delete pane.expansion.active;
+      continue;
+    }
+    for (const paneId of pane.expansion.paneIds) {
+      activePaneIds.add(paneId);
+    }
+  }
+  return node;
+}
+
+function normalizePaneLayoutNode(
+  node: unknown,
+  seenIds = new Set<string>(),
+  isNested = false
+): PaneLayoutNode | null {
   if (!isRecord(node)) {
     return null;
   }
@@ -80,6 +128,22 @@ function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()): Pa
       type: "pane",
       id
     };
+
+    const expansion = isRecord(source.expansion) ? source.expansion : null;
+    if (expansion && Array.isArray(expansion.paneIds)) {
+      const paneIds = [...new Set([
+        id,
+        ...expansion.paneIds.map((paneId) => normalizeText(paneId)).filter(Boolean)
+      ])];
+      if (paneIds.length > 1) {
+        normalized.expansion = {
+          paneIds
+        };
+        if (expansion.active === true) {
+          normalized.expansion.active = true;
+        }
+      }
+    }
 
     if (typeof source.selectedWebAppId === "string" && source.selectedWebAppId.trim()) {
       normalized.selectedWebAppId = source.selectedWebAppId.trim();
@@ -105,14 +169,14 @@ function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()): Pa
       }
     }
 
-    return normalized;
+    return isNested ? normalized : sanitizeNormalizedPaneExpansions(normalized);
   }
 
   if (source.type === "split") {
     const id = String(source.id || "").trim();
     const direction = source.direction === "horizontal" ? "horizontal" : "vertical";
-    const first = normalizePaneLayoutNode(source.first, seenIds);
-    const second = normalizePaneLayoutNode(source.second, seenIds);
+    const first = normalizePaneLayoutNode(source.first, seenIds, true);
+    const second = normalizePaneLayoutNode(source.second, seenIds, true);
 
     if (!id || seenIds.has(id) || !first || !second) {
       return null;
@@ -133,7 +197,7 @@ function normalizePaneLayoutNode(node: unknown, seenIds = new Set<string>()): Pa
       normalized.expandedChild = source.expandedChild;
     }
 
-    return normalized;
+    return isNested ? normalized : sanitizeNormalizedPaneExpansions(normalized);
   }
 
   return null;

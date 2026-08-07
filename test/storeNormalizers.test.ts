@@ -432,6 +432,10 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
     first: {
       type: "pane",
       id: "project:pane:1",
+      expansion: {
+        active: true,
+        paneIds: [" project:pane:2 ", "project:pane:1", "project:pane:2"]
+      },
       selectedWebAppId: "twicc"
     },
     second: {
@@ -455,6 +459,10 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
     first: {
       type: "pane",
       id: "project:pane:1",
+      expansion: {
+        active: true,
+        paneIds: ["project:pane:1", "project:pane:2"]
+      },
       selectedWebAppId: "twicc"
     },
     second: {
@@ -470,6 +478,57 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
       }
     }
   });
+});
+
+test("normalizePaneLayoutNode preserves disjoint active pane expansions", () => {
+  const normalized = normalizePaneLayoutNode({
+    type: "split",
+    id: "project:split:root",
+    direction: "horizontal",
+    ratio: 0.5,
+    first: {
+      type: "split",
+      id: "project:split:left",
+      direction: "vertical",
+      ratio: 0.5,
+      first: {
+        type: "pane",
+        id: "project:pane:a",
+        expansion: {
+          active: true,
+          paneIds: ["project:pane:a", "project:pane:b"]
+        }
+      },
+      second: {
+        type: "pane",
+        id: "project:pane:b"
+      }
+    },
+    second: {
+      type: "split",
+      id: "project:split:right",
+      direction: "vertical",
+      ratio: 0.5,
+      first: {
+        type: "pane",
+        id: "project:pane:c",
+        expansion: {
+          active: true,
+          paneIds: ["project:pane:c", "project:pane:d"]
+        }
+      },
+      second: {
+        type: "pane",
+        id: "project:pane:d"
+      }
+    }
+  });
+
+  assert.equal(normalized?.type, "split");
+  assert.equal(normalized?.type === "split" && normalized.first.type === "split" &&
+    normalized.first.first.type === "pane" && normalized.first.first.expansion?.active, true);
+  assert.equal(normalized?.type === "split" && normalized.second.type === "split" &&
+    normalized.second.first.type === "pane" && normalized.second.first.expansion?.active, true);
 });
 
 test("normalizePaneLayouts drops invalid layouts", () => {

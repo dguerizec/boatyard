@@ -378,6 +378,9 @@ const paneLayoutView = createPaneLayoutView({
     isGlobalWorkspace(project) ? {} : state.pluginConfig?.projects?.[project.id || ""] || {}
   ),
   openProjectWebApp,
+  setHiddenWebAppPaneIds: (paneIds: Iterable<string>) => {
+    visibleWebApps.setSurfaceHiddenPaneIds(paneIds);
+  },
   setVisibleWebAppHost: (paneId: string, entry: unknown) => {
     visibleWebApps.set(paneId, entry as Parameters<typeof visibleWebApps.set>[1]);
   },

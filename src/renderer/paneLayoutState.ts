@@ -17,6 +17,10 @@ type PaneLayoutTransientWebApp = Record<string, unknown> & {
 export type PaneNode = {
   type: "pane";
   id: string;
+  expansion?: {
+    active?: boolean;
+    paneIds: string[];
+  };
   selectedWebAppId?: string | null;
   transientWebApp?: PaneLayoutTransientWebApp;
 };
@@ -48,22 +52,25 @@ type PaneLayoutStateOptions = {
 };
 
 type PaneLayoutStateApi = {
+  activatePaneExpansion(project: PaneLayoutProject, paneId: string, paneIds: string[]): boolean;
+  clearPaneExpansionMemories(project: PaneLayoutProject): void;
   collectPaneNodes(node: PaneLayoutNode | null | undefined, panes?: PaneNode[]): PaneNode[];
   countPaneNodes(node: PaneLayoutNode | null | undefined): number;
   createPaneNode(project: PaneLayoutProject, selectedWebAppId?: string | null): PaneNode;
   createSplitNode(project: PaneLayoutProject, direction: string, first: PaneLayoutNode, selectedWebAppId?: string | null): SplitNode;
   findFirstPaneNode(node: PaneLayoutNode | null | undefined): PaneNode | null;
+  findActivePaneExpansions(project: PaneLayoutProject): Array<{ pane: PaneNode; paneIds: string[] }>;
   findPaneNode(node: PaneLayoutNode | null | undefined, paneId: string): PaneNode | null;
   findPaneNodeBySelectedWebApp(node: PaneLayoutNode | null | undefined, webAppId: string): PaneNode | null;
   getPaneExpansionState(project: PaneLayoutProject, paneId: string): { canExpand: boolean; canShrink: boolean };
-  getPaneExpansionTarget(project: PaneLayoutProject, paneId: string): PaneAncestorPathItem | null;
-  getPaneAncestorPath(node: PaneLayoutNode | null | undefined, paneId: string, path?: PaneAncestorPathItem[]): PaneAncestorPathItem[] | null;
+  getPaneExpansionPaneIds(project: PaneLayoutProject, paneId: string): string[];
   getPaneLayout(projectId?: string): PaneLayoutNode | undefined;
   getProjectPaneLayout(project: PaneLayoutProject): PaneLayoutNode;
   getSelectedWebApp(project: PaneLayoutProject, paneId: string, webApps: PaneLayoutWebApp[]): PaneLayoutWebApp;
   getSelectedWebAppForPane(paneId: string): string | undefined;
   getSelectedWebAppForProject(projectId: string): string | undefined;
   hydratePaneLayouts(persistedLayouts?: Record<string, unknown>): void;
+  shrinkPaneExpansion(project: PaneLayoutProject, paneId: string): boolean;
   persistPaneLayout(project: PaneLayoutProject): void;
   removePaneNode(node: PaneLayoutNode | null | undefined, paneId: string): RemovePaneResult;
   replacePaneNode(node: PaneLayoutNode, paneId: string, replacement: PaneLayoutNode): PaneLayoutNode;
@@ -122,6 +129,14 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
      * @param {PaneLayoutNode} layout
      */
     function setPaneLayout(projectId: string | undefined, layout: PaneLayoutNode) {
+      const previousLayout = paneLayoutsByProject.get(projectId || "");
+      if (previousLayout) {
+        const previousPaneIds = collectPaneNodes(previousLayout).map((pane) => pane.id).sort();
+        const nextPaneIds = collectPaneNodes(layout).map((pane) => pane.id).sort();
+        if (previousPaneIds.join("\n") !== nextPaneIds.join("\n")) {
+          clearPaneExpansionData(layout);
+        }
+      }
       paneLayoutsByProject.set(projectId || "", layout);
     }
 
@@ -183,6 +198,14 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       collectPaneNodes(node.first, panes);
       collectPaneNodes(node.second, panes);
       return panes;
+    }
+
+    function findActivePaneExpansions(project: PaneLayoutProject) {
+      return collectPaneNodes(getProjectPaneLayout(project)).flatMap((pane) => (
+        pane.expansion?.active === true
+          ? [{ pane, paneIds: [...pane.expansion.paneIds] }]
+          : []
+      ));
     }
 
     /**
@@ -304,10 +327,13 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
      * @returns {{ canExpand: boolean, canShrink: boolean }}
      */
     function getPaneExpansionState(project: PaneLayoutProject, paneId: string) {
-      const path = getPaneAncestorPath(getProjectPaneLayout(project), paneId) || [];
+      const layout = getProjectPaneLayout(project);
+      const activeExpansions = findActivePaneExpansions(project);
+      const activeExpansion = activeExpansions.find(({ pane }) => pane.id === paneId);
+      const isOccupied = activeExpansions.some(({ paneIds }) => paneIds.includes(paneId));
       return {
-        canExpand: path.some(({ node }) => !node.expandedChild),
-        canShrink: path.some(({ node, side }) => node.expandedChild === side)
+        canExpand: countPaneNodes(layout) > 1 && !isOccupied,
+        canShrink: Boolean(activeExpansion)
       };
     }
 
@@ -318,7 +344,81 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
      */
     function getPaneExpansionTarget(project: PaneLayoutProject, paneId: string) {
       const path = getPaneAncestorPath(getProjectPaneLayout(project), paneId) || [];
-      return [...path].reverse().find(({ node }) => !node.expandedChild) || null;
+      return [...path].reverse()[0] || null;
+    }
+
+    function getPaneExpansionPaneIds(project: PaneLayoutProject, paneId: string) {
+      const layout = getProjectPaneLayout(project);
+      const pane = findPaneNode(layout, paneId);
+      const knownPaneIds = new Set(collectPaneNodes(layout).map((candidate) => candidate.id));
+      if (pane?.expansion) {
+        const rememberedPaneIds = [...new Set(pane.expansion.paneIds)]
+          .filter((candidateId) => knownPaneIds.has(candidateId));
+        if (rememberedPaneIds.includes(paneId) && rememberedPaneIds.length > 1) {
+          return rememberedPaneIds;
+        }
+      }
+
+      const target = getPaneExpansionTarget(project, paneId);
+      return target
+        ? collectPaneNodes(target.node).map((candidate) => candidate.id)
+        : [];
+    }
+
+    function activatePaneExpansion(project: PaneLayoutProject, paneId: string, paneIds: string[]) {
+      const layout = getProjectPaneLayout(project);
+      const panes = collectPaneNodes(layout);
+      const knownPaneIds = new Set(panes.map((pane) => pane.id));
+      const sourcePane = panes.find((pane) => pane.id === paneId);
+      const nextPaneIds = [...new Set([paneId, ...paneIds])]
+        .filter((candidateId) => knownPaneIds.has(candidateId));
+      if (!sourcePane || nextPaneIds.length <= 1) {
+        return false;
+      }
+
+      const nextPaneIdSet = new Set(nextPaneIds);
+      for (const pane of panes) {
+        if (pane.expansion?.active && pane.expansion.paneIds.some((candidateId) => nextPaneIdSet.has(candidateId))) {
+          delete pane.expansion.active;
+        }
+      }
+      sourcePane.expansion = {
+        active: true,
+        paneIds: nextPaneIds
+      };
+      return true;
+    }
+
+    function shrinkPaneExpansion(project: PaneLayoutProject, paneId: string) {
+      const activeExpansion = findActivePaneExpansions(project)
+        .find(({ pane }) => pane.id === paneId);
+      if (!activeExpansion?.pane.expansion) {
+        return false;
+      }
+
+      delete activeExpansion.pane.expansion.active;
+      return true;
+    }
+
+    function clearExpandedChildren(node: PaneLayoutNode | null | undefined) {
+      if (!node || node.type === "pane") {
+        return;
+      }
+
+      delete node.expandedChild;
+      clearExpandedChildren(node.first);
+      clearExpandedChildren(node.second);
+    }
+
+    function clearPaneExpansionData(layout: PaneLayoutNode) {
+      for (const pane of collectPaneNodes(layout)) {
+        delete pane.expansion;
+      }
+      clearExpandedChildren(layout);
+    }
+
+    function clearPaneExpansionMemories(project: PaneLayoutProject) {
+      clearPaneExpansionData(getProjectPaneLayout(project));
     }
 
     /**
@@ -449,28 +549,108 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       hydratePaneLayoutSelections(node.second);
     }
 
+    function findNestedLegacyExpansionSource(node: PaneLayoutNode): PaneNode | null {
+      if (node.type === "pane") {
+        return null;
+      }
+
+      if (node.expandedChild === "first" || node.expandedChild === "second") {
+        return findLegacyExpansionSource(node[node.expandedChild]);
+      }
+
+      return findNestedLegacyExpansionSource(node.first) || findNestedLegacyExpansionSource(node.second);
+    }
+
+    function findLegacyExpansionSource(node: PaneLayoutNode): PaneNode {
+      if (node.type === "pane") {
+        return node;
+      }
+
+      return findNestedLegacyExpansionSource(node) || findFirstPaneNode(node) as PaneNode;
+    }
+
+    function migrateLegacyPaneExpansion(node: PaneLayoutNode) {
+      function findExpandedSplit(candidate: PaneLayoutNode): SplitNode | null {
+        if (candidate.type === "pane") {
+          return null;
+        }
+
+        if (candidate.expandedChild === "first" || candidate.expandedChild === "second") {
+          return candidate;
+        }
+
+        return findExpandedSplit(candidate.first) || findExpandedSplit(candidate.second);
+      }
+
+      const expandedSplit = findExpandedSplit(node);
+      if (!expandedSplit || !expandedSplit.expandedChild) {
+        return;
+      }
+
+      const sourcePane = findLegacyExpansionSource(expandedSplit[expandedSplit.expandedChild]);
+      sourcePane.expansion = {
+        active: true,
+        paneIds: collectPaneNodes(expandedSplit).map((pane) => pane.id)
+      };
+      clearExpandedChildren(node);
+    }
+
+    function sanitizePaneExpansions(node: PaneLayoutNode) {
+      const panes = collectPaneNodes(node);
+      const knownPaneIds = new Set(panes.map((pane) => pane.id));
+      const activePaneIds = new Set<string>();
+      for (const pane of panes) {
+        if (!pane.expansion) {
+          continue;
+        }
+
+        const paneIds = [...new Set([pane.id, ...pane.expansion.paneIds])]
+          .filter((candidateId) => knownPaneIds.has(candidateId));
+        if (paneIds.length <= 1) {
+          delete pane.expansion;
+          continue;
+        }
+
+        pane.expansion.paneIds = paneIds;
+        if (!pane.expansion.active) {
+          continue;
+        }
+        if (paneIds.some((candidateId) => activePaneIds.has(candidateId))) {
+          delete pane.expansion.active;
+          continue;
+        }
+        for (const candidateId of paneIds) {
+          activePaneIds.add(candidateId);
+        }
+      }
+    }
+
     /**
      * @param {Record<string, unknown>} persistedLayouts
      */
     function hydratePaneLayouts(persistedLayouts: Record<string, unknown> = {}) {
       for (const [projectId, layout] of Object.entries(persistedLayouts)) {
         const paneLayout = layout as PaneLayoutNode;
+        migrateLegacyPaneExpansion(paneLayout);
+        sanitizePaneExpansions(paneLayout);
         paneLayoutsByProject.set(projectId, paneLayout);
         hydratePaneLayoutSelections(paneLayout);
       }
     }
 
     return {
+      activatePaneExpansion,
+      clearPaneExpansionMemories,
       collectPaneNodes,
       countPaneNodes,
       createPaneNode,
       createSplitNode,
       findFirstPaneNode,
+      findActivePaneExpansions,
       findPaneNode,
       findPaneNodeBySelectedWebApp,
       getPaneExpansionState,
-      getPaneExpansionTarget,
-      getPaneAncestorPath,
+      getPaneExpansionPaneIds,
       getPaneLayout,
       getProjectPaneLayout,
       getSelectedWebApp,
@@ -481,6 +661,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       removePaneNode,
       replacePaneNode,
       setPaneLayout,
+      shrinkPaneExpansion,
       setSelectedWebAppForPane: (paneId, webAppId) => selectedWebAppByPane.set(paneId, webAppId),
       setSelectedWebAppForProject: (projectId, webAppId) => selectedWebAppByProject.set(projectId, webAppId),
       deleteSelectedWebAppForPane: (paneId) => selectedWebAppByPane.delete(paneId),

@@ -28,9 +28,11 @@ export function createVisibleWebAppTracker({
   persistPaneLayout
 }: VisibleWebAppTrackerOptions) {
   let visibleWebAppHosts = new Map<string, VisibleWebAppEntry>();
+  let surfaceHiddenPaneIds = new Set<string>();
 
   function reset() {
     visibleWebAppHosts = new Map();
+    surfaceHiddenPaneIds = new Set();
   }
 
   function set(paneId: string, entry: VisibleWebAppEntry) {
@@ -38,10 +40,16 @@ export function createVisibleWebAppTracker({
   }
 
   function getEntries() {
-    return [...visibleWebAppHosts.entries()].map(([paneId, entry]) => ({
-      ...entry,
-      paneId
-    }));
+    return [...visibleWebAppHosts.entries()]
+      .filter(([paneId]) => !surfaceHiddenPaneIds.has(paneId))
+      .map(([paneId, entry]) => ({
+        ...entry,
+        paneId
+      }));
+  }
+
+  function setSurfaceHiddenPaneIds(paneIds: Iterable<string>) {
+    surfaceHiddenPaneIds = new Set(paneIds);
   }
 
   function getWebAppByKey(key: string) {
@@ -110,6 +118,7 @@ export function createVisibleWebAppTracker({
     getWebAppByKey,
     persistPaneLayoutForWebApp,
     reset,
-    set
+    set,
+    setSurfaceHiddenPaneIds
   });
 }

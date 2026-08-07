@@ -2,6 +2,10 @@ import type { RendererPaneNode, RendererProject } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type { WidgetLayout, WidgetPane } from "./widgetSurfaceTypes.js";
 import { createPaneIconLabel, shouldUseIconOnlyPaneTab } from "./paneIcons.js";
+import {
+  resolvePaneExpansionPaneIds,
+  type PaneExpansionRect
+} from "./paneExpansionGeometry.js";
 
 type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
@@ -10,6 +14,10 @@ type PaneLayoutHost = HTMLDivElement & {
 type PaneSplitSide = "first" | "second";
 
 type PaneNode = UnknownRecord & {
+  expansion?: {
+    active?: boolean;
+    paneIds: string[];
+  };
   id: string;
   selectedWebAppId?: string | null;
   type: "pane";
@@ -27,12 +35,9 @@ type SplitNode = UnknownRecord & {
 
 type PaneLayoutNode = PaneNode | SplitNode;
 
-type PaneAncestorPathItem = {
-  node: PaneLayoutNode;
-  side: PaneSplitSide;
-};
-
 type PaneLayoutStateApi = {
+  activatePaneExpansion(project: RendererProject, paneId: string, paneIds: string[]): boolean;
+  clearPaneExpansionMemories(project: RendererProject): void;
   countPaneNodes(node: unknown): number;
   createSplitNode(
     project: RendererProject,
@@ -41,17 +46,18 @@ type PaneLayoutStateApi = {
     selectedWebAppId?: string
   ): unknown;
   deleteSelectedWebAppForPane(paneId: string): unknown;
+  findActivePaneExpansions(project: RendererProject): Array<{ pane: PaneNode; paneIds: string[] }>;
   findPaneNode(node: unknown, paneId: string): unknown;
   findPaneNodeBySelectedWebApp(node: unknown, webAppId: string): unknown;
-  getPaneAncestorPath(node: unknown, paneId: string): unknown;
+  getPaneExpansionPaneIds(project: RendererProject, paneId: string): string[];
   getPaneExpansionState(project: RendererProject, paneId: string): { canExpand: boolean; canShrink: boolean };
-  getPaneExpansionTarget(project: RendererProject, paneId: string): unknown;
   getSelectedWebAppForPane(paneId: string): string | undefined;
   getSelectedWebAppForProject(projectId?: string): string | undefined;
   removePaneNode(node: unknown, paneId: string): unknown;
   replacePaneNode(node: unknown, paneId: string, replacement: unknown): unknown;
   setPaneLayout(projectId: string | undefined, layout: unknown): unknown;
   setSelectedWebAppForPane(paneId: string, webAppId?: string): unknown;
+  shrinkPaneExpansion(project: RendererProject, paneId: string): boolean;
 };
 
 type PaneWebApp = UnknownRecord & {
@@ -169,6 +175,7 @@ type PaneLayoutViewOptions = {
   getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
   getAllProjectPluginConfig: (project: RendererProject) => UnknownRecord;
   openProjectWebApp: (projectId: string | undefined, webAppId: string, url: string) => unknown;
+  setHiddenWebAppPaneIds: (paneIds: Iterable<string>) => void;
   setVisibleWebAppHost: (paneId: string, entry: VisiblePaneWebAppEntry) => void;
   resetVisibleWebAppHosts: () => void;
   queueWebAppSync: () => void;
@@ -225,6 +232,7 @@ export function createPaneLayoutView({
     getGlobalPluginConfig,
     getAllProjectPluginConfig,
     openProjectWebApp,
+    setHiddenWebAppPaneIds,
     setVisibleWebAppHost,
     resetVisibleWebAppHosts,
     queueWebAppSync,
@@ -235,6 +243,9 @@ export function createPaneLayoutView({
     const mobileDevRulerWidth = 32;
     const mobileDevRulerHeight = 24;
     const mobileDevHostPadding = 20;
+    let activeExpansionsCleanup: (() => void) | null = null;
+    let isPaintingPaneExpansion = false;
+    let suppressExpansionClickUntil = 0;
 
     function clamp(value: number, min: number, max: number) {
       return Math.min(max, Math.max(min, value));
@@ -342,57 +353,370 @@ export function createPaneLayoutView({
       return webApp.mobileDev === true && getMobileDevViewportState(webApp).enabled;
     }
 
-    function clearPaneExpansionPreview() {
-      document.querySelectorAll(".webapp-split.pane-expand-preview").forEach((split) => {
-        split.classList.remove("pane-expand-preview");
+    function getPaneElements() {
+      return [...dashboardGrid.querySelectorAll<HTMLElement>(".webapp-pane[data-pane-id]")];
+    }
+
+    function getPaneExpansionRects(): PaneExpansionRect[] {
+      const paneRects = getPaneElements().flatMap((pane) => {
+        if (!pane.dataset.paneId || pane.classList.contains("pane-expanded")) {
+          return [];
+        }
+
+        const rect = pane.getBoundingClientRect();
+        return [{
+          bottom: rect.bottom,
+          id: pane.dataset.paneId,
+          left: rect.left,
+          right: rect.right,
+          top: rect.top
+        }];
       });
+      const placeholderRects = [...dashboardGrid.querySelectorAll<HTMLElement>(
+        ".pane-expansion-placeholder[data-pane-id]"
+      )].flatMap((placeholder) => {
+        if (!placeholder.dataset.paneId) {
+          return [];
+        }
+
+        const rect = placeholder.getBoundingClientRect();
+        return [{
+          bottom: rect.bottom,
+          id: placeholder.dataset.paneId,
+          left: rect.left,
+          right: rect.right,
+          top: rect.top
+        }];
+      });
+      return [...paneRects, ...placeholderRects];
+    }
+
+    function findPaneElement(paneId: string) {
+      return getPaneElements().find((pane) => pane.dataset.paneId === paneId) || null;
+    }
+
+    function clearPaneExpansionPreview() {
+      for (const pane of getPaneElements()) {
+        pane.classList.remove("pane-expand-preview");
+      }
+    }
+
+    function resolvePaneExpansionSelection(paneIds: Iterable<string>) {
+      return resolvePaneExpansionPaneIds(getPaneExpansionRects(), paneIds);
+    }
+
+    function showPaneExpansionPreview(project: RendererProject, paneIds: Iterable<string>) {
+      clearPaneExpansionPreview();
+      const selectedPaneIds = new Set(resolvePaneExpansionSelection(paneIds));
+      for (const pane of getPaneElements()) {
+        pane.classList.toggle("pane-expand-preview", Boolean(
+          pane.dataset.paneId && selectedPaneIds.has(pane.dataset.paneId)
+        ));
+      }
+      for (const activeExpansion of paneLayoutState.findActivePaneExpansions(project)) {
+        if (!activeExpansion.paneIds.some((paneId) => selectedPaneIds.has(paneId))) {
+          continue;
+        }
+
+        findPaneElement(activeExpansion.pane.id)?.classList.add("pane-expand-preview");
+      }
+      return [...selectedPaneIds];
     }
 
     function previewPaneExpansion(project: RendererProject, paneId: string, enabled: boolean) {
       clearPaneExpansionPreview();
-
-      if (!enabled) {
+      if (!enabled || isPaintingPaneExpansion) {
         return;
       }
 
-      const target = paneLayoutState.getPaneExpansionTarget(project, paneId) as PaneAncestorPathItem | null;
-      if (!target) {
-        return;
-      }
-
-      const split = [...document.querySelectorAll<HTMLElement>(".webapp-split")]
-        .find((candidate) => candidate.dataset.splitId === target.node.id);
-      if (split) {
-        split.classList.add("pane-expand-preview");
-      }
+      showPaneExpansionPreview(project, paneLayoutState.getPaneExpansionPaneIds(project, paneId));
     }
 
-    function expandPane(project: RendererProject, paneId: string) {
-      const target = paneLayoutState.getPaneExpansionTarget(project, paneId) as PaneAncestorPathItem | null;
+    function clearActivePaneExpansionPresentation() {
+      activeExpansionsCleanup?.();
+      activeExpansionsCleanup = null;
+    }
 
-      if (!target) {
+    function applyActivePaneExpansionPresentation(project: RendererProject) {
+      clearActivePaneExpansionPresentation();
+      const activeExpansions = paneLayoutState.findActivePaneExpansions(project);
+      if (!activeExpansions.length) {
         return;
       }
 
-      target.node.expandedChild = target.side;
+      const presentations = activeExpansions.flatMap((activeExpansion) => {
+        const expandedPane = findPaneElement(activeExpansion.pane.id);
+        const coveredPanes = activeExpansion.paneIds
+          .map((paneId) => findPaneElement(paneId))
+          .filter((pane): pane is HTMLElement => Boolean(pane));
+        if (!expandedPane || coveredPanes.length <= 1) {
+          return [];
+        }
+
+        const placeholder = document.createElement("div");
+        placeholder.className = "pane-expansion-placeholder";
+        placeholder.dataset.paneId = expandedPane.dataset.paneId;
+        expandedPane.before(placeholder);
+        expandedPane.classList.add("pane-expanded");
+        return [{
+          activeExpansion,
+          coveredPanes,
+          expandedPane,
+          placeholder
+        }];
+      });
+      if (!presentations.length) {
+        return;
+      }
+      dashboardGrid.classList.add("pane-expansion-active");
+      setHiddenWebAppPaneIds(new Set(presentations.flatMap(({ activeExpansion }) => (
+        activeExpansion.paneIds.filter((paneId) => paneId !== activeExpansion.pane.id)
+      ))));
+
+      function updateExpandedPaneBounds() {
+        for (const { coveredPanes, expandedPane, placeholder } of presentations) {
+          if (!expandedPane.isConnected || !placeholder.isConnected) {
+            continue;
+          }
+
+          const rects = coveredPanes.map((pane) => (
+            pane === expandedPane ? placeholder : pane
+          ).getBoundingClientRect());
+          expandedPane.style.left = `${Math.min(...rects.map((rect) => rect.left))}px`;
+          expandedPane.style.top = `${Math.min(...rects.map((rect) => rect.top))}px`;
+          expandedPane.style.width = `${Math.max(...rects.map((rect) => rect.right)) - Math.min(...rects.map((rect) => rect.left))}px`;
+          expandedPane.style.height = `${Math.max(...rects.map((rect) => rect.bottom)) - Math.min(...rects.map((rect) => rect.top))}px`;
+        }
+        queueWebAppSync();
+      }
+
+      let resizeObserver: ResizeObserver | null = null;
+      if (typeof ResizeObserver === "function") {
+        resizeObserver = new ResizeObserver(updateExpandedPaneBounds);
+      }
+      resizeObserver?.observe(dashboardGrid);
+      for (const { coveredPanes, expandedPane, placeholder } of presentations) {
+        resizeObserver?.observe(placeholder);
+        for (const pane of coveredPanes) {
+          if (pane !== expandedPane) {
+            resizeObserver?.observe(pane);
+          }
+        }
+      }
+      window.addEventListener("resize", updateExpandedPaneBounds);
+      window.addEventListener("scroll", updateExpandedPaneBounds, true);
+      updateExpandedPaneBounds();
+
+      activeExpansionsCleanup = () => {
+        resizeObserver?.disconnect();
+        window.removeEventListener("resize", updateExpandedPaneBounds);
+        window.removeEventListener("scroll", updateExpandedPaneBounds, true);
+        setHiddenWebAppPaneIds([]);
+        dashboardGrid.classList.remove("pane-expansion-active");
+        for (const { expandedPane, placeholder } of presentations) {
+          expandedPane.classList.remove("pane-expanded");
+          expandedPane.style.left = "";
+          expandedPane.style.top = "";
+          expandedPane.style.width = "";
+          expandedPane.style.height = "";
+          placeholder.remove();
+        }
+        queueWebAppSync();
+      };
+    }
+
+    function scheduleActivePaneExpansionPresentation(project: RendererProject) {
+      window.requestAnimationFrame(() => {
+        applyActivePaneExpansionPresentation(project);
+        syncVisiblePaneActions(project);
+      });
+    }
+
+    function activatePaneExpansion(project: RendererProject, paneId: string, paneIds: Iterable<string>) {
+      const resolvedPaneIds = resolvePaneExpansionSelection(paneIds);
+      if (!paneLayoutState.activatePaneExpansion(project, paneId, resolvedPaneIds)) {
+        return false;
+      }
+
+      clearPaneExpansionPreview();
       persistPaneLayout(project);
-      renderPaneLayoutPreservingPanes(project);
+      applyActivePaneExpansionPresentation(project);
+      syncVisiblePaneActions(project);
+      return true;
     }
 
     function shrinkPane(project: RendererProject, paneId: string) {
-      const path = (paneLayoutState.getPaneAncestorPath(
-        getProjectPaneLayout(project),
-        paneId
-      ) || []) as PaneAncestorPathItem[];
-      const target = path.find(({ node, side }: PaneAncestorPathItem) => node.expandedChild === side);
-
-      if (!target) {
+      if (!paneLayoutState.shrinkPaneExpansion(project, paneId)) {
         return;
       }
 
-      delete target.node.expandedChild;
+      applyActivePaneExpansionPresentation(project);
       persistPaneLayout(project);
-      renderPaneLayoutPreservingPanes(project);
+      syncVisiblePaneActions(project);
+    }
+
+    function togglePaneExpansion(project: RendererProject, paneId: string) {
+      const expansionState = paneLayoutState.getPaneExpansionState(project, paneId);
+      if (expansionState.canShrink) {
+        shrinkPane(project, paneId);
+        return;
+      }
+
+      if (expansionState.canExpand) {
+        activatePaneExpansion(project, paneId, paneLayoutState.getPaneExpansionPaneIds(project, paneId));
+      }
+    }
+
+    function isPointInsideRect(
+      event: PointerEvent,
+      rect: Pick<DOMRect, "bottom" | "left" | "right" | "top">
+    ) {
+      return event.clientX >= rect.left && event.clientX <= rect.right &&
+        event.clientY >= rect.top && event.clientY <= rect.bottom;
+    }
+
+    function findPaneIdAtPoint(event: PointerEvent) {
+      return getPaneExpansionRects().find((rect) => isPointInsideRect(event, rect))?.id || "";
+    }
+
+    function startPaneExpansionBrush(
+      event: PointerEvent,
+      project: RendererProject,
+      paneId: string,
+      button: HTMLButtonElement
+    ) {
+      const expansionState = paneLayoutState.getPaneExpansionState(project, paneId);
+      if (event.button !== 0 || button.disabled || expansionState.canShrink) {
+        return;
+      }
+
+      const touchedPaneIds = new Set([paneId]);
+      let coveredPaneIds = showPaneExpansionPreview(project, touchedPaneIds);
+      let didDrag = false;
+      let didLeaveButton = false;
+      let isResetting = false;
+      let wasCancelled = false;
+      const startX = event.clientX;
+      const startY = event.clientY;
+      isPaintingPaneExpansion = true;
+      button.classList.add("painting");
+      button.setAttribute("aria-pressed", "true");
+      button.setPointerCapture?.(event.pointerId);
+
+      function cleanup() {
+        document.removeEventListener("pointermove", onPointerMove);
+        document.removeEventListener("pointerup", onPointerUp);
+        document.removeEventListener("pointercancel", onPointerCancel);
+        document.removeEventListener("keydown", onKeyDown);
+        if (button.hasPointerCapture?.(event.pointerId)) {
+          button.releasePointerCapture(event.pointerId);
+        }
+        button.classList.remove("painting");
+        button.classList.remove("reset-target");
+        const paneNode = paneLayoutState.findPaneNode(getProjectPaneLayout(project), paneId) as PaneNode | null;
+        if (paneNode) {
+          syncPaneExpansionButton(project, paneNode, button);
+        }
+        isPaintingPaneExpansion = false;
+        clearPaneExpansionPreview();
+      }
+
+      function resetSelection() {
+        touchedPaneIds.clear();
+        touchedPaneIds.add(paneId);
+        coveredPaneIds = showPaneExpansionPreview(project, touchedPaneIds);
+      }
+
+      function onPointerMove(moveEvent: PointerEvent) {
+        if (moveEvent.pointerId !== event.pointerId || wasCancelled) {
+          return;
+        }
+
+        if (!didDrag) {
+          const movedX = Math.abs(moveEvent.clientX - startX);
+          const movedY = Math.abs(moveEvent.clientY - startY);
+          if (movedX < 4 && movedY < 4) {
+            return;
+          }
+          didDrag = true;
+        }
+
+        const isOverButton = isPointInsideRect(moveEvent, button.getBoundingClientRect());
+        if (!isOverButton) {
+          if (!didLeaveButton) {
+            button.classList.add("reset-target");
+            button.title = "Reset pane selection";
+            button.setAttribute("aria-label", "Reset pane selection");
+            button.replaceChildren(createToolIcon("refresh"));
+          }
+          didLeaveButton = true;
+          isResetting = false;
+        } else if (didLeaveButton && !isResetting) {
+          resetSelection();
+          isResetting = true;
+          return;
+        }
+
+        const touchedPaneId = findPaneIdAtPoint(moveEvent);
+        if (touchedPaneId && !touchedPaneIds.has(touchedPaneId)) {
+          touchedPaneIds.add(touchedPaneId);
+          coveredPaneIds = showPaneExpansionPreview(project, touchedPaneIds);
+        }
+      }
+
+      function onPointerUp(upEvent: PointerEvent) {
+        if (upEvent.pointerId !== event.pointerId) {
+          return;
+        }
+
+        cleanup();
+        if (wasCancelled) {
+          suppressExpansionClickUntil = Date.now() + 250;
+          return;
+        }
+        if (!didDrag) {
+          suppressExpansionClickUntil = Date.now() + 250;
+          togglePaneExpansion(project, paneId);
+          return;
+        }
+
+        suppressExpansionClickUntil = Date.now() + 250;
+        activatePaneExpansion(project, paneId, coveredPaneIds);
+      }
+
+      function onPointerCancel(cancelEvent: PointerEvent) {
+        if (cancelEvent.pointerId !== event.pointerId) {
+          return;
+        }
+
+        suppressExpansionClickUntil = Date.now() + 250;
+        cleanup();
+      }
+
+      function onKeyDown(keyEvent: KeyboardEvent) {
+        if (keyEvent.key !== "Escape") {
+          return;
+        }
+
+        keyEvent.preventDefault();
+        wasCancelled = true;
+        resetSelection();
+        document.removeEventListener("pointermove", onPointerMove);
+        document.removeEventListener("keydown", onKeyDown);
+        button.classList.remove("painting");
+        button.classList.remove("reset-target");
+        const paneNode = paneLayoutState.findPaneNode(getProjectPaneLayout(project), paneId) as PaneNode | null;
+        if (paneNode) {
+          syncPaneExpansionButton(project, paneNode, button);
+        }
+        isPaintingPaneExpansion = false;
+        clearPaneExpansionPreview();
+      }
+
+      document.addEventListener("pointermove", onPointerMove);
+      document.addEventListener("pointerup", onPointerUp);
+      document.addEventListener("pointercancel", onPointerCancel);
+      document.addEventListener("keydown", onKeyDown);
     }
 
     function splitPane(project: RendererProject, paneId: string, direction: string) {
@@ -411,6 +735,7 @@ export function createPaneLayoutView({
         webApps.find((webApp: PaneWebApp) => webApp.id === "manual")?.id ||
         webApps.find((webApp: PaneWebApp) => webApp.id !== currentWebAppId)?.id ||
         currentWebAppId;
+      paneLayoutState.clearPaneExpansionMemories(project);
       const replacement = paneLayoutState.createSplitNode(
         project,
         direction,
@@ -436,6 +761,7 @@ export function createPaneLayoutView({
         return;
       }
 
+      paneLayoutState.clearPaneExpansionMemories(project);
       paneLayoutState.deleteSelectedWebAppForPane(paneId);
       paneLayoutState.setPaneLayout(project.id, result.node);
       persistPaneLayout(project);
@@ -605,23 +931,55 @@ export function createPaneLayoutView({
       );
     }
 
-    function syncReusedPaneActions(project: RendererProject, paneNode: PaneNode, pane: HTMLElement) {
+    function syncPaneExpansionButton(project: RendererProject, paneNode: PaneNode, button: HTMLButtonElement) {
       const expansionState = paneLayoutState.getPaneExpansionState(project, paneNode.id);
-      const expandPaneButton = getPaneActionButton(pane, "expand", "Expand pane");
-      const shrinkPaneButton = getPaneActionButton(pane, "shrink", "Shrink pane");
+      const isShrink = expansionState.canShrink;
+      const label = isShrink ? "Shrink pane" : "Expand pane";
+      button.dataset.paneAction = "toggle-expand";
+      button.dataset.paneExpansionMode = isShrink ? "shrink" : "expand";
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.setAttribute("aria-pressed", String(isShrink));
+      button.disabled = isShrink ? false : !expansionState.canExpand;
+      button.classList.toggle("active", isShrink);
+      button.replaceChildren(createToolIcon(isShrink ? "shrinkPane" : "expandPane"));
+    }
+
+    function syncReusedPaneActions(project: RendererProject, paneNode: PaneNode, pane: HTMLElement) {
+      const hasActiveExpansions = paneLayoutState.findActivePaneExpansions(project).length > 0;
+      const expansionButton = getPaneActionButton(pane, "toggle-expand", "Expand pane") ||
+        getPaneActionButton(pane, "shrink", "Shrink pane");
+      const verticalSplitButton = getPaneActionButton(pane, "split-vertical", "Split vertically");
+      const horizontalSplitButton = getPaneActionButton(pane, "split-horizontal", "Split horizontally");
       const closePaneButton = getPaneActionButton(pane, "close", "Close pane");
 
-      if (expandPaneButton) {
-        expandPaneButton.disabled = !expansionState.canExpand;
+      if (expansionButton) {
+        syncPaneExpansionButton(project, paneNode, expansionButton);
       }
 
-      if (shrinkPaneButton) {
-        shrinkPaneButton.disabled = !expansionState.canShrink;
-        shrinkPaneButton.classList.toggle("active", expansionState.canShrink);
+      if (verticalSplitButton) {
+        verticalSplitButton.disabled = hasActiveExpansions;
+      }
+
+      if (horizontalSplitButton) {
+        horizontalSplitButton.disabled = hasActiveExpansions;
       }
 
       if (closePaneButton) {
-        closePaneButton.disabled = paneLayoutState.countPaneNodes(getProjectPaneLayout(project)) <= 1;
+        closePaneButton.disabled = hasActiveExpansions ||
+          paneLayoutState.countPaneNodes(getProjectPaneLayout(project)) <= 1;
+      }
+    }
+
+    function syncVisiblePaneActions(project: RendererProject) {
+      for (const pane of getPaneElements()) {
+        const paneId = pane.dataset.paneId;
+        const paneNode = paneId
+          ? paneLayoutState.findPaneNode(getProjectPaneLayout(project), paneId) as PaneNode | null
+          : null;
+        if (paneNode) {
+          syncReusedPaneActions(project, paneNode, pane);
+        }
       }
     }
 
@@ -1203,35 +1561,44 @@ export function createPaneLayoutView({
         tabs.append(terminalPaneTabs);
       }
 
-      const expansionState = paneLayoutState.getPaneExpansionState(project, paneNode.id);
-      const expandPaneButton = document.createElement("button");
-      expandPaneButton.className = "webapp-tool-button";
-      expandPaneButton.type = "button";
-      expandPaneButton.dataset.paneAction = "expand";
-      expandPaneButton.title = "Expand pane";
-      expandPaneButton.setAttribute("aria-label", "Expand pane");
-      expandPaneButton.append(createToolIcon("expandPane"));
-      expandPaneButton.disabled = !expansionState.canExpand;
-      expandPaneButton.addEventListener("mouseenter", () => previewPaneExpansion(project, paneNode.id, !expandPaneButton.disabled));
-      expandPaneButton.addEventListener("mouseleave", clearPaneExpansionPreview);
-      expandPaneButton.addEventListener("focus", () => previewPaneExpansion(project, paneNode.id, !expandPaneButton.disabled));
-      expandPaneButton.addEventListener("blur", clearPaneExpansionPreview);
-      expandPaneButton.addEventListener("click", () => expandPane(project, paneNode.id));
-
-      const shrinkPaneButton = document.createElement("button");
-      shrinkPaneButton.className = "webapp-tool-button";
-      shrinkPaneButton.type = "button";
-      shrinkPaneButton.dataset.paneAction = "shrink";
-      shrinkPaneButton.title = "Shrink pane";
-      shrinkPaneButton.setAttribute("aria-label", "Shrink pane");
-      shrinkPaneButton.append(createToolIcon("shrinkPane"));
-      shrinkPaneButton.disabled = !expansionState.canShrink;
-      shrinkPaneButton.classList.toggle("active", expansionState.canShrink);
-      shrinkPaneButton.addEventListener("click", () => shrinkPane(project, paneNode.id));
+      const expansionButton = document.createElement("button");
+      expansionButton.className = "webapp-tool-button pane-expansion-button";
+      expansionButton.type = "button";
+      syncPaneExpansionButton(project, paneNode, expansionButton);
+      expansionButton.addEventListener("mouseenter", () => {
+        if (expansionButton.dataset.paneExpansionMode === "expand") {
+          previewPaneExpansion(project, paneNode.id, !expansionButton.disabled);
+        }
+      });
+      expansionButton.addEventListener("mouseleave", () => {
+        if (!isPaintingPaneExpansion) {
+          clearPaneExpansionPreview();
+        }
+      });
+      expansionButton.addEventListener("focus", () => {
+        if (expansionButton.dataset.paneExpansionMode === "expand") {
+          previewPaneExpansion(project, paneNode.id, !expansionButton.disabled);
+        }
+      });
+      expansionButton.addEventListener("blur", () => {
+        if (!isPaintingPaneExpansion) {
+          clearPaneExpansionPreview();
+        }
+      });
+      expansionButton.addEventListener("pointerdown", (event) => {
+        startPaneExpansionBrush(event, project, paneNode.id, expansionButton);
+      });
+      expansionButton.addEventListener("click", () => {
+        if (Date.now() < suppressExpansionClickUntil) {
+          return;
+        }
+        togglePaneExpansion(project, paneNode.id);
+      });
 
       const verticalSplitButton = document.createElement("button");
       verticalSplitButton.className = "webapp-tool-button split-vertical";
       verticalSplitButton.type = "button";
+      verticalSplitButton.dataset.paneAction = "split-vertical";
       verticalSplitButton.title = "Split vertically";
       verticalSplitButton.setAttribute("aria-label", "Split vertically");
       verticalSplitButton.append(createToolIcon("splitVertical"));
@@ -1240,6 +1607,7 @@ export function createPaneLayoutView({
       const horizontalSplitButton = document.createElement("button");
       horizontalSplitButton.className = "webapp-tool-button split-horizontal";
       horizontalSplitButton.type = "button";
+      horizontalSplitButton.dataset.paneAction = "split-horizontal";
       horizontalSplitButton.title = "Split horizontally";
       horizontalSplitButton.setAttribute("aria-label", "Split horizontally");
       horizontalSplitButton.append(createToolIcon("splitHorizontal"));
@@ -1252,10 +1620,14 @@ export function createPaneLayoutView({
       closePaneButton.title = "Close pane";
       closePaneButton.setAttribute("aria-label", "Close pane");
       closePaneButton.append(createToolIcon("close"));
-      closePaneButton.disabled = paneLayoutState.countPaneNodes(getProjectPaneLayout(project)) <= 1;
+      const hasActiveExpansions = paneLayoutState.findActivePaneExpansions(project).length > 0;
+      verticalSplitButton.disabled = hasActiveExpansions;
+      horizontalSplitButton.disabled = hasActiveExpansions;
+      closePaneButton.disabled = hasActiveExpansions ||
+        paneLayoutState.countPaneNodes(getProjectPaneLayout(project)) <= 1;
       closePaneButton.addEventListener("click", () => closePane(project, paneNode.id));
 
-      actions.append(expandPaneButton, shrinkPaneButton, verticalSplitButton, horizontalSplitButton, closePaneButton);
+      actions.append(expansionButton, verticalSplitButton, horizontalSplitButton, closePaneButton);
       header.append(tabs, actions);
 
       pane.append(header, host);
@@ -1304,14 +1676,20 @@ export function createPaneLayoutView({
       project: RendererProject,
       node: PaneLayoutNode,
       reusablePanes?: PaneElementReuseMap,
-      options: PaneReuseOptions = {}
+      options: PaneReuseOptions = {},
+      isNested = false
     ): HTMLElement {
-      if (node.type === "pane") {
-        return reuseWebAppPane(project, node, reusablePanes, options) || createWebAppPane(project, node);
+      if (!isNested) {
+        clearPaneExpansionPreview();
+        clearActivePaneExpansionPresentation();
       }
 
-      if (node.expandedChild === "first" || node.expandedChild === "second") {
-        return createPaneLayout(project, node[node.expandedChild], reusablePanes, options);
+      if (node.type === "pane") {
+        const pane = reuseWebAppPane(project, node, reusablePanes, options) || createWebAppPane(project, node);
+        if (!isNested) {
+          scheduleActivePaneExpansionPresentation(project);
+        }
+        return pane;
       }
 
       const split = document.createElement("div");
@@ -1319,10 +1697,13 @@ export function createPaneLayoutView({
       split.dataset.splitId = node.id;
       applySplitRatio(split, node);
       split.append(
-        createPaneLayout(project, node.first, reusablePanes, options),
+        createPaneLayout(project, node.first, reusablePanes, options, true),
         createSplitResizer(project, node),
-        createPaneLayout(project, node.second, reusablePanes, options)
+        createPaneLayout(project, node.second, reusablePanes, options, true)
       );
+      if (!isNested) {
+        scheduleActivePaneExpansionPresentation(project);
+      }
       return split;
     }
 
