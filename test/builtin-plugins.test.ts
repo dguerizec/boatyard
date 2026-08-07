@@ -593,6 +593,17 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /Array\.from\(clipboardData\.items \|\| \[\]\)/);
   assert.match(renderer, /attachments: creationDraft\.attachments\.map\(\(attachment\) => attachment\.dataUrl\)/);
   assert.match(renderer, /className = "twicc-session-flow-remove-attachment"/);
+  assert.match(renderer, /TWICC_SESSION_CREATION_DRAFT_STORAGE_PREFIX = "boatyard:twicc-session-creation-draft:"/);
+  assert.match(renderer, /const projectId = String\(project\.id \|\| project\.sourcePath \|\| projectReference \|\| "default"\)/);
+  assert.match(renderer, /const restoredCreation = readSessionCreationDraft\(creationDraftStorageKey\)/);
+  assert.match(renderer, /let composerMode: TwiccSessionComposerMode = restoredCreation\?\.mode \|\| ""/);
+  assert.match(renderer, /sessionCreationDraftCache\.set\(storageKey,[\s\S]*?attachments: \[\.\.\.draft\.attachments\]/);
+  assert.match(renderer, /localStorage\?\.setItem\(storageKey, JSON\.stringify\(stored\)\)/);
+  assert.match(renderer, /titleInput\.addEventListener\("input", \(\) => \{[\s\S]*?persistCreationDraft\(\)/);
+  assert.match(renderer, /promptInput\.addEventListener\("input", \(\) => \{[\s\S]*?persistCreationDraft\(\)/);
+  assert.match(renderer, /function closeCreationComposer\(\): void \{[\s\S]*?clearSessionCreationDraft\(creationDraftStorageKey\)/);
+  assert.match(renderer, /pendingCreatedSessions\.set\(created\.sessionId[\s\S]*?clearSessionCreationDraft\(creationDraftStorageKey\)/);
+  assert.match(renderer, /if \(composerMode === "worktree"\) \{\s*void loadWorktreeCreationOptions\(\)/);
   assert.match(styles, /\.twicc-session-flow-attachments/);
   assert.match(styles, /\.twicc-session-flow-attachment img/);
   assert.match(renderer, /sessionFlowLane: "in_progress"/);

@@ -104,6 +104,21 @@
     usePier: boolean;
     worktreeMode: TwiccWorktreeMode;
   };
+  type TwiccStoredSessionCreationDraft = {
+    branch: string;
+    mode: Exclude<TwiccSessionComposerMode, "">;
+    path: string;
+    pathEdited: boolean;
+    prompt: string;
+    startFrom: string;
+    title: string;
+    version: 1;
+    worktreeMode: TwiccWorktreeMode;
+  };
+  type TwiccCachedSessionCreationDraft = {
+    draft: TwiccSessionCreationDraft;
+    mode: Exclude<TwiccSessionComposerMode, "">;
+  };
   type PierSessionFlowService = PluginRegistryRecord & {
     createWorktree(project: TwiccProject, payload?: Record<string, unknown>): Promise<unknown> | undefined;
     getDefaultWorktreePath(project: TwiccProject, branchName?: unknown, options?: PluginRegistryRecord): string;
@@ -205,6 +220,7 @@
   const WEBAPP_URL_CHANGED_EVENT = "boatyard:webapp-url-changed";
   const TWICC_SESSION_FLOW_ORIENTATION_EVENT = "boatyard:twicc-session-flow-orientation";
   const TWICC_SESSION_FLOW_ORIENTATION_STORAGE_PREFIX = "boatyard:twicc-session-flow-orientation:";
+  const TWICC_SESSION_CREATION_DRAFT_STORAGE_PREFIX = "boatyard:twicc-session-creation-draft:";
   const TWICC_SESSION_FLOW_LANES: Array<{ id: TwiccSessionFlowLane; label: string }> = [
     { id: "in_progress", label: "In progress" },
     { id: "backlog", label: "Backlog" },
@@ -231,6 +247,7 @@
   let nextSessionFlowSurfaceId = 0;
   const retainedDoneProjectStatuses = new Map<string, TwiccProjectStatus>();
   const acknowledgedDoneProjectSignatures = new Map<string, string>();
+  const sessionCreationDraftCache = new Map<string, TwiccCachedSessionCreationDraft>();
   let projectStatusRefreshTimer: number | null = null;
   let latestGlobalConfig: TwiccConfig = {};
 
@@ -1248,6 +1265,128 @@
       || getProjectIdFromUrl(options.pluginConfig?.twiccProjectUrl);
   }
 
+  function createEmptySessionCreationDraft(): TwiccSessionCreationDraft {
+    return {
+      attachments: [],
+      attachmentsLoading: 0,
+      branch: "",
+      path: "",
+      pathEdited: false,
+      prompt: "",
+      startFrom: "",
+      title: "",
+      usePier: false,
+      worktreeMode: "new"
+    };
+  }
+
+  function getSessionCreationDraftStorageKey(project: TwiccProject, projectReference: unknown): string {
+    const projectId = String(project.id || project.sourcePath || projectReference || "default").trim() || "default";
+    return `${TWICC_SESSION_CREATION_DRAFT_STORAGE_PREFIX}${encodeURIComponent(projectId)}`;
+  }
+
+  function normalizeStoredSessionCreationDraft(value: unknown): TwiccStoredSessionCreationDraft | null {
+    if (!isRecord(value) || value.version !== 1) {
+      return null;
+    }
+    const mode = value.mode === "direct" || value.mode === "worktree" ? value.mode : "";
+    if (!mode) {
+      return null;
+    }
+    return {
+      branch: String(value.branch || ""),
+      mode,
+      path: String(value.path || ""),
+      pathEdited: value.pathEdited === true,
+      prompt: String(value.prompt || ""),
+      startFrom: String(value.startFrom || ""),
+      title: String(value.title || ""),
+      version: 1,
+      worktreeMode: value.worktreeMode === "existing" ? "existing" : "new"
+    };
+  }
+
+  function readSessionCreationDraft(storageKey: string): TwiccCachedSessionCreationDraft | null {
+    const cached = sessionCreationDraftCache.get(storageKey);
+    if (cached) {
+      return {
+        draft: {
+          ...cached.draft,
+          attachments: [...cached.draft.attachments],
+          attachmentsLoading: 0,
+          usePier: false
+        },
+        mode: cached.mode
+      };
+    }
+    try {
+      const stored = normalizeStoredSessionCreationDraft(JSON.parse(
+        globalScope.localStorage?.getItem(storageKey) || "null"
+      ));
+      if (!stored) {
+        return null;
+      }
+      return {
+        draft: {
+          ...createEmptySessionCreationDraft(),
+          branch: stored.branch,
+          path: stored.path,
+          pathEdited: stored.pathEdited,
+          prompt: stored.prompt,
+          startFrom: stored.startFrom,
+          title: stored.title,
+          worktreeMode: stored.worktreeMode
+        },
+        mode: stored.mode
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function persistSessionCreationDraft(
+    storageKey: string,
+    mode: TwiccSessionComposerMode,
+    draft: TwiccSessionCreationDraft
+  ): void {
+    if (!mode) {
+      return;
+    }
+    sessionCreationDraftCache.set(storageKey, {
+      draft: {
+        ...draft,
+        attachments: [...draft.attachments],
+        attachmentsLoading: 0
+      },
+      mode
+    });
+    const stored: TwiccStoredSessionCreationDraft = {
+      branch: draft.branch,
+      mode,
+      path: draft.path,
+      pathEdited: draft.pathEdited,
+      prompt: draft.prompt,
+      startFrom: draft.startFrom,
+      title: draft.title,
+      version: 1,
+      worktreeMode: draft.worktreeMode
+    };
+    try {
+      globalScope.localStorage?.setItem(storageKey, JSON.stringify(stored));
+    } catch {
+      // The in-memory copy still preserves the draft while Boatyard remains open.
+    }
+  }
+
+  function clearSessionCreationDraft(storageKey: string): void {
+    sessionCreationDraftCache.delete(storageKey);
+    try {
+      globalScope.localStorage?.removeItem(storageKey);
+    } catch {
+      // The in-memory draft has still been cleared.
+    }
+  }
+
   function getSessionFlowOrientationStorageKey(project: TwiccProject, paneId: unknown): string {
     const projectId = String(project.id || project.sourcePath || "default").trim() || "default";
     const normalizedPaneId = String(paneId || "default").trim() || "default";
@@ -1314,6 +1453,8 @@
     widget.append(board, message, archiveDropzone);
 
     const projectReference = getSessionFlowProjectReference(project, props);
+    const creationDraftStorageKey = getSessionCreationDraftStorageKey(project, projectReference);
+    const restoredCreation = readSessionCreationDraft(creationDraftStorageKey);
     const twiccWebAppState = props.getProjectWebAppState?.("twicc-plugin");
     const twiccWebAppKey = String(twiccWebAppState?.key || "");
     let activeSessionId = getSessionIdFromUrl(twiccWebAppState?.url);
@@ -1330,25 +1471,18 @@
     let editingSessionId = "";
     let editingSessionDraft = "";
     let renamingSessionId = "";
-    let composerMode: TwiccSessionComposerMode = "";
+    let composerMode: TwiccSessionComposerMode = restoredCreation?.mode || "";
     let creationOptions: TwiccSessionCreationOptions | null = null;
-    let creationOptionsLoading = false;
+    let creationOptionsLoading = composerMode === "worktree";
     let creationError = "";
     let pierAvailable = false;
     let pierWorktreePattern = "";
     let creationRequestId = 0;
-    let creationDraft: TwiccSessionCreationDraft = {
-      attachments: [],
-      attachmentsLoading: 0,
-      branch: "",
-      path: "",
-      pathEdited: false,
-      prompt: "",
-      startFrom: "",
-      title: "",
-      usePier: false,
-      worktreeMode: "new"
-    };
+    let creationDraft = restoredCreation?.draft || createEmptySessionCreationDraft();
+
+    function persistCreationDraft(): void {
+      persistSessionCreationDraft(creationDraftStorageKey, composerMode, creationDraft);
+    }
 
     function isAlive(): boolean {
       if (widget.isConnected) {
@@ -1661,18 +1795,8 @@
     function resetCreationDraft(mode: TwiccSessionComposerMode): void {
       composerMode = mode;
       creationError = "";
-      creationDraft = {
-        attachments: [],
-        attachmentsLoading: 0,
-        branch: "",
-        path: "",
-        pathEdited: false,
-        prompt: "",
-        startFrom: "",
-        title: "",
-        usePier: false,
-        worktreeMode: "new"
-      };
+      creationDraft = createEmptySessionCreationDraft();
+      persistCreationDraft();
     }
 
     function focusCreationComposer(): void {
@@ -1692,8 +1816,7 @@
       focusCreationComposer();
     }
 
-    async function openWorktreeComposer(): Promise<void> {
-      resetCreationDraft("worktree");
+    async function loadWorktreeCreationOptions(): Promise<void> {
       creationOptions = null;
       creationOptionsLoading = true;
       pierAvailable = false;
@@ -1718,7 +1841,10 @@
         pierAvailable = pierAvailability.available && Boolean(pierService);
         pierWorktreePattern = pierAvailability.worktreePattern;
         creationDraft.usePier = pierAvailable;
-        creationDraft.path = joinWorktreePath(creationOptions.defaultWorktreeBase, creationDraft.branch);
+        if (creationDraft.worktreeMode === "new" && !creationDraft.pathEdited) {
+          creationDraft.path = joinWorktreePath(creationOptions.defaultWorktreeBase, creationDraft.branch);
+        }
+        persistCreationDraft();
       } catch (error) {
         if (requestId === creationRequestId && composerMode === "worktree") {
           creationError = error instanceof Error ? error.message : String(error);
@@ -1732,8 +1858,14 @@
       }
     }
 
+    async function openWorktreeComposer(): Promise<void> {
+      resetCreationDraft("worktree");
+      await loadWorktreeCreationOptions();
+    }
+
     function closeCreationComposer(): void {
       creationRequestId += 1;
+      clearSessionCreationDraft(creationDraftStorageKey);
       composerMode = "";
       creationOptionsLoading = false;
       creationError = "";
@@ -2079,6 +2211,7 @@
       titleInput.value = creationDraft.title;
       titleInput.addEventListener("input", () => {
         creationDraft.title = titleInput.value;
+        persistCreationDraft();
       });
 
       const promptInput = document.createElement("textarea");
@@ -2089,6 +2222,7 @@
       promptInput.setAttribute("aria-keyshortcuts", "Control+Enter");
       promptInput.addEventListener("input", () => {
         creationDraft.prompt = promptInput.value;
+        persistCreationDraft();
       });
       promptInput.addEventListener("keydown", (event) => {
         if (
@@ -2116,6 +2250,7 @@
           .then((attachments) => {
             if (creationDraft === draft && composerMode) {
               draft.attachments.push(...attachments);
+              persistCreationDraft();
             }
           })
           .catch((error) => {
@@ -2161,6 +2296,7 @@
           removeButton.setAttribute("aria-label", `Remove ${attachment.name}`);
           removeButton.addEventListener("click", () => {
             creationDraft.attachments.splice(index, 1);
+            persistCreationDraft();
             render();
           });
           attachmentItem.append(preview, removeButton);
@@ -2211,6 +2347,7 @@
             ? getDefaultNewWorktreePath(creationDraft.branch)
             : "";
           creationError = "";
+          persistCreationDraft();
           render();
         });
         tabs.append(button);
@@ -2248,10 +2385,12 @@
           creationDraft.path = getDefaultNewWorktreePath(creationDraft.branch);
           pathInput.value = creationDraft.path;
         }
+        persistCreationDraft();
       });
       pathInput.addEventListener("input", () => {
         creationDraft.path = pathInput.value;
         creationDraft.pathEdited = true;
+        persistCreationDraft();
       });
 
       const fields: HTMLElement[] = [
@@ -2278,6 +2417,7 @@
       startFrom.value = creationDraft.startFrom;
       startFrom.addEventListener("change", () => {
         creationDraft.startFrom = startFrom.value;
+        persistCreationDraft();
       });
       const startField = createComposerField("Start from", startFrom, "Only used when creating a new branch.");
       startField.hidden = !isNewWorktreeBranch();
@@ -2321,6 +2461,7 @@
       select.value = creationDraft.path;
       select.addEventListener("change", () => {
         creationDraft.path = select.value;
+        persistCreationDraft();
       });
       return [createComposerField(
         "Worktree",
@@ -2442,6 +2583,7 @@
         };
         pendingCreatedSessions.set(created.sessionId, { createdAt, item: createdItem });
         sessions = [createdItem, ...sessions.filter((session) => session.id !== created.sessionId)];
+        clearSessionCreationDraft(creationDraftStorageKey);
         composerMode = "";
         creationRequestId += 1;
         delete widget.dataset.creating;
@@ -2465,6 +2607,7 @@
           ];
           creationDraft.worktreeMode = "existing";
           creationDraft.path = worktreePath;
+          persistCreationDraft();
           creationError = `Pier created the worktree, but TwiCC could not create the session: ${detail}. Retry from Existing worktree.`;
         } else {
           creationError = detail;
@@ -2861,6 +3004,9 @@
     }
 
     globalScope.addEventListener?.(WEBAPP_URL_CHANGED_EVENT, handleWebAppUrlChanged);
+    if (composerMode === "worktree") {
+      void loadWorktreeCreationOptions();
+    }
     void load();
     const refreshInterval = globalScope.setInterval?.(() => {
       if (!isAlive()) {
