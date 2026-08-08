@@ -2931,10 +2931,6 @@ body.sidebar-collapsed .workspace {
   margin: 0;
 }
 
-.project-workbench.pane-expansion-active .webapp-split-resizer {
-  pointer-events: none;
-}
-
 .webapp-split.vertical {
   grid-template-rows: minmax(0, 1fr);
 }

@@ -122,6 +122,15 @@ test("pane expansion uses border previews and one toggle control", () => {
   assert.doesNotMatch(view, /const shrinkPaneButton/);
 });
 
+test("active pane expansions keep split resizers interactive", () => {
+  const styles = readFileSync(`${process.cwd()}/src/renderer/styles.css`, "utf8");
+
+  assert.doesNotMatch(
+    styles,
+    /\.pane-expansion-active\s+\.webapp-split-resizer\s*\{[^}]*pointer-events\s*:\s*none/s
+  );
+});
+
 test("pane expansion can hide covered native web surfaces without forgetting them", () => {
   const tracker = createVisibleWebAppTracker({
     findPaneNode: () => null,
