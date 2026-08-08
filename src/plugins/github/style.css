@@ -83,6 +83,12 @@
   gap: 12px;
 }
 
+.github-widget-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .github-widget-title {
   min-width: 0;
   display: grid;
@@ -158,6 +164,12 @@
 
 .github-refresh-button:hover,
 .github-refresh-button:focus-visible,
+.github-hidden-runs-button:hover,
+.github-hidden-runs-button:focus-visible,
+.github-hide-run-button:hover,
+.github-hide-run-button:focus-visible,
+.github-show-run-button:hover,
+.github-show-run-button:focus-visible,
 .github-link-button:hover,
 .github-link-button:focus-visible,
 .github-run-link:hover,
@@ -174,6 +186,28 @@
 
 .github-refresh-button.loading {
   animation: github-spin 1s linear infinite;
+}
+
+.github-hidden-runs-button {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-strong);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.github-hidden-runs-button.active {
+  border-color: rgba(var(--accent-rgb), 0.75);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--text);
+}
+
+.github-hidden-runs-button:disabled {
+  opacity: 0.5;
 }
 
 .github-active-run {
@@ -195,6 +229,44 @@
   color: var(--muted);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+.github-hide-run-button,
+.github-show-run-button {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.68;
+}
+
+.github-hide-run-button:hover,
+.github-hide-run-button:focus-visible,
+.github-show-run-button:hover,
+.github-show-run-button:focus-visible {
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--text);
+  opacity: 1;
+}
+
+.github-hide-run-button:disabled,
+.github-show-run-button:disabled {
+  opacity: 0.35;
+}
+
+.github-hidden-run {
+  border-style: dashed;
+  opacity: 0.78;
 }
 
 .github-run-link,

@@ -86,6 +86,11 @@ type RendererContext = {
     boatyard: {
       invokePlugin(pluginId: string, actionName: string, payload: unknown): Promise<unknown>;
       openExternal(url?: unknown): void;
+      updateProjectPluginConfig?(
+        projectId: string,
+        pluginId: string,
+        config: Record<string, unknown>
+      ): Promise<unknown>;
     };
   };
 };
@@ -909,6 +914,146 @@ test("GitHub Actions widget renders active matrix jobs and terminal conclusions"
   assert.ok(findAllByClass(card, "failure").length >= 2);
   assert.ok(findAllByClass(card, "muted").length >= 1);
   assert.ok(findAllByClass(card, "warning").length >= 1);
+});
+
+test("GitHub Actions hides and restores persisted workflow runs across the widget and project indicator", async () => {
+  let rerenderProjectBadges = () => {};
+  const persistedConfigs: Array<{
+    config: Record<string, unknown>;
+    pluginId: string;
+    projectId: string;
+  }> = [];
+  const hiddenRun = createWorkflowRun({ id: 31, name: "Stuck staging" });
+  const visibleRun = createWorkflowRun({ id: 32, name: "Current staging" });
+  const context: RendererContext = {
+    clearTimeout: () => {},
+    console,
+    document: {
+      createElement: () => new FakeElement()
+    },
+    queueMicrotask,
+    setTimeout: () => 1,
+    window: {
+      CustomEvent: class MockCustomEvent {
+        type: string;
+
+        constructor(type: string) {
+          this.type = type;
+        }
+      } as unknown as typeof CustomEvent,
+      dispatchEvent: (event: { type: string }) => {
+        if (event.type === "boatyard:project-nav-badges-changed") {
+          rerenderProjectBadges();
+        }
+        return true;
+      },
+      boatyard: {
+        invokePlugin: async (_pluginId, actionName) => {
+          if (actionName === "actionsSnapshotForProject") {
+            return {
+              ...createSnapshot(),
+              activeRunCount: 2,
+              runs: [hiddenRun, visibleRun]
+            };
+          }
+          if (actionName === "pullRequestsSnapshotForProject") {
+            return createPullRequestsSnapshot();
+          }
+          throw new Error(`Unexpected action ${actionName}`);
+        },
+        openExternal: () => {},
+        updateProjectPluginConfig: async (projectId, pluginId, config) => {
+          persistedConfigs.push({ config, pluginId, projectId });
+          return {};
+        }
+      }
+    }
+  };
+  const widgetRegistry = activateGitHubWidgets(context);
+  const project = {
+    id: "project-id",
+    repoUrl: "https://github.com/octo-org/example"
+  };
+  const projectConfig = {
+    hiddenWorkflowRunIds: JSON.stringify([hiddenRun.id])
+  };
+  const definition = widgetRegistry?.get("boatyard.github.actions") as {
+    createElement(
+      project: Record<string, unknown>,
+      props: Record<string, unknown>
+    ): FakeElement;
+  };
+  const card = definition.createElement(project, {
+    pluginConfig: projectConfig,
+    projectId: project.id
+  });
+  const badgeDefinition = getProjectStatusBadgeDefinition(context);
+  rerenderProjectBadges = () => {
+    badgeDefinition?.render({ project, projectConfig });
+  };
+  const badge = badgeDefinition?.render({ project, projectConfig }) as FakeElement;
+  card.isConnected = true;
+  badge.isConnected = true;
+
+  await flush();
+  await flush();
+
+  assert.equal(findByText(card, "Stuck staging"), null);
+  assert.ok(findByText(card, "Current staging"));
+  assert.ok(badge.className.includes("workflow-running"));
+  const hiddenRunsButton = findByClass(card, "github-hidden-runs-button");
+  assert.equal(hiddenRunsButton?.textContent, "1 hidden");
+  assert.equal(hiddenRunsButton?.title, "Show hidden workflows");
+
+  const hideButton = findByClass(card, "github-hide-run-button");
+  assert.equal(hideButton?.title, "Hide this workflow");
+  assert.match(hideButton?.getAttribute("aria-label") || "", /Current staging/);
+  hideButton?.trigger("click");
+  await flush();
+
+  assert.equal(findByText(card, "Current staging"), null);
+  assert.match(
+    findByClass(card, "github-widget-title")?.children[1]?.textContent || "",
+    /^No active runs/
+  );
+  assert.equal(persistedConfigs.length, 1);
+  assert.equal(persistedConfigs[0].pluginId, "boatyard.github");
+  assert.equal(persistedConfigs[0].projectId, project.id);
+  assert.equal(
+    persistedConfigs[0].config.hiddenWorkflowRunIds,
+    JSON.stringify([String(hiddenRun.id), String(visibleRun.id)])
+  );
+  assert.equal(hiddenRunsButton?.textContent, "2 hidden");
+
+  const updatedBadge = badgeDefinition?.render({ project, projectConfig }) as FakeElement;
+  updatedBadge.isConnected = true;
+  await flush();
+  assert.equal(updatedBadge.hidden, true);
+
+  hiddenRunsButton?.trigger("click");
+  assert.equal(hiddenRunsButton?.title, "Hide hidden workflows");
+  assert.equal(hiddenRunsButton?.getAttribute("aria-expanded"), "true");
+  assert.ok(findByText(card, "Stuck staging"));
+  assert.ok(findByText(card, "Current staging"));
+  const showButtons = findAllByClass(card, "github-show-run-button");
+  assert.equal(showButtons.length, 2);
+  assert.match(showButtons[0].getAttribute("aria-label") || "", /Stuck staging/);
+  showButtons[0].trigger("click");
+  await flush();
+
+  assert.equal(persistedConfigs.length, 2);
+  assert.equal(
+    persistedConfigs[1].config.hiddenWorkflowRunIds,
+    JSON.stringify([String(visibleRun.id)])
+  );
+  assert.equal(hiddenRunsButton?.textContent, "1 hidden");
+  assert.ok(findByText(card, "Stuck staging"));
+  assert.equal(findAllByClass(card, "github-show-run-button").length, 1);
+
+  const restoredBadge = badgeDefinition?.render({ project, projectConfig }) as FakeElement;
+  restoredBadge.isConnected = true;
+  await flush();
+  assert.ok(restoredBadge.className.includes("workflow-running"));
 });
 
 test("GitHub Pull Requests widget renders independent review and CI states and filters locally", async () => {

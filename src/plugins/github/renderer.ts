@@ -110,6 +110,12 @@
 
   type GitHubConfig = {
     githubProjectStatusPriority?: string;
+    hiddenWorkflowRunIds?: string;
+  };
+
+  type GitHubWidgetProps = {
+    pluginConfig?: GitHubConfig;
+    projectId?: string;
   };
 
   type GitHubProjectStatusCategory = "workflowRunning" | "pullRequest" | "workflowResult";
@@ -174,6 +180,7 @@
   const PULL_REQUESTS_REFRESH_MS = 30000;
   const MAX_BACKOFF_MS = 5 * 60 * 1000;
   const GITHUB_PROJECT_STATUS_PRIORITY_DEFAULT = "workflowRunning,pullRequest,workflowResult";
+  const HIDDEN_WORKFLOW_RUN_IDS_CONFIG_KEY = "hiddenWorkflowRunIds";
   const GITHUB_PROJECT_STATUS_PRIORITY_OPTIONS = [
     {
       value: "workflowRunning,pullRequest,workflowResult",
@@ -200,6 +207,7 @@
       label: "Workflow result > Pull request > Running workflow"
     }
   ];
+  const hiddenWorkflowRunIdsByProject = new Map<string, Set<string>>();
   const workflowNotificationStates = new Map<string, GitHubWorkflowNotificationState>();
   let selectedProjectKey: string | null = null;
 
@@ -251,6 +259,60 @@
       project.gitUrl,
       project.slug
     ].map((value) => String(value || "").trim()).join("\u0000");
+  }
+
+  function parseHiddenWorkflowRunIds(value: unknown): Set<string> {
+    try {
+      const parsed = JSON.parse(String(value || "[]"));
+      return new Set(
+        (Array.isArray(parsed) ? parsed : [])
+          .map((runId) => String(runId || "").trim())
+          .filter(Boolean)
+      );
+    } catch {
+      return new Set();
+    }
+  }
+
+  function getHiddenWorkflowRunIds(
+    project: GitHubProject,
+    config: GitHubConfig = {}
+  ): Set<string> {
+    const projectKey = getProjectKey(project);
+    let hiddenRunIds = hiddenWorkflowRunIdsByProject.get(projectKey);
+    if (!hiddenRunIds) {
+      // Badge rerenders can receive stale project config while a visibility update is in flight.
+      // Once initialized, the shared set is authoritative until the renderer is reloaded.
+      hiddenRunIds = parseHiddenWorkflowRunIds(config.hiddenWorkflowRunIds);
+      hiddenWorkflowRunIdsByProject.set(projectKey, hiddenRunIds);
+    }
+    return hiddenRunIds;
+  }
+
+  function serializeHiddenWorkflowRunIds(runIds: Set<string>): string {
+    return JSON.stringify([...runIds].sort((left, right) => Number(left) - Number(right)));
+  }
+
+  function filterHiddenWorkflowRuns(
+    snapshot: GitHubActionsSnapshot | null,
+    hiddenRunIds: Set<string>
+  ): GitHubActionsSnapshot | null {
+    if (!snapshot) {
+      return null;
+    }
+    const runs = snapshot.runs.filter((run) => !hiddenRunIds.has(String(run.id)));
+    return {
+      ...snapshot,
+      activeRunCount: runs.filter((run) => isActiveWorkflowStatus(run.status)).length,
+      runs
+    };
+  }
+
+  function notifyProjectNavBadgesChanged(): void {
+    if (typeof globalScope.dispatchEvent !== "function" || typeof globalScope.CustomEvent !== "function") {
+      return;
+    }
+    globalScope.dispatchEvent(new globalScope.CustomEvent("boatyard:project-nav-badges-changed"));
   }
 
   function createProjectRefreshCoordinator<TSnapshot>({
@@ -624,9 +686,11 @@
   function createProjectStatusBadge(
     project: GitHubProject,
     globalConfig: GitHubConfig = {},
+    projectConfig: GitHubConfig = {},
     options: Pick<PluginProjectNavBadgeRenderContext, "currentView" | "isActiveProject"> = {}
   ): HTMLElement {
     const projectKey = getProjectKey(project);
+    const hiddenRunIds = getHiddenWorkflowRunIds(project, projectConfig);
     observeProjectSelection(
       projectKey,
       options.isActiveProject === true,
@@ -642,9 +706,10 @@
     let connectionCheckCompleted = false;
 
     function updateBadge() {
-      const notificationState = observeWorkflowTransitions(projectKey, actionsSnapshot);
+      const visibleActionsSnapshot = filterHiddenWorkflowRuns(actionsSnapshot, hiddenRunIds);
+      const notificationState = observeWorkflowTransitions(projectKey, visibleActionsSnapshot);
       const signals = getProjectStatusSignals(
-        actionsSnapshot,
+        visibleActionsSnapshot,
         pullRequestsSnapshot,
         notificationState.pendingResult
       );
@@ -654,7 +719,7 @@
         .find(Boolean) || null;
 
       if (currentSignal?.category === "workflowRunning") {
-        rememberDisplayedRunningWorkflows(notificationState, actionsSnapshot);
+        rememberDisplayedRunningWorkflows(notificationState, visibleActionsSnapshot);
       }
 
       badge.hidden = !currentSignal;
@@ -761,6 +826,28 @@
     return button;
   }
 
+  function createWorkflowVisibilityButton(
+    run: GitHubWorkflowRun,
+    hidden: boolean,
+    onChange: (run: GitHubWorkflowRun) => void,
+    disabled = false
+  ): HTMLButtonElement {
+    const action = hidden ? "Show" : "Hide";
+    const button = document.createElement("button");
+    button.className = hidden ? "github-show-run-button" : "github-hide-run-button";
+    button.type = "button";
+    button.disabled = disabled;
+    button.title = `${action} this workflow`;
+    button.setAttribute("aria-label", `${action} this workflow: ${getWorkflowRunTitle(run)}`);
+    button.textContent = hidden ? "⊙" : "⊘";
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onChange(run);
+    });
+    return button;
+  }
+
   function formatDuration(startValue: string, endValue = ""): string {
     const start = Date.parse(startValue);
     const end = endValue ? Date.parse(endValue) : Date.now();
@@ -845,9 +932,14 @@
     return row;
   }
 
-  function createActiveRun(run: GitHubWorkflowRun): HTMLElement {
+  function createActiveRun(
+    run: GitHubWorkflowRun,
+    onVisibilityChange: (run: GitHubWorkflowRun) => void,
+    visibilityChangeDisabled = false,
+    hidden = false
+  ): HTMLElement {
     const section = document.createElement("section");
-    section.className = "github-active-run";
+    section.className = hidden ? "github-active-run github-hidden-run" : "github-active-run";
 
     const header = document.createElement("div");
     header.className = "github-run-header";
@@ -855,8 +947,17 @@
     const title = createExternalLink(getWorkflowRunTitle(run), run.htmlUrl, "github-run-link");
     const duration = document.createElement("small");
     duration.className = "github-run-duration";
-    duration.textContent = formatDuration(run.startedAt || run.createdAt);
-    header.append(status, title, duration);
+    duration.textContent = formatDuration(
+      run.startedAt || run.createdAt,
+      isActiveWorkflowStatus(run.status) ? "" : run.updatedAt
+    );
+    const visibilityButton = createWorkflowVisibilityButton(
+      run,
+      hidden,
+      onVisibilityChange,
+      visibilityChangeDisabled
+    );
+    header.append(status, title, duration, visibilityButton);
 
     const metadata = document.createElement("div");
     metadata.className = "github-run-metadata";
@@ -896,7 +997,14 @@
     return row;
   }
 
-  function createActionsContent(snapshot: GitHubActionsSnapshot): HTMLElement {
+  function createActionsContent(
+    snapshot: GitHubActionsSnapshot,
+    hiddenRuns: GitHubWorkflowRun[],
+    showHiddenRuns: boolean,
+    onHide: (run: GitHubWorkflowRun) => void,
+    onShow: (run: GitHubWorkflowRun) => void,
+    visibilityChangeDisabled = false
+  ): HTMLElement {
     const content = document.createElement("div");
     content.className = "github-widget-content";
 
@@ -920,10 +1028,10 @@
       .filter((run) => !isActiveWorkflowStatus(run.status))
       .slice(0, 5);
 
-    if (!activeRuns.length && !completedRuns.length) {
+    if (!activeRuns.length && !completedRuns.length && !(showHiddenRuns && hiddenRuns.length)) {
       const empty = document.createElement("p");
       empty.className = "github-widget-message";
-      empty.textContent = "No workflow runs.";
+      empty.textContent = hiddenRuns.length ? "No visible workflow runs." : "No workflow runs.";
       content.append(empty);
       return content;
     }
@@ -933,7 +1041,10 @@
       section.className = "github-widget-section";
       const heading = document.createElement("h4");
       heading.textContent = activeRuns.length === 1 ? "Active run" : "Active runs";
-      section.append(heading, ...activeRuns.map(createActiveRun));
+      section.append(
+        heading,
+        ...activeRuns.map((run) => createActiveRun(run, onHide, visibilityChangeDisabled))
+      );
       content.append(section);
     }
 
@@ -948,10 +1059,27 @@
       section.append(heading, list);
       content.append(section);
     }
+
+    if (showHiddenRuns && hiddenRuns.length) {
+      const section = document.createElement("div");
+      section.className = "github-widget-section github-hidden-runs-section";
+      const heading = document.createElement("h4");
+      heading.textContent = "Hidden";
+      section.append(
+        heading,
+        ...hiddenRuns.map((run) => createActiveRun(
+          run,
+          onShow,
+          visibilityChangeDisabled,
+          true
+        ))
+      );
+      content.append(section);
+    }
     return content;
   }
 
-  function createActionsWidget(project: GitHubProject): HTMLElement {
+  function createActionsWidget(project: GitHubProject, props: GitHubWidgetProps = {}): HTMLElement {
     const card = document.createElement("article");
     card.className = "widget-card github-widget github-actions-widget";
 
@@ -965,13 +1093,22 @@
     subtitle.textContent = "Loading workflow runs…";
     titleGroup.append(title, subtitle);
 
+    const headerActions = document.createElement("div");
+    headerActions.className = "github-widget-actions";
+    const hiddenRunsButton = document.createElement("button");
+    hiddenRunsButton.className = "github-hidden-runs-button";
+    hiddenRunsButton.type = "button";
+    hiddenRunsButton.hidden = true;
+    hiddenRunsButton.title = "Show hidden workflows";
+    hiddenRunsButton.setAttribute("aria-expanded", "false");
     const refreshButton = document.createElement("button");
     refreshButton.className = "github-refresh-button";
     refreshButton.type = "button";
     refreshButton.textContent = "↻";
     refreshButton.title = "Refresh GitHub Actions";
     refreshButton.setAttribute("aria-label", "Refresh GitHub Actions");
-    header.append(titleGroup, refreshButton);
+    headerActions.append(hiddenRunsButton, refreshButton);
+    header.append(titleGroup, headerActions);
 
     const body = document.createElement("div");
     body.className = "github-widget-body";
@@ -981,22 +1118,113 @@
     body.append(loading);
     card.append(header, body);
 
+    const hiddenRunIds = getHiddenWorkflowRunIds(project, props.pluginConfig);
+    let latestSnapshot: GitHubActionsSnapshot | null = null;
+    let latestSnapshotStale = false;
+    let showHiddenRuns = false;
+    let visibilityError = "";
+    let visibilityUpdatePending = false;
     let wasConnected = false;
+
+    function renderSnapshot() {
+      if (!latestSnapshot) {
+        return;
+      }
+      const visibleSnapshot = filterHiddenWorkflowRuns(latestSnapshot, hiddenRunIds);
+      if (!visibleSnapshot) {
+        return;
+      }
+      const hiddenRuns = latestSnapshot.runs.filter((run) => hiddenRunIds.has(String(run.id)));
+      if (!hiddenRuns.length) {
+        showHiddenRuns = false;
+      }
+      hiddenRunsButton.hidden = !hiddenRuns.length;
+      hiddenRunsButton.disabled = visibilityUpdatePending;
+      hiddenRunsButton.textContent = `${hiddenRuns.length} hidden`;
+      hiddenRunsButton.title = showHiddenRuns ? "Hide hidden workflows" : "Show hidden workflows";
+      hiddenRunsButton.classList.toggle("active", showHiddenRuns);
+      hiddenRunsButton.setAttribute("aria-expanded", String(showHiddenRuns));
+      body.replaceChildren(createActionsContent(
+        visibleSnapshot,
+        hiddenRuns,
+        showHiddenRuns,
+        (run) => { void setWorkflowRunHidden(run, true); },
+        (run) => { void setWorkflowRunHidden(run, false); },
+        visibilityUpdatePending
+      ));
+      subtitle.textContent = [
+        visibleSnapshot.activeRunCount
+          ? `${visibleSnapshot.activeRunCount} active`
+          : "No active runs",
+        latestSnapshotStale ? "stale" : "",
+        formatTimestamp(visibleSnapshot.refreshedAt)
+      ].filter(Boolean).join(" · ");
+      if (visibilityError) {
+        const error = document.createElement("p");
+        error.className = "github-widget-error";
+        error.textContent = visibilityError;
+        body.append(error);
+      }
+    }
+
+    async function setWorkflowRunHidden(
+      run: GitHubWorkflowRun,
+      hidden: boolean
+    ): Promise<void> {
+      const runId = String(run.id);
+      if (visibilityUpdatePending || hiddenRunIds.has(runId) === hidden) {
+        return;
+      }
+      if (hidden) {
+        hiddenRunIds.add(runId);
+        const notificationState = workflowNotificationStates.get(getProjectKey(project));
+        notificationState?.displayedRunningRuns.delete(getWorkflowRunKey(run));
+        if (notificationState?.pendingResult?.url === run.htmlUrl) {
+          notificationState.pendingResult = null;
+        }
+      } else {
+        hiddenRunIds.delete(runId);
+      }
+      visibilityError = "";
+      visibilityUpdatePending = true;
+      renderSnapshot();
+      notifyProjectNavBadgesChanged();
+
+      try {
+        const projectId = String(project.id || props.projectId || "").trim();
+        const serialized = serializeHiddenWorkflowRunIds(hiddenRunIds);
+        if (projectId && typeof globalScope.boatyard?.updateProjectPluginConfig === "function") {
+          await globalScope.boatyard.updateProjectPluginConfig(projectId, "boatyard.github", {
+            [HIDDEN_WORKFLOW_RUN_IDS_CONFIG_KEY]: serialized
+          });
+        }
+        props.pluginConfig = {
+          ...props.pluginConfig,
+          [HIDDEN_WORKFLOW_RUN_IDS_CONFIG_KEY]: serialized
+        };
+      } catch (error) {
+        if (hidden) {
+          hiddenRunIds.delete(runId);
+        } else {
+          hiddenRunIds.add(runId);
+        }
+        visibilityError = `Could not ${hidden ? "hide" : "show"} workflow: ${getErrorMessage(error)}`;
+      } finally {
+        visibilityUpdatePending = false;
+        renderSnapshot();
+        notifyProjectNavBadgesChanged();
+      }
+    }
+
     const subscription = actionsCoordinator.subscribe(
       project,
       (state) => {
         refreshButton.disabled = state.loading;
         refreshButton.classList.toggle("loading", state.loading);
         if (state.snapshot) {
-          body.replaceChildren(createActionsContent(state.snapshot));
-          const activeText = state.snapshot.activeRunCount
-            ? `${state.snapshot.activeRunCount} active`
-            : "No active runs";
-          subtitle.textContent = [
-            activeText,
-            state.stale ? "stale" : "",
-            formatTimestamp(state.snapshot.refreshedAt)
-          ].filter(Boolean).join(" · ");
+          latestSnapshot = state.snapshot;
+          latestSnapshotStale = state.stale;
+          renderSnapshot();
         } else if (state.loading) {
           subtitle.textContent = "Loading workflow runs…";
         }
@@ -1025,6 +1253,10 @@
 
     refreshButton.addEventListener("click", () => {
       void subscription.refresh(true);
+    });
+    hiddenRunsButton.addEventListener("click", () => {
+      showHiddenRuns = !showHiddenRuns;
+      renderSnapshot();
     });
     return card;
   }
@@ -1355,6 +1587,7 @@
           id: "boatyard.github.projectStatus",
           render({
             project,
+            projectConfig,
             globalConfig,
             isActiveProject,
             currentView
@@ -1362,6 +1595,7 @@
             return createProjectStatusBadge(
               project || {},
               globalConfig as GitHubConfig | undefined,
+              projectConfig as GitHubConfig | undefined,
               {
                 currentView,
                 isActiveProject
