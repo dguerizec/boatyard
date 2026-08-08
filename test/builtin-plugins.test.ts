@@ -412,6 +412,128 @@ test("Twicc global settings expose connection and project status display fields"
     { value: "labels", label: "Labels" },
     { value: "icon", label: "Colored icon" }
   ]);
+  assert.equal(fields.twiccTopbarUsageDisplay.type, "select");
+  assert.equal(fields.twiccTopbarUsageDisplay.defaultValue, "chartsWithValues");
+  assert.deepEqual(plain(fields.twiccTopbarUsageDisplay.options), [
+    { value: "numbers", label: "Numeric values" },
+    { value: "charts", label: "Charts only" },
+    { value: "chartsWithValues", label: "Charts with values" },
+    { value: "bars", label: "Usage and pace bars" }
+  ]);
+});
+
+test("Twicc top bar usage renders usage and pace bars with a projected cutoff", async () => {
+  const { context, registry, widgetRegistry } = loadRendererPluginContext(undefined, async () => ({
+    ok: true,
+    json: async () => ({
+      codex: {
+        provider: "codex",
+        fetched_at: "2026-08-08T13:17:00.000Z",
+        five_hour_utilization: 24,
+        five_hour_temporal_pct: 12,
+        five_hour_burn_rate: 200,
+        five_hour_resets_at: "2026-08-08T17:41:00.000Z",
+        seven_day_utilization: 45,
+        seven_day_temporal_pct: 60,
+        seven_day_burn_rate: 75,
+        seven_day_resets_at: "2026-08-14T08:54:00.000Z"
+      }
+    })
+  }));
+
+  type MockElement = LooseVmValue & {
+    children: MockElement[];
+    className: string;
+    dataset: Record<string, string>;
+    style: {
+      values: Record<string, string>;
+    };
+    textContent: string;
+  };
+
+  function createMockElement(): MockElement {
+    const children: MockElement[] = [];
+    const classes = new Set<string>();
+    const styleValues: Record<string, string> = {};
+    const element = {
+      children,
+      dataset: {},
+      style: {
+        values: styleValues,
+        setProperty(name: string, value: string) {
+          styleValues[name] = value;
+        }
+      },
+      textContent: "",
+      title: "",
+      append(...nodes: MockElement[]) {
+        children.push(...nodes);
+      },
+      replaceChildren(...nodes: MockElement[]) {
+        children.splice(0, children.length, ...nodes);
+      },
+      addEventListener() {},
+      setAttribute() {},
+      classList: {
+        add(...names: string[]) {
+          names.forEach((name) => classes.add(name));
+        },
+        remove(...names: string[]) {
+          names.forEach((name) => classes.delete(name));
+        },
+        toggle(name: string, force?: boolean) {
+          const enabled = force === undefined ? !classes.has(name) : force;
+          if (enabled) {
+            classes.add(name);
+          } else {
+            classes.delete(name);
+          }
+          return enabled;
+        }
+      }
+    } as unknown as MockElement;
+    Object.defineProperty(element, "className", {
+      get: () => [...classes].join(" "),
+      set: (value: string) => {
+        classes.clear();
+        String(value).split(/\s+/).filter(Boolean).forEach((name) => classes.add(name));
+      }
+    });
+    return element;
+  }
+
+  context.document.createElement = createMockElement as unknown as BuiltinRendererContext["document"]["createElement"];
+  registry.applyEnabledState({});
+  if (!widgetRegistry) {
+    throw new Error("Widget registry test environment was not initialized.");
+  }
+  const usageWidget = widgetRegistry.get("boatyard.twicc.usage");
+  const chip = usageWidget.createCompact(null, {
+    globalPluginConfig: { twiccTopbarUsageDisplay: "bars" }
+  }) as MockElement;
+  await new Promise((resolve) => setImmediate(resolve));
+
+  function descendants(element: MockElement): MockElement[] {
+    return [element, ...element.children.flatMap(descendants)];
+  }
+
+  const elements = descendants(chip);
+  const withClass = (className: string) => elements.filter((element) =>
+    element.className.split(/\s+/).includes(className)
+  );
+  assert.equal(chip.dataset.displayMode, "bars");
+  assert.equal(withClass("twicc-usage-paced-provider").length, 1);
+  assert.equal(withClass("twicc-usage-paced-quota").length, 2);
+  assert.deepEqual(
+    withClass("twicc-usage-paced-fill").map((element) => element.style.values["--twicc-usage-paced-width"]),
+    ["24%", "12%", "45%", "60%"]
+  );
+  assert.deepEqual(
+    withClass("twicc-usage-paced-cutoff").map((element) => element.style.values["--twicc-usage-cutoff"]),
+    ["50%"]
+  );
+  assert.ok(elements.some((element) => element.textContent === "Codex"));
+  assert.ok(elements.some((element) => element.textContent === "×2.0"));
 });
 
 test("GitHub global settings expose all project status priority orders", () => {

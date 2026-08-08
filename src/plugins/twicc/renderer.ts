@@ -153,13 +153,22 @@
     five_hour_burn_rate_1h?: number;
     five_hour_burn_rate_30min?: number;
     five_hour_resets_at?: string;
+    five_hour_temporal_pct?: number;
     five_hour_utilization?: number;
+    period_costs?: {
+      five_hour?: TwiccUsagePeriodCost;
+      seven_day?: TwiccUsagePeriodCost;
+    };
     provider?: string;
     seven_day_burn_rate?: number;
     seven_day_burn_rate_12h?: number;
     seven_day_burn_rate_24h?: number;
     seven_day_resets_at?: string;
+    seven_day_temporal_pct?: number;
     seven_day_utilization?: number;
+  };
+  type TwiccUsagePeriodCost = {
+    cutoff_at?: string;
   };
   type TwiccSettingsFields = {
     getValue(key: string): string;
@@ -241,7 +250,8 @@
   const TWICC_TOPBAR_USAGE_DISPLAY_OPTIONS = [
     { value: "numbers", label: "Numeric values" },
     { value: "charts", label: "Charts only" },
-    { value: "chartsWithValues", label: "Charts with values" }
+    { value: "chartsWithValues", label: "Charts with values" },
+    { value: "bars", label: "Usage and pace bars" }
   ];
   let projectProcessStatuses: Record<string, TwiccProjectStatus> = {};
   let nextSessionFlowSurfaceId = 0;
@@ -659,6 +669,11 @@
     return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : 0;
   }
 
+  function getClampedPercent(value: unknown) {
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.min(100, number)) : 0;
+  }
+
   function getFiveHourBurnRate(provider: TwiccUsageProvider) {
     return provider.five_hour_burn_rate ??
       provider.five_hour_burn_rate_1h ??
@@ -720,6 +735,191 @@
       return "warn";
     }
     return "ok";
+  }
+
+  function getPacedUsageTone(utilization: unknown, burnRate: unknown) {
+    const utilizationValue = Number(utilization);
+    const burnRatePercent = normalizeBurnRatePercent(burnRate);
+    if (!Number.isFinite(utilizationValue)) {
+      return "unknown";
+    }
+    if (utilizationValue >= 100 || burnRatePercent >= 115) {
+      return "danger";
+    }
+    if (burnRatePercent >= 90) {
+      return "warn";
+    }
+    return "ok";
+  }
+
+  function formatBurnMultiplier(utilization: unknown, burnRate: unknown) {
+    const utilizationValue = Number(utilization);
+    if (Number.isFinite(utilizationValue) && utilizationValue >= 100) {
+      return "100%+";
+    }
+
+    const burnRatePercent = normalizeBurnRatePercent(burnRate);
+    if (!Number.isFinite(burnRatePercent) || burnRatePercent <= 5) {
+      return "";
+    }
+
+    const multiplier = burnRatePercent / 100;
+    return `×${multiplier.toFixed(multiplier < 10 ? 1 : 0)}`;
+  }
+
+  function getUsageTemporalPercent(
+    temporalPercent: unknown,
+    fetchedAt: unknown,
+    resetsAt: unknown,
+    windowMs: number
+  ) {
+    const directValue = Number(temporalPercent);
+    if (Number.isFinite(directValue)) {
+      return getClampedPercent(directValue);
+    }
+
+    const fetchedTime = new Date(String(fetchedAt || "")).getTime();
+    const resetTime = new Date(String(resetsAt || "")).getTime();
+    if (!Number.isFinite(fetchedTime) || !Number.isFinite(resetTime) || windowMs <= 0) {
+      return 0;
+    }
+
+    return getClampedPercent(((fetchedTime - (resetTime - windowMs)) / windowMs) * 100);
+  }
+
+  function getUsageCutoffPercent(
+    cutoffAt: unknown,
+    resetsAt: unknown,
+    windowMs: number,
+    burnRate: unknown
+  ) {
+    const cutoffTime = new Date(String(cutoffAt || "")).getTime();
+    const resetTime = new Date(String(resetsAt || "")).getTime();
+    if (Number.isFinite(cutoffTime) && Number.isFinite(resetTime) && windowMs > 0) {
+      return getClampedPercent(((cutoffTime - (resetTime - windowMs)) / windowMs) * 100);
+    }
+
+    const burnRatePercent = normalizeBurnRatePercent(burnRate);
+    return Number.isFinite(burnRatePercent) && burnRatePercent > 100
+      ? getClampedPercent(10000 / burnRatePercent)
+      : null;
+  }
+
+  function formatUsageTimestamp(value: unknown, timeOnly = false) {
+    const date = new Date(String(value || ""));
+    if (Number.isNaN(date.getTime())) {
+      return "--";
+    }
+
+    return timeOnly
+      ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : date.toLocaleString([], {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      });
+  }
+
+  function createPacedUsageQuota(
+    label: string,
+    utilization: unknown,
+    temporalPercent: unknown,
+    burnRate: unknown,
+    resetsAt: unknown,
+    cutoffAt: unknown,
+    fetchedAt: unknown,
+    windowMs: number
+  ) {
+    const timePercent = getUsageTemporalPercent(temporalPercent, fetchedAt, resetsAt, windowMs);
+    const cutoffPercent = getUsageCutoffPercent(cutoffAt, resetsAt, windowMs, burnRate);
+    const tone = getPacedUsageTone(utilization, burnRate);
+    const quota = document.createElement("span");
+    quota.className = `twicc-usage-paced-quota ${tone}`;
+
+    const lanes = document.createElement("span");
+    lanes.className = "twicc-usage-paced-lanes";
+
+    const usageLane = document.createElement("span");
+    usageLane.className = "twicc-usage-paced-lane";
+    const usageFill = document.createElement("span");
+    usageFill.className = "twicc-usage-paced-fill";
+    usageFill.style.setProperty("--twicc-usage-paced-width", `${getClampedPercent(utilization)}%`);
+    usageLane.append(usageFill);
+
+    const timeLane = document.createElement("span");
+    timeLane.className = "twicc-usage-paced-lane";
+    const timeFill = document.createElement("span");
+    timeFill.className = "twicc-usage-paced-fill time";
+    timeFill.style.setProperty("--twicc-usage-paced-width", `${timePercent}%`);
+    timeLane.append(timeFill);
+    if (cutoffPercent !== null) {
+      const cutoff = document.createElement("span");
+      cutoff.className = "twicc-usage-paced-cutoff";
+      cutoff.style.setProperty("--twicc-usage-cutoff", `${cutoffPercent}%`);
+      timeLane.append(cutoff);
+    }
+    lanes.append(usageLane, timeLane);
+
+    const burn = document.createElement("span");
+    burn.className = "twicc-usage-paced-burn";
+    burn.textContent = formatBurnMultiplier(utilization, burnRate);
+    burn.classList.toggle("empty", !burn.textContent);
+
+    const info = document.createElement("span");
+    info.className = "twicc-usage-paced-info";
+    const quotaLabel = document.createElement("strong");
+    quotaLabel.textContent = label;
+    const reset = document.createElement("small");
+    reset.textContent = formatUsageTimestamp(resetsAt);
+    info.append(quotaLabel, reset);
+
+    const burnText = burn.textContent ? `, burn ${burn.textContent}` : "";
+    quota.title = `${label}: ${formatPercent(utilization)} used, ${formatPercent(timePercent)} elapsed${burnText}, resets ${reset.textContent}`;
+    quota.setAttribute("aria-label", quota.title);
+    quota.append(lanes, burn, info);
+    return quota;
+  }
+
+  function createPacedUsageProvider(providerKey: string, usage: TwiccUsageProvider) {
+    const provider = asUsageProvider(usage);
+    const providerId = provider.provider || providerKey;
+    const entry = document.createElement("span");
+    entry.className = "twicc-usage-compact-provider twicc-usage-paced-provider";
+
+    const header = document.createElement("span");
+    header.className = "twicc-usage-paced-header";
+    header.append(createProviderIcon(providerId));
+    const providerName = document.createElement("strong");
+    providerName.textContent = formatProviderName(providerId);
+    const fetchedAt = document.createElement("small");
+    fetchedAt.textContent = formatUsageTimestamp(provider.fetched_at, true);
+    header.append(providerName, fetchedAt);
+
+    entry.append(
+      header,
+      createPacedUsageQuota(
+        "5h",
+        provider.five_hour_utilization,
+        provider.five_hour_temporal_pct,
+        getFiveHourBurnRate(provider),
+        provider.five_hour_resets_at,
+        provider.period_costs?.five_hour?.cutoff_at,
+        provider.fetched_at,
+        5 * 60 * 60 * 1000
+      ),
+      createPacedUsageQuota(
+        "7d",
+        provider.seven_day_utilization,
+        provider.seven_day_temporal_pct,
+        getSevenDayBurnRate(provider),
+        provider.seven_day_resets_at,
+        provider.period_costs?.seven_day?.cutoff_at,
+        provider.fetched_at,
+        7 * 24 * 60 * 60 * 1000
+      )
+    );
+    return entry;
   }
 
   function createUsageGauge(label: string, percentValue: unknown, detail: string, options: { compact?: boolean; values?: boolean } = {}) {
@@ -937,10 +1137,14 @@
     }
 
     function renderCompactProvider(providerKey: string, provider: TwiccUsageProvider) {
+      const mode = getDisplayMode();
+      if (mode === "bars") {
+        return createPacedUsageProvider(providerKey, provider);
+      }
+
       const entry = document.createElement("span");
       entry.className = "twicc-usage-compact-provider";
       entry.append(createProviderIcon(providerKey));
-      const mode = getDisplayMode();
 
       if (mode === "numbers") {
         for (const [label, value, title] of [
