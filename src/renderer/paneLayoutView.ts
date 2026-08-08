@@ -935,9 +935,10 @@ export function createPaneLayoutView({
       const expansionState = paneLayoutState.getPaneExpansionState(project, paneNode.id);
       const isShrink = expansionState.canShrink;
       const label = isShrink ? "Shrink pane" : "Expand pane";
+      const tooltip = isShrink ? label : "Drag to expand pane";
       button.dataset.paneAction = "toggle-expand";
       button.dataset.paneExpansionMode = isShrink ? "shrink" : "expand";
-      button.title = label;
+      button.title = tooltip;
       button.setAttribute("aria-label", label);
       button.setAttribute("aria-pressed", String(isShrink));
       button.disabled = isShrink ? false : !expansionState.canExpand;

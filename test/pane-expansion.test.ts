@@ -116,6 +116,7 @@ test("pane expansion uses border previews and one toggle control", () => {
   assert.doesNotMatch(styles, /pane-expand-preview::after/);
   assert.doesNotMatch(styles, /pane-expansion-preview-active/);
   assert.doesNotMatch(view, /pane-expansion-preview-active/);
+  assert.match(view, /const tooltip = isShrink \? label : "Drag to expand pane";/);
   assert.match(view, /if \(!didDrag\) \{\s*suppressExpansionClickUntil = Date\.now\(\) \+ 250;\s*togglePaneExpansion\(project, paneId\);\s*return;/s);
   assert.match(view, /actions\.append\(expansionButton, verticalSplitButton, horizontalSplitButton, closePaneButton\)/);
   assert.doesNotMatch(view, /const shrinkPaneButton/);
