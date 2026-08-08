@@ -1,6 +1,37 @@
 {
-  "generatedForVersion": "0.9.13",
+  "generatedForVersion": "0.9.14",
   "releases": [
+    {
+      "version": "0.9.14",
+      "date": "2026-08-08",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Hidden workflow runs",
+          "body": "GitHub panes can now manage hidden workflow runs so noisy or irrelevant runs stay out of the way."
+        },
+        {
+          "category": "Added",
+          "title": "TwiCC usage pace bars",
+          "body": "TwiCC usage views now show paced bars that make current usage easier to scan."
+        },
+        {
+          "category": "Changed",
+          "title": "GitHub refresh pacing",
+          "body": "GitHub data refreshes are now scheduled more consistently to reduce bursts and keep the pane responsive."
+        },
+        {
+          "category": "Changed",
+          "title": "Pane expansion tooltip",
+          "body": "Pane expansion controls now describe their behavior more clearly."
+        },
+        {
+          "category": "Fixed",
+          "title": "Split resizers",
+          "body": "Pane split resizers remain interactive after recent layout expansion changes."
+        }
+      ]
+    },
     {
       "version": "0.9.13",
       "date": "2026-08-08",
