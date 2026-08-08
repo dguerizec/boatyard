@@ -1,6 +1,22 @@
 {
-  "generatedForVersion": "0.9.12",
+  "generatedForVersion": "0.9.13",
   "releases": [
+    {
+      "version": "0.9.13",
+      "date": "2026-08-08",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Pane expansion brush",
+          "body": "Expand and restore panes more fluidly when adjusting your workspace layout."
+        },
+        {
+          "category": "Added",
+          "title": "TwiCC draft preservation",
+          "body": "TwiCC session prompts now keep draft text so unfinished messages are not lost while navigating."
+        }
+      ]
+    },
     {
       "version": "0.9.12",
       "date": "2026-08-07",

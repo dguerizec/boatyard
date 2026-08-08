@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.13] - 2026-08-08
+
+### Summary
+
+- **v0.9.13: Layout Brush & Draft Recovery** — Adds faster pane expansion controls and keeps TwiCC session drafts available while you work.
+
+### Added
+
+- **Pane expansion brush** — Expand and restore panes more fluidly when adjusting your workspace layout.
+- **TwiCC draft preservation** — TwiCC session prompts now keep draft text so unfinished messages are not lost while navigating.
+
 ## [0.9.12] - 2026-08-07
 
 ### Summary
