@@ -246,6 +246,7 @@ test("GitHub project badges share snapshots and apply the configured status prio
     actions: 0,
     pullRequests: 0
   };
+  const invocationPriorities: string[] = [];
   const activeRun = createWorkflowRun();
   const completedRun = {
     ...activeRun,
@@ -272,7 +273,8 @@ test("GitHub project badges share snapshots and apply the configured status prio
     setTimeout: () => 1,
     window: {
       boatyard: {
-        invokePlugin: async (_pluginId, actionName) => {
+        invokePlugin: async (_pluginId, actionName, payload) => {
+          invocationPriorities.push(String((payload as { priority?: string }).priority || ""));
           if (actionName === "actionsSnapshotForProject") {
             invocationCounts.actions += 1;
             return {
@@ -312,6 +314,7 @@ test("GitHub project badges share snapshots and apply the configured status prio
 
   assert.equal(invocationCounts.actions, 1);
   assert.equal(invocationCounts.pullRequests, 1);
+  assert.deepEqual(invocationPriorities, ["background", "background"]);
   assert.ok(defaultBadge.className.includes("workflow-running"));
   assert.ok(pullRequestFirstBadge.className.includes("pull-request"));
   assert.match(defaultBadge.title, /Workflow running: Deploy/);
@@ -479,6 +482,7 @@ test("GitHub project workflow result badges require an observed running state", 
 
 test("GitHub workflow result stays visible in the active project until it is selected again", async () => {
   const timerHarness = createTimerHarness();
+  const invocationPriorities: string[] = [];
   let workflowCompleted = false;
   const context: RendererContext = {
     clearTimeout: timerHarness.clearTimeout,
@@ -490,7 +494,8 @@ test("GitHub workflow result stays visible in the active project until it is sel
     setTimeout: timerHarness.setTimeout,
     window: {
       boatyard: {
-        invokePlugin: async (_pluginId, actionName) => {
+        invokePlugin: async (_pluginId, actionName, payload) => {
+          invocationPriorities.push(String((payload as { priority?: string }).priority || ""));
           if (actionName === "pullRequestsSnapshotForProject") {
             return createPullRequestsSnapshot();
           }
@@ -527,6 +532,7 @@ test("GitHub workflow result stays visible in the active project until it is sel
 
   await flush();
   await flush();
+  assert.deepEqual(invocationPriorities, ["foreground", "foreground"]);
   assert.ok(activeBadge.className.includes("workflow-running"));
 
   workflowCompleted = true;
@@ -635,6 +641,7 @@ test("GitHub Actions widgets share in-flight refreshes, queue manual refresh, an
 
   await flush();
   assert.equal(invocationPayloads.length, 1);
+  assert.equal(invocationPayloads[0].priority, "foreground");
 
   findByClass(firstCard, "github-refresh-button")?.trigger("click");
   resolveFirst(createSnapshot());
@@ -642,6 +649,7 @@ test("GitHub Actions widgets share in-flight refreshes, queue manual refresh, an
   await flush();
   assert.equal(invocationPayloads.length, 2);
   assert.equal(invocationPayloads[1].force, true);
+  assert.equal(invocationPayloads[1].priority, "interactive");
   assert.equal(timers.size, 1);
 
   firstCard.isConnected = false;

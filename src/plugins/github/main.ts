@@ -9,8 +9,11 @@ type GitHubProject = {
   repoUrl?: unknown;
 };
 
+type GitHubRequestPriority = "background" | "foreground" | "interactive";
+
 type ProjectPayload = {
   force?: boolean;
+  priority?: GitHubRequestPriority;
   project?: GitHubProject;
 };
 
@@ -28,12 +31,12 @@ function activate(ctx: GitHubPluginContext) {
     return service.statusForProject(project, { force });
   });
 
-  ctx.actions.handle<ProjectPayload>("actionsSnapshotForProject", ({ force = false, project = {} } = {}) => {
-    return service.actionsSnapshotForProject(project, { force });
+  ctx.actions.handle<ProjectPayload>("actionsSnapshotForProject", ({ force = false, priority, project = {} } = {}) => {
+    return service.actionsSnapshotForProject(project, { force, priority });
   });
 
-  ctx.actions.handle<ProjectPayload>("pullRequestsSnapshotForProject", ({ force = false, project = {} } = {}) => {
-    return service.pullRequestsSnapshotForProject(project, { force });
+  ctx.actions.handle<ProjectPayload>("pullRequestsSnapshotForProject", ({ force = false, priority, project = {} } = {}) => {
+    return service.pullRequestsSnapshotForProject(project, { force, priority });
   });
 }
 

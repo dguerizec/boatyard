@@ -157,7 +157,7 @@ Core project form events currently emitted:
 
 Implemented built-in plugins:
 
-- `boatyard.github`: project-scoped GitHub Actions and pull request widgets plus a priority-driven project status icon. They use the project's repository URL, share cached refreshes, and keep review and CI states independent. Completed workflow results appear only after Boatyard has observed the workflow running, then remain until the project is selected again.
+- `boatyard.github`: project-scoped GitHub Actions and pull request widgets plus a priority-driven project status icon. They use the project's repository URL, share cached refreshes, and route API work through a plugin-local priority queue with a shared rate-limit cooldown. Review and CI states remain independent. Completed workflow results appear only after Boatyard has observed the workflow running, then remain until the project is selected again.
 - `boatyard.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
 - `boatyard.twicc`: Twicc pane, global/project settings, project creation action, and service.
 - `boatyard.hawser`: Hawser pane, inbox widget, global/project settings, and service.

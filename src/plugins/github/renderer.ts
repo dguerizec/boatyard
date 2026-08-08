@@ -119,6 +119,8 @@
   };
 
   type GitHubProjectStatusCategory = "workflowRunning" | "pullRequest" | "workflowResult";
+  type GitHubRequestPriority = "background" | "foreground" | "interactive";
+  type GitHubAutomaticRequestPriority = Exclude<GitHubRequestPriority, "interactive">;
 
   type GitHubProjectStatusSignal = {
     category: GitHubProjectStatusCategory;
@@ -142,6 +144,7 @@
   type RefreshSubscriber<TSnapshot> = {
     isAlive: () => boolean;
     listener: (state: RefreshState<TSnapshot>) => void;
+    priority: GitHubAutomaticRequestPriority;
   };
 
   type RefreshEntry<TSnapshot> = {
@@ -161,7 +164,8 @@
     subscribe(
       project: GitHubProject,
       listener: RefreshSubscriber<TSnapshot>["listener"],
-      isAlive: RefreshSubscriber<TSnapshot>["isAlive"]
+      isAlive: RefreshSubscriber<TSnapshot>["isAlive"],
+      priority?: GitHubAutomaticRequestPriority
     ): {
       refresh(force?: boolean): Promise<void>;
       unsubscribe(): void;
@@ -351,6 +355,18 @@
       }
     }
 
+    function getRequestPriority(
+      entry: RefreshEntry<TSnapshot>,
+      force: boolean
+    ): GitHubRequestPriority {
+      if (force) {
+        return "interactive";
+      }
+      return [...entry.subscribers].some((subscriber) => subscriber.priority === "foreground")
+        ? "foreground"
+        : "background";
+    }
+
     function clearTimer(entry: RefreshEntry<TSnapshot>): void {
       if (entry.timer !== null) {
         globalScope.clearTimeout(entry.timer);
@@ -408,6 +424,7 @@
         try {
           const result = await invokePlugin(actionName, {
             force,
+            priority: getRequestPriority(entry, force),
             project: entry.project
           });
           entry.snapshot = normalize(result);
@@ -438,7 +455,8 @@
     function subscribe(
       project: GitHubProject,
       listener: RefreshSubscriber<TSnapshot>["listener"],
-      isAlive: RefreshSubscriber<TSnapshot>["isAlive"]
+      isAlive: RefreshSubscriber<TSnapshot>["isAlive"],
+      priority: GitHubAutomaticRequestPriority = "background"
     ) {
       const key = getProjectKey(project);
       let entry = entries.get(key);
@@ -460,7 +478,7 @@
         entry.project = project;
       }
 
-      const subscriber = { isAlive, listener };
+      const subscriber = { isAlive, listener, priority };
       entry.subscribers.add(subscriber);
       listener(stateFor(entry));
       if (!entry.inFlight && entry.timer === null) {
@@ -760,13 +778,17 @@
       connectionCheckCompleted = true;
     });
     const isAlive = () => !connectionCheckCompleted || badge.isConnected;
+    const requestPriority = options.isActiveProject === true
+      ? "foreground"
+      : "background";
     actionsCoordinator.subscribe(
       project,
       (state) => {
         actionsSnapshot = state.snapshot;
         updateBadge();
       },
-      isAlive
+      isAlive,
+      requestPriority
     );
     pullRequestsCoordinator.subscribe(
       project,
@@ -774,7 +796,8 @@
         pullRequestsSnapshot = state.snapshot;
         updateBadge();
       },
-      isAlive
+      isAlive,
+      requestPriority
     );
 
     return badge;
@@ -1248,7 +1271,8 @@
           wasConnected = true;
         }
         return !wasConnected || card.isConnected;
-      }
+      },
+      "foreground"
     );
 
     refreshButton.addEventListener("click", () => {
@@ -1533,7 +1557,8 @@
           wasConnected = true;
         }
         return !wasConnected || card.isConnected;
-      }
+      },
+      "foreground"
     );
 
     refreshButton.addEventListener("click", () => {

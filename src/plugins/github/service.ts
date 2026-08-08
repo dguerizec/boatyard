@@ -13,6 +13,7 @@ const GITHUB_AUTH_CACHE_TTL_MS = 5 * 60 * 1000;
 const GITHUB_RUNS_CACHE_TTL_MS = 10 * 1000;
 const GITHUB_ACTIVE_JOBS_CACHE_TTL_MS = 4 * 1000;
 const GITHUB_PULL_REQUESTS_CACHE_TTL_MS = 30 * 1000;
+const GITHUB_RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
 
 const GITHUB_PULL_REQUESTS_QUERY = `
 query BoatyardPullRequests($owner: String!, $name: String!, $searchQuery: String!) {
@@ -111,6 +112,8 @@ type GitHubCommandOptions = {
   execFileAsync?: ExecFileAsync;
 };
 
+type GitHubRequestPriority = "background" | "foreground" | "interactive";
+
 type GitHubServiceErrorCode =
   | "authentication"
   | "invalidResponse"
@@ -135,6 +138,9 @@ type AsyncRequestOptions = {
 };
 
 type GitHubApiOptions = GitHubCommandOptions & {
+  now?: () => number;
+  priority?: GitHubRequestPriority;
+  scheduler?: GitHubRequestScheduler;
   timeoutMs?: number;
 };
 
@@ -143,10 +149,39 @@ type GitHubGraphQlVariables = Record<string, string>;
 type GitHubServiceOptions = GitHubCommandOptions & {
   cache?: ReturnType<typeof createAsyncRequestCache>;
   now?: () => number;
+  scheduler?: GitHubRequestScheduler;
 };
 
 type GitHubServiceRequestOptions = {
   force?: boolean;
+  priority?: GitHubRequestPriority;
+};
+
+type GitHubRequestSchedulerOptions = {
+  cooldownMs?: number;
+  now?: () => number;
+};
+
+type GitHubScheduledRequestOptions = {
+  priority?: GitHubRequestPriority;
+};
+
+type GitHubScheduledRequest<T> = {
+  load: () => Promise<T>;
+  priority: GitHubRequestPriority;
+  reject: (error: unknown) => void;
+  resolve: (value: T) => void;
+  sequence: number;
+};
+
+type GitHubRequestScheduler = {
+  pause(delayMs: number): void;
+  schedule<T>(load: () => Promise<T>, options?: GitHubScheduledRequestOptions): Promise<T>;
+};
+
+type GitHubApiOutput = {
+  payload: unknown;
+  rateLimitDelayMs: number;
 };
 
 type GitHubRawStep = {
@@ -275,11 +310,17 @@ type GitHubPullRequestsSnapshot = {
 
 class GitHubServiceError extends Error {
   code: GitHubServiceErrorCode;
+  retryAfterMs: number;
 
-  constructor(code: GitHubServiceErrorCode, message: string) {
+  constructor(
+    code: GitHubServiceErrorCode,
+    message: string,
+    { retryAfterMs = 0 }: { retryAfterMs?: number } = {}
+  ) {
     super(message);
     this.name = "GitHubServiceError";
     this.code = code;
+    this.retryAfterMs = Math.max(0, retryAfterMs);
   }
 }
 
@@ -377,7 +418,34 @@ function isRateLimitError(error: unknown): boolean {
   return /rate limit|secondary rate|abuse detection|retry-after/i.test(getErrorOutput(error));
 }
 
-function normalizeGitHubCommandError(error: unknown): GitHubServiceError {
+function getRateLimitDelayMs(error: unknown, now = Date.now): number {
+  const output = getErrorOutput(error);
+  const retryAfter = output.match(/retry[- ]after\s*:?\s*(\d+)/i);
+  if (retryAfter) {
+    return Number(retryAfter[1]) * 1000;
+  }
+
+  const reset = output.match(/x-ratelimit-reset\s*:\s*(\d+)/i);
+  if (reset) {
+    return Math.max(0, Number(reset[1]) * 1000 - now());
+  }
+
+  const wait = output.match(/(?:please\s+)?wait\s+(\d+)\s+(second|minute|hour)s?/i);
+  if (!wait) {
+    return 0;
+  }
+  const multipliers: Record<string, number> = {
+    hour: 60 * 60 * 1000,
+    minute: 60 * 1000,
+    second: 1000
+  };
+  return Number(wait[1]) * multipliers[wait[2].toLowerCase()];
+}
+
+function normalizeGitHubCommandError(
+  error: unknown,
+  { now = Date.now }: { now?: () => number } = {}
+): GitHubServiceError {
   if (error instanceof GitHubServiceError) {
     return error;
   }
@@ -391,10 +459,120 @@ function normalizeGitHubCommandError(error: unknown): GitHubServiceError {
   }
 
   if (isRateLimitError(error)) {
-    return new GitHubServiceError("rateLimited", "GitHub API rate limit reached. Refresh will resume later.");
+    return new GitHubServiceError(
+      "rateLimited",
+      "GitHub API rate limit reached. Refresh will resume later.",
+      { retryAfterMs: getRateLimitDelayMs(error, now) }
+    );
   }
 
   return new GitHubServiceError("unknown", "GitHub request failed.");
+}
+
+function normalizeGitHubRequestPriority(value: unknown): GitHubRequestPriority {
+  return value === "interactive" || value === "foreground"
+    ? value
+    : "background";
+}
+
+function createRateLimitError(): GitHubServiceError {
+  return new GitHubServiceError(
+    "rateLimited",
+    "GitHub API rate limit reached. Refresh will resume later."
+  );
+}
+
+function createGitHubRequestScheduler({
+  cooldownMs = GITHUB_RATE_LIMIT_COOLDOWN_MS,
+  now = Date.now
+}: GitHubRequestSchedulerOptions = {}): GitHubRequestScheduler {
+  const queue: Array<GitHubScheduledRequest<unknown>> = [];
+  const priorityWeights: Record<GitHubRequestPriority, number> = {
+    background: 0,
+    foreground: 1,
+    interactive: 2
+  };
+  let active = false;
+  let blockedUntil = 0;
+  let nextSequence = 0;
+
+  function isRateLimited(): boolean {
+    return blockedUntil > now();
+  }
+
+  function rejectQueued(error: unknown): void {
+    for (const request of queue.splice(0)) {
+      request.reject(error);
+    }
+  }
+
+  function pause(delayMs: number): void {
+    const normalizedDelay = Math.max(0, delayMs);
+    if (!normalizedDelay) {
+      return;
+    }
+    blockedUntil = Math.max(blockedUntil, now() + normalizedDelay);
+    rejectQueued(createRateLimitError());
+  }
+
+  function sortQueue(): void {
+    queue.sort((left, right) => (
+      priorityWeights[right.priority] - priorityWeights[left.priority]
+      || left.sequence - right.sequence
+    ));
+  }
+
+  async function drain(): Promise<void> {
+    if (active || !queue.length) {
+      return;
+    }
+    if (isRateLimited()) {
+      rejectQueued(createRateLimitError());
+      return;
+    }
+
+    const request = queue.shift();
+    if (!request) {
+      return;
+    }
+    active = true;
+    try {
+      request.resolve(await request.load());
+    } catch (error) {
+      request.reject(error);
+      if (error instanceof GitHubServiceError && error.code === "rateLimited") {
+        blockedUntil = now() + Math.max(error.retryAfterMs, cooldownMs);
+        rejectQueued(error);
+      }
+    } finally {
+      active = false;
+      void drain();
+    }
+  }
+
+  function schedule<T>(
+    load: () => Promise<T>,
+    { priority = "background" }: GitHubScheduledRequestOptions = {}
+  ): Promise<T> {
+    if (isRateLimited()) {
+      return Promise.reject(createRateLimitError());
+    }
+
+    return new Promise<T>((resolve, reject) => {
+      queue.push({
+        load,
+        priority: normalizeGitHubRequestPriority(priority),
+        reject,
+        resolve,
+        sequence: nextSequence
+      } as GitHubScheduledRequest<unknown>);
+      nextSequence += 1;
+      sortQueue();
+      void drain();
+    });
+  }
+
+  return Object.freeze({ pause, schedule });
 }
 
 function parseJsonOutput(stdout: unknown): unknown {
@@ -403,6 +581,43 @@ function parseJsonOutput(stdout: unknown): unknown {
   } catch {
     throw new GitHubServiceError("invalidResponse", "GitHub CLI returned invalid JSON.");
   }
+}
+
+function parseGitHubApiOutput(stdout: unknown, now = Date.now): GitHubApiOutput {
+  const source = String(stdout || "").replace(/\r\n/g, "\n");
+  const responseStart = source.startsWith("HTTP/")
+    ? 0
+    : source.lastIndexOf("\nHTTP/") + 1;
+  if (responseStart < 0 || !source.slice(responseStart).startsWith("HTTP/")) {
+    return {
+      payload: parseJsonOutput(source),
+      rateLimitDelayMs: 0
+    };
+  }
+
+  const headerEnd = source.indexOf("\n\n", responseStart);
+  if (headerEnd < 0) {
+    return {
+      payload: parseJsonOutput(source),
+      rateLimitDelayMs: 0
+    };
+  }
+  const headers = source.slice(responseStart, headerEnd);
+  const body = source.slice(headerEnd + 2);
+  const retryAfter = headers.match(/^retry-after\s*:\s*(\d+)/im);
+  const remaining = headers.match(/^x-ratelimit-remaining\s*:\s*(\d+)/im);
+  const reset = headers.match(/^x-ratelimit-reset\s*:\s*(\d+)/im);
+  let rateLimitDelayMs = retryAfter
+    ? Number(retryAfter[1]) * 1000
+    : 0;
+  if (!rateLimitDelayMs && remaining?.[1] === "0" && reset) {
+    rateLimitDelayMs = Math.max(0, Number(reset[1]) * 1000 - now());
+  }
+
+  return {
+    payload: parseJsonOutput(body),
+    rateLimitDelayMs
+  };
 }
 
 function getRepositoryKey(repository: GitHubRepositoryRef): string {
@@ -471,23 +686,34 @@ async function runGitHubApiJson(
   endpoint: string,
   {
     execFileAsync = runExecFile,
+    now = Date.now,
+    priority = "background",
+    scheduler,
     timeoutMs = GITHUB_API_TIMEOUT_MS
   }: GitHubApiOptions = {}
 ): Promise<unknown> {
-  try {
-    const { stdout } = await execFileAsync("gh", [
-      "api",
-      "--hostname",
-      repository.host,
-      endpoint
-    ], {
-      timeout: timeoutMs,
-      windowsHide: true
-    });
-    return parseJsonOutput(stdout);
-  } catch (error) {
-    throw normalizeGitHubCommandError(error);
-  }
+  const load = async () => {
+    try {
+      const { stdout } = await execFileAsync("gh", [
+        "api",
+        "--hostname",
+        repository.host,
+        "--include",
+        endpoint
+      ], {
+        timeout: timeoutMs,
+        windowsHide: true
+      });
+      const output = parseGitHubApiOutput(stdout, now);
+      scheduler?.pause(output.rateLimitDelayMs);
+      return output.payload;
+    } catch (error) {
+      throw normalizeGitHubCommandError(error, { now });
+    }
+  };
+  return scheduler
+    ? scheduler.schedule(load, { priority })
+    : load();
 }
 
 async function runGitHubGraphQlJson(
@@ -496,6 +722,9 @@ async function runGitHubGraphQlJson(
   variables: GitHubGraphQlVariables,
   {
     execFileAsync = runExecFile,
+    now = Date.now,
+    priority = "background",
+    scheduler,
     timeoutMs = GITHUB_API_TIMEOUT_MS
   }: GitHubApiOptions = {}
 ): Promise<unknown> {
@@ -503,23 +732,31 @@ async function runGitHubGraphQlJson(
     "-f",
     `${key}=${value}`
   ]);
-  try {
-    const { stdout } = await execFileAsync("gh", [
-      "api",
-      "graphql",
-      "--hostname",
-      repository.host,
-      "-f",
-      `query=${query}`,
-      ...variableArgs
-    ], {
-      timeout: timeoutMs,
-      windowsHide: true
-    });
-    return parseJsonOutput(stdout);
-  } catch (error) {
-    throw normalizeGitHubCommandError(error);
-  }
+  const load = async () => {
+    try {
+      const { stdout } = await execFileAsync("gh", [
+        "api",
+        "graphql",
+        "--hostname",
+        repository.host,
+        "--include",
+        "-f",
+        `query=${query}`,
+        ...variableArgs
+      ], {
+        timeout: timeoutMs,
+        windowsHide: true
+      });
+      const output = parseGitHubApiOutput(stdout, now);
+      scheduler?.pause(output.rateLimitDelayMs);
+      return output.payload;
+    } catch (error) {
+      throw normalizeGitHubCommandError(error, { now });
+    }
+  };
+  return scheduler
+    ? scheduler.schedule(load, { priority })
+    : load();
 }
 
 function normalizeNumber(value: unknown): number {
@@ -854,8 +1091,11 @@ function requireGitHubRepository(project: GitHubProject): GitHubRepositoryRef {
 function createGitHubService({
   execFileAsync = runExecFile,
   cache = createAsyncRequestCache(),
-  now = Date.now
+  now = Date.now,
+  scheduler: schedulerOverride
 }: GitHubServiceOptions = {}) {
+  const scheduler = schedulerOverride || createGitHubRequestScheduler({ now });
+
   async function statusForProject(
     project: GitHubProject = {},
     { force = false }: GitHubServiceRequestOptions = {}
@@ -877,7 +1117,10 @@ function createGitHubService({
 
   async function loadWorkflowRuns(
     repository: GitHubRepositoryRef,
-    { force = false }: GitHubServiceRequestOptions = {}
+    {
+      force = false,
+      priority = "background"
+    }: GitHubServiceRequestOptions = {}
   ): Promise<GitHubRawRun[]> {
     const repositoryKey = getRepositoryKey(repository);
     return cache.get(
@@ -886,7 +1129,12 @@ function createGitHubService({
         const payload = await runGitHubApiJson(
           repository,
           `repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/actions/runs?per_page=20`,
-          { execFileAsync }
+          {
+            execFileAsync,
+            now,
+            priority,
+            scheduler
+          }
         );
         if (!isRecord(payload) || !Array.isArray(payload.workflow_runs)) {
           throw new GitHubServiceError("invalidResponse", "GitHub returned an invalid workflow run list.");
@@ -903,7 +1151,10 @@ function createGitHubService({
   async function loadWorkflowJobs(
     repository: GitHubRepositoryRef,
     runId: number,
-    { force = false }: GitHubServiceRequestOptions = {}
+    {
+      force = false,
+      priority = "background"
+    }: GitHubServiceRequestOptions = {}
   ): Promise<GitHubWorkflowJob[]> {
     const repositoryKey = getRepositoryKey(repository);
     return cache.get(
@@ -912,7 +1163,12 @@ function createGitHubService({
         const payload = await runGitHubApiJson(
           repository,
           `repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.repo)}/actions/runs/${runId}/jobs?filter=latest&per_page=100`,
-          { execFileAsync }
+          {
+            execFileAsync,
+            now,
+            priority,
+            scheduler
+          }
         );
         if (!isRecord(payload) || !Array.isArray(payload.jobs)) {
           throw new GitHubServiceError("invalidResponse", "GitHub returned an invalid workflow job list.");
@@ -930,7 +1186,10 @@ function createGitHubService({
 
   async function actionsSnapshotForProject(
     project: GitHubProject = {},
-    { force = false }: GitHubServiceRequestOptions = {}
+    {
+      force = false,
+      priority = "background"
+    }: GitHubServiceRequestOptions = {}
   ): Promise<GitHubActionsSnapshot> {
     const repository = resolveGitHubRepository(project);
     const status = await statusForProject(project);
@@ -944,7 +1203,7 @@ function createGitHubService({
       };
     }
 
-    const rawRuns = await loadWorkflowRuns(repository, { force });
+    const rawRuns = await loadWorkflowRuns(repository, { force, priority });
     const runs: GitHubWorkflowRun[] = [];
     for (const rawRun of rawRuns) {
       const run = normalizeWorkflowRun(rawRun);
@@ -952,7 +1211,7 @@ function createGitHubService({
         continue;
       }
       const jobs = isActiveWorkflowStatus(run.status)
-        ? await loadWorkflowJobs(repository, run.id, { force })
+        ? await loadWorkflowJobs(repository, run.id, { force, priority })
         : [];
       runs.push({
         ...run,
@@ -971,7 +1230,10 @@ function createGitHubService({
 
   async function pullRequestsSnapshotForProject(
     project: GitHubProject = {},
-    { force = false }: GitHubServiceRequestOptions = {}
+    {
+      force = false,
+      priority = "background"
+    }: GitHubServiceRequestOptions = {}
   ): Promise<GitHubPullRequestsSnapshot> {
     const repository = resolveGitHubRepository(project);
     const status = await statusForProject(project);
@@ -997,7 +1259,12 @@ function createGitHubService({
             owner: repository.owner,
             searchQuery: `repo:${repository.owner}/${repository.repo} is:pr is:open review-requested:@me`
           },
-          { execFileAsync }
+          {
+            execFileAsync,
+            now,
+            priority,
+            scheduler
+          }
         );
         return normalizePullRequestsGraphQl(payload);
       },
@@ -1043,6 +1310,7 @@ module.exports = {
   GITHUB_PULL_REQUESTS_QUERY,
   GitHubServiceError,
   createAsyncRequestCache,
+  createGitHubRequestScheduler,
   createGitHubService,
   getGitHubProjectStatus,
   isActiveWorkflowStatus,
@@ -1057,6 +1325,7 @@ module.exports = {
   normalizeWorkflowJob,
   normalizeWorkflowRun,
   normalizeWorkflowStep,
+  parseGitHubApiOutput,
   parseGitHubRepositoryUrl,
   runGitHubApiJson,
   runGitHubGraphQlJson,

@@ -4,7 +4,9 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
   GITHUB_PULL_REQUESTS_QUERY,
+  GitHubServiceError,
   createAsyncRequestCache,
+  createGitHubRequestScheduler,
   createGitHubService,
   getGitHubProjectStatus,
   normalizeGitHubCommandError,
@@ -15,6 +17,7 @@ const {
   normalizePullRequestsGraphQl,
   normalizeWorkflowJob,
   normalizeWorkflowRun,
+  parseGitHubApiOutput,
   parseGitHubRepositoryUrl,
   runGitHubApiJson,
   runGitHubGraphQlJson,
@@ -24,6 +27,7 @@ const {
 type CommandError = Error & {
   code?: string;
   stderr?: string;
+  stdout?: string;
 };
 
 function createPullRequestGraphQlResponse() {
@@ -250,6 +254,81 @@ test("createAsyncRequestCache deduplicates in-flight work and honors TTL and for
   assert.equal(calls, 3);
 });
 
+test("createGitHubRequestScheduler serializes requests and promotes foreground work", async () => {
+  const scheduler = createGitHubRequestScheduler();
+  const started: string[] = [];
+  let resolveFirst!: (value: string) => void;
+  const first = scheduler.schedule(async () => {
+    started.push("first");
+    return new Promise<string>((resolve) => {
+      resolveFirst = resolve;
+    });
+  }, { priority: "background" });
+  const background = scheduler.schedule(async () => {
+    started.push("background");
+    return "background";
+  }, { priority: "background" });
+  const foreground = scheduler.schedule(async () => {
+    started.push("foreground");
+    return "foreground";
+  }, { priority: "foreground" });
+  const interactive = scheduler.schedule(async () => {
+    started.push("interactive");
+    return "interactive";
+  }, { priority: "interactive" });
+
+  assert.deepEqual(started, ["first"]);
+  resolveFirst("first");
+  assert.equal(await first, "first");
+  assert.equal(await interactive, "interactive");
+  assert.equal(await foreground, "foreground");
+  assert.equal(await background, "background");
+  assert.deepEqual(started, ["first", "interactive", "foreground", "background"]);
+});
+
+test("createGitHubRequestScheduler applies one shared retry delay after a rate limit", async () => {
+  let currentTime = 1000;
+  let queuedCalls = 0;
+  const scheduler = createGitHubRequestScheduler({
+    cooldownMs: 60_000,
+    now: () => currentTime
+  });
+  const limited = scheduler.schedule(async () => {
+    throw new GitHubServiceError(
+      "rateLimited",
+      "GitHub API rate limit reached. Refresh will resume later.",
+      { retryAfterMs: 120_000 }
+    );
+  });
+  const queued = scheduler.schedule(async () => {
+    queuedCalls += 1;
+    return "queued";
+  });
+
+  await assert.rejects(limited, { code: "rateLimited" });
+  await assert.rejects(queued, { code: "rateLimited" });
+  await assert.rejects(
+    scheduler.schedule(async () => {
+      queuedCalls += 1;
+      return "blocked";
+    }),
+    { code: "rateLimited" }
+  );
+  assert.equal(queuedCalls, 0);
+
+  currentTime += 60_000;
+  await assert.rejects(
+    scheduler.schedule(async () => "still blocked"),
+    { code: "rateLimited" }
+  );
+  currentTime += 60_000;
+  assert.equal(await scheduler.schedule(async () => {
+    queuedCalls += 1;
+    return "resumed";
+  }), "resumed");
+  assert.equal(queuedCalls, 1);
+});
+
 test("runGitHubApiJson uses hostname-aware gh API arguments and rejects invalid JSON safely", async () => {
   const calls: Array<{ command: string; args: string[] }> = [];
   const repository = {
@@ -271,6 +350,7 @@ test("runGitHubApiJson uses hostname-aware gh API arguments and rejects invalid 
       "api",
       "--hostname",
       "github.com",
+      "--include",
       "repos/octo-org/example/actions/runs"
     ]
   }]);
@@ -288,12 +368,66 @@ test("runGitHubApiJson uses hostname-aware gh API arguments and rejects invalid 
 
 test("normalizeGitHubCommandError maps rate limits without exposing raw command output", () => {
   const error = new Error("API rate limit exceeded for secret account") as CommandError;
-  error.stderr = "secondary rate limit; private detail";
-  const normalized = normalizeGitHubCommandError(error);
+  error.stderr = "secondary rate limit; private detail\nRetry-After: 120";
+  const normalized = normalizeGitHubCommandError(error, { now: () => 1000 });
 
   assert.equal(normalized.code, "rateLimited");
   assert.equal(normalized.message, "GitHub API rate limit reached. Refresh will resume later.");
+  assert.equal(normalized.retryAfterMs, 120_000);
   assert.doesNotMatch(normalized.message, /secret|private/);
+});
+
+test("parseGitHubApiOutput keeps JSON separate from rate-limit headers", () => {
+  const output = parseGitHubApiOutput([
+    "HTTP/2.0 200 OK",
+    "Content-Type: application/json",
+    "X-RateLimit-Remaining: 0",
+    "X-RateLimit-Reset: 70",
+    "",
+    '{"ok":true}'
+  ].join("\r\n"), () => 10_000);
+
+  assert.deepEqual(output.payload, { ok: true });
+  assert.equal(output.rateLimitDelayMs, 60_000);
+});
+
+test("runGitHubApiJson pauses the shared scheduler at primary quota exhaustion", async () => {
+  let calls = 0;
+  const scheduler = createGitHubRequestScheduler({
+    now: () => 10_000
+  });
+  const repository = {
+    host: "github.com",
+    owner: "octo-org",
+    repo: "example"
+  };
+  const execFileAsync = async () => {
+    calls += 1;
+    return {
+      stdout: [
+        "HTTP/2.0 200 OK",
+        "X-RateLimit-Remaining: 0",
+        "X-RateLimit-Reset: 70",
+        "",
+        '{"ok":true}'
+      ].join("\n")
+    };
+  };
+
+  assert.deepEqual(await runGitHubApiJson(repository, "repos/octo-org/example", {
+    execFileAsync,
+    now: () => 10_000,
+    scheduler
+  }), { ok: true });
+  await assert.rejects(
+    runGitHubApiJson(repository, "repos/octo-org/example", {
+      execFileAsync,
+      now: () => 10_000,
+      scheduler
+    }),
+    { code: "rateLimited" }
+  );
+  assert.equal(calls, 1);
 });
 
 test("workflow normalizers preserve authoritative run, job, and step status", () => {
@@ -423,6 +557,42 @@ test("createGitHubService loads active jobs, keeps completed runs compact, and c
   await service.actionsSnapshotForProject(project, { force: true });
   assert.equal(calls.length, 5);
   assert.equal(calls.filter((args) => args[0] === "auth").length, 1);
+});
+
+test("createGitHubService serializes REST and GraphQL API work across projects", async () => {
+  let activeApiCalls = 0;
+  let maxActiveApiCalls = 0;
+  const service = createGitHubService({
+    execFileAsync: async (_command: string, args: string[]) => {
+      if (args[0] === "auth") {
+        return { stdout: "" };
+      }
+
+      activeApiCalls += 1;
+      maxActiveApiCalls = Math.max(maxActiveApiCalls, activeApiCalls);
+      await new Promise((resolve) => setImmediate(resolve));
+      activeApiCalls -= 1;
+
+      if (args[0] === "api" && args[1] === "graphql") {
+        return { stdout: JSON.stringify(createPullRequestGraphQlResponse()) };
+      }
+      if (args.at(-1)?.includes("/actions/runs?")) {
+        return { stdout: JSON.stringify({ workflow_runs: [] }) };
+      }
+      throw new Error(`Unexpected arguments: ${args.join(" ")}`);
+    }
+  });
+
+  await Promise.all([
+    service.actionsSnapshotForProject({
+      repoUrl: "https://github.com/octo-org/actions-example"
+    }, { priority: "background" }),
+    service.pullRequestsSnapshotForProject({
+      repoUrl: "https://github.com/octo-org/example"
+    }, { priority: "foreground" })
+  ]);
+
+  assert.equal(maxActiveApiCalls, 1);
 });
 
 test("runGitHubGraphQlJson passes the query and variables as safe gh arguments", async () => {
