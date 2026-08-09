@@ -16,6 +16,7 @@
     "src/renderer/hawserWidget.ts",
     "src/renderer/manualViews.ts",
     "src/renderer/onboardingTour.ts",
+    "src/renderer/paneNavigation.ts",
     "src/renderer/paneLayoutState.ts",
     "src/renderer/paneLayoutView.ts",
     "src/renderer/pluginLoader.ts",

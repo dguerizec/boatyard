@@ -3004,6 +3004,92 @@ body.sidebar-collapsed .workspace {
   gap: 4px;
 }
 
+.webapp-browser-controls {
+  position: relative;
+  z-index: 4;
+  flex: 0 0 32px;
+  width: 32px;
+}
+
+.webapp-browser-controls-overlay {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 40px;
+  height: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  background: var(--panel-strong);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28);
+}
+
+.webapp-browser-controls-overlay::-webkit-scrollbar {
+  display: none;
+}
+
+.webapp-browser-controls-overlay .webapp-tool-button {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.webapp-browser-controls-overlay[hidden] {
+  display: none;
+}
+
+.webapp-pane-navigation {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  padding: 1px;
+  scrollbar-width: none;
+}
+
+.webapp-pane-navigation::-webkit-scrollbar {
+  display: none;
+}
+
+.webapp-pane-navigation-item {
+  min-height: 30px;
+  flex: 0 0 auto;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.webapp-pane-navigation-item:hover,
+.webapp-pane-navigation-item:focus-visible {
+  border-color: var(--line);
+  background: rgba(var(--line-strong-rgb), 0.1);
+  color: var(--text);
+  outline: none;
+}
+
+.webapp-pane-navigation-item.active {
+  border-color: rgba(var(--accent-rgb), 0.58);
+  background: rgba(var(--accent-rgb), 0.13);
+  color: var(--text);
+}
+
 .webapp-pane.widget-pane.editing .webapp-tabs {
   flex: 0 1 auto;
 }
@@ -3191,6 +3277,21 @@ body.sidebar-collapsed .workspace {
   gap: 8px;
   text-align: left;
   font-weight: 700;
+}
+
+.webapp-navigation-history-menu {
+  padding: 4px;
+}
+
+.webapp-navigation-history-menu .webapp-tab-menu-item {
+  min-height: 26px;
+  height: 26px;
+  display: block;
+  overflow: hidden;
+  padding: 0 8px;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .webapp-tab-menu-item .pane-icon-label {

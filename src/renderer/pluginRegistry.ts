@@ -109,6 +109,14 @@ export function registerPluginRegistry(globalScope: PluginRegistryWindow): Plugi
       throw new Error(`Pane ${id} renderHeaderActions must be a function.`);
     }
 
+    if (definition.isAvailable !== undefined && typeof definition.isAvailable !== "function") {
+      throw new Error(`Pane ${id} isAvailable must be a function.`);
+    }
+
+    if (definition.resolveNavigation !== undefined && typeof definition.resolveNavigation !== "function") {
+      throw new Error(`Pane ${id} resolveNavigation must be a function.`);
+    }
+
     return {
       ...definition,
       id,
@@ -120,7 +128,11 @@ export function registerPluginRegistry(globalScope: PluginRegistryWindow): Plugi
       kind: requestedKind,
       parentLabel: normalizeText(definition.parentLabel),
       parentWebAppId: normalizeText(definition.parentWebAppId),
+      replacesWebAppIds: Array.isArray(definition.replacesWebAppIds)
+        ? [...new Set(definition.replacesWebAppIds.map(normalizeText).filter(Boolean))]
+        : [],
       scope: normalizeText(definition.scope || "project"),
+      showInMenu: definition.showInMenu !== false,
       webAppId: normalizeText(definition.webAppId || id),
       key: normalizeText(definition.key || definition.webAppId || id)
     };

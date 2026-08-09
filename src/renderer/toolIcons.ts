@@ -2,8 +2,15 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 type IconNode = [tag: string, attrs: Record<string, string>][];
 
-// KeyRound from Lucide, kept as local icon data so the renderer never depends on a CDN.
+// Selected Lucide icons, kept as local data so the renderer never depends on a CDN.
 const LUCIDE_TOOL_ICONS: Record<string, IconNode> = {
+  git: [
+    ["circle", { cx: "6", cy: "3", r: "3" }],
+    ["circle", { cx: "18", cy: "6", r: "3" }],
+    ["circle", { cx: "6", cy: "21", r: "3" }],
+    ["path", { d: "M6 6v12" }],
+    ["path", { d: "M18 9a9 9 0 0 1-9 9" }]
+  ],
   key: [
     [
       "path",
@@ -65,6 +72,10 @@ const TOOL_ICONS: Record<string, string[]> = {
   lock: [
     "M6.5 10V7.5a5.5 5.5 0 0 1 11 0V10",
     "M5.5 10h13a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-7A1.5 1.5 0 0 1 5.5 10z"
+  ],
+  navigationControls: [
+    "M9 7l-5 5 5 5",
+    "M15 7l5 5-5 5"
   ],
   pencil: [
     "M12 20h9",

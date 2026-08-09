@@ -194,8 +194,24 @@ declare global {
     id: string;
     key: string;
     label: string;
+    navigation?: PluginPaneNavigation;
+    showInMenu?: boolean;
     url: string;
     restoreUrl?: boolean;
+  };
+
+  type PluginPaneNavigationItem = {
+    activeUrlPatterns?: string[];
+    id: string;
+    label: string;
+    url?: string;
+    webAppId?: string;
+  };
+
+  type PluginPaneNavigation = {
+    items: PluginPaneNavigationItem[];
+    showAddressBar?: boolean;
+    showHomeButton?: boolean;
   };
 
   type PluginPaneResolveContext = {
@@ -209,17 +225,22 @@ declare global {
     icon?: unknown;
     iconOnly?: unknown;
     iconUrl?: unknown;
+    isAvailable?: (context: PluginPaneResolveContext) => boolean;
     key?: unknown;
     kind?: unknown;
     mobileDev?: unknown;
     name?: unknown;
+    navigation?: PluginPaneNavigation;
     parentLabel?: unknown;
     parentWebAppId?: unknown;
+    replacesWebAppIds?: unknown;
     scope?: unknown;
+    showInMenu?: unknown;
     title?: unknown;
     webAppId?: unknown;
     render?: (container: HTMLElement, props?: PluginRegistryRecord) => unknown;
     renderHeaderActions?: (container: HTMLElement, props?: PluginRegistryRecord) => unknown;
+    resolveNavigation?: (context: PluginPaneResolveContext) => PluginPaneNavigation | null | undefined;
     resolveUrl?: (context: PluginPaneResolveContext) => string;
     resolveWebApps?: (context: PluginPaneResolveContext) => PluginPaneWebApp[];
   };
@@ -231,7 +252,9 @@ declare global {
     kind: "wcv" | "dom";
     parentLabel: string;
     parentWebAppId: string;
+    replacesWebAppIds: string[];
     scope: string;
+    showInMenu: boolean;
     webAppId: string;
     key: string;
   };

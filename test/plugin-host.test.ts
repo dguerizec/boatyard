@@ -41,7 +41,16 @@ function createPluginFixture() {
       ctx.stateMigrations.register(({ state }) => ({
         projectPluginConfig: (state.projects || [])
           .filter((project) => project.previewUrl)
-          .map((project) => ({ projectId: project.id, config: { previewUrl: project.previewUrl } }))
+          .map((project) => ({ projectId: project.id, config: { previewUrl: project.previewUrl } })),
+        webAppMigrations: (state.projects || [])
+          .filter((project) => project.previewUrl)
+          .map((project) => ({
+            projectId: project.id,
+            sourceKey: "legacy",
+            sourceWebAppId: "legacy",
+            targetKey: "preview",
+            targetWebAppId: "vendor.example.pane"
+          }))
       }));
     };
   `);
@@ -123,6 +132,7 @@ test("PluginHost skips disabled plugin actions and inspectors", async () => {
 test("PluginHost applies plugin-owned state migrations", async () => {
   const pluginRoot = createPluginFixture();
   const migrated: PluginMigration[] = [];
+  const migratedWebApps: Array<{ migration: unknown; projectId: string }> = [];
   const store = {
     getState: () => ({
       plugins: { enabled: {} },
@@ -131,6 +141,9 @@ test("PluginHost applies plugin-owned state migrations", async () => {
         previewUrl: "https://preview.example/"
       }]
     }),
+    migrateProjectWebApp: (projectId: string, migration: unknown) => {
+      migratedWebApps.push({ projectId, migration });
+    },
     updateProjectPluginConfig: (projectId: string, pluginId: string, config: unknown) => {
       migrated.push({ projectId, pluginId, config });
     },
@@ -145,6 +158,16 @@ test("PluginHost applies plugin-owned state migrations", async () => {
     projectId: "project-id",
     pluginId: "vendor.example",
     config: { previewUrl: "https://preview.example/" }
+  }]);
+  assert.deepEqual(migratedWebApps, [{
+    projectId: "project-id",
+    migration: {
+      projectId: "project-id",
+      sourceKey: "legacy",
+      sourceWebAppId: "legacy",
+      targetKey: "preview",
+      targetWebAppId: "vendor.example.pane"
+    }
   }]);
 });
 

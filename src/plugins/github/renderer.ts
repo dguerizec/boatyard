@@ -1,6 +1,9 @@
 "use strict";
 
 (function registerGitHubPlugin(globalScope: BoatyardPluginRendererGlobal) {
+  const rendererScriptUrl = (document.currentScript as HTMLScriptElement | null)?.src || "";
+  const githubIconUrl = rendererScriptUrl ? new URL("github-icon.svg", rendererScriptUrl).href : "";
+
   type GitHubProject = PluginRegistryRecord & {
     gitUrl?: string;
     id?: string;
@@ -134,6 +137,11 @@
     pendingResult: GitHubProjectStatusSignal | null;
   };
 
+  type GitHubActionsView = {
+    isAlive: () => boolean;
+    render: () => void;
+  };
+
   type RefreshState<TSnapshot> = {
     error: string;
     loading: boolean;
@@ -184,6 +192,8 @@
   const PULL_REQUESTS_REFRESH_MS = 30000;
   const MAX_BACKOFF_MS = 5 * 60 * 1000;
   const GITHUB_PROJECT_STATUS_PRIORITY_DEFAULT = "workflowRunning,pullRequest,workflowResult";
+  const GITHUB_REPOSITORY_WEBAPP_ID = "boatyard.github.repository";
+  const GITHUB_OVERVIEW_WEBAPP_ID = "boatyard.github.overview";
   const HIDDEN_WORKFLOW_RUN_IDS_CONFIG_KEY = "hiddenWorkflowRunIds";
   const GITHUB_PROJECT_STATUS_PRIORITY_OPTIONS = [
     {
@@ -212,6 +222,8 @@
     }
   ];
   const hiddenWorkflowRunIdsByProject = new Map<string, Set<string>>();
+  const actionsViewsByProject = new Map<string, Set<GitHubActionsView>>();
+  const workflowVisibilityUpdatesByProject = new Set<string>();
   const workflowNotificationStates = new Map<string, GitHubWorkflowNotificationState>();
   let selectedProjectKey: string | null = null;
 
@@ -240,6 +252,109 @@
 
   function isRecord(value: unknown): value is PluginRegistryRecord {
     return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function normalizeGitHubRepositoryPath(pathname: unknown) {
+    const parts = String(pathname || "")
+      .replace(/^\/+|\/+$/g, "")
+      .split("/")
+      .filter(Boolean);
+    if (parts.length < 2) {
+      return null;
+    }
+    const owner = parts[0];
+    const repo = parts[1].replace(/\.git$/i, "");
+    return owner && repo ? { owner, repo } : null;
+  }
+
+  function parseGitHubRepositoryUrl(value: unknown) {
+    const source = String(value || "").trim();
+    if (!source) {
+      return null;
+    }
+
+    const scpMatch = source.match(/^(?:[^@\s]+@)?([^:/\s]+):(.+)$/);
+    if (scpMatch && !source.includes("://")) {
+      const host = scpMatch[1].replace(/^www\./i, "").toLowerCase();
+      const repository = normalizeGitHubRepositoryPath(scpMatch[2]);
+      return host === "github.com" && repository ? { host, ...repository } : null;
+    }
+
+    try {
+      const parsed = new URL(source);
+      const host = parsed.hostname.replace(/^www\./i, "").toLowerCase();
+      const repository = normalizeGitHubRepositoryPath(parsed.pathname);
+      return host === "github.com" && repository ? { host, ...repository } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getGitHubRepositoryRootUrl(project: GitHubProject = {}) {
+    const repository = parseGitHubRepositoryUrl(project.repoUrl) || parseGitHubRepositoryUrl(project.gitUrl);
+    return repository
+      ? `https://${repository.host}/${repository.owner}/${repository.repo}`
+      : "";
+  }
+
+  function escapeRegularExpression(value: string) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function resolveGitHubPaneNavigation(project: GitHubProject = {}): PluginPaneNavigation | null {
+    const repositoryUrl = getGitHubRepositoryRootUrl(project);
+    if (!repositoryUrl) {
+      return null;
+    }
+    const repositoryPattern = escapeRegularExpression(repositoryUrl);
+    return {
+      showAddressBar: false,
+      showHomeButton: false,
+      items: [
+        {
+          id: "overview",
+          label: "Overview",
+          webAppId: GITHUB_OVERVIEW_WEBAPP_ID
+        },
+        {
+          activeUrlPatterns: [
+            `^${repositoryPattern}(?:/?(?:[?#].*)?$|/(?:blob|branches|commit|commits|releases|tags|tree)(?:/|[?#]|$))`
+          ],
+          id: "code",
+          label: "Code",
+          url: repositoryUrl,
+          webAppId: GITHUB_REPOSITORY_WEBAPP_ID
+        },
+        {
+          activeUrlPatterns: [`^${repositoryPattern}/issues(?:/|[?#]|$)`],
+          id: "issues",
+          label: "Issues",
+          url: `${repositoryUrl}/issues`,
+          webAppId: GITHUB_REPOSITORY_WEBAPP_ID
+        },
+        {
+          activeUrlPatterns: [`^${repositoryPattern}/pull(?:s(?:/|[?#]|$)|/(?:[^/?#]+))`],
+          id: "pullRequests",
+          label: "Pull requests",
+          url: `${repositoryUrl}/pulls`,
+          webAppId: GITHUB_REPOSITORY_WEBAPP_ID
+        },
+        {
+          activeUrlPatterns: [`^${repositoryPattern}/actions(?:/|[?#]|$)`],
+          id: "actions",
+          label: "Actions",
+          url: `${repositoryUrl}/actions`,
+          webAppId: GITHUB_REPOSITORY_WEBAPP_ID
+        },
+        {
+          activeUrlPatterns: [`^${repositoryPattern}/settings(?:/|[?#]|$)`],
+          id: "settings",
+          label: "Settings",
+          url: `${repositoryUrl}/settings`,
+          webAppId: GITHUB_REPOSITORY_WEBAPP_ID
+        }
+      ]
+    };
   }
 
   function asActionsSnapshot(value: unknown): GitHubActionsSnapshot {
@@ -317,6 +432,29 @@
       return;
     }
     globalScope.dispatchEvent(new globalScope.CustomEvent("boatyard:project-nav-badges-changed"));
+  }
+
+  function registerActionsView(projectKey: string, view: GitHubActionsView) {
+    const views = actionsViewsByProject.get(projectKey) || new Set<GitHubActionsView>();
+    views.add(view);
+    actionsViewsByProject.set(projectKey, views);
+  }
+
+  function notifyActionsViews(projectKey: string) {
+    const views = actionsViewsByProject.get(projectKey);
+    if (!views) {
+      return;
+    }
+    for (const view of views) {
+      if (!view.isAlive()) {
+        views.delete(view);
+        continue;
+      }
+      view.render();
+    }
+    if (!views.size) {
+      actionsViewsByProject.delete(projectKey);
+    }
   }
 
   function createProjectRefreshCoordinator<TSnapshot>({
@@ -1142,12 +1280,19 @@
     card.append(header, body);
 
     const hiddenRunIds = getHiddenWorkflowRunIds(project, props.pluginConfig);
+    const projectKey = getProjectKey(project);
     let latestSnapshot: GitHubActionsSnapshot | null = null;
     let latestSnapshotStale = false;
     let showHiddenRuns = false;
     let visibilityError = "";
-    let visibilityUpdatePending = false;
     let wasConnected = false;
+
+    function isViewAlive() {
+      if (card.isConnected) {
+        wasConnected = true;
+      }
+      return !wasConnected || card.isConnected;
+    }
 
     function renderSnapshot() {
       if (!latestSnapshot) {
@@ -1161,6 +1306,7 @@
       if (!hiddenRuns.length) {
         showHiddenRuns = false;
       }
+      const visibilityUpdatePending = workflowVisibilityUpdatesByProject.has(projectKey);
       hiddenRunsButton.hidden = !hiddenRuns.length;
       hiddenRunsButton.disabled = visibilityUpdatePending;
       hiddenRunsButton.textContent = `${hiddenRuns.length} hidden`;
@@ -1195,7 +1341,7 @@
       hidden: boolean
     ): Promise<void> {
       const runId = String(run.id);
-      if (visibilityUpdatePending || hiddenRunIds.has(runId) === hidden) {
+      if (workflowVisibilityUpdatesByProject.has(projectKey) || hiddenRunIds.has(runId) === hidden) {
         return;
       }
       if (hidden) {
@@ -1209,8 +1355,8 @@
         hiddenRunIds.delete(runId);
       }
       visibilityError = "";
-      visibilityUpdatePending = true;
-      renderSnapshot();
+      workflowVisibilityUpdatesByProject.add(projectKey);
+      notifyActionsViews(projectKey);
       notifyProjectNavBadgesChanged();
 
       try {
@@ -1233,11 +1379,16 @@
         }
         visibilityError = `Could not ${hidden ? "hide" : "show"} workflow: ${getErrorMessage(error)}`;
       } finally {
-        visibilityUpdatePending = false;
-        renderSnapshot();
+        workflowVisibilityUpdatesByProject.delete(projectKey);
+        notifyActionsViews(projectKey);
         notifyProjectNavBadgesChanged();
       }
     }
+
+    registerActionsView(projectKey, {
+      isAlive: isViewAlive,
+      render: renderSnapshot
+    });
 
     const subscription = actionsCoordinator.subscribe(
       project,
@@ -1266,12 +1417,7 @@
           subtitle.textContent = state.stale ? "Showing stale data" : "Refresh failed";
         }
       },
-      () => {
-        if (card.isConnected) {
-          wasConnected = true;
-        }
-        return !wasConnected || card.isConnected;
-      },
+      isViewAlive,
       "foreground"
     );
 
@@ -1567,6 +1713,20 @@
     return card;
   }
 
+  function renderGitHubOverview(container: HTMLElement, props: PluginRegistryRecord = {}) {
+    const project = (props.project || {}) as GitHubProject;
+    const overview = document.createElement("div");
+    overview.className = "github-overview-pane";
+    overview.append(
+      createActionsWidget(project, {
+        pluginConfig: props.projectConfig as GitHubConfig | undefined,
+        projectId: String(props.projectId || project.id || "")
+      }),
+      createPullRequestsWidget(project)
+    );
+    container.replaceChildren(overview);
+  }
+
   registry.register(
     {
       id: "boatyard.github",
@@ -1574,6 +1734,10 @@
       version: "0.1.0",
       apiVersion: "0.1",
       contributes: {
+        panes: [
+          GITHUB_REPOSITORY_WEBAPP_ID,
+          GITHUB_OVERVIEW_WEBAPP_ID
+        ],
         widgets: [
           "boatyard.github.actions",
           "boatyard.github.pullRequests"
@@ -1606,6 +1770,46 @@
               options: GITHUB_PROJECT_STATUS_PRIORITY_OPTIONS
             }
           ]
+        });
+
+        ctx.panes.register({
+          id: GITHUB_REPOSITORY_WEBAPP_ID,
+          webAppId: GITHUB_REPOSITORY_WEBAPP_ID,
+          key: "github",
+          title: "GitHub",
+          iconUrl: githubIconUrl,
+          kind: "wcv",
+          parentLabel: "GitHub",
+          parentWebAppId: GITHUB_OVERVIEW_WEBAPP_ID,
+          replacesWebAppIds: ["repo"],
+          scope: "project",
+          showInMenu: false,
+          isAvailable({ project }: PluginPaneResolveContext) {
+            return Boolean(getGitHubRepositoryRootUrl((project || {}) as GitHubProject));
+          },
+          resolveNavigation({ project }: PluginPaneResolveContext) {
+            return resolveGitHubPaneNavigation((project || {}) as GitHubProject);
+          },
+          resolveUrl({ project }: PluginPaneResolveContext) {
+            return getGitHubRepositoryRootUrl((project || {}) as GitHubProject);
+          }
+        });
+
+        ctx.panes.register({
+          id: GITHUB_OVERVIEW_WEBAPP_ID,
+          webAppId: GITHUB_OVERVIEW_WEBAPP_ID,
+          key: "github-overview",
+          title: "GitHub",
+          iconUrl: githubIconUrl,
+          kind: "dom",
+          scope: "project",
+          isAvailable({ project }: PluginPaneResolveContext) {
+            return Boolean(getGitHubRepositoryRootUrl((project || {}) as GitHubProject));
+          },
+          resolveNavigation({ project }: PluginPaneResolveContext) {
+            return resolveGitHubPaneNavigation((project || {}) as GitHubProject);
+          },
+          render: renderGitHubOverview
         });
 
         ctx.projectNavBadges.register({
@@ -1662,6 +1866,8 @@
         });
       },
       deactivate() {
+        actionsViewsByProject.clear();
+        workflowVisibilityUpdatesByProject.clear();
         workflowNotificationStates.clear();
         selectedProjectKey = null;
       }

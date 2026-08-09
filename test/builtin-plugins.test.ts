@@ -22,10 +22,17 @@ type LooseVmValue = ((...args: unknown[]) => LooseVmValue) & {
 type PluginPane = {
   id: string;
   iconUrl?: string;
+  isAvailable?: (context: unknown) => boolean;
   key?: string;
   parentLabel?: string;
   parentWebAppId?: string;
+  replacesWebAppIds?: string[];
+  showInMenu?: boolean;
   renderHeaderActions?: (container: unknown, props?: Record<string, unknown>) => unknown;
+  resolveNavigation?: (context: unknown) => {
+    items: Array<{ activeUrlPatterns?: string[]; id: string; label: string; url?: string; webAppId?: string }>;
+    showAddressBar?: boolean;
+  } | null;
   title?: string;
   resolveUrl(context: unknown): string;
   resolveWebApps(context: unknown): unknown[];
@@ -57,6 +64,7 @@ type PluginField = {
 type PluginSummary = {
   contributes: {
     globalSettings?: string[];
+    panes?: string[];
     projectNavBadges?: string[];
     widgets: string[];
   };
@@ -270,16 +278,84 @@ test("Built-in plugins register project integrations and widgets", () => {
   assert.equal(registry.getService("boatyard.telegram").version, "0.1.0");
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane: PluginPane) => pane.id).sort()),
-    ["boatyard.hawser.pane", "boatyard.pier.preview", "boatyard.twicc.pane"]
+    ["boatyard.github.repository", "boatyard.hawser.pane", "boatyard.pier.preview", "boatyard.twicc.pane"]
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "dom" }).map((pane: PluginPane) => pane.id).sort()),
-    ["boatyard.telegram.pane", "boatyard.twicc.sessionFlowPane"]
+    ["boatyard.github.overview", "boatyard.telegram.pane", "boatyard.twicc.sessionFlowPane"]
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane: PluginPane) => pane.key).sort()),
-    ["hawser", "pier", "twicc-plugin"]
+    ["github", "hawser", "pier", "twicc-plugin"]
   );
+  const githubPane = registry
+    .listPanes({ scope: "project", kind: "wcv" })
+    .find((pane: PluginPane) => pane.id === "boatyard.github.repository");
+  const githubContext = {
+    project: {
+      gitUrl: "git@github.com:octo-org/example.git",
+      repoUrl: "https://github.com/octo-org/example/tree/main/docs"
+    }
+  };
+  assert.equal(githubPane.resolveUrl(githubContext), "https://github.com/octo-org/example");
+  assert.equal(githubPane.isAvailable?.(githubContext), true);
+  assert.equal(githubPane.parentLabel, "GitHub");
+  assert.equal(githubPane.parentWebAppId, "boatyard.github.overview");
+  assert.deepEqual(plain(githubPane.replacesWebAppIds), ["repo"]);
+  assert.equal(githubPane.showInMenu, false);
+  assert.match(githubPane.iconUrl || "", /\/plugins\/github\/github-icon\.svg$/);
+  const githubNavigation = githubPane.resolveNavigation?.(githubContext);
+  assert.equal(githubNavigation?.showAddressBar, false);
+  assert.deepEqual(
+    plain(githubNavigation?.items.map((item: {
+      id: string;
+      label: string;
+      url?: string;
+      webAppId?: string;
+    }) => ({
+      id: item.id,
+      label: item.label,
+      url: item.url || "",
+      webAppId: item.webAppId
+    }))),
+    [
+      { id: "overview", label: "Overview", url: "", webAppId: "boatyard.github.overview" },
+      { id: "code", label: "Code", url: "https://github.com/octo-org/example", webAppId: "boatyard.github.repository" },
+      { id: "issues", label: "Issues", url: "https://github.com/octo-org/example/issues", webAppId: "boatyard.github.repository" },
+      { id: "pullRequests", label: "Pull requests", url: "https://github.com/octo-org/example/pulls", webAppId: "boatyard.github.repository" },
+      { id: "actions", label: "Actions", url: "https://github.com/octo-org/example/actions", webAppId: "boatyard.github.repository" },
+      { id: "settings", label: "Settings", url: "https://github.com/octo-org/example/settings", webAppId: "boatyard.github.repository" }
+    ]
+  );
+  const pullRequestUrl = "https://github.com/octo-org/example/pull/42/files";
+  const activeNavigationItems = githubNavigation?.items.filter((item: {
+    activeUrlPatterns?: string[];
+    id: string;
+    webAppId?: string;
+  }) => (
+    item.webAppId === "boatyard.github.repository"
+    && item.activeUrlPatterns?.some((pattern) => new RegExp(pattern).test(pullRequestUrl))
+  ));
+  assert.deepEqual(
+    plain(activeNavigationItems?.map((item: { id: string }) => item.id)),
+    ["pullRequests"]
+  );
+  const settingsUrl = "https://github.com/octo-org/example/settings/actions";
+  assert.deepEqual(
+    plain(githubNavigation?.items
+      .filter((item: { activeUrlPatterns?: string[] }) => (
+        item.activeUrlPatterns?.some((pattern) => new RegExp(pattern).test(settingsUrl))
+      ))
+      .map((item: { id: string }) => item.id)),
+    ["settings"]
+  );
+  const githubOverviewPane = registry
+    .listPanes({ scope: "project", kind: "dom" })
+    .find((pane: PluginPane) => pane.id === "boatyard.github.overview");
+  assert.equal(githubOverviewPane.title, "GitHub");
+  assert.equal(githubOverviewPane.parentLabel, "");
+  assert.equal(githubOverviewPane.parentWebAppId, "");
+  assert.equal(githubOverviewPane.showInMenu, true);
   const twiccPane = registry
     .listPanes({ scope: "project", kind: "wcv" })
     .find((pane: PluginPane) => pane.id === "boatyard.twicc.pane");
@@ -327,6 +403,10 @@ test("Built-in plugins register project integrations and widgets", () => {
   const colorPalettePlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.colorPalette");
   assert.deepEqual(plain(colorPalettePlugin.contributes.widgets), ["boatyard.colorPalette.widget"]);
   const githubPlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.github");
+  assert.deepEqual(
+    plain(githubPlugin.contributes.panes),
+    ["boatyard.github.repository", "boatyard.github.overview"]
+  );
   assert.deepEqual(
     plain(githubPlugin.contributes.widgets),
     ["boatyard.github.actions", "boatyard.github.pullRequests"]

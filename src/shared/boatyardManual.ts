@@ -93,7 +93,7 @@ type BoatyardManualGlobal = typeof globalThis & {
           },
           {
             title: "Tabs and home tabs",
-            body: "Pane tabs include widgets, preview URLs, saved project URLs, terminals, plugin panes, and repository links. The Home menu can save useful sub-tabs."
+            body: "Pane tabs include widgets, preview URLs, saved project URLs, terminals, plugin panes, and repository links. The Home menu can save useful sub-tabs. Integration panes can keep provider-specific section navigation visible above scrollable web content."
           },
           {
             title: "Navigation and focus",
@@ -181,7 +181,7 @@ type BoatyardManualGlobal = typeof globalThis & {
         entries: [
           {
             title: "Built-in integrations",
-            body: "Boatyard includes GitHub, Pier, TwiCC, Hawser, Telegram, and Color Palette integrations when their plugin files are present."
+            body: "Boatyard includes GitHub, Pier, TwiCC, Hawser, Telegram, and Color Palette integrations when their plugin files are present. GitHub adds a repository pane with sticky section navigation and an Overview that reuses the Actions and Pull Requests widget views."
           },
           {
             title: "Integration settings",

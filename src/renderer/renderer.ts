@@ -597,21 +597,27 @@ function openWebAppHomeMenu(
   event: MouseEvent,
   project: RendererProject,
   paneNode: RendererPaneNode,
-  selectedWebApp: UnknownRecord
+  selectedWebApp: UnknownRecord,
+  onAction?: () => void
 ) {
-  return webAppMenus.openWebAppHomeMenu(event, project, paneNode, selectedWebApp);
+  return webAppMenus.openWebAppHomeMenu(event, project, paneNode, selectedWebApp, onAction);
 }
 
 function openWebAppOpenUrlDialog(payload = {}) {
   return webAppMenus.openWebAppOpenUrlDialog(payload);
 }
 
-function openWebAppRefreshMenu(event: MouseEvent, selectedWebApp: UnknownRecord) {
-  return webAppMenus.openWebAppRefreshMenu(event, selectedWebApp);
+function openWebAppRefreshMenu(event: MouseEvent, selectedWebApp: UnknownRecord, onAction?: () => void) {
+  return webAppMenus.openWebAppRefreshMenu(event, selectedWebApp, onAction);
 }
 
-function openWebAppNavigationHistoryMenu(event: MouseEvent, selectedWebApp: UnknownRecord, direction: "back" | "forward") {
-  return webAppMenus.openWebAppNavigationHistoryMenu(event, selectedWebApp, direction);
+function openWebAppNavigationHistoryMenu(
+  event: MouseEvent,
+  selectedWebApp: UnknownRecord,
+  direction: "back" | "forward",
+  onAction?: () => void
+) {
+  return webAppMenus.openWebAppNavigationHistoryMenu(event, selectedWebApp, direction, onAction);
 }
 
 function openWebAppUrlFieldMenu(

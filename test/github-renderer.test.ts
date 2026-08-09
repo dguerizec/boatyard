@@ -96,6 +96,7 @@ type RendererContext = {
 };
 
 function activateGitHubWidgets(context: RendererContext) {
+  (context as RendererContext & { URL: typeof URL }).URL = URL;
   context.window.setTimeout = context.setTimeout;
   context.window.clearTimeout = context.clearTimeout;
   context.window.window = context.window;
@@ -924,6 +925,80 @@ test("GitHub Actions widget renders active matrix jobs and terminal conclusions"
   assert.ok(findAllByClass(card, "warning").length >= 1);
 });
 
+test("GitHub overview pane reuses the Actions and Pull Requests widget views", async () => {
+  const context: RendererContext = {
+    clearTimeout: () => {},
+    console,
+    document: {
+      createElement: () => new FakeElement()
+    },
+    queueMicrotask,
+    setTimeout: () => 1,
+    window: {
+      boatyard: {
+        invokePlugin: async (_pluginId, actionName) => {
+          if (actionName === "actionsSnapshotForProject") {
+            return {
+              ...createSnapshot(),
+              activeRunCount: 1,
+              runs: [createWorkflowRun({ id: 41, name: "Overview deployment" })]
+            };
+          }
+          if (actionName === "pullRequestsSnapshotForProject") {
+            return createPullRequestsSnapshot([{
+              authorLogin: "octocat",
+              baseRefName: "main",
+              checks: [],
+              ciState: "passed",
+              headRefName: "feature/overview",
+              isAuthoredByViewer: true,
+              isDraft: false,
+              isReadyToMerge: true,
+              isReviewRequestedFromViewer: false,
+              mergeState: "clean",
+              number: 17,
+              reviewState: "approved",
+              title: "Overview pull request",
+              updatedAt: "2026-07-29T10:00:00Z",
+              url: "https://github.com/octo-org/example/pull/17"
+            }]);
+          }
+          throw new Error(`Unexpected action ${actionName}`);
+        },
+        openExternal: () => {}
+      }
+    }
+  };
+  activateGitHubWidgets(context);
+  const panes = context.window.BoatyardPluginRegistry?.listPanes({ kind: "dom" }) as Array<{
+    id: string;
+    render(container: FakeElement, props: Record<string, unknown>): void;
+  }>;
+  const overviewPane = panes.find((pane) => pane.id === "boatyard.github.overview");
+  const host = new FakeElement();
+  overviewPane?.render(host, {
+    project: {
+      id: "project-id",
+      repoUrl: "https://github.com/octo-org/example"
+    },
+    projectConfig: {},
+    projectId: "project-id"
+  });
+
+  await flush();
+  await flush();
+
+  const overview = findByClass(host, "github-overview-pane");
+  if (!overview) {
+    throw new Error("GitHub overview pane was not rendered.");
+  }
+  assert.equal(findAllByClass(overview, "github-widget").length, 2);
+  assert.ok(findByText(overview, "Overview deployment"));
+  assert.ok(findByText(overview, "Overview pull request"));
+  assert.ok(findByText(overview, "All 1"));
+  assert.equal(findByClass(overview, "github-hide-run-button")?.title, "Hide this workflow");
+});
+
 test("GitHub Actions hides and restores persisted workflow runs across the widget and project indicator", async () => {
   let rerenderProjectBadges = () => {};
   const persistedConfigs: Array<{
@@ -995,12 +1070,17 @@ test("GitHub Actions hides and restores persisted workflow runs across the widge
     pluginConfig: projectConfig,
     projectId: project.id
   });
+  const mirrorCard = definition.createElement(project, {
+    pluginConfig: projectConfig,
+    projectId: project.id
+  });
   const badgeDefinition = getProjectStatusBadgeDefinition(context);
   rerenderProjectBadges = () => {
     badgeDefinition?.render({ project, projectConfig });
   };
   const badge = badgeDefinition?.render({ project, projectConfig }) as FakeElement;
   card.isConnected = true;
+  mirrorCard.isConnected = true;
   badge.isConnected = true;
 
   await flush();
@@ -1020,6 +1100,7 @@ test("GitHub Actions hides and restores persisted workflow runs across the widge
   await flush();
 
   assert.equal(findByText(card, "Current staging"), null);
+  assert.equal(findByText(mirrorCard, "Current staging"), null);
   assert.match(
     findByClass(card, "github-widget-title")?.children[1]?.textContent || "",
     /^No active runs/
@@ -1032,6 +1113,7 @@ test("GitHub Actions hides and restores persisted workflow runs across the widge
     JSON.stringify([String(hiddenRun.id), String(visibleRun.id)])
   );
   assert.equal(hiddenRunsButton?.textContent, "2 hidden");
+  assert.equal(findByClass(mirrorCard, "github-hidden-runs-button")?.textContent, "2 hidden");
 
   const updatedBadge = badgeDefinition?.render({ project, projectConfig }) as FakeElement;
   updatedBadge.isConnected = true;

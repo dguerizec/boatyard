@@ -1,4 +1,5 @@
 import { createPluginLoader } from "./pluginLoader.js";
+import { syncPaneNavigationButtonUrl } from "./paneNavigation.js";
 import { hasActiveSettingsInteraction } from "./settingsFormController.js";
 import type { BoatyardBridge, RendererProject } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
@@ -81,6 +82,11 @@ export function registerRendererEventBindings({
     for (const input of document.querySelectorAll<HTMLInputElement>(".webapp-url")) {
       if (input.dataset.webappKey === key && input !== document.activeElement) {
         input.value = url;
+      }
+    }
+    for (const button of document.querySelectorAll<HTMLButtonElement>(".webapp-pane-navigation-item")) {
+      if (button.dataset.webappKey === key) {
+        syncPaneNavigationButtonUrl(button, url);
       }
     }
   });

@@ -679,6 +679,106 @@ test("ProjectStore persists pane layouts", () => {
   assert.deepEqual(reloaded.getPaneLayout("project-id"), layout);
 });
 
+test("ProjectStore migrates project webapp references across every saved window", () => {
+  const { filePath, store } = createTempStore();
+
+  store.load();
+  const projectId = store.addProject({
+    name: "GitHub project",
+    repoUrl: "https://github.com/octo-org/example",
+    sourcePath: "/workspace/example"
+  }).projects[0].id;
+  store.updateProject(projectId, {
+    webAppHomeTabs: [{
+      id: "home:readme",
+      label: "README",
+      parentLabel: "Repo",
+      parentWebAppId: "repo",
+      url: "https://github.com/octo-org/example/blob/main/README.md"
+    }],
+    webAppOpenRules: [{
+      label: "Repository links",
+      pattern: "repo",
+      scope: "source-app",
+      target: "same-pane"
+    }]
+  });
+  store.updatePaneLayout(projectId, {
+    type: "split",
+    id: `${projectId}:split:1`,
+    direction: "vertical",
+    ratio: 0.5,
+    first: {
+      type: "pane",
+      id: `${projectId}:pane:1`,
+      selectedWebAppId: "repo"
+    },
+    second: {
+      type: "pane",
+      id: `${projectId}:pane:2`,
+      selectedWebAppId: "manual",
+      transientWebApp: {
+        id: "transient:repository-link",
+        label: "Repository link",
+        parentLabel: "Repo",
+        parentWebAppId: "repo",
+        url: "https://github.com/octo-org/example/issues/1"
+      }
+    }
+  });
+  store.updateWebAppState(`${projectId}:pane:1:repo`, {
+    url: "https://github.com/octo-org/example/pulls"
+  });
+  store.ensureWorkspaceWindow("window-a", "group-a");
+  store.updateWorkspacePaneLayout("window-a", projectId, {
+    type: "pane",
+    id: `${projectId}:window-pane:1`,
+    selectedWebAppId: "repo"
+  });
+  store.updateWorkspaceWebAppState("window-a", `${projectId}:window-pane:1:repo`, {
+    url: "https://github.com/octo-org/example/actions"
+  });
+
+  const migration = {
+    sourceKey: "repo",
+    sourceWebAppId: "repo",
+    targetKey: "github",
+    targetWebAppId: "boatyard.github.repository"
+  };
+  assert.equal(store.migrateProjectWebApp(projectId, migration), true);
+  assert.equal(store.migrateProjectWebApp(projectId, migration), false);
+
+  const state = store.getState();
+  const mainLayout = state.paneLayouts[projectId];
+  assert.equal(mainLayout.type, "split");
+  if (mainLayout.type !== "split") {
+    throw new Error("Expected a split layout.");
+  }
+  assert.equal(mainLayout.first.selectedWebAppId, "boatyard.github.repository");
+  assert.equal(
+    mainLayout.second.type === "pane" ? mainLayout.second.transientWebApp?.parentWebAppId : "",
+    "boatyard.github.repository"
+  );
+  assert.equal(state.webApps[`${projectId}:pane:1:repo`], undefined);
+  assert.equal(
+    state.webApps[`${projectId}:pane:1:github`]?.url,
+    "https://github.com/octo-org/example/pulls"
+  );
+  assert.equal(
+    state.workspaceSession.windows["window-a"].paneLayouts[projectId].selectedWebAppId,
+    "boatyard.github.repository"
+  );
+  assert.equal(state.workspaceSession.windows["window-a"].webApps[`${projectId}:window-pane:1:repo`], undefined);
+  assert.equal(
+    state.workspaceSession.windows["window-a"].webApps[`${projectId}:window-pane:1:github`]?.url,
+    "https://github.com/octo-org/example/actions"
+  );
+  assert.equal(state.projects[0].webAppHomeTabs[0].parentWebAppId, "boatyard.github.repository");
+  assert.equal(state.projects[0].webAppOpenRules[0].pattern, "boatyard.github.repository");
+
+  assert.deepEqual(new ProjectStore(filePath).load(), state);
+});
+
 test("ProjectStore persists widget layouts", () => {
   const { filePath, store } = createTempStore();
 

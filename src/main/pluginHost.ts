@@ -23,6 +23,7 @@ type PluginHostStore = {
     plugins?: { enabled?: Record<string, boolean | undefined> };
   } | undefined;
   updateGlobalPluginConfig?(pluginId: string, config: UnknownRecord): unknown;
+  migrateProjectWebApp?(projectId: string, migration: UnknownRecord): unknown;
   updateProjectPluginConfig?(projectId: string, pluginId: string, config: UnknownRecord): unknown;
 };
 
@@ -74,9 +75,17 @@ type PluginStateMigrationHandler = (payload: { state: unknown }) => unknown | Pr
 type PluginInspectorRegistration = { pluginId: string; handler: PluginInspectorHandler };
 type PluginStateMigrationRegistration = { pluginId: string; handler: PluginStateMigrationHandler };
 type PluginProjectConfigMigration = { config: UnknownRecord; projectId: string };
+type PluginWebAppMigration = {
+  projectId: string;
+  sourceKey: string;
+  sourceWebAppId: string;
+  targetKey: string;
+  targetWebAppId: string;
+};
 type PluginMigrationResult = {
   globalPluginConfig?: UnknownRecord;
   projectPluginConfig: PluginProjectConfigMigration[];
+  webAppMigrations: PluginWebAppMigration[];
 } | null | undefined;
 
 type RuntimePluginContext = Omit<PluginContext<unknown>, "execFileAsync" | "projectInspectors" | "stateMigrations"> & {
@@ -120,6 +129,26 @@ function normalizeMigrationResult(result: unknown): PluginMigrationResult {
           return [{
             projectId: String(entry.projectId),
             config: entry.config
+          }];
+        })
+      : [],
+    webAppMigrations: Array.isArray(result.webAppMigrations)
+      ? result.webAppMigrations.flatMap((entry) => {
+          if (!isRecord(entry)) {
+            return [];
+          }
+          const projectId = normalizeText(entry.projectId);
+          const sourceWebAppId = normalizeText(entry.sourceWebAppId);
+          const targetWebAppId = normalizeText(entry.targetWebAppId);
+          if (!projectId || !sourceWebAppId || !targetWebAppId) {
+            return [];
+          }
+          return [{
+            projectId,
+            sourceKey: normalizeText(entry.sourceKey),
+            sourceWebAppId,
+            targetKey: normalizeText(entry.targetKey),
+            targetWebAppId
           }];
         })
       : []
@@ -329,6 +358,9 @@ class PluginHost {
       }
 
       const migrationResult = normalizeMigrationResult(await migration.handler({ state: this.store.getState() }));
+      for (const entry of migrationResult?.webAppMigrations || []) {
+        this.store.migrateProjectWebApp?.(entry.projectId, entry);
+      }
       for (const entry of migrationResult?.projectPluginConfig || []) {
         this.store.updateProjectPluginConfig?.(
           entry.projectId,

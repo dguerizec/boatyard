@@ -17,6 +17,10 @@ type WebAppMenuElement = HTMLDivElement & {
   cleanup?: () => void;
 };
 
+export function getPaneMenuWebApps(webApps: WebAppDefinition[]) {
+  return webApps.filter((webApp) => webApp.showInMenu !== false);
+}
+
   type WebAppBounds = {
     x: number;
     y: number;
@@ -1121,7 +1125,8 @@ export function createWebAppMenus({
       }
 
       function buildWebAppTabMenuGroups() {
-        const rootWebApps = webApps.filter((webApp: MenuWebApp) => !webApp.parentWebAppId);
+        const menuWebApps = getPaneMenuWebApps(webApps) as MenuWebApp[];
+        const rootWebApps = menuWebApps.filter((webApp: MenuWebApp) => !webApp.parentWebAppId);
         const rootByLabel = new Map(rootWebApps.map((webApp) => [getMenuLabel(webApp), webApp]));
         const childrenByParentId = new Map<string, WebAppTabMenuChild[]>();
         const groupedRootWebApps = new WeakSet<MenuWebApp>();
@@ -1129,7 +1134,7 @@ export function createWebAppMenus({
         const virtualPrefixChildren = new Map<string, WebAppTabMenuChild[]>();
         const virtualPrefixByWebApp = new WeakMap<MenuWebApp, string>();
 
-        for (const webApp of webApps.filter((candidate: MenuWebApp) => candidate.parentWebAppId)) {
+        for (const webApp of menuWebApps.filter((candidate: MenuWebApp) => candidate.parentWebAppId)) {
           const parentWebAppId = webApp.parentWebAppId;
           if (!parentWebAppId) {
             continue;
@@ -1241,7 +1246,11 @@ export function createWebAppMenus({
         item.disabled = webApp.menuOnly === true;
         item.dataset.webAppId = webApp.id || "";
         item.setAttribute("role", "menuitem");
-        item.setAttribute("aria-current", String(webApp.id === selectedWebApp.id));
+        const representsSelectedWebApp = webApp.id === selectedWebApp.id || (
+          selectedWebApp.showInMenu === false
+          && selectedWebApp.parentWebAppId === webApp.id
+        );
+        item.setAttribute("aria-current", String(representsSelectedWebApp));
         item.setAttribute("data-load-state", !webApp.menuOnly && isWebAppLoaded(webApp.key) ? "Loaded" : "Not loaded");
         const currentFaviconUrl = getWebAppFavicon(webApp.key);
         item.append(createPaneIconLabel({
@@ -1347,7 +1356,8 @@ export function createWebAppMenus({
     async function openWebAppNavigationHistoryMenu(
       event: MouseEvent,
       selectedWebApp: MenuWebApp,
-      direction: "back" | "forward"
+      direction: "back" | "forward",
+      onAction?: () => void
     ) {
       event.preventDefault();
       const sourceButton = event.currentTarget;
@@ -1363,7 +1373,7 @@ export function createWebAppMenus({
         : history.entries.filter((entry) => entry.index > history.activeIndex);
 
       const menu = document.createElement("div") as WebAppMenuElement;
-      menu.className = "webapp-tab-menu";
+      menu.className = "webapp-tab-menu webapp-navigation-history-menu";
       menu.setAttribute("role", "menu");
 
       const menuWidth = 320;
@@ -1392,6 +1402,7 @@ export function createWebAppMenus({
         item.textContent = getNavigationEntryLabel(entry);
         item.addEventListener("click", () => {
           closeWebAppTabMenu();
+          onAction?.();
           invokeWebApp("navigateWebApp", selectedWebApp.key, "history-index", String(entry.index)).catch((error: unknown) => {
             console.error("Could not navigate to webapp history entry:", error);
           });
@@ -1431,7 +1442,8 @@ export function createWebAppMenus({
       event: MouseEvent,
       project: RendererProject,
       paneNode: MenuPaneNode,
-      selectedWebApp: MenuWebApp
+      selectedWebApp: MenuWebApp,
+      onAction?: () => void
     ) {
       event.preventDefault();
       const sourceButton = event.currentTarget;
@@ -1458,6 +1470,7 @@ export function createWebAppMenus({
       item.textContent = selectedWebApp.homeTab ? "Update this tab home" : "Save current URL as sub-tab";
       item.addEventListener("click", () => {
         closeWebAppTabMenu();
+        onAction?.();
         saveCurrentUrlAsWebAppHomeTab(project, paneNode, selectedWebApp).catch((error: unknown) => {
           console.error("Could not save webapp home tab:", error);
         });
@@ -1492,7 +1505,11 @@ export function createWebAppMenus({
       item.focus();
     }
 
-    async function openWebAppRefreshMenu(event: MouseEvent, selectedWebApp: MenuWebApp) {
+    async function openWebAppRefreshMenu(
+      event: MouseEvent,
+      selectedWebApp: MenuWebApp,
+      onAction?: () => void
+    ) {
       event.preventDefault();
       const sourceButton = event.currentTarget;
       closeWebAppTabMenu();
@@ -1518,6 +1535,7 @@ export function createWebAppMenus({
       item.textContent = "Hard reload";
       item.addEventListener("click", () => {
         closeWebAppTabMenu();
+        onAction?.();
         invokeWebApp("navigateWebApp", selectedWebApp.key, "hard-refresh").catch((error: unknown) => {
           console.error("Could not hard reload webapp:", error);
         });

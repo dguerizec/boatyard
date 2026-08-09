@@ -2,7 +2,8 @@ import type {
   RendererPaneLayoutNode,
   RendererPaneNode,
   RendererProject,
-  WebAppDefinition
+  WebAppDefinition,
+  WebAppPaneNavigation
 } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 
@@ -10,13 +11,18 @@ type PluginPaneDefinition = UnknownRecord & {
   icon?: string;
   iconOnly?: boolean;
   iconUrl?: string;
+  isAvailable?: (context: UnknownRecord) => boolean;
   key?: string;
   mobileDev?: boolean;
   parentLabel?: string;
   parentWebAppId?: string;
   pluginId?: string;
+  replacesWebAppIds?: string[];
+  navigation?: WebAppPaneNavigation;
+  resolveNavigation?: (context: UnknownRecord) => WebAppPaneNavigation | null | undefined;
   resolveUrl?: (context: UnknownRecord) => string;
   resolveWebApps?: (context: UnknownRecord) => WebAppDefinition[];
+  showInMenu?: boolean;
   title?: string;
   webAppId?: string;
 };
@@ -32,6 +38,21 @@ type ProjectWebAppsOptions = {
   isGlobalWorkspace: (project: RendererProject) => boolean;
 };
 
+function resolvePaneNavigation(
+  pluginPane: PluginPaneDefinition,
+  context: UnknownRecord,
+  override?: WebAppPaneNavigation
+) {
+  const navigation = override || (
+    typeof pluginPane.resolveNavigation === "function"
+      ? pluginPane.resolveNavigation(context)
+      : pluginPane.navigation
+  );
+  return navigation && Array.isArray(navigation.items) && navigation.items.length
+    ? navigation
+    : undefined;
+}
+
 export function createProjectWebApps({
   findPaneNode,
   getGlobalPluginConfig,
@@ -44,6 +65,7 @@ export function createProjectWebApps({
 }: ProjectWebAppsOptions) {
   function getProjectWebApps(project: RendererProject, paneId: string) {
     const paneNode = findPaneNode(getPaneLayout(project), paneId);
+    const replacedWebAppIds = new Set<string>();
     const webApps: WebAppDefinition[] = getProjectWidgetPanes(project).map((widgetPane, index) => ({
       icon: "grid",
       id: `widgets:${widgetPane.id}`,
@@ -99,7 +121,24 @@ export function createProjectWebApps({
       restoreUrl: false
     });
 
+    function getPluginPaneContext(pluginPane: PluginPaneDefinition) {
+      return {
+        project,
+        projectConfig: isGlobalWorkspace(project)
+          ? {}
+          : getProjectPluginConfig(project.id, pluginPane.pluginId),
+        globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId)
+      };
+    }
+
     for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "dom" })) {
+      const context = getPluginPaneContext(pluginPane);
+      if (pluginPane.isAvailable?.(context) === false) {
+        continue;
+      }
+      for (const webAppId of pluginPane.replacesWebAppIds || []) {
+        replacedWebAppIds.add(webAppId);
+      }
       webApps.push({
         icon: pluginPane.icon,
         iconOnly: pluginPane.iconOnly,
@@ -108,19 +147,22 @@ export function createProjectWebApps({
         label: pluginPane.title,
         key: `${paneId}:${pluginPane.key}`,
         kind: "dom",
+        navigation: resolvePaneNavigation(pluginPane, context),
         parentLabel: pluginPane.parentLabel || "",
         parentWebAppId: pluginPane.parentWebAppId || "",
-        pluginPane
+        pluginPane,
+        showInMenu: pluginPane.showInMenu !== false
       });
     }
 
     for (const pluginPane of getPluginPaneDefinitions({ scope: isGlobalWorkspace(project) ? "global" : "project", kind: "wcv" })) {
-      const projectPluginConfig = isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId);
-      const context = {
-        project,
-        projectConfig: projectPluginConfig,
-        globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId)
-      };
+      const context = getPluginPaneContext(pluginPane);
+      if (pluginPane.isAvailable?.(context) === false) {
+        continue;
+      }
+      for (const webAppId of pluginPane.replacesWebAppIds || []) {
+        replacedWebAppIds.add(webAppId);
+      }
 
       if (typeof pluginPane.resolveWebApps === "function") {
         for (const webApp of pluginPane.resolveWebApps(context) || []) {
@@ -134,8 +176,12 @@ export function createProjectWebApps({
             id: webApp.id || `${pluginPane.webAppId}:${webApp.key || webApp.url}`,
             label: webApp.label || pluginPane.title,
             key: `${paneId}:${pluginPane.key}:${webApp.key || webApp.id || webApp.url}`,
-            url: webApp.url,
             mobileDev: Boolean(webApp.mobileDev ?? pluginPane.mobileDev),
+            navigation: resolvePaneNavigation(pluginPane, context, webApp.navigation),
+            parentLabel: webApp.parentLabel || pluginPane.parentLabel || "",
+            parentWebAppId: webApp.parentWebAppId || pluginPane.parentWebAppId || "",
+            showInMenu: webApp.showInMenu ?? pluginPane.showInMenu !== false,
+            url: webApp.url,
             restoreUrl: webApp.restoreUrl
           });
         }
@@ -154,13 +200,18 @@ export function createProjectWebApps({
         id: pluginPane.webAppId,
         label: pluginPane.title,
         key: `${paneId}:${pluginPane.key}`,
-        url,
-        mobileDev: Boolean(pluginPane.mobileDev)
+        mobileDev: Boolean(pluginPane.mobileDev),
+        navigation: resolvePaneNavigation(pluginPane, context),
+        parentLabel: pluginPane.parentLabel || "",
+        parentWebAppId: pluginPane.parentWebAppId || "",
+        showInMenu: pluginPane.showInMenu !== false,
+        url
       });
     }
 
-    if (!isGlobalWorkspace(project) && project.repoUrl) {
+    if (!isGlobalWorkspace(project) && project.repoUrl && !replacedWebAppIds.has("repo")) {
       webApps.push({
+        icon: "git",
         id: "repo",
         label: "Repo",
         key: `${paneId}:repo`,

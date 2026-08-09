@@ -2,7 +2,10 @@
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createWebAppMenus } = require(`${process.cwd()}/build/renderer/webAppMenus`);
+const {
+  createWebAppMenus,
+  getPaneMenuWebApps
+} = require(`${process.cwd()}/build/renderer/webAppMenus`);
 
 type TestPaneNode = {
   type: "pane";
@@ -42,6 +45,23 @@ function findPaneNode(
   }
   return findPaneNode(node.first, paneId) || findPaneNode(node.second, paneId);
 }
+
+test("pane menu omits internal navigation targets", () => {
+  const overview = {
+    id: "github-overview",
+    label: "GitHub",
+    showInMenu: true
+  };
+  const repository = {
+    id: "github-repository",
+    label: "GitHub",
+    parentWebAppId: overview.id,
+    showInMenu: false,
+    url: "https://github.com/octo-org/example"
+  };
+
+  assert.deepEqual(getPaneMenuWebApps([overview, repository]), [overview]);
+});
 
 test("opening successive external links in an existing pane reuses its transient webapp", async () => {
   const sourcePane: TestPaneNode = {

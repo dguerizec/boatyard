@@ -1,7 +1,16 @@
-import type { RendererPaneNode, RendererProject } from "./rendererTypes.js";
+import type {
+  RendererPaneNode,
+  RendererProject,
+  WebAppPaneNavigation,
+  WebAppPaneNavigationItem
+} from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type { WidgetLayout, WidgetPane } from "./widgetSurfaceTypes.js";
 import { createPaneIconLabel, shouldUseIconOnlyPaneTab } from "./paneIcons.js";
+import {
+  isPaneNavigationItemActive,
+  shouldUseCompactPaneBrowserControls
+} from "./paneNavigation.js";
 import {
   resolvePaneExpansionPaneIds,
   type PaneExpansionRect
@@ -57,6 +66,7 @@ type PaneLayoutStateApi = {
   replacePaneNode(node: unknown, paneId: string, replacement: unknown): unknown;
   setPaneLayout(projectId: string | undefined, layout: unknown): unknown;
   setSelectedWebAppForPane(paneId: string, webAppId?: string): unknown;
+  setSelectedWebAppForProject(projectId: string | undefined, webAppId?: string): unknown;
   shrinkPaneExpansion(project: RendererProject, paneId: string): boolean;
 };
 
@@ -69,6 +79,7 @@ type PaneWebApp = UnknownRecord & {
   kind?: string;
   label?: string;
   mobileDev?: boolean;
+  navigation?: WebAppPaneNavigation;
   pluginPane?: {
     pluginId: string;
     render(host: HTMLElement, props: UnknownRecord): unknown;
@@ -150,10 +161,16 @@ type PaneLayoutViewOptions = {
     event: MouseEvent,
     project: RendererProject,
     paneNode: RendererPaneNode,
-    selectedWebApp: PaneWebApp
+    selectedWebApp: PaneWebApp,
+    onAction?: () => void
   ) => void;
-  openWebAppNavigationHistoryMenu: (event: MouseEvent, selectedWebApp: PaneWebApp, direction: "back" | "forward") => void;
-  openWebAppRefreshMenu: (event: MouseEvent, selectedWebApp: PaneWebApp) => void;
+  openWebAppNavigationHistoryMenu: (
+    event: MouseEvent,
+    selectedWebApp: PaneWebApp,
+    direction: "back" | "forward",
+    onAction?: () => void
+  ) => void;
+  openWebAppRefreshMenu: (event: MouseEvent, selectedWebApp: PaneWebApp, onAction?: () => void) => void;
   openWebAppUrlFieldMenu: (
     event: MouseEvent,
     project: RendererProject,
@@ -244,6 +261,7 @@ export function createPaneLayoutView({
     const mobileDevRulerHeight = 24;
     const mobileDevHostPadding = 20;
     let activeExpansionsCleanup: (() => void) | null = null;
+    let closeOpenPaneBrowserControls: (() => void) | null = null;
     let isPaintingPaneExpansion = false;
     let suppressExpansionClickUntil = 0;
 
@@ -1028,6 +1046,7 @@ export function createPaneLayoutView({
     }
 
     function renderPaneLayoutPreservingPanes(project: RendererProject, options: PaneReuseOptions = {}) {
+      closeOpenPaneBrowserControls?.();
       const reusablePanes = collectReusablePaneElements();
       resetVisibleWebAppHosts();
       const paneLayoutElement = createPaneLayout(
@@ -1326,6 +1345,8 @@ export function createPaneLayoutView({
       const isTerminalPane = selectedWebApp.kind === "terminal";
       const isWidgetPane = selectedWebApp.kind === "widgets";
       const isDomPane = selectedWebApp.kind === "dom";
+      const paneNavigation = selectedWebApp.navigation;
+      const useCompactBrowserControls = shouldUseCompactPaneBrowserControls(paneNavigation);
       const pluginPane = isDomPane ? selectedWebApp.pluginPane : undefined;
       const widgetPane = isWidgetPane ? selectedWebApp.widgetPane : undefined;
       const widgetFallbackWidth = isWidgetPane
@@ -1414,6 +1435,116 @@ export function createPaneLayoutView({
 
       tabs.append(tabPickerButton);
 
+      const compactBrowserControls = useCompactBrowserControls ? document.createElement("div") : null;
+      const compactBrowserControlsButton = compactBrowserControls ? document.createElement("button") : null;
+      const compactBrowserControlsOverlay = compactBrowserControls ? document.createElement("div") : null;
+      let compactBrowserControlsResizeObserver: ResizeObserver | null = null;
+
+      function syncCompactBrowserControlsWidth() {
+        if (!compactBrowserControlsOverlay) {
+          return;
+        }
+        const availableWidth = tabs.getBoundingClientRect().right
+          - compactBrowserControlsOverlay.getBoundingClientRect().left;
+        compactBrowserControlsOverlay.style.maxWidth = `${Math.max(0, availableWidth)}px`;
+      }
+
+      function closeCompactBrowserControls(restoreFocus = false) {
+        if (!compactBrowserControls || !compactBrowserControlsButton || !compactBrowserControlsOverlay) {
+          return;
+        }
+        compactBrowserControlsResizeObserver?.disconnect();
+        compactBrowserControlsResizeObserver = null;
+        compactBrowserControlsOverlay.hidden = true;
+        compactBrowserControlsButton.classList.remove("active");
+        compactBrowserControlsButton.setAttribute("aria-expanded", "false");
+        document.removeEventListener("pointerdown", onCompactBrowserControlsPointerDown);
+        document.removeEventListener("keydown", onCompactBrowserControlsKeyDown);
+        if (closeOpenPaneBrowserControls === closeCompactBrowserControls) {
+          closeOpenPaneBrowserControls = null;
+        }
+        if (restoreFocus) {
+          compactBrowserControlsButton.focus();
+        }
+      }
+
+      function onCompactBrowserControlsPointerDown(event: PointerEvent) {
+        const target = event.target;
+        if (
+          target instanceof Node
+          && (
+            compactBrowserControls?.contains(target)
+            || (target instanceof Element && Boolean(target.closest(".webapp-tab-menu")))
+          )
+        ) {
+          return;
+        }
+        closeCompactBrowserControls();
+      }
+
+      function onCompactBrowserControlsKeyDown(event: KeyboardEvent) {
+        if (event.key !== "Escape" || isWebAppTabMenuOpen()) {
+          return;
+        }
+        event.preventDefault();
+        closeCompactBrowserControls(true);
+      }
+
+      function openCompactBrowserControls() {
+        if (
+          !compactBrowserControls
+          || !compactBrowserControlsButton
+          || !compactBrowserControlsOverlay
+          || compactBrowserControlsButton.disabled
+        ) {
+          return;
+        }
+        closeOpenPaneBrowserControls?.();
+        closeWebAppTabMenu();
+        compactBrowserControlsOverlay.hidden = false;
+        compactBrowserControlsOverlay.scrollLeft = 0;
+        syncCompactBrowserControlsWidth();
+        if (typeof ResizeObserver === "function") {
+          compactBrowserControlsResizeObserver = new ResizeObserver(syncCompactBrowserControlsWidth);
+          compactBrowserControlsResizeObserver.observe(tabs);
+        }
+        compactBrowserControlsButton.classList.add("active");
+        compactBrowserControlsButton.setAttribute("aria-expanded", "true");
+        closeOpenPaneBrowserControls = closeCompactBrowserControls;
+        document.addEventListener("pointerdown", onCompactBrowserControlsPointerDown);
+        document.addEventListener("keydown", onCompactBrowserControlsKeyDown);
+        compactBrowserControlsOverlay.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+      }
+
+      if (compactBrowserControls && compactBrowserControlsButton && compactBrowserControlsOverlay) {
+        compactBrowserControls.className = "webapp-browser-controls";
+        compactBrowserControlsButton.className = "webapp-tool-button webapp-browser-controls-button";
+        compactBrowserControlsButton.type = "button";
+        compactBrowserControlsButton.disabled = isDomPane;
+        compactBrowserControlsButton.title = isDomPane
+          ? "Browser controls are unavailable in this view"
+          : "Browser controls";
+        compactBrowserControlsButton.setAttribute("aria-label", "Browser controls");
+        compactBrowserControlsButton.setAttribute("aria-expanded", "false");
+        compactBrowserControlsButton.setAttribute("aria-controls", `pane-browser-controls-${paneNode.id}`);
+        compactBrowserControlsButton.append(createToolIcon("navigationControls"));
+        compactBrowserControlsButton.addEventListener("click", () => {
+          if (compactBrowserControlsOverlay.hidden) {
+            openCompactBrowserControls();
+          } else {
+            closeCompactBrowserControls(true);
+          }
+        });
+
+        compactBrowserControlsOverlay.className = "webapp-browser-controls-overlay";
+        compactBrowserControlsOverlay.id = `pane-browser-controls-${paneNode.id}`;
+        compactBrowserControlsOverlay.hidden = true;
+        compactBrowserControlsOverlay.setAttribute("role", "toolbar");
+        compactBrowserControlsOverlay.setAttribute("aria-label", "Browser navigation");
+        compactBrowserControls.append(compactBrowserControlsButton, compactBrowserControlsOverlay);
+        tabs.append(compactBrowserControls);
+      }
+
       if (pluginPane?.renderHeaderActions && pluginPaneProps) {
         const headerActions = document.createElement("div");
         headerActions.className = "plugin-pane-header-actions";
@@ -1441,7 +1572,13 @@ export function createPaneLayoutView({
         homeButton.append(createToolIcon("home"));
         homeButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "home", selectedWebApp.url));
         homeButton.addEventListener("contextmenu", (event) => {
-          openWebAppHomeMenu(event, project, paneNode, selectedWebApp);
+          openWebAppHomeMenu(
+            event,
+            project,
+            paneNode,
+            selectedWebApp,
+            useCompactBrowserControls ? closeCompactBrowserControls : undefined
+          );
         });
 
         const backButton = document.createElement("button");
@@ -1452,7 +1589,12 @@ export function createPaneLayoutView({
         backButton.append(createToolIcon("arrowLeft"));
         backButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "back"));
         backButton.addEventListener("contextmenu", (event) => {
-          openWebAppNavigationHistoryMenu(event, selectedWebApp, "back");
+          openWebAppNavigationHistoryMenu(
+            event,
+            selectedWebApp,
+            "back",
+            useCompactBrowserControls ? closeCompactBrowserControls : undefined
+          );
         });
 
         const forwardButton = document.createElement("button");
@@ -1463,7 +1605,12 @@ export function createPaneLayoutView({
         forwardButton.append(createToolIcon("arrowRight"));
         forwardButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "forward"));
         forwardButton.addEventListener("contextmenu", (event) => {
-          openWebAppNavigationHistoryMenu(event, selectedWebApp, "forward");
+          openWebAppNavigationHistoryMenu(
+            event,
+            selectedWebApp,
+            "forward",
+            useCompactBrowserControls ? closeCompactBrowserControls : undefined
+          );
         });
 
         const refreshButton = document.createElement("button");
@@ -1474,7 +1621,11 @@ export function createPaneLayoutView({
         refreshButton.append(createToolIcon("refresh"));
         refreshButton.addEventListener("click", () => invokeWebApp("navigateWebApp", selectedWebApp.key, "refresh"));
         refreshButton.addEventListener("contextmenu", (event) => {
-          openWebAppRefreshMenu(event, selectedWebApp);
+          openWebAppRefreshMenu(
+            event,
+            selectedWebApp,
+            useCompactBrowserControls ? closeCompactBrowserControls : undefined
+          );
         });
 
         const autofillButton = isPasswordManagerEnabled() ? document.createElement("button") : null;
@@ -1538,15 +1689,101 @@ export function createPaneLayoutView({
           openWebAppUrlFieldMenu(event, project, selectedWebApp, activeUrl.value);
         });
 
-        tabs.append(
-          homeButton,
+        const browserControlButtons = [
+          ...(paneNavigation?.showHomeButton === false ? [] : [homeButton]),
           backButton,
           forwardButton,
           refreshButton,
           ...(autofillButton ? [autofillButton] : []),
-          ...(mobileDevButton ? [mobileDevButton] : []),
-          activeUrl
-        );
+          ...(mobileDevButton ? [mobileDevButton] : [])
+        ];
+
+        if (useCompactBrowserControls && compactBrowserControlsOverlay) {
+          for (const button of browserControlButtons) {
+            button.addEventListener("click", () => closeCompactBrowserControls());
+          }
+          compactBrowserControlsOverlay.append(...browserControlButtons);
+        } else {
+          tabs.append(
+            ...browserControlButtons,
+            ...(paneNavigation?.showAddressBar === false ? [] : [activeUrl])
+          );
+        }
+      }
+
+      if (paneNavigation?.items.length) {
+        const navigationDefinition = paneNavigation;
+        const navigation = document.createElement("nav");
+        navigation.className = "webapp-pane-navigation";
+        navigation.setAttribute("aria-label", `${selectedWebApp.label || "Pane"} sections`);
+
+        function syncNavigationItems(currentUrl: string) {
+          for (const button of navigation.querySelectorAll<HTMLButtonElement>(".webapp-pane-navigation-item")) {
+            const item = navigationDefinition.items.find((candidate) => candidate.id === button.dataset.navigationItemId);
+            if (!item) {
+              continue;
+            }
+            const isActive = isPaneNavigationItemActive(item, selectedWebApp.id, currentUrl);
+            button.classList.toggle("active", isActive);
+            button.setAttribute("aria-current", isActive ? "page" : "false");
+          }
+        }
+
+        function activateNavigationItem(item: WebAppPaneNavigationItem) {
+          closeCompactBrowserControls();
+          const targetWebAppId = item.webAppId || selectedWebApp.id;
+          const targetWebApp = webApps.find((candidate) => candidate.id === targetWebAppId);
+          if (!targetWebApp) {
+            return;
+          }
+
+          const targetUrl = item.url || "";
+          if (targetUrl) {
+            setCurrentWebAppUrl(targetWebApp.key || "", targetUrl);
+          }
+
+          if (targetWebApp.id === selectedWebApp.id) {
+            if (targetUrl && targetWebApp.kind !== "dom") {
+              void invokeWebApp("navigateWebApp", targetWebApp.key, "open", targetUrl);
+              syncNavigationItems(targetUrl);
+            }
+            return;
+          }
+
+          paneLayoutState.setSelectedWebAppForPane(paneNode.id, targetWebApp.id);
+          paneLayoutState.setSelectedWebAppForProject(project.id, targetWebApp.id);
+          paneNode.selectedWebAppId = targetWebApp.id;
+          persistPaneLayout(project);
+          renderPaneLayoutPreservingPanes(project);
+
+          if (targetUrl && targetWebApp.kind !== "dom") {
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                void invokeWebApp("navigateWebApp", targetWebApp.key, "open", targetUrl);
+              });
+            });
+          }
+        }
+
+        const currentUrl = getCurrentWebAppUrl(selectedWebApp) || "";
+        for (const item of navigationDefinition.items) {
+          const button = document.createElement("button");
+          button.className = "webapp-pane-navigation-item";
+          button.type = "button";
+          button.textContent = item.label;
+          button.dataset.navigationItemId = item.id;
+          button.dataset.selectedWebAppId = selectedWebApp.id;
+          button.dataset.targetWebAppId = item.webAppId || selectedWebApp.id;
+          button.dataset.targetUrl = item.url || "";
+          button.dataset.activeUrlPatterns = JSON.stringify(item.activeUrlPatterns || []);
+          button.dataset.webappKey = selectedWebApp.kind === "dom" ? "" : selectedWebApp.key || "";
+          const isActive = isPaneNavigationItemActive(item, selectedWebApp.id, currentUrl);
+          button.classList.toggle("active", isActive);
+          button.setAttribute("aria-current", isActive ? "page" : "false");
+          button.addEventListener("click", () => activateNavigationItem(item));
+          navigation.append(button);
+        }
+        tabs.append(navigation);
       }
 
       const actions = document.createElement("div");

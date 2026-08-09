@@ -23,6 +23,7 @@ const {
   runGitHubGraphQlJson,
   resolveGitHubRepository
 } = require(`${process.cwd()}/build/plugins/github/service`);
+const { activate: activateGitHubPlugin } = require(`${process.cwd()}/build/plugins/github/main`);
 
 type CommandError = Error & {
   code?: string;
@@ -149,6 +150,42 @@ test("resolveGitHubRepository prefers repoUrl and falls back to gitUrl", () => {
     host: "github.com",
     owner: "octo-org",
     repo: "from-git-url"
+  });
+});
+
+test("GitHub plugin migrates legacy Repo panes only for GitHub projects", () => {
+  let migrationRegistered = false;
+  let migrateState = (_payload: { state: unknown }): unknown => null;
+  activateGitHubPlugin({
+    actions: { handle() {} },
+    execFileAsync: async () => ({ stdout: "" }),
+    stateMigrations: {
+      register(handler: (payload: { state: unknown }) => unknown) {
+        migrationRegistered = true;
+        migrateState = handler;
+      }
+    }
+  });
+
+  assert.equal(migrationRegistered, true);
+  assert.deepEqual(migrateState({
+    state: {
+      projects: [{
+        id: "github-project",
+        repoUrl: "https://github.com/octo-org/example"
+      }, {
+        id: "gitlab-project",
+        repoUrl: "https://gitlab.com/octo-org/example"
+      }]
+    }
+  }), {
+    webAppMigrations: [{
+      projectId: "github-project",
+      sourceKey: "repo",
+      sourceWebAppId: "repo",
+      targetKey: "github",
+      targetWebAppId: "boatyard.github.repository"
+    }]
   });
 });
 

@@ -44,6 +44,20 @@ export type RendererState = UnknownRecord & {
   webApps?: Record<string, { faviconPageUrl?: string; faviconUrl?: string; url?: string }>;
 };
 
+export type WebAppPaneNavigationItem = {
+  activeUrlPatterns?: string[];
+  id: string;
+  label: string;
+  url?: string;
+  webAppId?: string;
+};
+
+export type WebAppPaneNavigation = {
+  items: WebAppPaneNavigationItem[];
+  showAddressBar?: boolean;
+  showHomeButton?: boolean;
+};
+
 export type WebAppDefinition = UnknownRecord & {
   backgroundColor?: string;
   faviconUrl?: string;
@@ -54,9 +68,11 @@ export type WebAppDefinition = UnknownRecord & {
   key?: string;
   label?: unknown;
   mobileDev?: boolean;
+  navigation?: WebAppPaneNavigation;
   parentLabel?: string;
   parentWebAppId?: string;
   restoreUrl?: boolean;
+  showInMenu?: boolean;
   transient?: boolean;
   url?: string;
 };

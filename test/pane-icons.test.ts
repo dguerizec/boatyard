@@ -395,6 +395,14 @@ test("known pane tool icons take precedence over URL favicons", () => {
     }) as FakeElement;
     assert.equal(linkIcon.classList.contains("tool"), true);
     assert.equal(linkIcon.children[0].tagName, "svg");
+
+    const gitIcon = createPaneIcon({
+      icon: "git",
+      label: "Repo",
+      url: "https://gitlab.com/example/project"
+    }) as FakeElement;
+    assert.equal(gitIcon.classList.contains("tool"), true);
+    assert.equal(gitIcon.children[0].tagName, "svg");
   });
 });
 
@@ -427,9 +435,35 @@ test("project webapps expose built-in icons and leave URL panes eligible for fav
           key: "twicc-plugin",
           kind: "wcv",
           pluginId: "boatyard.twicc",
+          resolveNavigation: () => ({
+            items: [{
+              id: "sessions",
+              label: "Sessions",
+              url: "https://twicc.example.test/project/example",
+              webAppId: "twicc-plugin"
+            }],
+            showAddressBar: false
+          }),
           resolveUrl: () => "https://twicc.example.test/project/example",
           title: "Twicc",
           webAppId: "twicc-plugin"
+        }, {
+          isAvailable: ({ project }: { project: { repoUrl?: string } }) => project.repoUrl?.includes("github.com") === true,
+          key: "github",
+          kind: "wcv",
+          pluginId: "boatyard.github",
+          replacesWebAppIds: ["repo"],
+          resolveUrl: ({ project }: { project: { repoUrl?: string } }) => project.repoUrl || "",
+          title: "GitHub",
+          webAppId: "boatyard.github.repository"
+        }, {
+          isAvailable: () => false,
+          key: "unavailable",
+          kind: "wcv",
+          pluginId: "vendor.unavailable",
+          resolveUrl: () => "https://unavailable.example.test",
+          title: "Unavailable",
+          webAppId: "unavailable"
         }]
       : kind === "dom"
         ? [{
@@ -439,6 +473,7 @@ test("project webapps expose built-in icons and leave URL panes eligible for fav
             parentWebAppId: "twicc-plugin",
             pluginId: "boatyard.twicc",
             render: () => {},
+            showInMenu: false,
             title: "Session Flow",
             webAppId: "twicc-session-flow"
           }]
@@ -450,6 +485,7 @@ test("project webapps expose built-in icons and leave URL panes eligible for fav
   });
   const webApps = projectWebApps.getProjectWebApps({
     id: "project-1",
+    repoUrl: "https://gitlab.com/example/project",
     sourcePath: "/workspace/example",
     urls: [{ id: "app", label: "App", url: "https://app.example.test/dashboard" }]
   }, "pane-1");
@@ -457,25 +493,51 @@ test("project webapps expose built-in icons and leave URL panes eligible for fav
   assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "widgets:primary")?.icon, "grid");
   assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "terminal")?.icon, "terminal");
   assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "manual")?.icon, "info");
+  assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "repo")?.icon, "git");
+  assert.equal(webApps.some((webApp: { id?: string }) => webApp.id === "unavailable"), false);
+  assert.equal(
+    projectWebApps.getProjectWebApps({
+      id: "project-2",
+      repoUrl: "https://github.com/example/project",
+      sourcePath: "/workspace/github-project",
+      urls: []
+    }, "pane-1").some((webApp: { id?: string }) => webApp.id === "repo"),
+    false
+  );
+  assert.deepEqual(
+    webApps.find((webApp: { id?: string }) => webApp.id === "twicc-plugin")?.navigation,
+    {
+      items: [{
+        id: "sessions",
+        label: "Sessions",
+        url: "https://twicc.example.test/project/example",
+        webAppId: "twicc-plugin"
+      }],
+      showAddressBar: false
+    }
+  );
   assert.deepEqual(
     webApps
       .filter((webApp: { id?: string }) => ["twicc-plugin", "twicc-session-flow"].includes(webApp.id || ""))
-      .map((webApp: { id?: string; label?: string; parentLabel?: string; parentWebAppId?: string }) => ({
+      .map((webApp: { id?: string; label?: string; parentLabel?: string; parentWebAppId?: string; showInMenu?: boolean }) => ({
         id: webApp.id,
         label: webApp.label,
         parentLabel: webApp.parentLabel || "",
-        parentWebAppId: webApp.parentWebAppId || ""
+        parentWebAppId: webApp.parentWebAppId || "",
+        showInMenu: webApp.showInMenu
       })),
     [{
       id: "twicc-session-flow",
       label: "Session Flow",
       parentLabel: "Twicc",
-      parentWebAppId: "twicc-plugin"
+      parentWebAppId: "twicc-plugin",
+      showInMenu: false
     }, {
       id: "twicc-plugin",
       label: "Twicc",
       parentLabel: "",
-      parentWebAppId: ""
+      parentWebAppId: "",
+      showInMenu: true
     }]
   );
   assert.equal(

@@ -119,7 +119,18 @@ test("Plugin registry activates plugins and records contributions", () => {
           icon: "grid",
           iconOnly: true,
           iconUrl: "./preview.svg",
+          replacesWebAppIds: ["repo", "repo", ""],
+          showInMenu: false,
+          isAvailable: ({ project }: ProjectContext) => Boolean(project.previewUrl),
           kind: "wcv",
+          resolveNavigation: ({ project }: ProjectContext) => ({
+            items: [{
+              id: "preview",
+              label: "Preview",
+              url: project.previewUrl,
+              webAppId: "preview"
+            }]
+          }),
           resolveUrl: ({ project }: ProjectContext) => project.previewUrl,
         });
         ctx.projectNavBadges.register({
@@ -153,6 +164,15 @@ test("Plugin registry activates plugins and records contributions", () => {
   assert.equal(registry.listPanes({ kind: "wcv" })[0].icon, "grid");
   assert.equal(registry.listPanes({ kind: "wcv" })[0].iconOnly, true);
   assert.equal(registry.listPanes({ kind: "wcv" })[0].iconUrl, "./preview.svg");
+  assert.deepEqual(registry.listPanes({ kind: "wcv" })[0].replacesWebAppIds, ["repo"]);
+  assert.equal(registry.listPanes({ kind: "wcv" })[0].showInMenu, false);
+  assert.equal(registry.listPanes({ kind: "wcv" })[0].isAvailable({ project: { slug: "demo" } }), false);
+  assert.equal(
+    registry.listPanes({ kind: "wcv" })[0].resolveNavigation({
+      project: { previewUrl: "https://demo.example", slug: "demo" }
+    }).items[0].label,
+    "Preview"
+  );
   assert.equal(registry.listProjectNavBadges()[0].id, "vendor.preview.badge");
   assert.equal(widgetRegistry.get("vendor.preview.widget").name, "Preview");
   assert.equal(registry.getService("vendor.preview").ping(), "pong");

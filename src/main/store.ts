@@ -219,6 +219,53 @@ function normalizePaneLayouts(paneLayouts: unknown = {}): Record<string, PaneLay
   return normalized;
 }
 
+function migratePaneLayoutWebApp(
+  layout: PaneLayoutNode | undefined,
+  sourceWebAppId: string,
+  targetWebAppId: string
+): boolean {
+  if (!layout) {
+    return false;
+  }
+
+  let changed = false;
+  for (const pane of collectNormalizedPaneNodes(layout)) {
+    if (pane.selectedWebAppId === sourceWebAppId) {
+      pane.selectedWebAppId = targetWebAppId;
+      changed = true;
+    }
+    if (pane.transientWebApp?.parentWebAppId === sourceWebAppId) {
+      pane.transientWebApp.parentWebAppId = targetWebAppId;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+function migratePaneWebAppState(
+  webApps: Record<string, WebAppState>,
+  layout: PaneLayoutNode | undefined,
+  sourceKey: string,
+  targetKey: string
+): boolean {
+  if (!layout || !sourceKey || !targetKey || sourceKey === targetKey) {
+    return false;
+  }
+
+  let changed = false;
+  for (const pane of collectNormalizedPaneNodes(layout)) {
+    const sourceStateKey = `${pane.id}:${sourceKey}`;
+    const targetStateKey = `${pane.id}:${targetKey}`;
+    if (!webApps[sourceStateKey]) {
+      continue;
+    }
+    webApps[targetStateKey] ||= webApps[sourceStateKey];
+    delete webApps[sourceStateKey];
+    changed = true;
+  }
+  return changed;
+}
+
 function normalizeTerminalSelections(terminalSelections: unknown = {}, projects: StoredProject[] = []): Record<string, Record<string, string>> {
   if (!terminalSelections || typeof terminalSelections !== "object" || Array.isArray(terminalSelections)) {
     return {};
@@ -1117,6 +1164,60 @@ class ProjectStore {
 
     this.save();
     return this.getPaneLayout(projectId);
+  }
+
+  migrateProjectWebApp(projectId: unknown, migration: unknown): boolean {
+    const normalizedProjectId = normalizeText(projectId);
+    const project = this.state.projects.find((candidate) => candidate.id === normalizedProjectId);
+    const source = toRecord(migration);
+    const sourceWebAppId = normalizeText(source.sourceWebAppId);
+    const targetWebAppId = normalizeText(source.targetWebAppId);
+    const sourceKey = normalizeText(source.sourceKey);
+    const targetKey = normalizeText(source.targetKey);
+    if (!project || !sourceWebAppId || !targetWebAppId || sourceWebAppId === targetWebAppId) {
+      return false;
+    }
+
+    let changed = migratePaneLayoutWebApp(
+      this.state.paneLayouts[normalizedProjectId],
+      sourceWebAppId,
+      targetWebAppId
+    );
+    changed = migratePaneWebAppState(
+      this.state.webApps,
+      this.state.paneLayouts[normalizedProjectId],
+      sourceKey,
+      targetKey
+    ) || changed;
+
+    for (const workspaceWindow of Object.values(this.state.workspaceSession.windows)) {
+      const layout = workspaceWindow.paneLayouts[normalizedProjectId];
+      changed = migratePaneLayoutWebApp(layout, sourceWebAppId, targetWebAppId) || changed;
+      changed = migratePaneWebAppState(
+        workspaceWindow.webApps,
+        layout,
+        sourceKey,
+        targetKey
+      ) || changed;
+    }
+
+    for (const tab of project.webAppHomeTabs) {
+      if (tab.parentWebAppId === sourceWebAppId) {
+        tab.parentWebAppId = targetWebAppId;
+        changed = true;
+      }
+    }
+    for (const rule of project.webAppOpenRules) {
+      if (rule.scope === "source-app" && rule.pattern === sourceWebAppId) {
+        rule.pattern = targetWebAppId;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.save();
+    }
+    return changed;
   }
 
   getWidgetLayout(projectId: unknown): ProjectWidgetLayout | null {
