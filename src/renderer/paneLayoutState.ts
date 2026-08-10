@@ -53,6 +53,8 @@ type PaneLayoutStateOptions = {
 
 type PaneLayoutStateApi = {
   activatePaneExpansion(project: PaneLayoutProject, paneId: string, paneIds: string[]): boolean;
+  applyPaneClose(project: PaneLayoutProject, paneId: string): boolean;
+  applyPaneSplit(project: PaneLayoutProject, paneId: string, replacement: SplitNode): boolean;
   clearPaneExpansionMemories(project: PaneLayoutProject): void;
   collectPaneNodes(node: PaneLayoutNode | null | undefined, panes?: PaneNode[]): PaneNode[];
   countPaneNodes(node: PaneLayoutNode | null | undefined): number;
@@ -64,6 +66,7 @@ type PaneLayoutStateApi = {
   findPaneNodeBySelectedWebApp(node: PaneLayoutNode | null | undefined, webAppId: string): PaneNode | null;
   getPaneExpansionState(project: PaneLayoutProject, paneId: string): { canExpand: boolean; canShrink: boolean };
   getPaneExpansionPaneIds(project: PaneLayoutProject, paneId: string): string[];
+  getPaneStructuralActionState(project: PaneLayoutProject, paneId: string): { canClose: boolean; canSplit: boolean };
   getPaneLayout(projectId?: string): PaneLayoutNode | undefined;
   getProjectPaneLayout(project: PaneLayoutProject): PaneLayoutNode;
   getSelectedWebApp(project: PaneLayoutProject, paneId: string, webApps: PaneLayoutWebApp[]): PaneLayoutWebApp;
@@ -334,6 +337,17 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       return {
         canExpand: countPaneNodes(layout) > 1 && !isOccupied,
         canShrink: Boolean(activeExpansion)
+      };
+    }
+
+    function getPaneStructuralActionState(project: PaneLayoutProject, paneId: string) {
+      const layout = getProjectPaneLayout(project);
+      const paneExists = Boolean(findPaneNode(layout, paneId));
+      const isProtected = findActivePaneExpansions(project)
+        .some(({ paneIds }) => paneIds.includes(paneId));
+      return {
+        canClose: paneExists && countPaneNodes(layout) > 1 && !isProtected,
+        canSplit: paneExists && !isProtected
       };
     }
 
@@ -625,6 +639,48 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       }
     }
 
+    function applyPaneSplit(project: PaneLayoutProject, paneId: string, replacement: SplitNode) {
+      const layout = getProjectPaneLayout(project);
+      const replacementPaneIds = collectPaneNodes(replacement).map((pane) => pane.id);
+      if (
+        !getPaneStructuralActionState(project, paneId).canSplit ||
+        !replacementPaneIds.includes(paneId) ||
+        replacementPaneIds.length <= 1
+      ) {
+        return false;
+      }
+
+      const nextLayout = replacePaneNode(layout, paneId, replacement);
+      for (const pane of collectPaneNodes(nextLayout)) {
+        if (!pane.expansion?.paneIds.includes(paneId)) {
+          continue;
+        }
+
+        pane.expansion.paneIds = [...new Set(pane.expansion.paneIds.flatMap((candidateId) => (
+          candidateId === paneId ? replacementPaneIds : [candidateId]
+        )))];
+      }
+      sanitizePaneExpansions(nextLayout);
+      paneLayoutsByProject.set(getProjectPaneLayoutKey(project), nextLayout);
+      return true;
+    }
+
+    function applyPaneClose(project: PaneLayoutProject, paneId: string) {
+      const layout = getProjectPaneLayout(project);
+      if (!getPaneStructuralActionState(project, paneId).canClose) {
+        return false;
+      }
+
+      const result = removePaneNode(layout, paneId);
+      if (!result.removed || !result.node) {
+        return false;
+      }
+
+      sanitizePaneExpansions(result.node);
+      paneLayoutsByProject.set(getProjectPaneLayoutKey(project), result.node);
+      return true;
+    }
+
     /**
      * @param {Record<string, unknown>} persistedLayouts
      */
@@ -640,6 +696,8 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
 
     return {
       activatePaneExpansion,
+      applyPaneClose,
+      applyPaneSplit,
       clearPaneExpansionMemories,
       collectPaneNodes,
       countPaneNodes,
@@ -651,6 +709,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       findPaneNodeBySelectedWebApp,
       getPaneExpansionState,
       getPaneExpansionPaneIds,
+      getPaneStructuralActionState,
       getPaneLayout,
       getProjectPaneLayout,
       getSelectedWebApp,

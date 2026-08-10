@@ -119,6 +119,8 @@ test("pane expansion uses border previews and one toggle control", () => {
   assert.match(view, /const tooltip = isShrink \? label : "Drag to expand pane";/);
   assert.match(view, /if \(!didDrag\) \{\s*suppressExpansionClickUntil = Date\.now\(\) \+ 250;\s*togglePaneExpansion\(project, paneId\);\s*return;/s);
   assert.match(view, /actions\.append\(expansionButton, verticalSplitButton, horizontalSplitButton, closePaneButton\)/);
+  assert.match(view, /getPaneStructuralActionState\(project, paneNode\.id\)/);
+  assert.doesNotMatch(view, /hasActiveExpansions/);
   assert.doesNotMatch(view, /const shrinkPaneButton/);
 });
 
@@ -240,6 +242,82 @@ test("pane expansions coexist until the newest selection overlaps an active area
   assert.deepEqual(state.findActivePaneExpansions(project).map(({ pane }: { pane: TestPaneNode }) => pane.id), [
     "pane-b"
   ]);
+});
+
+test("pane splits and closes preserve disjoint expansions while protecting occupied panes", () => {
+  const state = createPaneLayoutState({
+    updatePaneLayout: async () => undefined
+  });
+  const project = { id: "project" };
+  const layout = createFourPaneLayout();
+  const paneD = state.findPaneNode(layout, "pane-d") as TestPaneNode;
+  paneD.expansion = {
+    paneIds: ["pane-d", "pane-a"]
+  };
+  state.hydratePaneLayouts({ project: layout });
+  assert.equal(state.activatePaneExpansion(project, "pane-b", ["pane-b", "pane-c"]), true);
+
+  assert.deepEqual(state.getPaneStructuralActionState(project, "pane-a"), {
+    canClose: true,
+    canSplit: true
+  });
+  assert.deepEqual(state.getPaneStructuralActionState(project, "pane-b"), {
+    canClose: false,
+    canSplit: false
+  });
+  assert.deepEqual(state.getPaneStructuralActionState(project, "pane-c"), {
+    canClose: false,
+    canSplit: false
+  });
+
+  const paneA = state.findPaneNode(state.getProjectPaneLayout(project), "pane-a") as TestPaneNode;
+  const replacement = state.createSplitNode(project, "vertical", { ...paneA });
+  const addedPaneId = replacement.second.id;
+  assert.equal(state.applyPaneSplit(project, "pane-a", replacement), true);
+  assert.deepEqual(state.findActivePaneExpansions(project).map(({ paneIds }: { paneIds: string[] }) => paneIds), [[
+    "pane-b",
+    "pane-c"
+  ]]);
+  assert.deepEqual(
+    (state.findPaneNode(state.getProjectPaneLayout(project), "pane-d") as TestPaneNode).expansion?.paneIds,
+    ["pane-d", "pane-a", addedPaneId]
+  );
+
+  const paneB = state.findPaneNode(state.getProjectPaneLayout(project), "pane-b") as TestPaneNode;
+  const blockedReplacement = state.createSplitNode(project, "horizontal", { ...paneB });
+  assert.equal(state.applyPaneSplit(project, "pane-b", blockedReplacement), false);
+  assert.equal(state.countPaneNodes(state.getProjectPaneLayout(project)), 5);
+
+  assert.equal(state.applyPaneClose(project, "pane-a"), true);
+  assert.equal(state.findPaneNode(state.getProjectPaneLayout(project), "pane-a"), null);
+  assert.deepEqual(state.findActivePaneExpansions(project).map(({ paneIds }: { paneIds: string[] }) => paneIds), [[
+    "pane-b",
+    "pane-c"
+  ]]);
+  assert.deepEqual(
+    (state.findPaneNode(state.getProjectPaneLayout(project), "pane-d") as TestPaneNode).expansion?.paneIds,
+    ["pane-d", addedPaneId]
+  );
+  assert.equal(state.applyPaneClose(project, "pane-b"), false);
+});
+
+test("the last pane remains close-protected without blocking splits", () => {
+  const state = createPaneLayoutState({
+    updatePaneLayout: async () => undefined
+  });
+  const project = { id: "project" };
+  state.hydratePaneLayouts({
+    project: {
+      type: "pane",
+      id: "pane-a"
+    }
+  });
+
+  assert.deepEqual(state.getPaneStructuralActionState(project, "pane-a"), {
+    canClose: false,
+    canSplit: true
+  });
+  assert.equal(state.applyPaneClose(project, "pane-a"), false);
 });
 
 test("legacy nested expansion state migrates to one remembered active area", () => {

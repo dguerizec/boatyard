@@ -522,8 +522,7 @@ const webAppMenus = createWebAppMenus({
   getWebAppHostBounds,
   findPaneNode: (layout, paneId) => paneId ? findPaneNode(layout, paneId) : null,
   createSplitNode,
-  replacePaneNode,
-  setPaneLayout: paneLayoutState.setPaneLayout,
+  applyPaneSplit: paneLayoutState.applyPaneSplit,
   setSelectedWebAppForPane: (paneId, webAppId) => {
     if (!webAppId) {
       return undefined;

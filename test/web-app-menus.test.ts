@@ -128,8 +128,7 @@ test("opening successive external links in an existing pane reuses its transient
         id: "unused-pane"
       }
     }),
-    replacePaneNode: (node: TestPaneLayoutNode) => node,
-    setPaneLayout: () => undefined,
+    applyPaneSplit: () => true,
     setSelectedWebAppForPane: (paneId: string, webAppId?: string) => {
       selectedPaneCalls.push([paneId, webAppId]);
     },

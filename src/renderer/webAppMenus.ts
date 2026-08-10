@@ -133,8 +133,7 @@ export function getPaneMenuWebApps(webApps: WebAppDefinition[]) {
       first: RendererPaneLayoutNode,
       selectedWebAppId?: string | null
     ) => MenuSplitNode;
-    replacePaneNode: (layout: RendererPaneLayoutNode, paneId: string, replacement: RendererPaneLayoutNode) => RendererPaneLayoutNode;
-    setPaneLayout: (projectId: string | undefined, layout: RendererPaneLayoutNode) => unknown;
+    applyPaneSplit: (project: RendererProject, paneId: string, replacement: MenuSplitNode) => boolean;
     setSelectedWebAppForPane: (paneId: string, webAppId?: string) => unknown;
     setSelectedWebAppForProject: (projectId: string | undefined, webAppId?: string) => unknown;
     setCurrentWebAppUrl: (key: string, url: string) => void;
@@ -194,8 +193,7 @@ export function createWebAppMenus({
     getWebAppHostBounds,
     findPaneNode,
     createSplitNode,
-    replacePaneNode,
-    setPaneLayout,
+    applyPaneSplit,
     setSelectedWebAppForPane,
     setSelectedWebAppForProject,
     setCurrentWebAppUrl,
@@ -332,7 +330,9 @@ export function createWebAppMenus({
       replacementPane.transientWebApp = transientWebApp;
       replacementPane.selectedWebAppId = transientWebApp.id;
 
-      setPaneLayout(project.id, replacePaneNode(layout, sourceEntry.paneId, replacement));
+      if (!applyPaneSplit(project, sourceEntry.paneId, replacement)) {
+        return false;
+      }
       setSelectedWebAppForPane(sourceEntry.paneId, sourceWebAppId);
       setSelectedWebAppForPane(replacementPane.id, replacementPane.selectedWebAppId);
 

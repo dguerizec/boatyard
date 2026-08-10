@@ -46,7 +46,8 @@ type PaneLayoutNode = PaneNode | SplitNode;
 
 type PaneLayoutStateApi = {
   activatePaneExpansion(project: RendererProject, paneId: string, paneIds: string[]): boolean;
-  clearPaneExpansionMemories(project: RendererProject): void;
+  applyPaneClose(project: RendererProject, paneId: string): boolean;
+  applyPaneSplit(project: RendererProject, paneId: string, replacement: SplitNode): boolean;
   countPaneNodes(node: unknown): number;
   createSplitNode(
     project: RendererProject,
@@ -60,10 +61,9 @@ type PaneLayoutStateApi = {
   findPaneNodeBySelectedWebApp(node: unknown, webAppId: string): unknown;
   getPaneExpansionPaneIds(project: RendererProject, paneId: string): string[];
   getPaneExpansionState(project: RendererProject, paneId: string): { canExpand: boolean; canShrink: boolean };
+  getPaneStructuralActionState(project: RendererProject, paneId: string): { canClose: boolean; canSplit: boolean };
   getSelectedWebAppForPane(paneId: string): string | undefined;
   getSelectedWebAppForProject(projectId?: string): string | undefined;
-  removePaneNode(node: unknown, paneId: string): unknown;
-  replacePaneNode(node: unknown, paneId: string, replacement: unknown): unknown;
   setPaneLayout(projectId: string | undefined, layout: unknown): unknown;
   setSelectedWebAppForPane(paneId: string, webAppId?: string): unknown;
   setSelectedWebAppForProject(projectId: string | undefined, webAppId?: string): unknown;
@@ -753,7 +753,6 @@ export function createPaneLayoutView({
         webApps.find((webApp: PaneWebApp) => webApp.id === "manual")?.id ||
         webApps.find((webApp: PaneWebApp) => webApp.id !== currentWebAppId)?.id ||
         currentWebAppId;
-      paneLayoutState.clearPaneExpansionMemories(project);
       const replacement = paneLayoutState.createSplitNode(
         project,
         direction,
@@ -761,27 +760,20 @@ export function createPaneLayoutView({
         nextWebAppId
       ) as PaneLayoutNode & { first: PaneLayoutNode };
       replacement.first.selectedWebAppId = currentWebAppId;
-      paneLayoutState.setPaneLayout(project.id, paneLayoutState.replacePaneNode(layout, paneId, replacement));
+      if (!paneLayoutState.applyPaneSplit(project, paneId, replacement as SplitNode)) {
+        return;
+      }
       paneLayoutState.setSelectedWebAppForPane(paneId, currentWebAppId);
       persistPaneLayout(project);
       renderPaneLayoutPreservingPanes(project);
     }
 
     function closePane(project: RendererProject, paneId: string) {
-      const layout = getProjectPaneLayout(project);
-
-      if (paneLayoutState.countPaneNodes(layout) <= 1) {
+      if (!paneLayoutState.applyPaneClose(project, paneId)) {
         return;
       }
 
-      const result = paneLayoutState.removePaneNode(layout, paneId) as { node: PaneLayoutNode; removed: boolean };
-      if (!result.removed) {
-        return;
-      }
-
-      paneLayoutState.clearPaneExpansionMemories(project);
       paneLayoutState.deleteSelectedWebAppForPane(paneId);
-      paneLayoutState.setPaneLayout(project.id, result.node);
       persistPaneLayout(project);
       renderPaneLayoutPreservingPanes(project);
     }
@@ -964,8 +956,26 @@ export function createPaneLayoutView({
       button.replaceChildren(createToolIcon(isShrink ? "shrinkPane" : "expandPane"));
     }
 
+    function syncPaneStructuralActionButtons(
+      project: RendererProject,
+      paneNode: PaneNode,
+      verticalSplitButton: HTMLButtonElement | null,
+      horizontalSplitButton: HTMLButtonElement | null,
+      closePaneButton: HTMLButtonElement | null
+    ) {
+      const actionState = paneLayoutState.getPaneStructuralActionState(project, paneNode.id);
+      if (verticalSplitButton) {
+        verticalSplitButton.disabled = !actionState.canSplit;
+      }
+      if (horizontalSplitButton) {
+        horizontalSplitButton.disabled = !actionState.canSplit;
+      }
+      if (closePaneButton) {
+        closePaneButton.disabled = !actionState.canClose;
+      }
+    }
+
     function syncReusedPaneActions(project: RendererProject, paneNode: PaneNode, pane: HTMLElement) {
-      const hasActiveExpansions = paneLayoutState.findActivePaneExpansions(project).length > 0;
       const expansionButton = getPaneActionButton(pane, "toggle-expand", "Expand pane") ||
         getPaneActionButton(pane, "shrink", "Shrink pane");
       const verticalSplitButton = getPaneActionButton(pane, "split-vertical", "Split vertically");
@@ -975,19 +985,13 @@ export function createPaneLayoutView({
       if (expansionButton) {
         syncPaneExpansionButton(project, paneNode, expansionButton);
       }
-
-      if (verticalSplitButton) {
-        verticalSplitButton.disabled = hasActiveExpansions;
-      }
-
-      if (horizontalSplitButton) {
-        horizontalSplitButton.disabled = hasActiveExpansions;
-      }
-
-      if (closePaneButton) {
-        closePaneButton.disabled = hasActiveExpansions ||
-          paneLayoutState.countPaneNodes(getProjectPaneLayout(project)) <= 1;
-      }
+      syncPaneStructuralActionButtons(
+        project,
+        paneNode,
+        verticalSplitButton,
+        horizontalSplitButton,
+        closePaneButton
+      );
     }
 
     function syncVisiblePaneActions(project: RendererProject) {
@@ -1858,11 +1862,13 @@ export function createPaneLayoutView({
       closePaneButton.title = "Close pane";
       closePaneButton.setAttribute("aria-label", "Close pane");
       closePaneButton.append(createToolIcon("close"));
-      const hasActiveExpansions = paneLayoutState.findActivePaneExpansions(project).length > 0;
-      verticalSplitButton.disabled = hasActiveExpansions;
-      horizontalSplitButton.disabled = hasActiveExpansions;
-      closePaneButton.disabled = hasActiveExpansions ||
-        paneLayoutState.countPaneNodes(getProjectPaneLayout(project)) <= 1;
+      syncPaneStructuralActionButtons(
+        project,
+        paneNode,
+        verticalSplitButton,
+        horizontalSplitButton,
+        closePaneButton
+      );
       closePaneButton.addEventListener("click", () => closePane(project, paneNode.id));
 
       actions.append(expansionButton, verticalSplitButton, horizontalSplitButton, closePaneButton);

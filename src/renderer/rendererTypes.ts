@@ -100,6 +100,8 @@ export type RendererCreateModule<TInstance extends RendererModuleInstance = Rend
 };
 
 export type PaneLayoutStateInstance = RendererModuleInstance & {
+  applyPaneClose(project: RendererProject, paneId: string): boolean;
+  applyPaneSplit(project: RendererProject, paneId: string, replacement: RendererPaneLayoutNode): boolean;
   collectPaneNodes(node: RendererPaneLayoutNode | null | undefined, panes?: RendererPaneNode[]): RendererPaneNode[];
   countPaneNodes(node: RendererPaneLayoutNode | null | undefined): number;
   createSplitNode(project: RendererProject, direction: string, first: RendererPaneLayoutNode, selectedWebAppId?: string | null): RendererPaneLayoutNode;
@@ -109,6 +111,7 @@ export type PaneLayoutStateInstance = RendererModuleInstance & {
   findPaneNode(node: RendererPaneLayoutNode | null | undefined, paneId?: string): RendererPaneNode | null;
   findPaneNodeBySelectedWebApp(node: RendererPaneLayoutNode | null | undefined, webAppId?: string): RendererPaneNode | null;
   getPaneLayout(project: RendererProject): RendererPaneLayoutNode;
+  getPaneStructuralActionState(project: RendererProject, paneId: string): { canClose: boolean; canSplit: boolean };
   getSelectedWebAppForPane(paneId: string): string;
   getSelectedWebAppForProject(projectId?: string): string;
   hydratePaneLayouts(layouts: unknown): void;
