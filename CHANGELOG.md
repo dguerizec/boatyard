@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.9.16] - 2026-08-10
+
+### Summary
+
+- **v0.9.16: Smarter GitHub Refreshes** — Improves GitHub status updates and keeps pane controls reliable while working in expanded layouts.
+
+### Changed
+
+- **GitHub refresh behavior** — GitHub Actions and Pull Requests now share coordinated polling, reducing duplicate refreshes across repository views.
+- **GitHub rate limits** — When GitHub rate limits are reached, refreshes now wait for the retry window instead of repeatedly failing.
+
+### Fixed
+
+- **Pane actions in expanded layouts** — Split and close controls now stay available for panes outside an active expanded area.
+- **Protected expanded panes** — Boatyard now prevents splitting or closing panes that are currently covered by an active pane expansion.
+
 ## [0.9.15] - 2026-08-10
 
 ### Summary

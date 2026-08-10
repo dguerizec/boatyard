@@ -1,6 +1,32 @@
 {
-  "generatedForVersion": "0.9.15",
+  "generatedForVersion": "0.9.16",
   "releases": [
+    {
+      "version": "0.9.16",
+      "date": "2026-08-10",
+      "features": [
+        {
+          "category": "Changed",
+          "title": "GitHub refresh behavior",
+          "body": "GitHub Actions and Pull Requests now share coordinated polling, reducing duplicate refreshes across repository views."
+        },
+        {
+          "category": "Changed",
+          "title": "GitHub rate limits",
+          "body": "When GitHub rate limits are reached, refreshes now wait for the retry window instead of repeatedly failing."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pane actions in expanded layouts",
+          "body": "Split and close controls now stay available for panes outside an active expanded area."
+        },
+        {
+          "category": "Fixed",
+          "title": "Protected expanded panes",
+          "body": "Boatyard now prevents splitting or closing panes that are currently covered by an active pane expansion."
+        }
+      ]
+    },
     {
       "version": "0.9.15",
       "date": "2026-08-10",
