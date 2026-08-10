@@ -1,6 +1,37 @@
 {
-  "generatedForVersion": "0.9.14",
+  "generatedForVersion": "0.9.15",
   "releases": [
+    {
+      "version": "0.9.15",
+      "date": "2026-08-10",
+      "features": [
+        {
+          "category": "Added",
+          "title": "GitHub repository pane",
+          "body": "GitHub projects now get a dedicated pane with Overview, Code, Issues, Pull requests, Actions, and Settings sections."
+        },
+        {
+          "category": "Added",
+          "title": "GitHub overview",
+          "body": "The new Overview section brings Actions and Pull Requests together in one place."
+        },
+        {
+          "category": "Changed",
+          "title": "Repository tabs",
+          "body": "GitHub repositories now open through the GitHub pane, while the generic Repo pane remains available for other Git hosts."
+        },
+        {
+          "category": "Changed",
+          "title": "Browser controls",
+          "body": "Repository section panes keep navigation visible and move browser controls into a compact overlay."
+        },
+        {
+          "category": "Fixed",
+          "title": "Workflow visibility sync",
+          "body": "Hiding or restoring GitHub workflow runs now stays consistent across GitHub widgets and the new overview pane."
+        }
+      ]
+    },
     {
       "version": "0.9.14",
       "date": "2026-08-08",
