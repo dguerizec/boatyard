@@ -122,6 +122,8 @@
   };
 
   type GitHubProjectStatusCategory = "workflowRunning" | "pullRequest" | "workflowResult";
+  type GitHubPollingChannel = "actions" | "pullRequests";
+  type GitHubPollingDetail = "full" | "summary";
   type GitHubRequestPriority = "background" | "foreground" | "interactive";
   type GitHubAutomaticRequestPriority = Exclude<GitHubRequestPriority, "interactive">;
 
@@ -150,6 +152,7 @@
   };
 
   type RefreshSubscriber<TSnapshot> = {
+    detail: GitHubPollingDetail;
     isAlive: () => boolean;
     listener: (state: RefreshState<TSnapshot>) => void;
     priority: GitHubAutomaticRequestPriority;
@@ -173,7 +176,8 @@
       project: GitHubProject,
       listener: RefreshSubscriber<TSnapshot>["listener"],
       isAlive: RefreshSubscriber<TSnapshot>["isAlive"],
-      priority?: GitHubAutomaticRequestPriority
+      priority?: GitHubAutomaticRequestPriority,
+      detail?: GitHubPollingDetail
     ): {
       refresh(force?: boolean): Promise<void>;
       unsubscribe(): void;
@@ -189,6 +193,7 @@
   const registry = globalScope.BoatyardPluginRegistry;
   const ACTIONS_ACTIVE_REFRESH_MS = 5000;
   const ACTIONS_IDLE_REFRESH_MS = 30000;
+  const GITHUB_POLLING_HEARTBEAT_MS = 30 * 1000;
   const PULL_REQUESTS_REFRESH_MS = 30000;
   const MAX_BACKOFF_MS = 5 * 60 * 1000;
   const GITHUB_PROJECT_STATUS_PRIORITY_DEFAULT = "workflowRunning,pullRequest,workflowResult";
@@ -380,6 +385,17 @@
     ].map((value) => String(value || "").trim()).join("\u0000");
   }
 
+  function getPollingChannelKey(
+    project: GitHubProject,
+    channel: GitHubPollingChannel
+  ): string {
+    const repository = parseGitHubRepositoryUrl(project.repoUrl)
+      || parseGitHubRepositoryUrl(project.gitUrl);
+    return repository
+      ? `github:${repository.host}/${repository.owner}/${repository.repo}:${channel}`.toLowerCase()
+      : `${getProjectKey(project)}\u0000${channel}`;
+  }
+
   function parseHiddenWorkflowRunIds(value: unknown): Set<string> {
     try {
       const parsed = JSON.parse(String(value || "[]"));
@@ -457,7 +473,293 @@
     }
   }
 
-  function createProjectRefreshCoordinator<TSnapshot>({
+  type CentralPollingDemand = {
+    channel: GitHubPollingChannel;
+    detail: GitHubPollingDetail;
+    priority: GitHubAutomaticRequestPriority;
+    project: GitHubProject;
+  };
+
+  type CentralPollingRegistration = {
+    accept(value: unknown): void;
+    acceptSyncError(error: unknown): void;
+    listDemands(): CentralPollingDemand[];
+  };
+
+  function createCentralPollingBroker() {
+    const registrations = new Set<CentralPollingRegistration>();
+    const available = typeof globalScope.boatyard?.onPluginEvent === "function";
+    const clientId = `github-renderer-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    let enabled = true;
+    let heartbeatTimer: number | null = null;
+    let syncAgain = false;
+    let syncInFlight = false;
+    let syncQueued = false;
+
+    function apply(value: unknown): void {
+      for (const registration of registrations) {
+        registration.accept(value);
+      }
+    }
+
+    function scheduleHeartbeat(): void {
+      if (!available || typeof globalScope.setTimeout !== "function") {
+        return;
+      }
+      if (heartbeatTimer !== null && typeof globalScope.clearTimeout === "function") {
+        globalScope.clearTimeout(heartbeatTimer);
+      }
+      heartbeatTimer = globalScope.setTimeout(() => {
+        heartbeatTimer = null;
+        scheduleSync();
+      }, GITHUB_POLLING_HEARTBEAT_MS);
+    }
+
+    async function sync(): Promise<void> {
+      if (!available) {
+        return;
+      }
+      if (syncInFlight) {
+        syncAgain = true;
+        return;
+      }
+      syncInFlight = true;
+      const subscriptions = enabled
+        ? [...registrations].flatMap((registration) => registration.listDemands())
+        : [];
+      try {
+        const response = await invokePlugin("syncPollingSubscriptions", {
+          clientId,
+          subscriptions
+        });
+        if (isRecord(response) && Array.isArray(response.channels)) {
+          response.channels.forEach(apply);
+        }
+      } catch (error) {
+        for (const registration of registrations) {
+          registration.acceptSyncError(error);
+        }
+      } finally {
+        syncInFlight = false;
+        scheduleHeartbeat();
+      }
+      if (syncAgain) {
+        syncAgain = false;
+        await sync();
+      }
+    }
+
+    function scheduleSync(): void {
+      if (!available || syncQueued) {
+        return;
+      }
+      syncQueued = true;
+      queueMicrotask(() => {
+        syncQueued = false;
+        void sync();
+      });
+    }
+
+    if (available) {
+      globalScope.boatyard?.onPluginEvent?.(
+        "boatyard.github",
+        "pollingChannelState",
+        apply
+      );
+    }
+
+    return Object.freeze({
+      available,
+      refresh(channel: GitHubPollingChannel, project: GitHubProject): Promise<void> {
+        return invokePlugin("refreshPollingChannel", { channel, project })
+          .then((state) => {
+            apply(state);
+          });
+      },
+      register(registration: CentralPollingRegistration): void {
+        registrations.add(registration);
+      },
+      scheduleSync,
+      setEnabled(nextEnabled: boolean): void {
+        enabled = nextEnabled;
+        scheduleSync();
+      }
+    });
+  }
+
+  const centralPollingBroker = createCentralPollingBroker();
+
+  function formatCentralPollingError(value: unknown): string {
+    if (!isRecord(value)) {
+      return "";
+    }
+    const message = String(value.message || "GitHub request failed.");
+    const retryAt = Date.parse(String(value.retryAt || ""));
+    if (String(value.code || "") !== "rateLimited" || !Number.isFinite(retryAt)) {
+      return message;
+    }
+    return `GitHub API rate limit reached. Retrying at ${new Date(retryAt).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit"
+    })}.`;
+  }
+
+  function createCentralProjectRefreshCoordinator<TSnapshot>({
+    channel,
+    normalize
+  }: {
+    channel: GitHubPollingChannel;
+    normalize: (value: unknown) => TSnapshot;
+  }): RefreshCoordinator<TSnapshot> {
+    type CentralEntry = {
+      error: string;
+      loading: boolean;
+      project: GitHubProject;
+      revision: number;
+      snapshot: TSnapshot | null;
+      stale: boolean;
+      subscribers: Set<RefreshSubscriber<TSnapshot>>;
+    };
+
+    const entries = new Map<string, CentralEntry>();
+
+    function stateFor(entry: CentralEntry): RefreshState<TSnapshot> {
+      return {
+        error: entry.error,
+        loading: entry.loading,
+        snapshot: entry.snapshot,
+        stale: entry.stale
+      };
+    }
+
+    function prune(key: string, entry: CentralEntry): void {
+      for (const subscriber of entry.subscribers) {
+        if (!subscriber.isAlive()) {
+          entry.subscribers.delete(subscriber);
+        }
+      }
+      if (!entry.subscribers.size) {
+        entries.delete(key);
+      }
+    }
+
+    function notify(key: string, entry: CentralEntry): void {
+      prune(key, entry);
+      if (!entries.has(key)) {
+        centralPollingBroker.scheduleSync();
+        return;
+      }
+      const state = stateFor(entry);
+      for (const subscriber of entry.subscribers) {
+        subscriber.listener(state);
+      }
+    }
+
+    const registration: CentralPollingRegistration = {
+      accept(value: unknown) {
+        if (!isRecord(value) || value.channel !== channel) {
+          return;
+        }
+        const key = String(value.channelKey || "");
+        const entry = entries.get(key);
+        if (!entry) {
+          return;
+        }
+        const revision = Math.max(0, Number(value.revision) || 0);
+        if (revision < entry.revision) {
+          return;
+        }
+        entry.revision = revision;
+        entry.loading = value.loading === true;
+        entry.error = formatCentralPollingError(value.error);
+        entry.stale = value.stale === true;
+        if (value.snapshot !== null && value.snapshot !== undefined) {
+          try {
+            entry.snapshot = normalize(value.snapshot);
+          } catch (error) {
+            entry.error = getErrorMessage(error);
+            entry.stale = !!entry.snapshot;
+          }
+        }
+        notify(key, entry);
+      },
+      acceptSyncError(error: unknown) {
+        for (const [key, entry] of entries) {
+          entry.loading = false;
+          entry.error = getErrorMessage(error);
+          entry.stale = !!entry.snapshot;
+          notify(key, entry);
+        }
+      },
+      listDemands() {
+        const demands: CentralPollingDemand[] = [];
+        for (const [key, entry] of entries) {
+          prune(key, entry);
+          if (!entries.has(key)) {
+            continue;
+          }
+          const subscribers = [...entry.subscribers];
+          demands.push({
+            channel,
+            detail: subscribers.some((subscriber) => subscriber.detail === "full")
+              ? "full"
+              : "summary",
+            priority: subscribers.some((subscriber) => subscriber.priority === "foreground")
+              ? "foreground"
+              : "background",
+            project: entry.project
+          });
+        }
+        return demands;
+      }
+    };
+    centralPollingBroker.register(registration);
+
+    function subscribe(
+      project: GitHubProject,
+      listener: RefreshSubscriber<TSnapshot>["listener"],
+      isAlive: RefreshSubscriber<TSnapshot>["isAlive"],
+      priority: GitHubAutomaticRequestPriority = "background",
+      detail: GitHubPollingDetail = "summary"
+    ) {
+      const key = getPollingChannelKey(project, channel);
+      let entry = entries.get(key);
+      if (!entry) {
+        entry = {
+          error: "",
+          loading: true,
+          project,
+          revision: 0,
+          snapshot: null,
+          stale: false,
+          subscribers: new Set()
+        };
+        entries.set(key, entry);
+      }
+      const subscriber = { detail, isAlive, listener, priority };
+      entry.subscribers.add(subscriber);
+      listener(stateFor(entry));
+      centralPollingBroker.scheduleSync();
+
+      return {
+        refresh(_force = false) {
+          return centralPollingBroker.refresh(channel, project);
+        },
+        unsubscribe() {
+          if (!entry) {
+            return;
+          }
+          entry.subscribers.delete(subscriber);
+          prune(key, entry);
+          centralPollingBroker.scheduleSync();
+        }
+      };
+    }
+
+    return Object.freeze({ subscribe });
+  }
+
+  function createLegacyProjectRefreshCoordinator<TSnapshot>({
     actionName,
     getRefreshInterval,
     normalize
@@ -594,7 +896,8 @@
       project: GitHubProject,
       listener: RefreshSubscriber<TSnapshot>["listener"],
       isAlive: RefreshSubscriber<TSnapshot>["isAlive"],
-      priority: GitHubAutomaticRequestPriority = "background"
+      priority: GitHubAutomaticRequestPriority = "background",
+      detail: GitHubPollingDetail = "summary"
     ) {
       const key = getProjectKey(project);
       let entry = entries.get(key);
@@ -616,7 +919,7 @@
         entry.project = project;
       }
 
-      const subscriber = { isAlive, listener, priority };
+      const subscriber = { detail, isAlive, listener, priority };
       entry.subscribers.add(subscriber);
       listener(stateFor(entry));
       if (!entry.inFlight && entry.timer === null) {
@@ -642,6 +945,17 @@
     }
 
     return Object.freeze({ subscribe });
+  }
+
+  function createProjectRefreshCoordinator<TSnapshot>(options: {
+    actionName: string;
+    channel: GitHubPollingChannel;
+    getRefreshInterval: (snapshot: TSnapshot | null) => number;
+    normalize: (value: unknown) => TSnapshot;
+  }): RefreshCoordinator<TSnapshot> {
+    return centralPollingBroker.available
+      ? createCentralProjectRefreshCoordinator(options)
+      : createLegacyProjectRefreshCoordinator(options);
   }
 
   function isActiveWorkflowStatus(status: string): boolean {
@@ -751,6 +1065,7 @@
 
   const actionsCoordinator = createProjectRefreshCoordinator<GitHubActionsSnapshot>({
     actionName: "actionsSnapshotForProject",
+    channel: "actions",
     normalize: asActionsSnapshot,
     getRefreshInterval(snapshot) {
       return snapshot?.activeRunCount
@@ -761,6 +1076,7 @@
 
   const pullRequestsCoordinator = createProjectRefreshCoordinator<GitHubPullRequestsSnapshot>({
     actionName: "pullRequestsSnapshotForProject",
+    channel: "pullRequests",
     normalize: asPullRequestsSnapshot,
     getRefreshInterval() {
       return PULL_REQUESTS_REFRESH_MS;
@@ -926,7 +1242,8 @@
         updateBadge();
       },
       isAlive,
-      requestPriority
+      requestPriority,
+      "summary"
     );
     pullRequestsCoordinator.subscribe(
       project,
@@ -935,7 +1252,8 @@
         updateBadge();
       },
       isAlive,
-      requestPriority
+      requestPriority,
+      "summary"
     );
 
     return badge;
@@ -1418,7 +1736,8 @@
         }
       },
       isViewAlive,
-      "foreground"
+      "foreground",
+      "full"
     );
 
     refreshButton.addEventListener("click", () => {
@@ -1704,7 +2023,8 @@
         }
         return !wasConnected || card.isConnected;
       },
-      "foreground"
+      "foreground",
+      "full"
     );
 
     refreshButton.addEventListener("click", () => {
@@ -1752,6 +2072,7 @@
     },
     {
       activate(ctx) {
+        centralPollingBroker.setEnabled(true);
         ctx.status.set({
           state: "ready",
           summary: "GitHub integration is available"
@@ -1866,6 +2187,7 @@
         });
       },
       deactivate() {
+        centralPollingBroker.setEnabled(false);
         actionsViewsByProject.clear();
         workflowVisibilityUpdatesByProject.clear();
         workflowNotificationStates.clear();

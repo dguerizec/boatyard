@@ -85,6 +85,11 @@ type RendererContext = {
     BoatyardWidgetRegistry?: Record<string, (...args: unknown[]) => unknown>;
     boatyard: {
       invokePlugin(pluginId: string, actionName: string, payload: unknown): Promise<unknown>;
+      onPluginEvent?(
+        pluginId: string,
+        eventName: string,
+        callback: (payload: unknown) => void
+      ): () => void;
       openExternal(url?: unknown): void;
       updateProjectPluginConfig?(
         projectId: string,
@@ -321,6 +326,144 @@ test("GitHub project badges share snapshots and apply the configured status prio
   assert.match(defaultBadge.title, /Workflow running: Deploy/);
   assert.match(defaultBadge.title, /Pull request: Ready for review/);
   assert.doesNotMatch(defaultBadge.title, /Workflow passed: CI/);
+});
+
+test("GitHub central polling feeds badges and widgets from one canonical channel", async () => {
+  const syncPayloads: Array<Record<string, unknown>> = [];
+  const refreshPayloads: Array<Record<string, unknown>> = [];
+  let onPollingState = (_payload: unknown) => {};
+  const context: RendererContext = {
+    clearTimeout: () => {},
+    console,
+    document: {
+      createElement: () => new FakeElement()
+    },
+    queueMicrotask,
+    setTimeout: () => 1,
+    window: {
+      boatyard: {
+        invokePlugin: async (_pluginId, actionName, payload) => {
+          if (actionName === "syncPollingSubscriptions") {
+            syncPayloads.push(payload as Record<string, unknown>);
+            return { channels: [] };
+          }
+          if (actionName === "refreshPollingChannel") {
+            refreshPayloads.push(payload as Record<string, unknown>);
+            return {
+              channel: "actions",
+              channelKey: "github:github.com/octo-org/example:actions",
+              error: null,
+              loading: false,
+              revision: 2,
+              snapshot: createSnapshot(),
+              stale: false
+            };
+          }
+          throw new Error(`Unexpected action ${actionName}`);
+        },
+        onPluginEvent: (_pluginId, eventName, callback) => {
+          assert.equal(eventName, "pollingChannelState");
+          onPollingState = callback;
+          return () => {};
+        },
+        openExternal: () => {}
+      }
+    }
+  };
+  const widgetRegistry = activateGitHubWidgets(context);
+  const project = {
+    id: "project-id",
+    repoUrl: "https://github.com/octo-org/example"
+  };
+  const duplicateProject = {
+    id: "duplicate-project-id",
+    repoUrl: "https://github.com/octo-org/example/tree/main"
+  };
+  const badgeDefinition = getProjectStatusBadgeDefinition(context);
+  const sidebarBadge = badgeDefinition?.render({ project }) as FakeElement;
+  const shortcutBadge = badgeDefinition?.render({ project: duplicateProject }) as FakeElement;
+  const actionsDefinition = widgetRegistry?.get("boatyard.github.actions") as {
+    createElement(project: Record<string, unknown>): FakeElement;
+  };
+  const card = actionsDefinition.createElement(project);
+  sidebarBadge.isConnected = true;
+  shortcutBadge.isConnected = true;
+  card.isConnected = true;
+
+  await flush();
+  await flush();
+
+  const subscriptions = syncPayloads.at(-1)?.subscriptions as Array<Record<string, unknown>>;
+  assert.equal(subscriptions.length, 2);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(subscriptions.map((subscription) => ({
+        channel: subscription.channel,
+        detail: subscription.detail,
+        priority: subscription.priority
+      })))),
+    [{
+      channel: "actions",
+      detail: "full",
+      priority: "foreground"
+    }, {
+      channel: "pullRequests",
+      detail: "summary",
+      priority: "background"
+    }]
+  );
+
+  const activeSnapshot = {
+    ...createSnapshot(),
+    activeRunCount: 1,
+    runs: [createWorkflowRun({ name: "Shared deployment" })]
+  };
+  onPollingState({
+    channel: "actions",
+    channelKey: "github:github.com/octo-org/example:actions",
+    error: null,
+    loading: false,
+    revision: 1,
+    snapshot: activeSnapshot,
+    stale: false
+  });
+  onPollingState({
+    channel: "pullRequests",
+    channelKey: "github:github.com/octo-org/example:pullrequests",
+    error: null,
+    loading: false,
+    revision: 1,
+    snapshot: createPullRequestsSnapshot(),
+    stale: false
+  });
+
+  assert.ok(sidebarBadge.className.includes("workflow-running"));
+  assert.ok(shortcutBadge.className.includes("workflow-running"));
+  assert.ok(findByText(card, "Shared deployment"));
+
+  findByClass(card, "github-refresh-button")?.trigger("click");
+  await flush();
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(refreshPayloads)),
+    [{ channel: "actions", project }]
+  );
+
+  onPollingState({
+    channel: "actions",
+    channelKey: "github:github.com/octo-org/example:actions",
+    error: {
+      code: "rateLimited",
+      message: "GitHub API rate limit reached. Refresh will resume later.",
+      retryAt: "2026-08-10T10:30:00.000Z"
+    },
+    loading: false,
+    revision: 2,
+    snapshot: null,
+    stale: false
+  });
+  assert.match(
+    findByClass(card, "github-widget-error")?.textContent || "",
+    /^GitHub API rate limit reached\. Retrying at /i
+  );
 });
 
 test("GitHub project badge distinguishes draft pull requests", async () => {

@@ -1,8 +1,9 @@
 "use strict";
 
-import type { ExecFileAsync, PluginActions, PluginStateMigrations } from "../../shared/pluginTypes";
+import type { ExecFileAsync, PluginActions, PluginEvents, PluginStateMigrations } from "../../shared/pluginTypes";
 
 const { createGitHubService, resolveGitHubRepository } = require("./service");
+const { createGitHubPollingCoordinator } = require("./polling");
 
 type GitHubProject = {
   id?: unknown;
@@ -24,6 +25,7 @@ type ProjectPayload = {
 
 type GitHubPluginContext = {
   actions: PluginActions;
+  events: PluginEvents;
   execFileAsync: ExecFileAsync;
   stateMigrations: PluginStateMigrations<GitHubStoreState>;
 };
@@ -31,6 +33,10 @@ type GitHubPluginContext = {
 function activate(ctx: GitHubPluginContext) {
   const service = createGitHubService({
     execFileAsync: ctx.execFileAsync
+  });
+  const polling = createGitHubPollingCoordinator({
+    service,
+    emit: (state: unknown) => ctx.events.emit("pollingChannelState", state)
   });
 
   ctx.stateMigrations.register(({ state }) => ({
@@ -55,6 +61,18 @@ function activate(ctx: GitHubPluginContext) {
 
   ctx.actions.handle<ProjectPayload>("pullRequestsSnapshotForProject", ({ force = false, priority, project = {} } = {}) => {
     return service.pullRequestsSnapshotForProject(project, { force, priority });
+  });
+
+  ctx.actions.handle("syncPollingSubscriptions", (payload: unknown = {}) => {
+    const source = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+    return {
+      channels: polling.syncClient(source.clientId, source.subscriptions)
+    };
+  });
+
+  ctx.actions.handle("refreshPollingChannel", (payload: unknown = {}) => {
+    const source = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
+    return polling.refresh(source.channel, source.project);
   });
 }
 

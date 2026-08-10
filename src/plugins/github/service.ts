@@ -84,6 +84,28 @@ query BoatyardPullRequests($owner: String!, $name: String!, $searchQuery: String
 }
 `;
 
+const GITHUB_PULL_REQUESTS_SUMMARY_QUERY = `
+query BoatyardPullRequestsSummary($owner: String!, $name: String!) {
+  viewer {
+    login
+  }
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 50, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes {
+        number
+        title
+        url
+        updatedAt
+        isDraft
+        author {
+          login
+        }
+      }
+    }
+  }
+}
+`;
+
 type UnknownRecord = Record<string, unknown>;
 
 type GitHubProject = {
@@ -153,6 +175,7 @@ type GitHubServiceOptions = GitHubCommandOptions & {
 };
 
 type GitHubServiceRequestOptions = {
+  detail?: "full" | "summary";
   force?: boolean;
   priority?: GitHubRequestPriority;
 };
@@ -475,10 +498,11 @@ function normalizeGitHubRequestPriority(value: unknown): GitHubRequestPriority {
     : "background";
 }
 
-function createRateLimitError(): GitHubServiceError {
+function createRateLimitError(retryAfterMs = 0): GitHubServiceError {
   return new GitHubServiceError(
     "rateLimited",
-    "GitHub API rate limit reached. Refresh will resume later."
+    "GitHub API rate limit reached. Refresh will resume later.",
+    { retryAfterMs }
   );
 }
 
@@ -512,7 +536,7 @@ function createGitHubRequestScheduler({
       return;
     }
     blockedUntil = Math.max(blockedUntil, now() + normalizedDelay);
-    rejectQueued(createRateLimitError());
+    rejectQueued(createRateLimitError(Math.max(0, blockedUntil - now())));
   }
 
   function sortQueue(): void {
@@ -527,7 +551,7 @@ function createGitHubRequestScheduler({
       return;
     }
     if (isRateLimited()) {
-      rejectQueued(createRateLimitError());
+      rejectQueued(createRateLimitError(Math.max(0, blockedUntil - now())));
       return;
     }
 
@@ -555,7 +579,7 @@ function createGitHubRequestScheduler({
     { priority = "background" }: GitHubScheduledRequestOptions = {}
   ): Promise<T> {
     if (isRateLimited()) {
-      return Promise.reject(createRateLimitError());
+      return Promise.reject(createRateLimitError(Math.max(0, blockedUntil - now())));
     }
 
     return new Promise<T>((resolve, reject) => {
@@ -1187,6 +1211,7 @@ function createGitHubService({
   async function actionsSnapshotForProject(
     project: GitHubProject = {},
     {
+      detail = "full",
       force = false,
       priority = "background"
     }: GitHubServiceRequestOptions = {}
@@ -1210,7 +1235,7 @@ function createGitHubService({
       if (!run) {
         continue;
       }
-      const jobs = isActiveWorkflowStatus(run.status)
+      const jobs = detail === "full" && isActiveWorkflowStatus(run.status)
         ? await loadWorkflowJobs(repository, run.id, { force, priority })
         : [];
       runs.push({
@@ -1231,6 +1256,7 @@ function createGitHubService({
   async function pullRequestsSnapshotForProject(
     project: GitHubProject = {},
     {
+      detail = "full",
       force = false,
       priority = "background"
     }: GitHubServiceRequestOptions = {}
@@ -1249,16 +1275,21 @@ function createGitHubService({
 
     const repositoryKey = getRepositoryKey(repository);
     const normalized = await cache.get(
-      `pullRequests:${repositoryKey}`,
+      `pullRequests:${repositoryKey}:${detail}`,
       async () => {
         const payload = await runGitHubGraphQlJson(
           repository,
-          GITHUB_PULL_REQUESTS_QUERY,
-          {
-            name: repository.repo,
-            owner: repository.owner,
-            searchQuery: `repo:${repository.owner}/${repository.repo} is:pr is:open review-requested:@me`
-          },
+          detail === "full" ? GITHUB_PULL_REQUESTS_QUERY : GITHUB_PULL_REQUESTS_SUMMARY_QUERY,
+          detail === "full"
+            ? {
+              name: repository.repo,
+              owner: repository.owner,
+              searchQuery: `repo:${repository.owner}/${repository.repo} is:pr is:open review-requested:@me`
+            }
+            : {
+              name: repository.repo,
+              owner: repository.owner
+            },
           {
             execFileAsync,
             now,
@@ -1293,7 +1324,7 @@ function createGitHubService({
       cache.invalidate(`actions:jobs:${repositoryKey}:`);
     }
     if (!domain || domain === "pullRequests") {
-      cache.invalidate(`pullRequests:${repositoryKey}`);
+      cache.invalidate(`pullRequests:${repositoryKey}:`);
     }
   }
 
@@ -1308,6 +1339,7 @@ function createGitHubService({
 module.exports = {
   DEFAULT_GITHUB_HOST,
   GITHUB_PULL_REQUESTS_QUERY,
+  GITHUB_PULL_REQUESTS_SUMMARY_QUERY,
   GitHubServiceError,
   createAsyncRequestCache,
   createGitHubRequestScheduler,
