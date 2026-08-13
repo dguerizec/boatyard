@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.10.0] - 2026-08-13
+
+### Summary
+
+- **v0.10.0: Resource Visibility** — Adds a Linux Resources pane and improves terminal/session reliability across windows and shutdowns.
+
+### Added
+
+- **Linux Resources pane** — New global Resources view shows memory, process, and container usage for embedded web apps, terminals, Pier workloads, and the local TwiCC service.
+- **Project resource breakdowns** — Pier and TwiCC resource usage is grouped by project so busy workspaces are easier to identify.
+- **Terminal resource details** — Terminal sessions now report per-session usage in the Resources pane.
+
+### Fixed
+
+- **Terminal state per window** — Terminal state is now persisted per window instead of leaking or overwriting state across separate windows.
+- **Terminal cleanup** — Transient terminal client sessions now detach cleanly, stale sessions remain visible and removable, and orphaned sessions are recovered more safely.
+- **Shutdown reliability** — Terminal sessions are handled more safely during app startup and shutdown.
+- **Pane minimum sizes** — Pane resizing now uses stable physical minimums, improving layout behavior in dense resource views.
+
 ## [0.9.16] - 2026-08-10
 
 ### Summary

@@ -1,6 +1,47 @@
 {
-  "generatedForVersion": "0.9.16",
+  "generatedForVersion": "0.10.0",
   "releases": [
+    {
+      "version": "0.10.0",
+      "date": "2026-08-13",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Linux Resources pane",
+          "body": "New global Resources view shows memory, process, and container usage for embedded web apps, terminals, Pier workloads, and the local TwiCC service."
+        },
+        {
+          "category": "Added",
+          "title": "Project resource breakdowns",
+          "body": "Pier and TwiCC resource usage is grouped by project so busy workspaces are easier to identify."
+        },
+        {
+          "category": "Added",
+          "title": "Terminal resource details",
+          "body": "Terminal sessions now report per-session usage in the Resources pane."
+        },
+        {
+          "category": "Fixed",
+          "title": "Terminal state per window",
+          "body": "Terminal state is now persisted per window instead of leaking or overwriting state across separate windows."
+        },
+        {
+          "category": "Fixed",
+          "title": "Terminal cleanup",
+          "body": "Transient terminal client sessions now detach cleanly, stale sessions remain visible and removable, and orphaned sessions are recovered more safely."
+        },
+        {
+          "category": "Fixed",
+          "title": "Shutdown reliability",
+          "body": "Terminal sessions are handled more safely during app startup and shutdown."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pane minimum sizes",
+          "body": "Pane resizing now uses stable physical minimums, improving layout behavior in dense resource views."
+        }
+      ]
+    },
     {
       "version": "0.9.16",
       "date": "2026-08-10",
