@@ -1366,11 +1366,19 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("terminal:selection:update", (event: IpcMainInvokeEvent, projectId: string, surfaceKey: string, windowId: string) => {
-    return getConfigurationForEvent(event).store.updateTerminalSelection(projectId, surfaceKey, windowId);
+    const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    const configuration = getConfigurationForEvent(event);
+    return workspaceWindow
+      ? configuration.store.updateWorkspaceTerminalSelection(workspaceWindow.id, projectId, surfaceKey, windowId)
+      : configuration.store.updateTerminalSelection(projectId, surfaceKey, windowId);
   });
 
   ipcMain.handle("terminal:tab-order:update", (event: IpcMainInvokeEvent, projectId: string, windowIds: unknown) => {
-    return getConfigurationForEvent(event).store.updateTerminalTabOrder(projectId, windowIds);
+    const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
+    const configuration = getConfigurationForEvent(event);
+    return workspaceWindow
+      ? configuration.store.updateWorkspaceTerminalTabOrder(workspaceWindow.id, projectId, windowIds)
+      : configuration.store.updateTerminalTabOrder(projectId, windowIds);
   });
 
   ipcMain.handle("terminal:write", (event: IpcMainInvokeEvent, terminalId: string, data: string) => {

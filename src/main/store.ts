@@ -950,6 +950,36 @@ class ProjectStore {
     return structuredClone(workspaceWindow.widgetLayouts[String(projectId)] || null);
   }
 
+  updateWorkspaceTerminalSelection(
+    windowId: unknown,
+    projectId: unknown,
+    surfaceKey: unknown,
+    terminalWindowId: unknown
+  ): Record<string, string> {
+    const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
+    if (!workspaceWindow) {
+      return this.updateTerminalSelection(projectId, surfaceKey, terminalWindowId);
+    }
+    const selections = this.applyTerminalSelection(
+      workspaceWindow.terminalSelections,
+      projectId,
+      surfaceKey,
+      terminalWindowId
+    );
+    this.save();
+    return selections;
+  }
+
+  updateWorkspaceTerminalTabOrder(windowId: unknown, projectId: unknown, windowIds: unknown): string[] {
+    const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
+    if (!workspaceWindow) {
+      return this.updateTerminalTabOrder(projectId, windowIds);
+    }
+    const order = this.applyTerminalTabOrder(workspaceWindow.terminalTabOrders, projectId, windowIds);
+    this.save();
+    return order;
+  }
+
   updateWorkspaceWebAppState(windowId: unknown, key: unknown, webAppState: unknown): WebAppState | null {
     const workspaceWindow = this.state.workspaceSession.windows[normalizeText(windowId)];
     if (!workspaceWindow) {
@@ -1241,6 +1271,17 @@ class ProjectStore {
   }
 
   updateTerminalSelection(projectId: unknown, surfaceKey: unknown, windowId: unknown): Record<string, string> {
+    const selections = this.applyTerminalSelection(this.state.terminalSelections, projectId, surfaceKey, windowId);
+    this.save();
+    return selections;
+  }
+
+  private applyTerminalSelection(
+    terminalSelections: Record<string, Record<string, string>>,
+    projectId: unknown,
+    surfaceKey: unknown,
+    windowId: unknown
+  ): Record<string, string> {
     const normalizedProjectId = normalizeText(projectId);
     const normalizedSurfaceKey = normalizeText(surfaceKey);
     const normalizedWindowId = normalizeText(windowId);
@@ -1254,24 +1295,33 @@ class ProjectStore {
     }
 
     if (!normalizedWindowId) {
-      if (this.state.terminalSelections[normalizedProjectId]) {
-        delete this.state.terminalSelections[normalizedProjectId][normalizedSurfaceKey];
-        if (!Object.keys(this.state.terminalSelections[normalizedProjectId]).length) {
-          delete this.state.terminalSelections[normalizedProjectId];
+      if (terminalSelections[normalizedProjectId]) {
+        delete terminalSelections[normalizedProjectId][normalizedSurfaceKey];
+        if (!Object.keys(terminalSelections[normalizedProjectId]).length) {
+          delete terminalSelections[normalizedProjectId];
         }
       }
     } else {
-      this.state.terminalSelections[normalizedProjectId] = {
-        ...(this.state.terminalSelections[normalizedProjectId] || {}),
+      terminalSelections[normalizedProjectId] = {
+        ...(terminalSelections[normalizedProjectId] || {}),
         [normalizedSurfaceKey]: normalizedWindowId
       };
     }
 
-    this.save();
-    return structuredClone(this.state.terminalSelections[normalizedProjectId] || {});
+    return structuredClone(terminalSelections[normalizedProjectId] || {});
   }
 
   updateTerminalTabOrder(projectId: unknown, windowIds: unknown): string[] {
+    const order = this.applyTerminalTabOrder(this.state.terminalTabOrders, projectId, windowIds);
+    this.save();
+    return order;
+  }
+
+  private applyTerminalTabOrder(
+    terminalTabOrders: Record<string, string[]>,
+    projectId: unknown,
+    windowIds: unknown
+  ): string[] {
     const normalizedProjectId = normalizeText(projectId);
 
     if (normalizedProjectId !== GLOBAL_WORKSPACE_ID && !this.state.projects.some((project) => project.id === normalizedProjectId)) {
@@ -1284,13 +1334,12 @@ class ProjectStore {
     const normalizedWindowIds = normalizedOrders[normalizedProjectId] || [];
 
     if (!normalizedWindowIds.length) {
-      delete this.state.terminalTabOrders[normalizedProjectId];
+      delete terminalTabOrders[normalizedProjectId];
     } else {
-      this.state.terminalTabOrders[normalizedProjectId] = normalizedWindowIds;
+      terminalTabOrders[normalizedProjectId] = normalizedWindowIds;
     }
 
-    this.save();
-    return structuredClone(this.state.terminalTabOrders[normalizedProjectId] || []);
+    return structuredClone(terminalTabOrders[normalizedProjectId] || []);
   }
 
   updatePluginEnabled(pluginId: unknown, enabled: unknown, workspaceWindowId: unknown = null): ProjectStoreState {

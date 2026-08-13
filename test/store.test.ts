@@ -891,6 +891,37 @@ test("ProjectStore persists global terminal state", () => {
   assert.deepEqual(state.terminalTabOrders.__global__, ["@3", "@1", "@2"]);
 });
 
+test("ProjectStore persists terminal state independently for each workspace window", () => {
+  const { filePath, store } = createTempStore();
+
+  store.load();
+  const projectId = store.addProject({
+    name: "Project",
+    slug: "project",
+    sourcePath: "/workspace/project"
+  }).projects[0].id;
+  const surfaceKey = `pane:${projectId}:pane:1`;
+
+  store.ensureWorkspaceWindow("window-a", "group-a");
+  store.ensureWorkspaceWindow("window-b", "group-b");
+  store.updateWorkspaceTerminalSelection("window-a", projectId, surfaceKey, "@2");
+  store.updateWorkspaceTerminalSelection("window-b", projectId, surfaceKey, "@3");
+  store.updateWorkspaceTerminalTabOrder("window-a", projectId, ["@2", "@1", "@3"]);
+  store.updateWorkspaceTerminalTabOrder("window-b", projectId, ["@3", "@1", "@2"]);
+
+  const reloaded = new ProjectStore(filePath);
+  reloaded.load();
+  const windowA = reloaded.getStateForWorkspaceWindow("window-a");
+  const windowB = reloaded.getStateForWorkspaceWindow("window-b");
+
+  assert.equal(windowA.terminalSelections[projectId][surfaceKey], "@2");
+  assert.equal(windowB.terminalSelections[projectId][surfaceKey], "@3");
+  assert.deepEqual(windowA.terminalTabOrders[projectId], ["@2", "@1", "@3"]);
+  assert.deepEqual(windowB.terminalTabOrders[projectId], ["@3", "@1", "@2"]);
+  assert.equal(reloaded.getState().terminalSelections[projectId], undefined);
+  assert.equal(reloaded.getState().terminalTabOrders[projectId], undefined);
+});
+
 test("ProjectStore keeps preview URLs as core project data", () => {
   const { filePath } = createTempStoreFile();
   fs.writeFileSync(filePath, JSON.stringify({

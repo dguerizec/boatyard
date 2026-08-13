@@ -64,6 +64,8 @@ export type ProjectStoreInstance = {
   updateWindowState(state: { bounds: Rectangle; isMaximized: boolean }): unknown;
   updateWorkspaceNavigation(windowId: string, navigation: unknown): Record<string, unknown>;
   updateWorkspacePaneLayout(windowId: string, projectId: string | null | undefined, layout: unknown): unknown;
+  updateWorkspaceTerminalSelection(windowId: string, projectId: string, surfaceKey: string, terminalWindowId: string): unknown;
+  updateWorkspaceTerminalTabOrder(windowId: string, projectId: string, terminalWindowIds: unknown): unknown;
   updateWorkspaceWebAppState(windowId: string, key: string, state: UnknownRecord): unknown;
   updateWorkspaceWidgetLayout(windowId: string, projectId: string | null | undefined, layout: unknown): unknown;
   updateWorkspaceWindowState(windowId: string, state: { bounds: Rectangle; isFullScreen?: boolean; isMaximized: boolean }): unknown;
