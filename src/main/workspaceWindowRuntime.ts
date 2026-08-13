@@ -235,7 +235,9 @@ export class WorkspaceWindowRuntime {
       url: null,
       backgroundColor: null,
       bounds: null,
-      autofillEnabled: false
+      autofillEnabled: false,
+      label: "",
+      projectId: ""
     };
     this.webAppViews.set(key, item);
     return item;
@@ -267,7 +269,7 @@ export class WorkspaceWindowRuntime {
     }
   }
 
-  showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, restoreUrl = true }: ShowWebAppPayload) {
+  showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, label, projectId, restoreUrl = true }: ShowWebAppPayload) {
     if (!key) {
       throw new Error("Webapp key is required.");
     }
@@ -281,6 +283,12 @@ export class WorkspaceWindowRuntime {
     const webApp = this.ensureWebAppView(String(key));
     if (typeof autofillEnabled === "boolean") {
       webApp.autofillEnabled = autofillEnabled;
+    }
+    if (label !== undefined) {
+      webApp.label = String(label || "");
+    }
+    if (projectId !== undefined) {
+      webApp.projectId = String(projectId || "");
     }
     webApp.backgroundColor = backgroundColor;
     webApp.view.setBackgroundColor(getWebAppBackgroundColor(webApp.backgroundColor, this.theme));
@@ -296,6 +304,23 @@ export class WorkspaceWindowRuntime {
     } else if (!webApp.view.webContents.isLoadingMainFrame()) {
       this.sendWebAppLoaded(key, webApp.view.webContents.getURL());
     }
+  }
+
+  listWebContentsViewResources() {
+    return [...this.webAppViews.entries()].flatMap(([key, item]) => {
+      if (item.view.webContents.isDestroyed()) {
+        return [];
+      }
+      const pid = item.view.webContents.getOSProcessId();
+      return [{
+        key,
+        label: item.label,
+        pid: Number.isInteger(pid) && pid > 0 ? pid : 0,
+        projectId: item.projectId,
+        url: item.view.webContents.getURL() || item.url || "",
+        windowId: this.id
+      }];
+    });
   }
 
   setTheme(theme: unknown) {

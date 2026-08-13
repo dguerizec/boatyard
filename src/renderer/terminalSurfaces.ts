@@ -1,6 +1,7 @@
 import { createTerminalTabDom } from "./terminalTabDom.js";
 import { createTerminalTabMenuController } from "./terminalTabMenu.js";
 import { createTerminalSelectionBridge } from "./terminalSelectionBridge.js";
+import { createTerminalAttachmentCoordinator } from "./terminalAttachmentCoordinator.js";
 import {
   applyTerminalTheme,
   fitTerminal,
@@ -31,6 +32,9 @@ export function createTerminalSurfaces({
   }: TerminalSurfacesOptions) {
     const terminalWidgetsBySurface = new Map<string, TerminalSurfaceSession>();
     const terminalWidgetsByTerminal = new Map<string, TerminalOutputSession>();
+    const terminalAttachmentCoordinator = createTerminalAttachmentCoordinator({
+      discardAttachment: (attachment: { terminalId: string }) => boatyard.detachTerminal(attachment.terminalId)
+    });
     const terminalTabSyncTimers = new Map<string, TerminalTabSyncTimer>();
     const terminalTabOrdersByProject = new Map<string, string[]>();
     let nextTerminalSurfaceId = 1;
@@ -119,6 +123,7 @@ export function createTerminalSurfaces({
     }
 
     function detachTerminalSurface(surfaceId: string) {
+      terminalAttachmentCoordinator.invalidate(surfaceId);
       const session = terminalWidgetsBySurface.get(surfaceId);
 
       if (!session) {
@@ -145,6 +150,7 @@ export function createTerminalSurfaces({
     }
 
     function detachProjectTerminal(projectId: string) {
+      terminalAttachmentCoordinator.invalidateProject(projectId);
       for (const [surfaceId, session] of terminalWidgetsBySurface.entries()) {
         if (session.projectId === projectId) {
           detachTerminalSurface(surfaceId);
@@ -153,6 +159,7 @@ export function createTerminalSurfaces({
     }
 
     function detachInactiveProjectTerminals(activeProjectId: string | null = null) {
+      terminalAttachmentCoordinator.invalidateInactiveProjects(activeProjectId);
       for (const [surfaceId, session] of terminalWidgetsBySurface.entries()) {
         if (session.projectId !== activeProjectId) {
           detachTerminalSurface(surfaceId);
@@ -466,8 +473,10 @@ export function createTerminalSurfaces({
 
       card.dataset.pendingTerminalWindowId = tab.id;
       try {
-        await attachTerminalTab(project, card, tab.id, { focus: true });
-        persistTerminalSelection(project.id, card.dataset.terminalStorageKey, tab.id);
+        const attached = await attachTerminalTab(project, card, tab.id, { focus: true });
+        if (attached) {
+          persistTerminalSelection(project.id, card.dataset.terminalStorageKey, tab.id);
+        }
       } finally {
         if (card.dataset.pendingTerminalWindowId === tab.id) {
           delete card.dataset.pendingTerminalWindowId;
@@ -665,8 +674,10 @@ export function createTerminalSurfaces({
             return;
           }
 
-          await attachTerminalTab(project, card, selectedTab.id, { focus });
-          persistTerminalSelection(projectId, card.dataset.terminalStorageKey, selectedTab.id);
+          const attached = await attachTerminalTab(project, card, selectedTab.id, { focus });
+          if (attached) {
+            persistTerminalSelection(projectId, card.dataset.terminalStorageKey, selectedTab.id);
+          }
         }
       } catch (error) {
         setTerminalStatus(card, `Terminal unavailable: ${asErrorMessage(error)}`);
@@ -748,9 +759,9 @@ export function createTerminalSurfaces({
       card: TerminalCard,
       windowId: string,
       { focus = false }: { focus?: boolean } = {}
-    ) {
+    ): Promise<boolean> {
       if (!card.isConnected) {
-        return;
+        return false;
       }
 
       const TerminalConstructor = getXtermConstructor(globalScope);
@@ -758,15 +769,18 @@ export function createTerminalSurfaces({
 
       if (!TerminalConstructor || !FitAddonConstructor) {
         setTerminalStatus(card, "Terminal renderer unavailable.");
-        return;
+        return false;
       }
 
       const surfaceId = getTerminalSurfaceId(card);
       detachTerminalSurface(surfaceId);
+      const projectId = project.id || "";
+      const attachmentAttempt = terminalAttachmentCoordinator.begin(surfaceId, projectId);
       const viewport = card.querySelector<HTMLElement>(".terminal-viewport");
       if (!viewport) {
+        terminalAttachmentCoordinator.cancel(attachmentAttempt);
         setTerminalStatus(card, "Terminal viewport unavailable.");
-        return;
+        return false;
       }
       viewport.innerHTML = "";
       setTerminalStatus(card, "Attaching...");
@@ -782,10 +796,33 @@ export function createTerminalSurfaces({
       term.loadAddon(fitAddon);
       term.open(viewport);
       await nextAnimationFrame();
+      if (!card.isConnected || !terminalAttachmentCoordinator.isCurrent(attachmentAttempt)) {
+        terminalAttachmentCoordinator.cancel(attachmentAttempt);
+        term.dispose();
+        return false;
+      }
       let lastFitSize = fitTerminal(term, fitAddon);
 
-      const projectId = project.id || "";
-      const attachResult = await boatyard.attachTerminal(projectId, windowId, lastFitSize);
+      let attachResult;
+      try {
+        attachResult = await boatyard.attachTerminal(projectId, windowId, lastFitSize);
+      } catch (error) {
+        terminalAttachmentCoordinator.cancel(attachmentAttempt);
+        term.dispose();
+        throw error;
+      }
+      if (!card.isConnected) {
+        terminalAttachmentCoordinator.invalidate(surfaceId);
+      }
+      if (!terminalAttachmentCoordinator.isCurrent(attachmentAttempt)) {
+        try {
+          await terminalAttachmentCoordinator.discard(attachmentAttempt, attachResult);
+        } catch (error) {
+          console.error("Could not detach superseded terminal:", error);
+        }
+        term.dispose();
+        return false;
+      }
       const disposable = term.onData((data: string) => {
         if (data.includes("\x04")) {
           markTerminalCloseFocus(surfaceId, attachResult.tab.id);
@@ -849,6 +886,7 @@ export function createTerminalSurfaces({
         term,
         lastOutputTabSyncAt: 0
       });
+      terminalAttachmentCoordinator.complete(attachmentAttempt);
       setTerminalStatus(card, attachResult.tab.name || "attached");
 
       for (const tabButton of getTerminalTabButtons(card)) {
@@ -858,6 +896,7 @@ export function createTerminalSurfaces({
       if (focus) {
         term.focus();
       }
+      return true;
     }
 
     function createTerminalSurface(project: RendererProject, {

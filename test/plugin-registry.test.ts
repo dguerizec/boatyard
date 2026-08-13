@@ -333,6 +333,8 @@ test("Plugin registry accepts DOM pane renderers", () => {
           id: "vendor.dom.pane",
           title: "DOM",
           kind: "dom",
+          minHeight: "12.5em",
+          minWidth: "320px",
           renderHeaderActions(container: RenderContainer) {
             container.headerRendered = true;
           },
@@ -352,8 +354,31 @@ test("Plugin registry accepts DOM pane renderers", () => {
   pane.render(container);
 
   assert.equal(pane.webAppId, "vendor.dom.pane");
+  assert.equal(pane.minHeight, "12.5em");
+  assert.equal(pane.minWidth, "320px");
   assert.equal(container.headerRendered, true);
   assert.equal(container.rendered, true);
+});
+
+test("Plugin registry rejects pane minimum sizes outside px and em", () => {
+  const registry = createRegistry();
+
+  registry.register(
+    { id: "vendor.sizes", name: "Sizes" },
+    {
+      activate(ctx: PluginActivationContext) {
+        ctx.panes.register({
+          id: "vendor.sizes.pane",
+          title: "Sizes",
+          kind: "dom",
+          minWidth: "25%",
+          render() {}
+        });
+      }
+    }
+  );
+
+  assert.throws(() => registry.setEnabled("vendor.sizes", true), /minWidth must use px or em/);
 });
 
 test("Plugin registry requires namespaced contribution ids", () => {

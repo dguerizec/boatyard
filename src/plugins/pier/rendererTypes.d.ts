@@ -81,6 +81,33 @@ type PierService = {
   up(workload: PierWorkload, options?: PierOptions): Promise<unknown>;
 };
 
+type PierResourceWorkload = {
+  containerCount?: number;
+  memoryBytes?: number;
+  project?: string;
+  slug?: string;
+};
+
+type PierResourceProject = {
+  containerCount?: number;
+  error?: string;
+  memoryBytes?: number;
+  pierProject?: string;
+  projectId?: string;
+  projectName?: string;
+  workloads?: PierResourceWorkload[];
+};
+
+type PierResourceSnapshot = {
+  available?: boolean;
+  containerCount?: number;
+  error?: string;
+  errors?: Array<{ message?: string; projectId?: string; projectName?: string }>;
+  memoryBytes?: number;
+  projects?: PierResourceProject[];
+  workloads?: PierResourceWorkload[];
+};
+
 type PierFieldContext = {
   project: PierProject;
 };

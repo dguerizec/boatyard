@@ -24,6 +24,11 @@
           "category": "Fixed",
           "title": "Protected expanded panes",
           "body": "Boatyard now prevents splitting or closing panes that are currently covered by an active pane expansion."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pane minimum sizes",
+          "body": "Split resizing now uses pane minimum widths and heights instead of screen-relative limits, preserving neighboring pane sizes when split layouts rotate."
         }
       ]
     },

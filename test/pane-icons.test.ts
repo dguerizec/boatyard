@@ -490,6 +490,8 @@ test("project webapps expose built-in icons and leave URL panes eligible for fav
     urls: [{ id: "app", label: "App", url: "https://app.example.test/dashboard" }]
   }, "pane-1");
 
+  assert.equal(webApps.every((webApp: { projectId?: string }) => webApp.projectId === "project-1"), true);
+
   assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "widgets:primary")?.icon, "grid");
   assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "terminal")?.icon, "terminal");
   assert.equal(webApps.find((webApp: { id?: string }) => webApp.id === "manual")?.icon, "info");

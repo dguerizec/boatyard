@@ -1,3 +1,5 @@
+import { normalizePaneMinimumLength } from "./paneSplitGeometry.js";
+
 export function registerPluginRegistry(globalScope: PluginRegistryWindow): PluginRegistryApi {
   const plugins = new Map<string, RegisteredPlugin>();
   const statuses = new Map<string, PluginStatus>();
@@ -117,6 +119,15 @@ export function registerPluginRegistry(globalScope: PluginRegistryWindow): Plugi
       throw new Error(`Pane ${id} resolveNavigation must be a function.`);
     }
 
+    const minHeight = normalizePaneMinimumLength(definition.minHeight);
+    const minWidth = normalizePaneMinimumLength(definition.minWidth);
+    if (definition.minHeight !== undefined && !minHeight) {
+      throw new Error(`Pane ${id} minHeight must use px or em.`);
+    }
+    if (definition.minWidth !== undefined && !minWidth) {
+      throw new Error(`Pane ${id} minWidth must use px or em.`);
+    }
+
     return {
       ...definition,
       id,
@@ -126,6 +137,8 @@ export function registerPluginRegistry(globalScope: PluginRegistryWindow): Plugi
       pluginId,
       title,
       kind: requestedKind,
+      minHeight,
+      minWidth,
       parentLabel: normalizeText(definition.parentLabel),
       parentWebAppId: normalizeText(definition.parentWebAppId),
       replacesWebAppIds: Array.isArray(definition.replacesWebAppIds)

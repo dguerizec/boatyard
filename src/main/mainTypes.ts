@@ -75,8 +75,8 @@ export type TerminalServiceInstance = {
   attach(projectId: string, windowId: string, size: unknown): unknown;
   closeTab(projectId: string, windowId: string): unknown;
   createTab(projectId: string, name: string): unknown;
-  detach(terminalId: string): unknown;
-  detachAll(): unknown;
+  detach(terminalId: string): Promise<void>;
+  detachAll(): Promise<void>;
   listTabs(projectId: string): unknown;
   renameTab(projectId: string, windowId: string, name: string): unknown;
   resize(terminalId: string, size: unknown): unknown;
@@ -112,6 +112,8 @@ export type WebAppItem = {
   autofillEnabled: boolean;
   backgroundColor?: unknown;
   bounds: Rectangle | null;
+  label: string;
+  projectId: string;
   url: string | null;
   view: ElectronWebContentsView;
 };
@@ -126,6 +128,8 @@ export type ShowWebAppPayload = {
   backgroundColor?: unknown;
   bounds?: unknown;
   key?: unknown;
+  label?: unknown;
+  projectId?: unknown;
   restoreUrl?: boolean;
   url?: string;
 };

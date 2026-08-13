@@ -67,6 +67,8 @@ export type WebAppDefinition = UnknownRecord & {
   id?: string;
   key?: string;
   label?: unknown;
+  minHeight?: string;
+  minWidth?: string;
   mobileDev?: boolean;
   navigation?: WebAppPaneNavigation;
   parentLabel?: string;

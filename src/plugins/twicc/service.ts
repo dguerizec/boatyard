@@ -15,13 +15,16 @@ type TwiccProject = {
   directory?: string;
   git_root?: string;
   id?: string;
+  name?: string;
   worktree_of?: string;
   worktrees?: string[];
 };
 
 type TwiccProcess = {
   last_state_change_at?: string;
+  pid?: number;
   project_id?: string;
+  provider?: string;
   session_id?: string;
   session_title?: string;
   state?: string;

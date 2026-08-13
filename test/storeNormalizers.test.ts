@@ -422,12 +422,12 @@ test("normalizeWebAppHomeTabs keeps project scoped home tabs", () => {
   });
 });
 
-test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", () => {
+test("normalizePaneLayoutNode preserves physically constrained split ratios and pane selections", () => {
   assert.deepEqual(normalizePaneLayoutNode({
     type: "split",
     id: "project:split:1",
     direction: "horizontal",
-    ratio: 0.94,
+    ratio: 0.1,
     expandedChild: "first",
     first: {
       type: "pane",
@@ -454,7 +454,7 @@ test("normalizePaneLayoutNode clamps split ratios and keeps pane selections", ()
     type: "split",
     id: "project:split:1",
     direction: "horizontal",
-    ratio: 0.85,
+    ratio: 0.1,
     expandedChild: "first",
     first: {
       type: "pane",

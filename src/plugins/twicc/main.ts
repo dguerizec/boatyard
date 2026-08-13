@@ -1,6 +1,7 @@
 "use strict";
 
-import type { ExecFileAsync, PluginActions, PluginProjectInspectors } from "../../shared/pluginTypes";
+import type { ExecFileAsync, PluginActions, PluginProjectInspectors, PluginResources } from "../../shared/pluginTypes";
+import { TWICC_RESOURCE_PROVIDER_ID, collectTwiccResourceProvider } from "./resources.js";
 
 const {
   aliasTwiccProjectProcessStatuses,
@@ -20,7 +21,10 @@ const {
 } = require("./service");
 
 type BoatyardProject = { id: string; sourcePath?: string };
-type TwiccState = { projects?: BoatyardProject[] };
+type TwiccState = {
+  pluginConfig?: { global?: Record<string, Record<string, unknown> | undefined> };
+  projects?: BoatyardProject[];
+};
 type GlobalConfigPayload = { globalConfig?: Record<string, unknown> };
 type SourcePathPayload = { sourcePath?: unknown };
 type SessionFlowPayload = GlobalConfigPayload & { project?: unknown };
@@ -43,10 +47,16 @@ type TwiccPluginContext = {
   execFileAsync: ExecFileAsync;
   getState(): TwiccState;
   projectInspectors: PluginProjectInspectors;
+  resources: Pick<PluginResources, "registerProvider">;
 };
 
 function activate(ctx: TwiccPluginContext) {
   const projectCache = createTwiccProjectCache();
+
+  ctx.resources.registerProvider(TWICC_RESOURCE_PROVIDER_ID, () => collectTwiccResourceProvider({
+    execFileAsync: ctx.execFileAsync,
+    state: ctx.getState()
+  }));
 
   ctx.actions.handle<SourcePathPayload & GlobalConfigPayload>("createProject", async ({ sourcePath, globalConfig } = {}) => {
     const project = await createTwiccProject(sourcePath, {

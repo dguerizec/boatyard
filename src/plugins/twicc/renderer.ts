@@ -140,6 +140,41 @@
     state?: string;
   };
 
+  type TwiccResourceSession = {
+    pid?: number;
+    processCount?: number;
+    projectId?: string;
+    provider?: string;
+    pssBytes?: number;
+    rssBytes?: number;
+    sessionId?: string;
+    state?: string;
+    title?: string;
+  };
+  type TwiccResourceProject = {
+    processCount?: number;
+    projectId?: string;
+    projectName?: string;
+    pssBytes?: number;
+    rssBytes?: number;
+    sessions?: TwiccResourceSession[];
+  };
+  type TwiccResourceSnapshot = {
+    available?: boolean;
+    backend?: {
+      pid?: number;
+      processCount?: number;
+      pssBytes?: number;
+      rssBytes?: number;
+    };
+    error?: string;
+    processCount?: number;
+    projects?: TwiccResourceProject[];
+    pssBytes?: number;
+    rssBytes?: number;
+    sessionCount?: number;
+  };
+
   type TwiccCreatedProject = {
     url?: string;
   };
@@ -222,6 +257,10 @@
 
   const registry = globalScope.BoatyardPluginRegistry;
   const DEFAULT_TWICC_URL = "http://localhost:3500";
+  const SYSTEM_RESOURCES_PANE_ID = "boatyard.systemResources.pane";
+  const SYSTEM_RESOURCES_SERVICE_ID = "boatyard.systemResources";
+  const TWICC_RESOURCE_PANE_ID = "boatyard.twicc.systemResources.pane";
+  const TWICC_RESOURCE_PROVIDER_ID = "boatyard.twicc.systemResources";
   const TWICC_PROJECT_STATUS_REFRESH_MS = 5000;
   const TWICC_SESSION_FLOW_REFRESH_MS = 15000;
   const TWICC_SESSION_FLOW_OPTIMISTIC_TTL_MS = 60000;
@@ -3345,6 +3384,190 @@
     }
   }
 
+  function asTwiccResourceSnapshot(
+    providerSnapshot: PluginManagedResourceSnapshot | undefined
+  ): TwiccResourceSnapshot {
+    return isRecord(providerSnapshot?.data) ? providerSnapshot.data as TwiccResourceSnapshot : {};
+  }
+
+  function renderTwiccResourceOverview(
+    providerSnapshot: PluginManagedResourceSnapshot | undefined,
+    ui: PluginResourceRendererUi
+  ) {
+    const snapshot = asTwiccResourceSnapshot(providerSnapshot);
+    const card = ui.createCard("TwiCC", ui.formatCount(snapshot.sessionCount), "active sessions");
+    card.stats.append(
+      ui.createStat("PSS", ui.formatMemory(snapshot.pssBytes), "Local backend and agents"),
+      ui.createStat("RSS", ui.formatMemory(snapshot.rssBytes)),
+      ui.createStat("Processes", ui.formatCount(snapshot.processCount)),
+      ui.createStat("Backend overhead", ui.formatMemory(snapshot.backend?.pssBytes), "PSS")
+    );
+    if (snapshot.available) {
+      card.card.append(ui.element(
+        "p",
+        "system-resources-note",
+        "Shared local service, excluded from estimated managed memory."
+      ));
+    }
+    ui.addError(card.card, providerSnapshot?.error || snapshot.error);
+    return card.card;
+  }
+
+  function createTwiccResourceSessionRow(
+    ui: PluginResourceRendererUi,
+    session: TwiccResourceSession,
+    project: TwiccResourceProject
+  ) {
+    const title = String(session.title || session.sessionId || "Session");
+    const state = String(session.state || "unknown").replaceAll("_", " ");
+    const metadata = [String(session.provider || "Unknown provider"), state];
+    if (Number(session.pid) > 0) {
+      metadata.push(`PID ${Number(session.pid)}`);
+    }
+    return ui.createResourceItem({
+      metadata,
+      metrics: [
+        { label: "PSS", value: ui.formatMemory(session.pssBytes) },
+        { label: "RSS", value: ui.formatMemory(session.rssBytes) },
+        { label: "Processes", tone: "count", value: ui.formatCount(session.processCount) }
+      ],
+      share: {
+        label: `${title} PSS share within ${project.projectName || "TwiCC project"}`,
+        total: project.pssBytes,
+        unitLabel: "PSS",
+        value: session.pssBytes
+      },
+      title
+    });
+  }
+
+  function renderTwiccResourceDetails(
+    content: HTMLElement,
+    providerSnapshot: PluginManagedResourceSnapshot | undefined,
+    ui: PluginResourceRendererUi
+  ) {
+    const snapshot = asTwiccResourceSnapshot(providerSnapshot);
+    const summary = ui.element("div", "system-resources-detail-summary");
+    summary.append(
+      ui.createStat("Active sessions", ui.formatCount(snapshot.sessionCount)),
+      ui.createStat("Processes", ui.formatCount(snapshot.processCount)),
+      ui.createStat("PSS", ui.formatMemory(snapshot.pssBytes)),
+      ui.createStat("RSS", ui.formatMemory(snapshot.rssBytes)),
+      ui.createStat("Backend overhead", ui.formatMemory(snapshot.backend?.pssBytes), "PSS")
+    );
+    content.append(summary);
+
+    const list = ui.createResourceList();
+    const backendPssBytes = Number(snapshot.backend?.pssBytes) || 0;
+    if (Number(snapshot.backend?.processCount) > 0 || backendPssBytes > 0) {
+      const backend = ui.createResourceGroup({
+        metrics: [
+          { label: "PSS", value: ui.formatMemory(snapshot.backend?.pssBytes) },
+          { label: "RSS", value: ui.formatMemory(snapshot.backend?.rssBytes) },
+          { label: "Processes", tone: "count", value: ui.formatCount(snapshot.backend?.processCount) }
+        ],
+        share: {
+          label: "TwiCC backend overhead share of total TwiCC PSS",
+          total: snapshot.pssBytes,
+          unitLabel: "PSS",
+          value: snapshot.backend?.pssBytes
+        },
+        stateKey: "twicc:backend",
+        subtitle: "Shared service and processes not owned by an active session",
+        title: "TwiCC service"
+      });
+      backend.rows.append(ui.createResourceItem({
+        metadata: Number(snapshot.backend?.pid) > 0 ? [`PID ${Number(snapshot.backend?.pid)}`] : [],
+        metrics: [
+          { label: "PSS", value: ui.formatMemory(snapshot.backend?.pssBytes) },
+          { label: "RSS", value: ui.formatMemory(snapshot.backend?.rssBytes) },
+          { label: "Processes", tone: "count", value: ui.formatCount(snapshot.backend?.processCount) }
+        ],
+        share: {
+          label: "Backend overhead PSS share within the TwiCC service group",
+          total: snapshot.backend?.pssBytes,
+          unitLabel: "PSS",
+          value: snapshot.backend?.pssBytes
+        },
+        title: "Backend overhead"
+      }));
+      list.append(backend.group);
+    }
+
+    const projects = [...(snapshot.projects || [])].sort((left, right) => (
+      (Number(right.pssBytes) || 0) - (Number(left.pssBytes) || 0) ||
+      String(left.projectName || "").localeCompare(String(right.projectName || ""))
+    ));
+    for (const [projectIndex, project] of projects.entries()) {
+      const sessions = [...(project.sessions || [])].sort((left, right) => (
+        (Number(right.pssBytes) || 0) - (Number(left.pssBytes) || 0) ||
+        String(left.title || "").localeCompare(String(right.title || ""))
+      ));
+      const group = ui.createResourceGroup({
+        metrics: [
+          { label: "PSS", value: ui.formatMemory(project.pssBytes) },
+          { label: "RSS", value: ui.formatMemory(project.rssBytes) },
+          { label: "Sessions", tone: "count", value: ui.formatCount(sessions.length) },
+          { label: "Processes", tone: "count", value: ui.formatCount(project.processCount) }
+        ],
+        share: {
+          label: `${project.projectName || "TwiCC project"} share of total TwiCC PSS`,
+          total: snapshot.pssBytes,
+          unitLabel: "PSS",
+          value: project.pssBytes
+        },
+        stateKey: `twicc:${project.projectId || project.projectName || projectIndex}`,
+        subtitle: `${ui.formatCount(sessions.length)} active ${sessions.length === 1 ? "session" : "sessions"}`,
+        title: project.projectName || "TwiCC project"
+      });
+      for (const session of sessions) {
+        group.rows.append(createTwiccResourceSessionRow(ui, session, project));
+      }
+      list.append(group.group);
+    }
+    if (list.children.length) {
+      content.append(list);
+    } else if (snapshot.available) {
+      content.append(ui.element("p", "system-resources-empty", "No TwiCC process is currently running."));
+    }
+    ui.addError(content, providerSnapshot?.error || snapshot.error);
+  }
+
+  function createTwiccResourceRendererProvider() {
+    return Object.freeze({
+      id: TWICC_RESOURCE_PROVIDER_ID,
+      kind: "boatyard.resourceProvider",
+      label: "TwiCC",
+      order: 250,
+      paneId: TWICC_RESOURCE_PANE_ID,
+      renderDetails: renderTwiccResourceDetails,
+      renderOverview: renderTwiccResourceOverview,
+      sectionId: "twicc",
+      subtitle: "Local backend and active agent memory by project",
+      title: "TwiCC"
+    });
+  }
+
+  function getSystemResourcesService(): PluginResourceRendererHost | null {
+    return registry.getService<PluginResourceRendererHost>(SYSTEM_RESOURCES_SERVICE_ID);
+  }
+
+  function renderTwiccResourcePane(container: HTMLElement) {
+    const service = getSystemResourcesService();
+    if (!service) {
+      const message = document.createElement("p");
+      message.className = "system-resources-empty system-resources-error";
+      message.textContent = "System resources are unavailable.";
+      container.replaceChildren(message);
+      return;
+    }
+    return service.renderProviderPane(container, TWICC_RESOURCE_PROVIDER_ID);
+  }
+
+  function resolveSystemResourcesNavigation() {
+    return getSystemResourcesService()?.resolveNavigation() || null;
+  }
+
   registry.register(
     {
       id: "boatyard.twicc",
@@ -3353,15 +3576,16 @@
       apiVersion: "0.1",
       contributes: {
         widgets: ["boatyard.twicc.sessionFlow", "boatyard.twicc.usage"],
-        panes: ["boatyard.twicc.pane", "boatyard.twicc.sessionFlowPane"],
+        panes: ["boatyard.twicc.pane", "boatyard.twicc.sessionFlowPane", TWICC_RESOURCE_PANE_ID],
         projectNavBadges: ["boatyard.twicc.projectStatus"],
         globalSettings: ["boatyard.twicc.global"],
         projectSettings: ["boatyard.twicc.project"],
-        services: ["boatyard.twicc.api"]
+        services: ["boatyard.twicc.api", TWICC_RESOURCE_PROVIDER_ID]
       },
       permissions: [
         "projectConfig:read",
         "projectConfig:write",
+        "pane:dom",
         "pane:wcv",
         "widget:provide",
         "service:provide"
@@ -3371,6 +3595,7 @@
       activate(ctx) {
         const twiccService = createTwiccService();
         ctx.services.provide("boatyard.twicc.api", twiccService);
+        ctx.services.provide(TWICC_RESOURCE_PROVIDER_ID, createTwiccResourceRendererProvider());
         ctx.events.on("boatyard.projectForm.sourcePathInspected", (event: unknown) => {
           syncProjectUrlField(event as TwiccSourcePathInspectedEvent);
         });
@@ -3454,6 +3679,21 @@
               }
             }
           ]
+        });
+
+        ctx.panes.register({
+          id: TWICC_RESOURCE_PANE_ID,
+          webAppId: TWICC_RESOURCE_PANE_ID,
+          key: "twicc-system-resources",
+          title: "Resources",
+          icon: "info",
+          kind: "dom",
+          parentLabel: "Resources",
+          parentWebAppId: SYSTEM_RESOURCES_PANE_ID,
+          resolveNavigation: resolveSystemResourcesNavigation,
+          scope: "global",
+          showInMenu: false,
+          render: renderTwiccResourcePane
         });
 
         ctx.panes.register({

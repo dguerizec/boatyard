@@ -53,6 +53,7 @@ test("inspectPierProjectAvailability stays unavailable when the Pier CLI is miss
 
 test("Pier availability action includes the configured worktree pattern", async () => {
   const actions = new Map<string, (payload?: Record<string, unknown>) => Promise<unknown>>();
+  const resourceProviders: string[] = [];
   activate({
     actions: {
       handle(name: string, handler: (payload?: Record<string, unknown>) => Promise<unknown>) {
@@ -72,6 +73,11 @@ test("Pier availability action includes the configured worktree pattern", async 
       }
     }),
     plugin: { id: "boatyard.pier" },
+    resources: {
+      registerProvider(id: string) {
+        resourceProviders.push(id);
+      }
+    },
     stateMigrations: { register() {} }
   });
 
@@ -80,6 +86,7 @@ test("Pier availability action includes the configured worktree pattern", async 
     available: false,
     worktreePattern: "<repo>/../<project>-<worktree>"
   });
+  assert.deepEqual(resourceProviders, ["boatyard.pier.systemResources"]);
 });
 
 export {};

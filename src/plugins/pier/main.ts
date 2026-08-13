@@ -1,6 +1,7 @@
 "use strict";
 
-import type { ExecFileAsync, PluginActions, PluginMetadata } from "../../shared/pluginTypes";
+import type { ExecFileAsync, PluginActions, PluginMetadata, PluginResources } from "../../shared/pluginTypes";
+import { PIER_RESOURCE_PROVIDER_ID, collectPierResourceProvider } from "./resources.js";
 
 const fs = require("node:fs");
 const path = require("node:path");
@@ -29,6 +30,7 @@ type PierPluginContext = {
   actions: PluginActions;
   stateMigrations: { register(handler: (payload: { state: PierState }) => PierStateMigrationResult): void };
   plugin: PluginMetadata;
+  resources: Pick<PluginResources, "registerProvider">;
   execFileAsync: ExecFileAsync;
   getState(): PierState;
 };
@@ -139,6 +141,11 @@ async function inspectPierProjectAvailability(
 }
 
 function activate(ctx: PierPluginContext) {
+  ctx.resources.registerProvider(PIER_RESOURCE_PROVIDER_ID, () => collectPierResourceProvider({
+    execFileAsync: ctx.execFileAsync,
+    state: ctx.getState()
+  }));
+
   ctx.actions.handle<WorktreeAddInput & { cwd?: unknown }>("createWorktree", ({ cwd, worktreePath, branchName, fromRef, startAfterCreate } = {}) => {
     return runPierWorktreeCommand(
       buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCreate }),

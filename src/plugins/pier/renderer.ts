@@ -5,6 +5,10 @@
   const DEFAULT_PIER_URL = "http://pier.test";
   const DEFAULT_PIER_WORKTREE_PATTERN = "<repo>/worktrees/<worktree>";
   const ENABLED_ENTRY_POINTS_CONFIG_KEY = "pierEnabledEntryPoints";
+  const PIER_RESOURCE_PANE_ID = "boatyard.pier.systemResources.pane";
+  const PIER_RESOURCE_PROVIDER_ID = "boatyard.pier.systemResources";
+  const SYSTEM_RESOURCES_PANE_ID = "boatyard.systemResources.pane";
+  const SYSTEM_RESOURCES_SERVICE_ID = "boatyard.systemResources";
   const workloadCacheByProject = new Map<string, PierWorkload[]>();
   const selectedEntryPointsByProject = new Map<string, Set<string>>();
 
@@ -274,16 +278,17 @@
     workloadCacheByProject.set(key, next);
 
     if (previous !== JSON.stringify(next)) {
-      notifyPierWorkloadsChanged(project, next);
+      notifyPaneContributionsChanged(project, next);
     }
   }
 
-  function notifyPierWorkloadsChanged(project: PierProject, workloads: PierWorkload[]) {
+  function notifyPaneContributionsChanged(project: PierProject, workloads: PierWorkload[]) {
     if (typeof globalScope.dispatchEvent !== "function" || typeof globalScope.CustomEvent !== "function") {
       return;
     }
-    globalScope.dispatchEvent(new globalScope.CustomEvent("boatyard:pier-workloads-changed", {
+    globalScope.dispatchEvent(new globalScope.CustomEvent("boatyard:pane-contributions-changed", {
       detail: {
+        pluginId: "boatyard.pier",
         projectId: project?.id || "",
         pierProjectName: workloads[0]?.project || ""
       }
@@ -667,7 +672,7 @@
         selectedEntryPointsByProject.set(cacheKey, nextSelection);
         selector.querySelectorAll<HTMLButtonElement>(".pier-entry-point-button")
           .forEach((candidate) => { candidate.disabled = true; });
-        notifyPierWorkloadsChanged(project, workloads);
+        notifyPaneContributionsChanged(project, workloads);
 
         try {
           const projectId = String(project.id || "").trim();
@@ -686,7 +691,7 @@
             ...props.pluginConfig,
             [ENABLED_ENTRY_POINTS_CONFIG_KEY]: previousSerializedSelection
           };
-          notifyPierWorkloadsChanged(project, workloads);
+          notifyPaneContributionsChanged(project, workloads);
           onError(asError(error));
         } finally {
           renderPierEntryPointButtons(selector, workloads, project, props, onError);
@@ -1065,6 +1070,166 @@
     return card;
   }
 
+  function getPierResourceSnapshot(providerSnapshot: PluginManagedResourceSnapshot | undefined): PierResourceSnapshot {
+    return isRecord(providerSnapshot?.data) ? providerSnapshot.data as PierResourceSnapshot : {};
+  }
+
+  function createPierResourceWorkloadRow(
+    ui: PluginResourceRendererUi,
+    workload: PierResourceWorkload,
+    project: PierResourceProject
+  ) {
+    const projectName = project.projectName || project.pierProject || "Project";
+    const workloadName = workload.slug || "main";
+    return ui.createResourceItem({
+      badges: [{
+        label: `${ui.formatCount(workload.containerCount)} ${Number(workload.containerCount) === 1 ? "container" : "containers"}`,
+        tone: "success"
+      }],
+      metrics: [{ label: "Memory", value: ui.formatMemory(workload.memoryBytes) }],
+      share: {
+        label: `${workloadName} memory share within ${projectName}`,
+        total: project.memoryBytes,
+        unitLabel: "memory",
+        value: workload.memoryBytes
+      },
+      title: workloadName
+    });
+  }
+
+  function renderPierResourceOverview(
+    providerSnapshot: PluginManagedResourceSnapshot | undefined,
+    ui: PluginResourceRendererUi
+  ) {
+    const snapshot = getPierResourceSnapshot(providerSnapshot);
+    const card = ui.createCard("Pier", ui.formatCount(snapshot.workloads?.length), "running workloads");
+    card.stats.append(
+      ui.createStat("Container memory", ui.formatMemory(snapshot.memoryBytes), "Docker cgroup usage"),
+      ui.createStat("Containers", ui.formatCount(snapshot.containerCount))
+    );
+    if (snapshot.workloads?.length) {
+      const list = ui.element("div", "system-resources-workloads");
+      for (const workload of snapshot.workloads) {
+        const row = ui.element("div", "system-resources-workload");
+        const identity = ui.element("div", "system-resources-workload-identity");
+        identity.append(
+          ui.element("strong", "", `${workload.project || "Pier"} / ${workload.slug || "main"}`),
+          ui.element("small", "", `${ui.formatCount(workload.containerCount)} containers`)
+        );
+        row.append(
+          identity,
+          ui.element("strong", "system-resources-workload-memory", ui.formatMemory(workload.memoryBytes))
+        );
+        list.append(row);
+      }
+      card.card.append(list);
+    }
+    if (snapshot.errors?.length) {
+      card.card.append(ui.element(
+        "p",
+        "system-resources-note",
+        `${ui.formatCount(snapshot.errors.length)} project lookups unavailable. Open the Pier tab for details.`
+      ));
+    }
+    ui.addError(card.card, providerSnapshot?.error || snapshot.error);
+    return card.card;
+  }
+
+  function renderPierResourceDetails(
+    content: HTMLElement,
+    providerSnapshot: PluginManagedResourceSnapshot | undefined,
+    ui: PluginResourceRendererUi
+  ) {
+    const snapshot = getPierResourceSnapshot(providerSnapshot);
+    const projects = (snapshot.projects || [])
+      .filter((project) => (project.workloads || []).length > 0)
+      .sort((left, right) => (
+        (Number(right.memoryBytes) || 0) - (Number(left.memoryBytes) || 0) ||
+        String(left.projectName || "").localeCompare(String(right.projectName || ""))
+      ));
+    const summary = ui.element("div", "system-resources-detail-summary");
+    summary.append(
+      ui.createStat("Running workloads", ui.formatCount(snapshot.workloads?.length)),
+      ui.createStat("Containers", ui.formatCount(snapshot.containerCount)),
+      ui.createStat("Container memory", ui.formatMemory(snapshot.memoryBytes), "Docker cgroup usage")
+    );
+    content.append(summary);
+    const list = ui.createResourceList();
+    for (const [projectIndex, project] of projects.entries()) {
+      const workloads = [...(project.workloads || [])].sort((left, right) => (
+        (Number(right.memoryBytes) || 0) - (Number(left.memoryBytes) || 0) ||
+        String(left.slug || "").localeCompare(String(right.slug || ""))
+      ));
+      const detail = ui.createResourceGroup({
+        metrics: [
+          { label: "Memory", value: ui.formatMemory(project.memoryBytes) },
+          { label: "Workloads", tone: "count", value: ui.formatCount(workloads.length) },
+          { label: "Containers", tone: "count", value: ui.formatCount(project.containerCount) }
+        ],
+        share: {
+          label: `${project.projectName || "Project"} share of Pier container memory`,
+          total: snapshot.memoryBytes,
+          unitLabel: "memory",
+          value: project.memoryBytes
+        },
+        stateKey: `pier:${project.pierProject || project.projectName || projectIndex}`,
+        subtitle: `Pier project: ${project.pierProject || "unassigned"}`,
+        title: project.projectName || "Project"
+      });
+      for (const workload of workloads) {
+        detail.rows.append(createPierResourceWorkloadRow(ui, workload, project));
+      }
+      ui.addError(detail.rows, project.error);
+      list.append(detail.group);
+    }
+    if (projects.length) {
+      content.append(list);
+    }
+    for (const error of snapshot.errors || []) {
+      const prefix = error.projectName ? `${error.projectName}: ` : "";
+      ui.addError(content, `${prefix}${error.message || "Could not inspect this Pier project."}`);
+    }
+    if (!projects.length) {
+      content.append(ui.element("p", "system-resources-empty", "No Pier workload is currently running."));
+    }
+    ui.addError(content, providerSnapshot?.error || snapshot.error);
+  }
+
+  function createPierResourceRendererProvider() {
+    return Object.freeze({
+      id: PIER_RESOURCE_PROVIDER_ID,
+      kind: "boatyard.resourceProvider",
+      label: "Pier",
+      order: 300,
+      paneId: PIER_RESOURCE_PANE_ID,
+      renderDetails: renderPierResourceDetails,
+      renderOverview: renderPierResourceOverview,
+      sectionId: "pier",
+      subtitle: "Running workloads and container memory by project",
+      title: "Pier"
+    });
+  }
+
+  function getSystemResourcesService(): PluginResourceRendererHost | null {
+    return registry.getService<PluginResourceRendererHost>(SYSTEM_RESOURCES_SERVICE_ID);
+  }
+
+  function renderPierResourcePane(container: HTMLElement) {
+    const service = getSystemResourcesService();
+    if (!service) {
+      const message = document.createElement("p");
+      message.className = "system-resources-empty system-resources-error";
+      message.textContent = "System resources are unavailable.";
+      container.replaceChildren(message);
+      return;
+    }
+    return service.renderProviderPane(container, PIER_RESOURCE_PROVIDER_ID);
+  }
+
+  function resolveSystemResourcesNavigation() {
+    return getSystemResourcesService()?.resolveNavigation() || null;
+  }
+
   function syncProjectDefaults(event: PierCoreFieldChangedEvent) {
     if (!["slug", "devBranch"].includes(event.field)) {
       return;
@@ -1082,14 +1247,15 @@
       apiVersion: "0.1",
       contributes: {
         widgets: ["boatyard.pier.urls"],
-        panes: ["boatyard.pier.preview"],
+        panes: ["boatyard.pier.preview", PIER_RESOURCE_PANE_ID],
         globalSettings: ["boatyard.pier.global"],
         projectSettings: ["boatyard.pier.project"],
-        services: ["boatyard.pier"]
+        services: ["boatyard.pier", PIER_RESOURCE_PROVIDER_ID]
       },
       permissions: [
         "projectConfig:read",
         "projectConfig:write",
+        "pane:dom",
         "pane:wcv",
         "widget:provide",
         "service:provide"
@@ -1103,7 +1269,23 @@
         });
         const pierService = createPierService();
         ctx.services.provide("boatyard.pier", pierService);
+        ctx.services.provide(PIER_RESOURCE_PROVIDER_ID, createPierResourceRendererProvider());
         ctx.events.on("boatyard.projectForm.coreFieldChanged", syncProjectDefaults);
+
+        ctx.panes.register({
+          id: PIER_RESOURCE_PANE_ID,
+          webAppId: PIER_RESOURCE_PANE_ID,
+          key: "pier-system-resources",
+          title: "Resources",
+          icon: "info",
+          kind: "dom",
+          parentLabel: "Resources",
+          parentWebAppId: SYSTEM_RESOURCES_PANE_ID,
+          resolveNavigation: resolveSystemResourcesNavigation,
+          scope: "global",
+          showInMenu: false,
+          render: renderPierResourcePane
+        });
 
         ctx.settings.registerGlobalSection({
           id: "boatyard.pier.global",

@@ -61,6 +61,14 @@ const DEFAULT_WIDGET_PANE_ID = "widgets-0";
 const GLOBAL_WORKSPACE_ID = "__global__";
 type UnknownRecord = Record<string, unknown>;
 
+function normalizePaneSplitRatio(value: unknown) {
+  const ratio = Number(value);
+  return Math.min(
+    1 - Number.EPSILON,
+    Math.max(Number.EPSILON, Number.isFinite(ratio) ? ratio : 0.5)
+  );
+}
+
 function collectNormalizedPaneNodes(
   node: PaneLayoutNode,
   panes: Array<Extract<PaneLayoutNode, { type: "pane" }>> = []
@@ -188,7 +196,7 @@ function normalizePaneLayoutNode(
       type: "split",
       id,
       direction,
-      ratio: Math.min(0.85, Math.max(0.15, Number.isFinite(ratio) ? ratio : 0.5)),
+      ratio: normalizePaneSplitRatio(ratio),
       first,
       second
     };

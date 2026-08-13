@@ -4,6 +4,13 @@ const { execFile } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
 const { promisify } = require("node:util");
 const pty = require("node-pty");
+import {
+  getProjectTmuxSessionName,
+  getTerminalClientSessionName,
+  slugifyTmuxName
+} from "./terminalSessionNames.js";
+import { runTerminalAttachmentTransaction } from "./terminalAttachmentTransaction.js";
+import { getTerminalClientSessionCreationArgs } from "./terminalClientSessionLifecycle.js";
 
 type PtyProcess = ReturnType<typeof pty.spawn>;
 type TerminalProject = {
@@ -45,23 +52,6 @@ type TerminalServiceOptions = {
 };
 
 const execFileAsync = promisify(execFile);
-
-function slugifyTmuxName(value: unknown, fallback = "session"): string {
-  const normalized = String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_.-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return normalized || fallback;
-}
-
-function getProjectTmuxSessionName(project: TerminalProject, sessionPrefix = "boatyard"): string {
-  return `${slugifyTmuxName(sessionPrefix, "boatyard")}-${slugifyTmuxName(project.slug || project.name || project.id, "project")}`;
-}
-
-function getTerminalClientSessionName(projectSession: string, terminalId: unknown): string {
-  return `${projectSession}-client-${slugifyTmuxName(String(terminalId).slice(0, 8), "terminal")}`;
-}
 
 function getProjectCwd(project: TerminalProject): string {
   return String(project.sourcePath || process.cwd()).trim() || process.cwd();
@@ -184,6 +174,7 @@ class TerminalService {
   private sendToRenderer: (channel: string, payload: unknown) => void;
   private suppressResizeWarnings: boolean;
   private terminals: Map<string, TerminalRecord>;
+  private pendingSessionDestructions: Set<Promise<void>>;
 
   constructor({
     getProject,
@@ -198,6 +189,16 @@ class TerminalService {
     this.sendToRenderer = sendToRenderer;
     this.suppressResizeWarnings = suppressResizeWarnings;
     this.terminals = new Map();
+    this.pendingSessionDestructions = new Set();
+  }
+
+  private destroyClientSession(session: string | undefined): Promise<void> {
+    const destruction = destroyTmuxSession(session);
+    this.pendingSessionDestructions.add(destruction);
+    void destruction.finally(() => {
+      this.pendingSessionDestructions.delete(destruction);
+    });
+    return destruction;
   }
 
   getProject(projectId: string): TerminalProject {
@@ -340,49 +341,57 @@ class TerminalService {
     const clientSession = getTerminalClientSessionName(projectSession, terminalId);
     const cols = Math.max(20, Math.round(Number(size.cols) || 100));
     const rows = Math.max(5, Math.round(Number(size.rows) || 30));
-    await runTmux(["new-session", "-d", "-t", projectSession, "-s", clientSession]);
-    await configureTmuxSession(clientSession);
-    await runTmux(["select-window", "-t", `${clientSession}:${selectedTab.index}`]);
-    const term = pty.spawn("tmux", ["attach-session", "-t", clientSession], {
-      name: "xterm-256color",
-      cols,
-      rows,
-      cwd: getProjectCwd(project),
-      env: {
-        ...process.env,
-        ...this.getProjectTerminalEnv(project),
-        TERM: "xterm-256color"
+    return runTerminalAttachmentTransaction({
+      createSession: () => runTmux(getTerminalClientSessionCreationArgs(projectSession, clientSession)),
+      destroySession: () => destroyTmuxSession(clientSession),
+      initializeAttachment: async () => {
+        await configureTmuxSession(clientSession);
+        await runTmux(["select-window", "-t", `${clientSession}:${selectedTab.index}`]);
+        const term = pty.spawn("tmux", ["attach-session", "-t", clientSession], {
+          name: "xterm-256color",
+          cols,
+          rows,
+          cwd: getProjectCwd(project),
+          env: {
+            ...process.env,
+            ...this.getProjectTerminalEnv(project),
+            TERM: "xterm-256color"
+          }
+        });
+        term.onData((data: string) => {
+          this.sendToRenderer("terminal:data", {
+            terminalId,
+            data
+          });
+        });
+        term.onExit(({ exitCode }: { exitCode: number }) => {
+          const terminal = this.terminals.get(terminalId);
+          if (!terminal || terminal.term !== term) {
+            return;
+          }
+          this.terminals.delete(terminalId);
+          void this.destroyClientSession(terminal.clientSession);
+          this.sendToRenderer("terminal:exit", {
+            terminalId,
+            projectId: terminal.projectId,
+            windowId: terminal.windowId,
+            exitCode
+          });
+        });
+        this.terminals.set(terminalId, {
+          term,
+          projectId: project.id,
+          windowId: selectedTab.id,
+          clientSession
+        });
+        scheduleInitialTmuxRefresh(clientSession, selectedTab.id, cols, rows);
+
+        return {
+          terminalId,
+          tab: selectedTab
+        };
       }
     });
-    term.onData((data: string) => {
-      this.sendToRenderer("terminal:data", {
-        terminalId,
-        data
-      });
-    });
-    term.onExit(({ exitCode }: { exitCode: number }) => {
-      const terminal = this.terminals.get(terminalId);
-      this.terminals.delete(terminalId);
-      destroyTmuxSession(terminal?.clientSession);
-      this.sendToRenderer("terminal:exit", {
-        terminalId,
-        projectId: terminal?.projectId,
-        windowId: terminal?.windowId,
-        exitCode
-      });
-    });
-    this.terminals.set(terminalId, {
-      term,
-      projectId: project.id,
-      windowId: selectedTab.id,
-      clientSession
-    });
-    scheduleInitialTmuxRefresh(clientSession, selectedTab.id, cols, rows);
-
-    return {
-      terminalId,
-      tab: selectedTab
-    };
   }
 
   write(terminalId: unknown, data: unknown): void {
@@ -410,21 +419,24 @@ class TerminalService {
     resizeTmuxWindow(terminal.windowId, cols, rows);
   }
 
-  detach(terminalId: unknown): void {
+  async detach(terminalId: unknown): Promise<void> {
     const terminal = this.terminals.get(String(terminalId));
     if (!terminal) {
       return;
     }
 
-    terminal.term.kill();
     this.terminals.delete(String(terminalId));
-    destroyTmuxSession(terminal.clientSession);
+    try {
+      terminal.term.kill();
+    } catch (error) {
+      console.warn(`Could not stop terminal ${terminalId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    await this.destroyClientSession(terminal.clientSession);
   }
 
-  detachAll(): void {
-    for (const terminalId of this.terminals.keys()) {
-      this.detach(terminalId);
-    }
+  async detachAll(): Promise<void> {
+    await Promise.all([...this.terminals.keys()].map((terminalId) => this.detach(terminalId)));
+    await Promise.all([...this.pendingSessionDestructions]);
   }
 }
 

@@ -14,6 +14,8 @@ type PluginPaneDefinition = UnknownRecord & {
   isAvailable?: (context: UnknownRecord) => boolean;
   key?: string;
   mobileDev?: boolean;
+  minHeight?: string;
+  minWidth?: string;
   parentLabel?: string;
   parentWebAppId?: string;
   pluginId?: string;
@@ -72,6 +74,8 @@ export function createProjectWebApps({
       label: widgetPane.label || `Widgets ${index + 1}`,
       key: `${paneId}:widgets:${widgetPane.id}`,
       kind: "widgets",
+      minHeight: typeof widgetPane.minHeight === "string" ? widgetPane.minHeight : undefined,
+      minWidth: typeof widgetPane.minWidth === "string" ? widgetPane.minWidth : undefined,
       widgetPane
     }));
 
@@ -96,6 +100,8 @@ export function createProjectWebApps({
         parentLabel: homeTab.parentLabel || "",
         parentWebAppId: homeTab.parentWebAppId || "",
         key: `${paneId}:home:${homeTab.id}`,
+        minHeight: homeTab.minHeight,
+        minWidth: homeTab.minWidth,
         url: homeTab.url,
         homeTab: true,
         homeTabId: homeTab.id
@@ -147,6 +153,8 @@ export function createProjectWebApps({
         label: pluginPane.title,
         key: `${paneId}:${pluginPane.key}`,
         kind: "dom",
+        minHeight: pluginPane.minHeight,
+        minWidth: pluginPane.minWidth,
         navigation: resolvePaneNavigation(pluginPane, context),
         parentLabel: pluginPane.parentLabel || "",
         parentWebAppId: pluginPane.parentWebAppId || "",
@@ -176,6 +184,8 @@ export function createProjectWebApps({
             id: webApp.id || `${pluginPane.webAppId}:${webApp.key || webApp.url}`,
             label: webApp.label || pluginPane.title,
             key: `${paneId}:${pluginPane.key}:${webApp.key || webApp.id || webApp.url}`,
+            minHeight: webApp.minHeight || pluginPane.minHeight,
+            minWidth: webApp.minWidth || pluginPane.minWidth,
             mobileDev: Boolean(webApp.mobileDev ?? pluginPane.mobileDev),
             navigation: resolvePaneNavigation(pluginPane, context, webApp.navigation),
             parentLabel: webApp.parentLabel || pluginPane.parentLabel || "",
@@ -200,6 +210,8 @@ export function createProjectWebApps({
         id: pluginPane.webAppId,
         label: pluginPane.title,
         key: `${paneId}:${pluginPane.key}`,
+        minHeight: pluginPane.minHeight,
+        minWidth: pluginPane.minWidth,
         mobileDev: Boolean(pluginPane.mobileDev),
         navigation: resolvePaneNavigation(pluginPane, context),
         parentLabel: pluginPane.parentLabel || "",
@@ -227,6 +239,8 @@ export function createProjectWebApps({
         id: `url:${projectUrl.id}`,
         label: isGlobalWorkspace(project) ? label : `URL: ${label}`,
         key: `${paneId}:url:${projectUrl.id}`,
+        minHeight: typeof projectUrl.minHeight === "string" ? projectUrl.minHeight : undefined,
+        minWidth: typeof projectUrl.minWidth === "string" ? projectUrl.minWidth : undefined,
         url,
         mobileDev: true
       });
@@ -234,7 +248,8 @@ export function createProjectWebApps({
 
     return webApps.map((webApp) => ({
       ...webApp,
-      faviconUrl: getWebAppFavicon(webApp.key)
+      faviconUrl: getWebAppFavicon(webApp.key),
+      projectId: project.id || ""
     }));
   }
 

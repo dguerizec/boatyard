@@ -15,6 +15,17 @@ import {
   resolvePaneExpansionPaneIds,
   type PaneExpansionRect
 } from "./paneExpansionGeometry.js";
+import {
+  clampPaneSplitRatio,
+  DEFAULT_PANE_MIN_SIZE,
+  demoteSplitThroughFirstChild,
+  demoteSplitThroughSecondChild,
+  getPaneLayoutMinimumSize,
+  normalizePaneMinimumLength,
+  normalizePaneSplitRatio,
+  resolvePaneMinimumPixels,
+  type PaneMinimumAxis
+} from "./paneSplitGeometry.js";
 
 type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
@@ -78,6 +89,8 @@ type PaneWebApp = UnknownRecord & {
   key?: string;
   kind?: string;
   label?: string;
+  minHeight?: string;
+  minWidth?: string;
   mobileDev?: boolean;
   navigation?: WebAppPaneNavigation;
   pluginPane?: {
@@ -94,6 +107,8 @@ type VisiblePaneWebAppEntry = {
   webApp: {
     id?: string;
     key: string;
+    label?: string;
+    projectId?: string;
     url: string;
   };
 };
@@ -264,9 +279,25 @@ export function createPaneLayoutView({
     let closeOpenPaneBrowserControls: (() => void) | null = null;
     let isPaintingPaneExpansion = false;
     let suppressExpansionClickUntil = 0;
+    const normalizedDefaultPaneMinSize = DEFAULT_PANE_MIN_SIZE;
 
     function clamp(value: number, min: number, max: number) {
       return Math.min(max, Math.max(min, value));
+    }
+
+    function getPaneMinimumSize(paneNode: { id: string }, axis: PaneMinimumAxis) {
+      const pane = dashboardGrid.querySelector<HTMLElement>(
+        `.webapp-pane[data-pane-id="${CSS.escape(paneNode.id)}"]`
+      );
+      const value = axis === "width"
+        ? pane?.dataset.minWidth
+        : pane?.dataset.minHeight;
+      const fontSize = Number.parseFloat(pane ? getComputedStyle(pane).fontSize : "") || 16;
+      return resolvePaneMinimumPixels(value || normalizedDefaultPaneMinSize, fontSize);
+    }
+
+    function getLayoutMinimumSize(node: PaneLayoutNode, axis: PaneMinimumAxis) {
+      return getPaneLayoutMinimumSize(node, axis, webAppSplitResizerSize, getPaneMinimumSize);
     }
 
     function getMobileDevViewportKey(webApp: PaneWebApp) {
@@ -797,72 +828,6 @@ export function createPaneLayoutView({
       return findSplitParent(node.first, splitId) || findSplitParent(node.second, splitId);
     }
 
-    function demoteSplitThroughFirstChild(splitNode: SplitNode, containerSize: number) {
-      const pivot = splitNode.first;
-      if (pivot.type !== "split" || pivot.direction !== splitNode.direction || pivot.expandedChild) {
-        return null;
-      }
-
-      const pivotFirst = pivot.first;
-      const pivotSecond = pivot.second;
-      const second = splitNode.second;
-      const splitRatio = clamp(Number(splitNode.ratio) || 0.5, 0.15, 0.85);
-      const pivotRatio = clamp(Number(pivot.ratio) || 0.5, 0.15, 0.85);
-      const resizerOffset = webAppSplitResizerSize / 2;
-      const splitCenter = splitRatio * containerSize;
-      const pivotContainerSize = Math.max(1, splitCenter - resizerOffset);
-      const pivotCenter = pivotRatio * pivotContainerSize;
-      const nextPivotRatio = clamp(pivotCenter / containerSize, 0.15, 0.85);
-      const nextSplitContainerSize = Math.max(1, containerSize - (nextPivotRatio * containerSize) - resizerOffset);
-      const nextSplitRatio = clamp(
-        (splitCenter - (nextPivotRatio * containerSize) - resizerOffset) / nextSplitContainerSize,
-        0.15,
-        0.85
-      );
-
-      splitNode.first = pivotSecond;
-      splitNode.second = second;
-      splitNode.ratio = nextSplitRatio;
-      pivot.first = pivotFirst;
-      pivot.second = splitNode;
-      pivot.ratio = nextPivotRatio;
-      return {
-        replacement: pivot,
-        nextContainerSize: nextSplitContainerSize
-      };
-    }
-
-    function demoteSplitThroughSecondChild(splitNode: SplitNode, containerSize: number) {
-      const pivot = splitNode.second;
-      if (pivot.type !== "split" || pivot.direction !== splitNode.direction || pivot.expandedChild) {
-        return null;
-      }
-
-      const first = splitNode.first;
-      const pivotFirst = pivot.first;
-      const pivotSecond = pivot.second;
-      const splitRatio = clamp(Number(splitNode.ratio) || 0.5, 0.15, 0.85);
-      const pivotRatio = clamp(Number(pivot.ratio) || 0.5, 0.15, 0.85);
-      const resizerOffset = webAppSplitResizerSize / 2;
-      const splitCenter = splitRatio * containerSize;
-      const pivotContainerSize = Math.max(1, containerSize - splitCenter - resizerOffset);
-      const pivotCenter = splitCenter + resizerOffset + (pivotRatio * pivotContainerSize);
-      const nextPivotRatio = clamp(pivotCenter / containerSize, 0.15, 0.85);
-      const nextSplitContainerSize = Math.max(1, (nextPivotRatio * containerSize) - resizerOffset);
-      const nextSplitRatio = clamp(splitCenter / nextSplitContainerSize, 0.15, 0.85);
-
-      splitNode.first = first;
-      splitNode.second = pivotFirst;
-      splitNode.ratio = nextSplitRatio;
-      pivot.first = splitNode;
-      pivot.second = pivotSecond;
-      pivot.ratio = nextPivotRatio;
-      return {
-        replacement: pivot,
-        nextContainerSize: nextSplitContainerSize
-      };
-    }
-
     function normalizeSplitForResize(project: RendererProject, splitNode: SplitNode, splitElement: HTMLElement) {
       let layout = getProjectPaneLayout(project) as PaneLayoutNode;
       let didNormalize = false;
@@ -875,9 +840,14 @@ export function createPaneLayoutView({
         const parent = layout.type === "split" && layout.id === splitNode.id
           ? null
           : findSplitParent(layout, splitNode.id);
+        const geometryOptions = {
+          containerSize,
+          getPaneMinimumSize,
+          resizerSize: webAppSplitResizerSize
+        };
         const replacement =
-          demoteSplitThroughFirstChild(splitNode, containerSize) ||
-          demoteSplitThroughSecondChild(splitNode, containerSize);
+          demoteSplitThroughFirstChild(splitNode, geometryOptions) ||
+          demoteSplitThroughSecondChild(splitNode, geometryOptions);
         if (!replacement) {
           break;
         }
@@ -930,6 +900,8 @@ export function createPaneLayoutView({
         id: webApp.id || "",
         kind: webApp.kind || "",
         label: String(webApp.label || ""),
+        minHeight: normalizePaneMinimumLength(webApp.minHeight) || normalizedDefaultPaneMinSize,
+        minWidth: normalizePaneMinimumLength(webApp.minWidth) || normalizedDefaultPaneMinSize,
         parentWebAppId: webApp.parentWebAppId || "",
         url: webApp.url || ""
       })));
@@ -1122,7 +1094,15 @@ export function createPaneLayoutView({
           const rawRatio = isVertical
             ? (moveEvent.clientX - rect.left) / rect.width
             : (moveEvent.clientY - rect.top) / rect.height;
-          splitNode.ratio = clamp(rawRatio, 0.15, 0.85);
+          const axis = isVertical ? "width" : "height";
+          const containerSize = isVertical ? rect.width : rect.height;
+          splitNode.ratio = clampPaneSplitRatio(
+            rawRatio,
+            containerSize,
+            webAppSplitResizerSize,
+            getLayoutMinimumSize(splitNode.first, axis),
+            getLayoutMinimumSize(splitNode.second, axis)
+          );
           applySplitRatio(parentSplitElement, splitNode);
           queueWebAppSync();
         }
@@ -1326,7 +1306,7 @@ export function createPaneLayoutView({
     }
 
     function applySplitRatio(splitElement: HTMLElement, splitNode: PaneLayoutNode) {
-      const ratio = Number(splitNode.ratio) || 0.5;
+      const ratio = normalizePaneSplitRatio(splitNode.ratio);
       const firstRatio = ratio * 100;
       const secondRatio = (1 - ratio) * 100;
       const resizerOffset = webAppSplitResizerSize / 2;
@@ -1372,6 +1352,8 @@ export function createPaneLayoutView({
       }
       pane.dataset.mobileDev = String(isMobileDevViewportEnabled(selectedWebApp));
       pane.dataset.webAppMenuSignature = getWebAppMenuSignature(webApps);
+      pane.dataset.minHeight = normalizePaneMinimumLength(selectedWebApp.minHeight) || normalizedDefaultPaneMinSize;
+      pane.dataset.minWidth = normalizePaneMinimumLength(selectedWebApp.minWidth) || normalizedDefaultPaneMinSize;
 
       const host = document.createElement("div") as PaneLayoutHost;
       host.className = `webapp-host${isTerminalPane ? " terminal-pane-host" : ""}`;

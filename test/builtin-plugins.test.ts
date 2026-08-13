@@ -10,7 +10,7 @@ const { resolveFieldDefault } = require(`${process.cwd()}/build/renderer/pluginS
 const { registerPluginRegistry } = require(`${process.cwd()}/build/renderer/pluginRegistry`);
 const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widgetRegistry`);
 
-const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette", "github"];
+const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette", "github", "system-resources"];
 
 type MockFetch = (...args: unknown[]) => Promise<unknown>;
 
@@ -266,12 +266,65 @@ function fieldMap(fields: unknown): Record<string, LooseVmValue> {
   return Object.fromEntries(fields as Iterable<readonly [PropertyKey, LooseVmValue]>) as Record<string, LooseVmValue>;
 }
 
+type TestResourceElement = {
+  children: TestResourceElement[];
+  textContent: string;
+  append(...children: TestResourceElement[]): void;
+};
+
+function createTestResourceElement(textContent = ""): TestResourceElement {
+  return {
+    children: [],
+    textContent,
+    append(...children) {
+      this.children.push(...children);
+    }
+  };
+}
+
+function getTestResourceText(element: TestResourceElement): string[] {
+  return [element.textContent, ...element.children.flatMap(getTestResourceText)];
+}
+
+function createTestResourceUi() {
+  return {
+    addError(container: TestResourceElement, message: unknown) {
+      if (message) {
+        container.append(createTestResourceElement(String(message)));
+      }
+    },
+    createCard(title: string, count: string, countLabel: string) {
+      const card = createTestResourceElement(`${title} ${count} ${countLabel}`);
+      const stats = createTestResourceElement();
+      card.append(stats);
+      return { card, header: createTestResourceElement(), stats };
+    },
+    createResourceGroup(options: { title: string; subtitle?: string }) {
+      const group = createTestResourceElement(`${options.title} ${options.subtitle || ""}`);
+      const rows = createTestResourceElement();
+      group.append(rows);
+      return { group, rows };
+    },
+    createResourceItem(options: { title: string; metadata?: string[] }) {
+      return createTestResourceElement(`${options.title} ${(options.metadata || []).join(" ")}`);
+    },
+    createResourceList: () => createTestResourceElement(),
+    createStat: (label: string, value: string, detail = "") => (
+      createTestResourceElement(`${label} ${value} ${detail}`)
+    ),
+    element: (_tagName: string, _className = "", text = "") => createTestResourceElement(text),
+    formatCount: (value: unknown) => String(Number(value) || 0),
+    formatMemory: (value: unknown) => `${Number(value) || 0} B`
+  };
+}
+
 test("Built-in plugins register project integrations and widgets", () => {
   const registry = loadRendererPluginEnvironment();
 
   registry.applyEnabledState({});
 
   assert.equal(registry.getService("boatyard.twicc.api").version, "0.1.0");
+  assert.equal(registry.getService("boatyard.twicc.systemResources").kind, "boatyard.resourceProvider");
   assert.equal(typeof registry.getService("boatyard.pier").listProjectWorkloads, "function");
   assert.equal(typeof registry.getService("boatyard.pier").getProjectAvailability, "function");
   assert.equal(registry.getService("boatyard.hawser.api").version, "0.1.0");
@@ -283,6 +336,53 @@ test("Built-in plugins register project integrations and widgets", () => {
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "dom" }).map((pane: PluginPane) => pane.id).sort()),
     ["boatyard.github.overview", "boatyard.telegram.pane", "boatyard.twicc.sessionFlowPane"]
+  );
+  assert.deepEqual(
+    plain(registry.listPanes({ scope: "global", kind: "dom" }).map((pane: PluginPane) => pane.id).sort()),
+    [
+      "boatyard.pier.systemResources.pane",
+      "boatyard.systemResources.pane",
+      "boatyard.systemResources.tmux",
+      "boatyard.systemResources.wcv",
+      "boatyard.twicc.systemResources.pane"
+    ]
+  );
+  const resourcePanes = registry.listPanes({ scope: "global", kind: "dom" });
+  const resourcesPane = resourcePanes.find((pane: PluginPane) => pane.id === "boatyard.systemResources.pane");
+  assert.equal(resourcesPane.title, "Resources");
+  assert.equal(resourcesPane.key, "system-resources");
+  assert.equal(typeof resourcesPane.render, "function");
+  assert.deepEqual(
+    plain(resourcesPane.resolveNavigation?.({})?.items),
+    [
+      { id: "overview", label: "Overview", webAppId: "boatyard.systemResources.pane" },
+      { id: "wcv", label: "Web apps", webAppId: "boatyard.systemResources.wcv" },
+      { id: "tmux", label: "tmux", webAppId: "boatyard.systemResources.tmux" },
+      {
+        id: "boatyard.twicc.systemResources",
+        label: "TwiCC",
+        webAppId: "boatyard.twicc.systemResources.pane"
+      },
+      {
+        id: "boatyard.pier.systemResources",
+        label: "Pier",
+        webAppId: "boatyard.pier.systemResources.pane"
+      }
+    ]
+  );
+  assert.deepEqual(
+    plain(resourcePanes
+      .filter((pane: PluginPane) => pane.id !== "boatyard.systemResources.pane")
+      .map((pane: PluginPane) => ({
+        parentLabel: pane.parentLabel,
+        parentWebAppId: pane.parentWebAppId,
+        showInMenu: pane.showInMenu
+      }))),
+    Array.from({ length: 4 }, () => ({
+      parentLabel: "Resources",
+      parentWebAppId: "boatyard.systemResources.pane",
+      showInMenu: false
+    }))
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane: PluginPane) => pane.key).sort()),
@@ -419,6 +519,59 @@ test("Built-in plugins register project integrations and widgets", () => {
     plain(githubPlugin.contributes.globalSettings),
     ["boatyard.github.global"]
   );
+
+  registry.setEnabled("boatyard.pier", false);
+  assert.deepEqual(
+    plain(resourcesPane.resolveNavigation?.({})?.items),
+    [
+      { id: "overview", label: "Overview", webAppId: "boatyard.systemResources.pane" },
+      { id: "wcv", label: "Web apps", webAppId: "boatyard.systemResources.wcv" },
+      { id: "tmux", label: "tmux", webAppId: "boatyard.systemResources.tmux" },
+      {
+        id: "boatyard.twicc.systemResources",
+        label: "TwiCC",
+        webAppId: "boatyard.twicc.systemResources.pane"
+      }
+    ]
+  );
+  assert.equal(
+    registry.listPanes({ scope: "global", kind: "dom" })
+      .some((pane: PluginPane) => pane.id === "boatyard.pier.systemResources.pane"),
+    false
+  );
+});
+
+test("System resources and renderer event bindings remain provider agnostic", () => {
+  const systemResourcesSources = ["main.ts", "renderer.ts", "service.ts"]
+    .map((fileName) => fs.readFileSync(
+      path.join(process.cwd(), "src", "plugins", "system-resources", fileName),
+      "utf8"
+    ))
+    .join("\n");
+  const rendererEventBindings = fs.readFileSync(
+    path.join(process.cwd(), "src", "renderer", "rendererEventBindings.ts"),
+    "utf8"
+  );
+  const pierRenderer = fs.readFileSync(
+    path.join(process.cwd(), "src", "plugins", "pier", "renderer.ts"),
+    "utf8"
+  );
+  const twiccRenderer = fs.readFileSync(
+    path.join(process.cwd(), "src", "plugins", "twicc", "renderer.ts"),
+    "utf8"
+  );
+
+  assert.doesNotMatch(systemResourcesSources, /\bpier\b/i);
+  assert.doesNotMatch(systemResourcesSources, /\btwicc\b/i);
+  assert.doesNotMatch(rendererEventBindings, /\bpier\b/i);
+  assert.match(rendererEventBindings, /boatyard:pane-contributions-changed/);
+  assert.match(pierRenderer, /kind: "boatyard\.resourceProvider"/);
+  assert.match(pierRenderer, /ui\.createResourceGroup\(/);
+  assert.match(pierRenderer, /ui\.createResourceItem\(/);
+  assert.doesNotMatch(pierRenderer, /createMemoryShareIndicator|pier-resource-memory/);
+  assert.match(twiccRenderer, /kind: "boatyard\.resourceProvider"/);
+  assert.match(twiccRenderer, /ui\.createResourceGroup\(/);
+  assert.match(twiccRenderer, /ui\.createResourceItem\(/);
 });
 
 test("Twicc service extracts the current session id from a pane URL", () => {
@@ -431,6 +584,53 @@ test("Twicc service extracts the current session id from a pane URL", () => {
     "session-123"
   );
   assert.equal(service.getSessionIdFromUrl("http://localhost:3500/project/project-1"), "");
+});
+
+test("TwiCC resources render overview and project session details", () => {
+  const registry = loadRendererPluginEnvironment();
+  registry.applyEnabledState({});
+  const provider = registry.getService("boatyard.twicc.systemResources");
+  const ui = createTestResourceUi();
+  const providerSnapshot = {
+    data: {
+      available: true,
+      backend: { pid: 2497, processCount: 2, pssBytes: 800, rssBytes: 900 },
+      processCount: 5,
+      projects: [{
+        processCount: 3,
+        projectId: "boatyard",
+        projectName: "Boatyard",
+        pssBytes: 300,
+        rssBytes: 400,
+        sessions: [{
+          pid: 3062747,
+          processCount: 3,
+          provider: "codex",
+          pssBytes: 300,
+          rssBytes: 400,
+          sessionId: "session-1",
+          state: "assistant_turn",
+          title: "Memory accounting"
+        }]
+      }],
+      pssBytes: 1100,
+      rssBytes: 1300,
+      sessionCount: 1
+    }
+  };
+
+  const overview = provider.renderOverview(providerSnapshot, ui) as unknown as TestResourceElement;
+  const details = createTestResourceElement();
+  provider.renderDetails(details, providerSnapshot, ui);
+
+  const overviewText = getTestResourceText(overview);
+  assert.ok(overviewText.some((text) => text.includes("TwiCC 1 active sessions")));
+  assert.ok(overviewText.some((text) => text.includes("PSS 1100 B")));
+  assert.ok(overviewText.includes("Shared local service, excluded from estimated managed memory."));
+  const detailsText = getTestResourceText(details);
+  assert.ok(detailsText.some((text) => text.includes("TwiCC service")));
+  assert.ok(detailsText.some((text) => text.includes("Boatyard")));
+  assert.ok(detailsText.some((text) => text.includes("Memory accounting codex assistant turn PID 3062747")));
 });
 
 test("Telegram plugin defaults project topic titles to the project slug", () => {

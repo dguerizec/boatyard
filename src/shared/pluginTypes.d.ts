@@ -47,6 +47,38 @@ export interface PluginPaths {
   userData: string;
 }
 
+export type PluginWebContentsViewResource = {
+  key: string;
+  label: string;
+  pid: number;
+  projectId: string;
+  url: string;
+  windowId: string;
+};
+
+export type PluginResourceProviderResult = {
+  data?: unknown;
+  exclusiveMemoryBytes?: number;
+};
+
+export type PluginResourceProviderSnapshot = {
+  data?: unknown;
+  error: string;
+  exclusiveMemoryBytes: number;
+  id: string;
+  pluginId: string;
+};
+
+export type PluginResourceProviderCollector = () => (
+  PluginResourceProviderResult | Promise<PluginResourceProviderResult>
+);
+
+export interface PluginResources {
+  collectProviderSnapshots(): Promise<PluginResourceProviderSnapshot[]>;
+  listWebContentsViews(): PluginWebContentsViewResource[];
+  registerProvider(id: string, collector: PluginResourceProviderCollector): void;
+}
+
 export interface PluginContext<TState = unknown> {
   actions: PluginActions;
   events: PluginEvents;
@@ -55,6 +87,7 @@ export interface PluginContext<TState = unknown> {
   paths: PluginPaths;
   plugin: PluginMetadata;
   projectInspectors: PluginProjectInspectors;
+  resources: PluginResources;
   stateMigrations: PluginStateMigrations<TState>;
 }
 
@@ -132,6 +165,106 @@ declare global {
 
   type PluginRegistryRecord = Record<string, unknown>;
 
+  type PluginManagedResourceSnapshot = {
+    data?: unknown;
+    error?: string;
+    exclusiveMemoryBytes?: number;
+    id?: string;
+    pluginId?: string;
+  };
+
+  type PluginResourceMetric = {
+    label: string;
+    tone?: "default" | "count" | "warning";
+    value: string;
+  };
+
+  type PluginResourceShare = {
+    label: string;
+    total: unknown;
+    unitLabel: string;
+    value: unknown;
+  };
+
+  type PluginResourceBadge = {
+    label: string;
+    tone?: "accent" | "default" | "success" | "warning";
+  };
+
+  type PluginResourceGroupOptions = {
+    metrics?: PluginResourceMetric[];
+    share: PluginResourceShare;
+    stateKey: string;
+    subtitle?: string;
+    title: string;
+  };
+
+  type PluginResourceItemOptions = {
+    badges?: PluginResourceBadge[];
+    metadata?: string[];
+    metrics?: PluginResourceMetric[];
+    share: PluginResourceShare;
+    title: string;
+  };
+
+  type PluginResourceRendererUi = {
+    addError(container: HTMLElement, message: unknown): void;
+    createCard(title: string, count: string, countLabel: string): {
+      card: HTMLElement;
+      header: HTMLElement;
+      stats: HTMLElement;
+    };
+    createDetailGroup(title: string, subtitle: string, stats: HTMLElement[]): {
+      group: HTMLElement;
+      rows: HTMLElement;
+    };
+    createDetailRow(
+      title: string,
+      subtitle: string,
+      metrics: Array<{ label: string; value: string }>
+    ): HTMLElement;
+    createResourceGroup(options: PluginResourceGroupOptions): {
+      group: HTMLDetailsElement;
+      rows: HTMLElement;
+    };
+    createResourceItem(options: PluginResourceItemOptions): HTMLElement;
+    createResourceList(): HTMLElement;
+    createShareBar(share: PluginResourceShare): HTMLElement;
+    createStat(label: string, value: string, detail?: string): HTMLElement;
+    element<K extends keyof HTMLElementTagNameMap>(
+      tagName: K,
+      className?: string,
+      text?: string
+    ): HTMLElementTagNameMap[K];
+    formatCount(value: unknown): string;
+    formatMemory(value: unknown): string;
+  };
+
+  type PluginResourceRendererProvider = PluginRegistryRecord & {
+    id: string;
+    kind: "boatyard.resourceProvider";
+    label: string;
+    order: number;
+    paneId: string;
+    sectionId: string;
+    subtitle: string;
+    title: string;
+    renderDetails(
+      content: HTMLElement,
+      snapshot: PluginManagedResourceSnapshot | undefined,
+      ui: PluginResourceRendererUi
+    ): void;
+    renderOverview(
+      snapshot: PluginManagedResourceSnapshot | undefined,
+      ui: PluginResourceRendererUi
+    ): HTMLElement | null;
+  };
+
+  type PluginResourceRendererHost = PluginRegistryRecord & {
+    renderProviderPane(container: HTMLElement, providerId: string): (() => void) | void;
+    resolveNavigation(): PluginPaneNavigation;
+  };
+
   type PluginStatusAction = PluginRegistryRecord & {
     id?: string;
     label?: string;
@@ -194,6 +327,8 @@ declare global {
     id: string;
     key: string;
     label: string;
+    minHeight?: string;
+    minWidth?: string;
     navigation?: PluginPaneNavigation;
     showInMenu?: boolean;
     url: string;
@@ -229,6 +364,8 @@ declare global {
     key?: unknown;
     kind?: unknown;
     mobileDev?: unknown;
+    minHeight?: unknown;
+    minWidth?: unknown;
     name?: unknown;
     navigation?: PluginPaneNavigation;
     parentLabel?: unknown;
@@ -257,6 +394,8 @@ declare global {
     showInMenu: boolean;
     webAppId: string;
     key: string;
+    minHeight?: string;
+    minWidth?: string;
   };
 
   type PluginPaneListFilter = {

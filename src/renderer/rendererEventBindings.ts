@@ -162,7 +162,7 @@ export function registerRendererEventBindings({
 
   windowObject.addEventListener("boatyard:project-nav-badges-changed", renderProjectList);
 
-  windowObject.addEventListener("boatyard:pier-workloads-changed", createPierPaneRefreshHandler({
+  windowObject.addEventListener("boatyard:pane-contributions-changed", createPaneContributionsRefreshHandler({
     getCurrentProject,
     getCurrentView,
     renderPaneLayoutPreservingPanes,
@@ -196,28 +196,37 @@ export function registerRendererEventBindings({
     .finally(loadState);
 }
 
-type PierPaneRefreshHandlerOptions = {
+type PaneContributionsRefreshHandlerOptions = {
   getCurrentProject: () => RendererProject;
   getCurrentView: () => string;
   renderPaneLayoutPreservingPanes: (project: RendererProject, options?: UnknownRecord) => void;
   requestFrame: (callback: FrameRequestCallback) => number;
 };
 
-export function createPierPaneRefreshHandler({
+export function createPaneContributionsRefreshHandler({
   getCurrentProject,
   getCurrentView,
   renderPaneLayoutPreservingPanes,
   requestFrame
-}: PierPaneRefreshHandlerOptions) {
+}: PaneContributionsRefreshHandlerOptions) {
   let refreshFrame: number | null = null;
-  return () => {
-    if (getCurrentView() !== "project" || refreshFrame !== null) {
+  return (event?: Event) => {
+    const currentProject = getCurrentProject();
+    const detail = event && "detail" in event
+      ? (event as CustomEvent<{ projectId?: unknown }>).detail
+      : undefined;
+    const projectId = String(detail?.projectId || "").trim();
+    if (
+      getCurrentView() !== "project" ||
+      (projectId && projectId !== String(currentProject.id || "")) ||
+      refreshFrame !== null
+    ) {
       return;
     }
 
     refreshFrame = requestFrame(() => {
       refreshFrame = null;
-      renderPaneLayoutPreservingPanes(getCurrentProject(), {
+      renderPaneLayoutPreservingPanes(currentProject, {
         allowWebAppMenuChanges: true
       });
     });

@@ -5,7 +5,10 @@ import type {
   PluginActionHandler,
   PluginContext,
   PluginProjectInspectors,
-  PluginStateMigrations
+  PluginResourceProviderCollector,
+  PluginResourceProviderSnapshot,
+  PluginStateMigrations,
+  PluginWebContentsViewResource
 } from "../shared/pluginTypes";
 
 import type { Dirent } from "node:fs";
@@ -29,6 +32,7 @@ type PluginHostStore = {
 
 type PluginHostConstructorOptions = {
   execFileAsync?: ExecFileAsync;
+  listWebContentsViews?: () => PluginWebContentsViewResource[];
   pluginRoot?: string;
   sendToRenderer?: (channel: string, payload?: unknown) => unknown;
   store?: PluginHostStore | null;
@@ -73,6 +77,11 @@ type RendererPlugin = {
 type PluginInspectorHandler = (input?: unknown) => unknown | Promise<unknown>;
 type PluginStateMigrationHandler = (payload: { state: unknown }) => unknown | Promise<unknown>;
 type PluginInspectorRegistration = { pluginId: string; handler: PluginInspectorHandler };
+type PluginResourceProviderRegistration = {
+  collector: PluginResourceProviderCollector;
+  id: string;
+  pluginId: string;
+};
 type PluginStateMigrationRegistration = { pluginId: string; handler: PluginStateMigrationHandler };
 type PluginProjectConfigMigration = { config: UnknownRecord; projectId: string };
 type PluginWebAppMigration = {
@@ -218,10 +227,12 @@ class PluginHost {
   pluginRoot: string;
   store: PluginHostStore | null;
   execFileAsync?: ExecFileAsync;
+  listWebContentsViews: () => PluginWebContentsViewResource[];
   userDataPath: string;
   sendToRenderer: (channel: string, payload?: unknown) => unknown;
   actions: Map<string, PluginActionHandler>;
   inspectors: PluginInspectorRegistration[];
+  resourceProviders: PluginResourceProviderRegistration[];
   stateMigrations: PluginStateMigrationRegistration[];
   plugins: RuntimePlugin[];
 
@@ -229,10 +240,12 @@ class PluginHost {
     this.pluginRoot = options.pluginRoot || path.join(__dirname, "../plugins");
     this.store = options.store || null;
     this.execFileAsync = options.execFileAsync;
+    this.listWebContentsViews = options.listWebContentsViews || (() => []);
     this.userDataPath = options.userDataPath || "";
     this.sendToRenderer = options.sendToRenderer || (() => {});
     this.actions = new Map();
     this.inspectors = [];
+    this.resourceProviders = [];
     this.stateMigrations = [];
     this.plugins = [];
   }
@@ -240,6 +253,7 @@ class PluginHost {
   discover(): RuntimePlugin[] {
     this.actions.clear();
     this.inspectors = [];
+    this.resourceProviders = [];
     this.stateMigrations = [];
     this.plugins = listPluginManifestPaths(this.pluginRoot).map((manifestPath) => {
       const manifest = normalizeManifest(readJson(manifestPath), manifestPath);
@@ -304,6 +318,11 @@ class PluginHost {
       },
       projectInspectors: {
         register: (handler) => this.registerProjectInspector(pluginId, handler)
+      },
+      resources: {
+        collectProviderSnapshots: () => this.collectResourceProviderSnapshots(),
+        listWebContentsViews: () => this.listWebContentsViews(),
+        registerProvider: (providerId, collector) => this.registerResourceProvider(pluginId, providerId, collector)
       }
     };
   }
@@ -335,6 +354,53 @@ class PluginHost {
         `Plugin ${pluginId} project inspector must be a function.`
       )
     });
+  }
+
+  registerResourceProvider(pluginId: string, providerId: unknown, collector: unknown): void {
+    const id = normalizeText(providerId);
+    if (!id) {
+      throw new Error(`Plugin ${pluginId} resource provider id is required.`);
+    }
+    if (id !== pluginId && !id.startsWith(`${pluginId}.`)) {
+      throw new Error(`Resource provider ${id} must be prefixed with plugin id ${pluginId}.`);
+    }
+    if (this.resourceProviders.some((provider) => provider.id === id)) {
+      throw new Error(`Resource provider already registered: ${id}`);
+    }
+
+    this.resourceProviders.push({
+      collector: requireFunction<PluginResourceProviderCollector>(
+        collector,
+        `Plugin ${pluginId} resource provider ${id} collector must be a function.`
+      ),
+      id,
+      pluginId
+    });
+  }
+
+  async collectResourceProviderSnapshots(): Promise<PluginResourceProviderSnapshot[]> {
+    return Promise.all(this.resourceProviders
+      .filter((provider) => this.isPluginEnabled(provider.pluginId))
+      .map(async (provider) => {
+        try {
+          const result = await provider.collector();
+          const source = isRecord(result) ? result : {};
+          return {
+            data: source.data,
+            error: "",
+            exclusiveMemoryBytes: Math.max(0, Number(source.exclusiveMemoryBytes) || 0),
+            id: provider.id,
+            pluginId: provider.pluginId
+          };
+        } catch (error) {
+          return {
+            error: error instanceof Error ? error.message : String(error),
+            exclusiveMemoryBytes: 0,
+            id: provider.id,
+            pluginId: provider.pluginId
+          };
+        }
+      }));
   }
 
   registerStateMigration(pluginId: string, handler: unknown): void {

@@ -1,3 +1,5 @@
+import { normalizePaneSplitRatio } from "./paneSplitGeometry.js";
+
 export type WebAppMiniLayoutPaneNode = {
   id?: string;
   selectedWebAppId?: string | null;
@@ -121,7 +123,7 @@ export function createWebAppMiniLayout({
 
     const split = document.createElement("div");
     split.className = `webapp-open-mini-split ${node.direction === "horizontal" ? "horizontal" : "vertical"}`;
-    const ratio = Math.min(0.85, Math.max(0.15, Number(node.ratio) || 0.5));
+    const ratio = normalizePaneSplitRatio(node.ratio);
     if (node.direction === "horizontal") {
       split.style.gridTemplateRows = `${ratio}fr ${(1 - ratio)}fr`;
     } else {

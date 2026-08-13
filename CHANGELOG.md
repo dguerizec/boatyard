@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Pane actions in expanded layouts** — Split and close controls now stay available for panes outside an active expanded area.
 - **Protected expanded panes** — Boatyard now prevents splitting or closing panes that are currently covered by an active pane expansion.
+- **Pane minimum sizes** — Split resizing now uses pane minimum widths and heights instead of screen-relative limits, preserving neighboring pane sizes when split layouts rotate.
 
 ## [0.9.15] - 2026-08-10
 

@@ -24,6 +24,8 @@ import type {
 } from "./mainTypes.js";
 import { createWebAppContextMenu } from "./webAppContextMenu.js";
 import { createAppThemeManager, getAppBackgroundColor } from "./appTheme.js";
+import { cleanupOrphanedTerminalClientSessions } from "./terminalClientSessionLifecycle.js";
+import { createTerminalShutdownCoordinator } from "./terminalShutdown.js";
 import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
 import {
   DEFAULT_PROFILE_NAME,
@@ -51,6 +53,7 @@ const { TerminalService } = require("./terminalService");
 const { createUpdateManager, normalizeVersionTag } = require("./updateManager");
 
 const execFileAsync = promisify(execFile);
+const terminalSessionPrefix = process.env.BOATYARD_TERMINAL_SESSION_PREFIX || "boatyard";
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
 const DEFAULT_WEBAPP_BACKGROUND_COLOR = "#0b0f14";
@@ -122,6 +125,13 @@ const appThemeManager = createAppThemeManager({
 });
 const individuallyClosingWindowIds = new Set<string>();
 let isQuitting = false;
+const terminalShutdownCoordinator = createTerminalShutdownCoordinator({
+  getServices: () => [...configurationContexts.values()].map((configuration) => configuration.terminalService),
+  onError: (error) => {
+    console.warn(`Could not detach terminals before quitting: ${error instanceof Error ? error.message : String(error)}`);
+  },
+  quit: () => app.quit()
+});
 const webAppViews = new Map<string, WebAppItem>();
 let activeWebAppKey: string | null = null;
 let visibleWebAppKeys = new Set<string>();
@@ -387,9 +397,6 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     if (individuallyClosingWindowIds.delete(workspaceWindow.id)) {
       configuration.store.removeWorkspaceWindow(workspaceWindow.id);
     }
-    if (isQuitting) {
-      configuration.terminalService.detachAll();
-    }
     workspaceWindow.runtime.destroy();
   });
 }
@@ -468,13 +475,15 @@ async function createConfigurationContext(configDirectory: string): Promise<Conf
       return contextStore.getState().projects.find((project: MainProject) => project.id === projectId);
     },
     getSettings: () => contextStore.getState().settings,
-    sessionPrefix: process.env.BOATYARD_TERMINAL_SESSION_PREFIX || "boatyard",
+    sessionPrefix: terminalSessionPrefix,
     sendToRenderer: (channel: string, payload: unknown) => sendToConfiguration(configuration, channel, payload),
     suppressResizeWarnings: captureRunner.isCaptureMode()
   });
   const contextPluginHost: PluginHostInstance = new PluginHost({
     store: contextStore,
     execFileAsync,
+    listWebContentsViews: () => getWorkspaceWindowsForConfiguration(configuration)
+      .flatMap((workspaceWindow) => workspaceWindow.runtime.listWebContentsViewResources()),
     // Plugin connection/session material belongs to the Electron profile, not
     // to an individual Boatyard configuration profile.
     userDataPath: app.getPath("userData"),
@@ -770,7 +779,9 @@ function ensureWebAppView(key: string): WebAppItem {
     view,
     url: null,
     bounds: null,
-    autofillEnabled: false
+    autofillEnabled: false,
+    label: "",
+    projectId: ""
   };
   webAppViews.set(key, item);
   return item;
@@ -804,7 +815,7 @@ function normalizeWebAppBackgroundColor(backgroundColor: unknown) {
   return backgroundColor === "#ffffff" ? "#ffffff" : DEFAULT_WEBAPP_BACKGROUND_COLOR;
 }
 
-function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, restoreUrl = true }: ShowWebAppPayload) {
+function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, label, projectId, restoreUrl = true }: ShowWebAppPayload) {
   if (!key) {
     throw new Error("Webapp key is required.");
   }
@@ -823,6 +834,12 @@ function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, restor
   const webApp = ensureWebAppView(String(key));
   if (typeof autofillEnabled === "boolean") {
     webApp.autofillEnabled = autofillEnabled;
+  }
+  if (label !== undefined) {
+    webApp.label = String(label || "");
+  }
+  if (projectId !== undefined) {
+    webApp.projectId = String(projectId || "");
   }
   webApp.view.setBackgroundColor(normalizeWebAppBackgroundColor(backgroundColor));
   webApp.bounds = normalizeWebAppBounds(bounds);
@@ -1390,7 +1407,7 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle("terminal:detach", (event: IpcMainInvokeEvent, terminalId: string) => {
-    getConfigurationForEvent(event).terminalService.detach(terminalId);
+    return getConfigurationForEvent(event).terminalService.detach(terminalId);
   });
 
   ipcMain.handle("terminal:write-selection", (_event: IpcMainInvokeEvent, text: unknown) => {
@@ -1479,6 +1496,11 @@ function registerIpcHandlers() {
 }
 
 if (isPrimaryInstance) {
+  app.on("before-quit", (event: Event) => {
+    isQuitting = true;
+    terminalShutdownCoordinator.handleBeforeQuit(event);
+  });
+
   app.on("second-instance", (_event: Event, _commandLine: string[], _workingDirectory: string, additionalData: unknown) => {
     const descriptor = parseLaunchDescriptor(additionalData);
     if (!descriptor) {
@@ -1497,6 +1519,19 @@ if (isPrimaryInstance) {
 
 if (isPrimaryInstance) app.whenReady().then(async () => {
   appThemeManager.setTheme("dark");
+  const terminalRecovery = await cleanupOrphanedTerminalClientSessions({
+    execFileAsync,
+    sessionPrefix: terminalSessionPrefix
+  });
+  if (terminalRecovery.removedSessionNames.length) {
+    console.log(`Removed ${terminalRecovery.removedSessionNames.length} orphaned terminal session${terminalRecovery.removedSessionNames.length === 1 ? "" : "s"} before startup.`);
+  }
+  if (terminalRecovery.error) {
+    console.warn(`Could not recover orphaned terminal sessions: ${terminalRecovery.error}`);
+  }
+  for (const failure of terminalRecovery.failed) {
+    console.warn(`Could not remove orphaned terminal session ${failure.sessionName}: ${failure.message}`);
+  }
   migrateConfigurationRootToProfiles(initialLaunchDescriptor.configurationRoot);
   secretStore = new SecretStore(path.join(initialLaunchDescriptor.configurationRoot, "secrets.json"));
   secretStore.load();

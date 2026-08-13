@@ -36,6 +36,12 @@ function createPluginFixture() {
     "use strict";
     module.exports.activate = (ctx) => {
       ctx.actions.handle("echo", ({ value } = {}) => ({ value, userData: ctx.paths.userData }));
+      ctx.actions.handle("resources", () => ctx.resources.listWebContentsViews());
+      ctx.resources.registerProvider("vendor.example.resources", () => ({
+        data: { source: "example" },
+        exclusiveMemoryBytes: 4096
+      }));
+      ctx.actions.handle("resourceProviders", () => ctx.resources.collectProviderSnapshots());
       ctx.actions.handle("emit", () => ctx.events.emit("updated", { ok: true }));
       ctx.projectInspectors.register(({ sourcePath, globalConfig } = {}) => ({ sourcePath, globalConfig, inspected: true }));
       ctx.stateMigrations.register(({ state }) => ({
@@ -75,6 +81,14 @@ test("PluginHost discovers runtime plugins and routes actions", async () => {
   const host = new PluginHost({
     pluginRoot,
     store,
+    listWebContentsViews: () => [{
+      key: "pane-1:app",
+      label: "App",
+      pid: 42,
+      projectId: "project-id",
+      url: "https://app.example.test",
+      windowId: "window-id"
+    }],
     userDataPath: "/workspace/example/user-data",
     sendToRenderer: (channel: string, payload: unknown) => {
       sentEvents.push({ channel, payload });
@@ -97,6 +111,21 @@ test("PluginHost discovers runtime plugins and routes actions", async () => {
     value: "ok",
     userData: "/workspace/example/user-data"
   });
+  assert.deepEqual(await host.invoke("vendor.example", "resources"), [{
+    key: "pane-1:app",
+    label: "App",
+    pid: 42,
+    projectId: "project-id",
+    url: "https://app.example.test",
+    windowId: "window-id"
+  }]);
+  assert.deepEqual(await host.invoke("vendor.example", "resourceProviders"), [{
+    data: { source: "example" },
+    error: "",
+    exclusiveMemoryBytes: 4096,
+    id: "vendor.example.resources",
+    pluginId: "vendor.example"
+  }]);
   assert.deepEqual(await host.inspectSourcePath({ sourcePath: "/workspace/example/project" }), {
     "vendor.example": {
       sourcePath: "/workspace/example/project",
@@ -127,6 +156,7 @@ test("PluginHost skips disabled plugin actions and inspectors", async () => {
     /Plugin is disabled/
   );
   assert.deepEqual(await host.inspectSourcePath({ sourcePath: "/workspace/example/project" }), {});
+  assert.deepEqual(await host.collectResourceProviderSnapshots(), []);
 });
 
 test("PluginHost applies plugin-owned state migrations", async () => {
