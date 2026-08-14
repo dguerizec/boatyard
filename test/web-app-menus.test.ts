@@ -102,6 +102,7 @@ test("opening successive external links in an existing pane reuses its transient
   const invokedWebAppActions: string[] = [];
   let persistCount = 0;
   let renderCount = 0;
+  let splitCount = 0;
 
   const menus = createWebAppMenus({
     webAppOpenSplitRatio: 0.5,
@@ -128,7 +129,10 @@ test("opening successive external links in an existing pane reuses its transient
         id: "unused-pane"
       }
     }),
-    applyPaneSplit: () => true,
+    applyPaneSplit: () => {
+      splitCount += 1;
+      return true;
+    },
     setSelectedWebAppForPane: (paneId: string, webAppId?: string) => {
       selectedPaneCalls.push([paneId, webAppId]);
     },
@@ -201,6 +205,41 @@ test("opening successive external links in an existing pane reuses its transient
   ]);
   assert.equal(persistCount, 2);
   assert.equal(renderCount, 2);
+  assert.deepEqual(invokedWebAppActions, []);
+
+  const widgetSource = {
+    source: "explicit",
+    sourceId: "widget:boatyard.pier.urls",
+    sourceLabel: "Pier",
+    sourcePaneId: sourcePane.id,
+    sourcePaneWebAppId: "widgets:default"
+  };
+  await menus.applyWebAppOpenChoice({
+    ...widgetSource,
+    url: "https://split.example/page"
+  }, {
+    target: "split-pane",
+    persist: false
+  });
+  assert.equal(splitCount, 1);
+  assert.equal(persistCount, 3);
+  assert.equal(renderCount, 3);
+  assert.deepEqual(invokedWebAppActions, []);
+
+  await menus.applyWebAppOpenChoice({
+    ...widgetSource,
+    url: "https://same.example/page"
+  }, {
+    target: "same-pane",
+    persist: false
+  });
+  assert.equal(sourcePane.transientWebApp?.url, "https://same.example/page");
+  assert.equal(sourcePane.selectedWebAppId, sourcePane.transientWebApp?.id);
+  assert.equal(selectedPaneCalls.length, 5);
+  assert.equal(selectedProjectCalls.length, 3);
+  assert.equal(currentUrlCalls.length, 3);
+  assert.equal(persistCount, 4);
+  assert.equal(renderCount, 4);
   assert.deepEqual(invokedWebAppActions, []);
 });
 

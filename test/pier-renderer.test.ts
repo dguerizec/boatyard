@@ -17,11 +17,16 @@ class FakeElement {
   className = "";
   dataset: Record<string, string> = {};
   disabled = false;
+  detachCount = 0;
   hidden = false;
   href = "";
   isConnected = false;
   open = false;
   parentElement: FakeElement | null = null;
+  popover = "";
+  popoverOpen = false;
+  popoverTargetElement: FakeElement | null = null;
+  style: Record<string, string> = {};
   textContent = "";
   title = "";
   type = "";
@@ -75,6 +80,16 @@ class FakeElement {
     return this.parentElement?.closest(selector) || null;
   }
 
+  contains(candidate: FakeElement | null): boolean {
+    return candidate === this || this.children.some((child) => child.contains(candidate));
+  }
+
+  focus() {}
+
+  getBoundingClientRect() {
+    return { bottom: 40, height: 30, left: 10, right: 40, top: 10, width: 30, x: 10, y: 10 };
+  }
+
   getAttribute(name: string) {
     return this.attributes.get(name) || null;
   }
@@ -87,12 +102,31 @@ class FakeElement {
     ]);
   }
 
+  querySelector<T extends FakeElement = FakeElement>(_selector: string): T | null {
+    return (this.children[0] as T | undefined) || null;
+  }
+
+  matches(selector: string) {
+    return selector === ":popover-open" ? this.popoverOpen : false;
+  }
+
+  hidePopover() {
+    this.popoverOpen = false;
+    void this.trigger("toggle", {});
+  }
+
+  showPopover() {
+    this.popoverOpen = true;
+    void this.trigger("toggle", {});
+  }
+
   remove() {
     if (!this.parentElement) {
       return;
     }
     this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
     this.parentElement = null;
+    this.detachCount += 1;
   }
 
   replaceChildren(...children: FakeElement[]) {
@@ -110,6 +144,13 @@ class FakeElement {
   async trigger(name: string, event: unknown = { preventDefault() {} }) {
     for (const handler of this.listeners.get(name) || []) {
       await handler(event);
+    }
+    if (name === "click" && this.popoverTargetElement) {
+      if (this.popoverTargetElement.popoverOpen) {
+        this.popoverTargetElement.hidePopover();
+      } else {
+        this.popoverTargetElement.showPopover();
+      }
     }
   }
 }
@@ -307,6 +348,14 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
     sourcePath: "/workspace/pickatube"
   };
   const persistedPatches: Array<Record<string, unknown>> = [];
+  const openUrlCalls: Array<{ options?: { sourceElement?: FakeElement }; url: string }> = [];
+  const overlayCalls: Array<{ action: string; element?: FakeElement; margin?: number }> = [];
+  let externalOpenCount = 0;
+  const refreshCallbacks: Array<() => unknown> = [];
+  const captureRefresh = (callback: () => unknown) => {
+    refreshCallbacks.push(callback);
+    return refreshCallbacks.length;
+  };
   const body = new FakeElement();
   const CustomEvent = class {
     detail: unknown;
@@ -317,15 +366,15 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
       this.detail = init.detail;
     }
   };
-  const worktrees = ["develop", "playlist"].map((slug) => ({
-    path: `/workspace/pickatube/worktrees/${slug}`,
+  const worktrees = ["playlist", "analytics", "develop"].map((slug) => ({
+    path: slug === "develop" ? "/workspace/pickatube" : `/workspace/pickatube/worktrees/${slug}`,
     slug,
     branch: slug,
     has_workload: true,
     workload: {
       project: "pickatube",
       slug,
-      status: "running",
+      status: slug === "playlist" ? "stopped" : "running",
       urls: [
         {
           url: `http://${slug}.pickatube.test`,
@@ -337,7 +386,7 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
           label: `admin.${slug}.pickatube.test`
         }
       ],
-      worktree_path: `/workspace/pickatube/worktrees/${slug}`
+      worktree_path: slug === "develop" ? "/workspace/pickatube" : `/workspace/pickatube/worktrees/${slug}`
     }
   }));
   const context = {
@@ -362,12 +411,12 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
       }
       throw new Error(`Unexpected URL ${url}`);
     },
-    setInterval: () => 1,
+    setInterval: captureRefresh,
     window: {
       CustomEvent,
       boatyard: {
         invokePlugin: async () => null,
-        openExternal: () => {},
+        openExternal: () => { externalOpenCount += 1; },
         updateProjectPluginConfig: async (projectId: string, pluginId: string, patch: Record<string, unknown>) => {
           assert.equal(projectId, project.id);
           assert.equal(pluginId, "boatyard.pier");
@@ -378,7 +427,9 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
       },
       clearInterval: () => {},
       dispatchEvent: () => true,
-      setInterval: () => 1
+      innerHeight: 800,
+      innerWidth: 1200,
+      setInterval: captureRefresh
     } as Record<string, unknown>
   };
   context.window.window = context.window;
@@ -397,11 +448,35 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
   const widgetRegistry = context.window.BoatyardWidgetRegistry as {
     get(id: string): {
       createElement(project: Record<string, unknown>, props: Record<string, unknown>): FakeElement;
+      layout: {
+        default: { columns: number; rows: number };
+        min: { columns: number; rows: number };
+      };
+      name: string;
+      title: string;
     };
   };
   pluginRegistry.applyEnabledState({});
-  const card = widgetRegistry.get("boatyard.pier.urls").createElement(project, {
+  const widget = widgetRegistry.get("boatyard.pier.urls");
+  assert.equal(widget.name, "Pier");
+  assert.equal(widget.title, "Pier");
+  assert.deepEqual(plain(widget.layout), {
+    default: { columns: 4, rows: 4 },
+    min: { columns: 3, rows: 3 }
+  });
+  const card = widget.createElement(project, {
     globalPluginConfig: {},
+    openUrl: (url: string, options?: { sourceElement?: FakeElement }) => {
+      openUrlCalls.push({ options, url });
+    },
+    overlay: {
+      freeze: async (element: FakeElement, options?: { margin?: number }) => {
+        overlayCalls.push({ action: "freeze", element, margin: options?.margin });
+      },
+      restore: async () => {
+        overlayCalls.push({ action: "restore" });
+      }
+    },
     pluginConfig: {},
     projectId: project.id
   });
@@ -411,7 +486,62 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
 
   assert.equal(findAllByClass(card, "pier-entry-point-selector").length, 1);
   assert.equal(findAllByClass(card, "pier-entry-point-button").length, 2);
-  assert.equal(findAllByClass(card, "pier-url-row").length, 2);
+  assert.equal(findAllByClass(card, "pier-url-row").length, 3);
+  assert.equal(findAllByClass(card, "pier-entry-point-label")[0].textContent, "Tabs");
+  assert.equal(findAllByClass(card, "pier-workload-count")[0].textContent, "3");
+  const rows = findAllByClass(card, "pier-url-row");
+  const links = findAllByClass(card, "pier-url-link");
+  assert.deepEqual(links.map((link) => link.textContent), ["develop", "analytics", "playlist"]);
+  assert.equal(rows[0].dataset.key, "pickatube\u0000develop");
+  assert.equal(rows[1].dataset.key, "pickatube\u0000analytics");
+  assert.equal(rows[2].dataset.key, "pickatube\u0000playlist");
+  assert.equal(findAllByClass(card, "pier-status-dot").length, 3);
+  assert.equal(findAllByClass(card, "pier-row-menu").length, 3);
+  assert.equal(findAllByClass(card, "pier-row-menu-item").length, 12);
+  const menuButtons = findAllByClass(card, "pier-menu-button");
+  const menus = findAllByClass(card, "pier-row-menu");
+  const openUrlButtons = findAllByClass(card, "pier-row-menu-item")
+    .filter((button) => button.textContent === "Open URL");
+  assert.deepEqual(links.map((link) => link.disabled), [false, false, true]);
+  assert.deepEqual(openUrlButtons.map((button) => button.disabled), [false, false, true]);
+  await menuButtons[0].trigger("click");
+  await flush();
+  assert.equal(menus[0].popoverOpen, true);
+  assert.equal(menuButtons[0].getAttribute("aria-expanded"), "true");
+  assert.equal(menus[0].style.visibility, "");
+  assert.deepEqual(overlayCalls, [{ action: "freeze", element: menus[0], margin: 8 }]);
+  const detachCountsBeforeRefresh = rows.map((row) => row.detachCount);
+  assert.equal(refreshCallbacks.length, 1);
+  card.isConnected = true;
+  refreshCallbacks[0]();
+  await flush();
+  await flush();
+  assert.deepEqual(rows.map((row) => row.detachCount), detachCountsBeforeRefresh);
+  assert.equal(menus[0].popoverOpen, true);
+  assert.equal(menuButtons[0].getAttribute("aria-expanded"), "true");
+  await menuButtons[0].trigger("click");
+  await flush();
+  assert.equal(menus[0].popoverOpen, false);
+  assert.equal(menuButtons[0].getAttribute("aria-expanded"), "false");
+  assert.deepEqual(overlayCalls, [
+    { action: "freeze", element: menus[0], margin: 8 },
+    { action: "restore" }
+  ]);
+  const removeButtons = findAllByClass(card, "danger");
+  assert.deepEqual(removeButtons.map((button) => button.hidden), [true, false, false]);
+  assert.ok(!getTextContent(card).includes("/workspace/pickatube"));
+
+  await links[0].trigger("click");
+  await openUrlButtons[0].trigger("click");
+  assert.equal(openUrlCalls.length, 2);
+  assert.equal(openUrlCalls[0].url, "http://develop.pickatube.test");
+  assert.equal(openUrlCalls[0].options?.sourceElement, links[0]);
+  assert.equal(openUrlCalls[1].url, "http://develop.pickatube.test");
+  assert.equal(openUrlCalls[1].options?.sourceElement, openUrlButtons[0]);
+  assert.equal(externalOpenCount, 0);
+  await links[2].trigger("click");
+  await openUrlButtons[2].trigger("click");
+  assert.equal(openUrlCalls.length, 2);
   const buttons = findAllByClass(card, "pier-entry-point-button");
   assert.deepEqual(buttons.map((button) => button.textContent), ["Default", "Admin"]);
   assert.deepEqual(buttons.map((button) => button.getAttribute("aria-pressed")), ["true", "false"]);
@@ -433,7 +563,13 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
     plain(pane.resolveWebApps({ project, projectConfig: {}, globalPluginConfig: {} })).map(
       (webApp: { id: string }) => webApp.id
     ),
-    ["pier", "pier:develop", "pier:develop:admin", "pier:playlist", "pier:playlist:admin"]
+    [
+      "pier",
+      "pier:develop",
+      "pier:develop:admin",
+      "pier:analytics",
+      "pier:analytics:admin"
+    ]
   );
 });
 

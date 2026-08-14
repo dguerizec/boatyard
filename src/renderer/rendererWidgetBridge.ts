@@ -2,6 +2,7 @@ import { createWidgetSurfaces } from "./widgetSurfaces.js";
 import type { BoatyardBridge, RendererProject, RendererState } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type { CardOptions } from "./rendererDomHelpers.js";
+import type { WidgetOverlayFreezeScope } from "./widgetOverlay.js";
 
 type WidgetRegistryWindow = Window & {
   BoatyardWidgetRegistry?: {
@@ -12,6 +13,7 @@ type WidgetRegistryWindow = Window & {
 type RendererWidgetBridgeOptions = {
   boatyard: BoatyardBridge;
   clamp: (value: number, min: number, max: number) => number;
+  createOverlayFreezeScope: () => WidgetOverlayFreezeScope;
   createCard: (options: CardOptions) => HTMLElement;
   createTerminalWidget: (project: RendererProject, props?: UnknownRecord) => HTMLElement;
   createToolIcon: (name: string) => Element;
@@ -23,6 +25,7 @@ type RendererWidgetBridgeOptions = {
   isGlobalWorkspace: (project: RendererProject | null | undefined) => boolean;
   legacyWidgetIds: Map<string, string>;
   minWidgetRailWidth: number;
+  openUrl: (payload: UnknownRecord) => unknown;
   openProjectWebApp: (projectId: string, webAppId: string, url?: string) => boolean;
   renderWorkspaceDashboard: (project: RendererProject) => void;
   widgetGridGap: number;
@@ -63,10 +66,12 @@ export function createRendererWidgetBridge(options: RendererWidgetBridgeOptions)
 
   return createWidgetSurfaces({
     boatyard: options.boatyard as Parameters<typeof createWidgetSurfaces>[0]["boatyard"],
+    createOverlayFreezeScope: options.createOverlayFreezeScope,
     getState: options.getState,
     getProjectPluginConfig: options.getProjectPluginConfig,
     getGlobalPluginConfig: options.getGlobalPluginConfig,
     isGlobalWorkspace: options.isGlobalWorkspace,
+    openUrl: options.openUrl,
     openProjectWebApp: (projectId: string | undefined, webAppId: string, url: string) => (
       projectId ? options.openProjectWebApp(projectId, webAppId, url) : false
     ),

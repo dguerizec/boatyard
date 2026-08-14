@@ -9,6 +9,8 @@ import {
   normalizeWidgetGridPosition
 } from "./widgetGridGeometry.js";
 import { createWidgetAddMenu } from "./widgetAddMenu.js";
+import { createWidgetOpenUrlPayload } from "./widgetOpenUrl.js";
+import { createWidgetOverlayController } from "./widgetOverlay.js";
 import type {
   PersistedWidgetLayout,
   WidgetGridPosition,
@@ -30,10 +32,12 @@ const globalScope: WidgetSurfacesGlobal = window;
 
 export function createWidgetSurfaces({
     boatyard,
+    createOverlayFreezeScope,
     getState,
     getProjectPluginConfig,
     getGlobalPluginConfig,
     isGlobalWorkspace,
+    openUrl,
     openProjectWebApp,
     createCard,
     createToolIcon,
@@ -569,6 +573,7 @@ export function createWidgetSurfaces({
       widgetPaneId = defaultWidgetPaneId
     ) {
       const globalScope = isGlobalWorkspace(project);
+      const overlay = createWidgetOverlayController(createOverlayFreezeScope());
       const props = {
         projectId: project.id,
         project,
@@ -576,9 +581,18 @@ export function createWidgetSurfaces({
         pluginConfig: definition.pluginId && !globalScope ? getProjectPluginConfig(project.id, definition.pluginId) : {},
         globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {},
         allProjectPluginConfig: globalScope || !project.id ? {} : getState().pluginConfig?.projects?.[project.id] || {},
+        openUrl(url: string, options: { sourceElement?: Element } = {}) {
+          return openUrl(createWidgetOpenUrlPayload({
+            sourceElement: options.sourceElement,
+            url,
+            widgetId: definition.id,
+            widgetName: definition.name
+          }));
+        },
         openProjectWebApp(webAppId: string, url = "") {
           return openProjectWebApp(project.id, webAppId, url);
-        }
+        },
+        overlay
       };
       const card = definition.createElement
         ? definition.createElement(project, props)

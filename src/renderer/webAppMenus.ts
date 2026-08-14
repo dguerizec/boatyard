@@ -57,8 +57,12 @@ export function getPaneMenuWebApps(webApps: WebAppDefinition[]) {
 
   type WebAppOpenPayload = {
     source?: string;
+    sourceId?: string;
+    sourceLabel?: string;
     url?: string;
     sourceBounds?: unknown;
+    sourcePaneId?: string;
+    sourcePaneWebAppId?: string;
     sourceUrl?: string;
     sourceWebAppKey?: string;
   };
@@ -445,13 +449,41 @@ export function createWebAppMenus({
     }
 
     function getSourceEntryForOpenPayload(payload: WebAppOpenPayload) {
-      return getVisibleWebAppEntryByKey(payload.sourceWebAppKey) ||
+      const visibleEntry = getVisibleWebAppEntryByKey(payload.sourceWebAppKey) ||
         getVisibleWebAppEntryByUrl(payload.sourceUrl);
+      if (visibleEntry || !payload.sourcePaneId) {
+        return visibleEntry;
+      }
+
+      return {
+        host: null,
+        paneId: payload.sourcePaneId,
+        webApp: {
+          id: payload.sourcePaneWebAppId || payload.sourceId || "",
+          key: payload.sourceWebAppKey || "",
+          label: payload.sourceLabel || ""
+        }
+      };
+    }
+
+    function getSourceIdentityForOpenPayload(
+      payload: WebAppOpenPayload,
+      sourceEntry = getSourceEntryForOpenPayload(payload)
+    ) {
+      return String(payload.sourceId || sourceEntry?.webApp.id || "").trim();
+    }
+
+    function getSourceLabelForOpenPayload(
+      payload: WebAppOpenPayload,
+      sourceEntry = getSourceEntryForOpenPayload(payload)
+    ) {
+      return String(payload.sourceLabel || sourceEntry?.webApp.label || "").trim();
     }
 
     function getMatchingWebAppOpenRule(payload: WebAppOpenPayload) {
       const url = normalizeAddressInput(payload.url);
       const sourceEntry = getSourceEntryForOpenPayload(payload);
+      const sourceIdentity = getSourceIdentityForOpenPayload(payload, sourceEntry);
       const project = getVisibleWebAppProject();
       const settingsRules = (getSettings().webAppOpenRules || []).filter((rule) => (
         rule.projectId || !isProjectSpecificWebAppOpenRule(rule)
@@ -475,7 +507,7 @@ export function createWebAppMenus({
         }
 
         if (rule.scope === "source-app") {
-          return Boolean(sourceEntry?.webApp.id && rule.pattern === sourceEntry.webApp.id);
+          return Boolean(sourceIdentity && rule.pattern === sourceIdentity);
         }
 
         return matchesUrlPattern(url, rule.pattern);
@@ -497,11 +529,11 @@ export function createWebAppMenus({
 
     async function applyWebAppOpenChoice(payload: WebAppOpenPayload, choice: WebAppOpenChoice) {
       const url = normalizeAddressInput(payload.url);
+      const sourceEntry = getSourceEntryForOpenPayload(payload);
 
       if (choice.target === "external") {
         await openExternal(url);
       } else if (choice.target === "split-pane") {
-        const sourceEntry = getSourceEntryForOpenPayload(payload);
         if (!openUrlInSplitPaneFromEntry(sourceEntry, url)) {
           const opened = await invokeWebApp("navigateWebApp", payload.sourceWebAppKey, "open", url);
           if (!opened) {
@@ -510,13 +542,18 @@ export function createWebAppMenus({
         }
       } else if (choice.target?.startsWith("pane:")) {
         const paneId = choice.target.slice("pane:".length);
-        const sourceEntry = getSourceEntryForOpenPayload(payload);
         if (!openUrlInExistingPane(paneId, sourceEntry, url)) {
           const opened = await invokeWebApp("navigateWebApp", payload.sourceWebAppKey, "open", url);
           if (!opened) {
             await openExternal(url);
           }
         }
+      } else if (
+        !payload.sourceWebAppKey &&
+        sourceEntry?.paneId &&
+        openUrlInExistingPane(sourceEntry.paneId, sourceEntry, url)
+      ) {
+        // DOM and widget sources become a transient webapp in their current pane.
       } else {
         await invokeWebApp("navigateWebApp", payload.sourceWebAppKey, "open", url);
       }
@@ -526,11 +563,11 @@ export function createWebAppMenus({
       }
 
       const settings = getSettings();
-      const sourceEntry = getSourceEntryForOpenPayload(payload);
+      const sourceIdentity = getSourceIdentityForOpenPayload(payload, sourceEntry);
       const project = getVisibleWebAppProject();
       const projectId = choice.applyGlobally === false ? project?.id || "" : "";
       const pattern = choice.scope === "source-app"
-        ? sourceEntry?.webApp.id || ""
+        ? sourceIdentity
         : getWebAppOpenRulePattern(url, choice.scope, choice.pattern);
       const nextRule: WebAppOpenRule = {
         pattern,
@@ -629,8 +666,8 @@ export function createWebAppMenus({
         return;
       }
 
-      const sourceEntry = getVisibleWebAppEntryByKey(payload.sourceWebAppKey);
-      const sourceWebApp = sourceEntry?.webApp || null;
+      const sourceEntry = getSourceEntryForOpenPayload(payload);
+      const sourceLabel = getSourceLabelForOpenPayload(payload, sourceEntry);
       const sourceBounds = normalizePayloadBounds(payload.sourceBounds) || getWebAppHostBounds(sourceEntry?.host) || null;
 
       const dialog = document.createElement("dialog");
@@ -663,7 +700,7 @@ export function createWebAppMenus({
       const summary = document.createElement("div");
       summary.className = "webapp-open-summary";
       const source = document.createElement("span");
-      source.textContent = sourceWebApp ? `From ${sourceWebApp.label}` : "From webapp";
+      source.textContent = sourceLabel ? `From ${sourceLabel}` : "From webapp";
       const urlText = document.createElement("code");
       urlText.textContent = url;
       summary.append(source, urlText);
@@ -672,7 +709,9 @@ export function createWebAppMenus({
 	      const entriesByPaneId = new Map(visibleEntries.map((entry) => [entry.paneId, entry]));
 	      const visibleProject = getVisibleWebAppProject();
 	      const visibleLayout = visibleProject ? getProjectPaneLayout(visibleProject) : null;
-	      const initialRule = payload.source === "context-menu" ? getMatchingWebAppOpenRule(payload) : null;
+	      const initialRule = ["context-menu", "explicit"].includes(payload.source || "")
+	        ? getMatchingWebAppOpenRule(payload)
+	        : null;
 	      const initialTarget = initialRule?.target || "same-pane";
 	      const initialScope = initialRule?.scope === "source-app" ? "source-app" : "url-pattern";
 	      const initialPattern = initialScope === "url-pattern" ? initialRule?.pattern || url : url;
@@ -917,7 +956,7 @@ export function createWebAppMenus({
             pattern: elements.webAppOpenUrlPattern?.value,
             persist: persistInput.checked,
             scope: scopeSelect.value,
-            label: String(sourceWebApp?.label || "")
+            label: sourceLabel
           });
           dialog.close();
         } catch (submitError) {

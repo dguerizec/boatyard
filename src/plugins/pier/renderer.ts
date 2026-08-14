@@ -241,8 +241,8 @@
     });
   }
 
-  function isCurrentProjectWorktree(project: PierProject, entry: PierWorkload) {
-    return entry?.slug === "main" || normalizePath(project?.sourcePath) === normalizePath(entry?.worktreePath);
+  function isProtectedProjectWorktree(project: PierProject, entry: PierWorkload) {
+    return entry.primary === true || normalizePath(project?.sourcePath) === normalizePath(entry?.worktreePath);
   }
 
   function getDefaultPierProjectName(project: PierProject = {}) {
@@ -305,22 +305,43 @@
     return response.json();
   }
 
-  function normalizeWorktreeEntry(pierProjectName: string, worktree: unknown): PierWorkload {
+  function normalizeWorktreeEntry(
+    pierProjectName: string,
+    pierProjectPath: string,
+    worktree: unknown
+  ): PierWorkload {
     const source = isRecord(worktree) ? worktree : {};
     const workload = normalizePierWorkload(source.workload);
     const defaultUrl = getDefaultWorkloadUrl(workload);
+    const worktreePath = String(source.path || workload.worktreePath || "");
     const urls = workload.urls?.length
       ? workload.urls
       : defaultUrl ? [{ default: true, url: defaultUrl }] : undefined;
     return {
       project: workload.project || pierProjectName,
+      primary: Boolean(
+        normalizePath(pierProjectPath) &&
+        normalizePath(pierProjectPath) === normalizePath(worktreePath)
+      ),
       slug: workload.slug || String(source.slug || source.branch || "main"),
       url: defaultUrl,
-      worktreePath: String(source.path || workload.worktreePath || ""),
+      worktreePath,
       status: workload.status || (source.has_workload ? "" : "stopped"),
       running: source.has_workload === true && isWorkloadRunning(workload),
       urls
     };
+  }
+
+  function sortProjectWorkloads(workloads: PierWorkload[]) {
+    return [...workloads].sort((left, right) => {
+      if (left.primary !== right.primary) {
+        return left.primary ? -1 : 1;
+      }
+      return String(left.slug || "").localeCompare(String(right.slug || ""), "en", {
+        numeric: true,
+        sensitivity: "base"
+      });
+    });
   }
 
   async function listProjectWorkloads(project: PierProject, options: PierOptions = {}) {
@@ -335,6 +356,7 @@
     const pierProjectEntries = Array.isArray(pierProjects) ? pierProjects.map(normalizePierProjectEntry) : [];
     const pierProject = findPierProject(project, pierProjectEntries, options.pluginConfig);
     const pierProjectName = pierProject?.name || "";
+    const pierProjectPath = pierProject?.repo_path || "";
 
     if (!pierProjectName) {
       setCachedWorkloads(project, options, []);
@@ -348,9 +370,9 @@
     }
 
     const worktrees = await worktreesResponse.json();
-    const entries = (Array.isArray(worktrees) ? worktrees : [])
-      .map((worktree) => normalizeWorktreeEntry(pierProjectName, worktree))
-      .filter((entry): entry is PierWorkload => Boolean(entry.slug && entry.worktreePath));
+    const entries = sortProjectWorkloads((Array.isArray(worktrees) ? worktrees : [])
+      .map((worktree) => normalizeWorktreeEntry(pierProjectName, pierProjectPath, worktree))
+      .filter((entry): entry is PierWorkload => Boolean(entry.slug && entry.worktreePath)));
 
     setCachedWorkloads(project, options, entries);
     return entries;
@@ -457,16 +479,14 @@
           skipDown: payload.skipDown
         });
       },
-      openUrl(entry: PierWorkload | string, options: PierOptions = {}) {
+      openUrl(entry: PierWorkload | string, options: PierOptions = {}, sourceElement?: Element) {
         const url = typeof entry === "string" ? entry : entry?.url;
-        const slug = typeof entry === "string" ? "" : entry?.slug;
-        const webAppId = slug ? `pier:${slug}` : "pier";
         if (!url) {
           return false;
         }
 
-        if (typeof options.openProjectWebApp === "function" && options.openProjectWebApp(webAppId, url)) {
-          return true;
+        if (typeof options.openUrl === "function") {
+          return options.openUrl(url, { sourceElement });
         }
 
         return globalScope.boatyard?.openExternal?.(url);
@@ -502,57 +522,70 @@
 
   function updatePierUrlRow(row: PierUrlRow, entry: PierWorkload) {
     row.pierEntry = entry;
+    const canOpenUrl = Boolean(entry.running && entry.url);
     row.classList.toggle("stopped", !entry.running);
-    row.pierLink.href = entry.url || "#";
-    row.pierLink.textContent = entry.url || entry.slug || "";
-    row.pierLink.title = entry.url || entry.slug || "";
-    row.pierPathText.textContent = entry.worktreePath || "No worktree path";
-    row.pierPathButton.title = entry.worktreePath ? `Copy ${entry.worktreePath}` : "";
-    row.pierPathButton.disabled = !entry.worktreePath;
-    row.pierActionButton.textContent = entry.running ? "Stop" : "Start";
+    row.pierStatusDot.title = entry.running ? "Running" : "Stopped";
+    row.pierStatusDot.setAttribute("aria-label", row.pierStatusDot.title);
+    row.pierLink.textContent = entry.slug || entry.url || "";
+    row.pierLink.title = canOpenUrl ? `Open ${entry.url}` : entry.slug || "";
+    row.pierLink.disabled = !canOpenUrl;
+    row.pierOpenUrlButton.disabled = !canOpenUrl;
+    row.pierCopyUrlButton.disabled = !entry.url;
+    row.pierCopyPathButton.disabled = !entry.worktreePath;
+    row.pierMenuButton.title = `Actions for ${entry.slug || "worktree"}`;
+    row.pierMenuButton.setAttribute("aria-label", row.pierMenuButton.title);
+    const busy = row.dataset.busy === "true";
+    row.pierActionButton.textContent = busy
+      ? entry.running ? "Stopping" : "Starting"
+      : entry.running ? "Stop" : "Start";
     row.pierActionButton.classList.toggle("stop", entry.running);
     row.pierActionButton.classList.toggle("start", !entry.running);
-    row.pierActionButton.disabled = false;
-    row.pierRemoveButton.disabled = isCurrentProjectWorktree(row.pierProject, entry);
-    row.pierRemoveButton.title = row.pierRemoveButton.disabled
-      ? "The current project worktree cannot be removed from here."
-      : `Remove ${entry.slug}`;
+    row.pierActionButton.disabled = busy;
+    const protectedWorktree = isProtectedProjectWorktree(row.pierProject, entry);
+    row.pierRemoveButton.hidden = protectedWorktree;
+    row.pierMenuSeparator.hidden = protectedWorktree;
+    row.pierRemoveButton.title = protectedWorktree ? "" : `Remove ${entry.slug}`;
   }
 
   function asError(value: unknown): Error {
     return value instanceof Error ? value : new Error(String(value));
   }
 
+  function closePierRowMenu(menu: HTMLDivElement) {
+    if (menu.matches(":popover-open")) {
+      menu.hidePopover();
+    }
+  }
+
   function createPierUrlRow(props: PierOptions, service: PierService, onRefresh: () => Promise<unknown>, onError: (error: Error) => void): PierUrlRow {
-    const link = document.createElement("a");
+    const statusDot = document.createElement("span");
+    statusDot.className = "pier-status-dot";
+
+    const link = document.createElement("button");
     link.className = "pier-url-link";
+    link.type = "button";
     link.addEventListener("click", (event) => {
       event.preventDefault();
       const entry = getClosestPierUrlRow(link)?.pierEntry || {};
-      if (entry.url) {
-        service.openUrl(entry, props);
+      if (entry.running && entry.url) {
+        service.openUrl(entry, props, link);
       }
     });
 
-    const pathButton = document.createElement("button");
-    pathButton.className = "pier-path-button";
-    pathButton.type = "button";
-    const pathText = document.createElement("span");
-    pathText.className = "pier-path-text";
-    pathButton.append(pathText);
-    pathButton.addEventListener("click", async () => {
-      try {
-        await copyText(getClosestPierUrlRow(pathButton)?.pierEntry.worktreePath || "");
-      } catch (error) {
-        onError(asError(error));
-      }
-    });
+    const identity = document.createElement("div");
+    identity.className = "pier-worktree-identity";
+    identity.append(statusDot, link);
 
     const actionButton = document.createElement("button");
     actionButton.className = "pier-action-button";
     actionButton.type = "button";
     actionButton.addEventListener("click", async () => {
       const entry = getClosestPierUrlRow(actionButton)?.pierEntry || {};
+      const row = getClosestPierUrlRow(actionButton);
+      if (!row) {
+        return;
+      }
+      row.dataset.busy = "true";
       actionButton.disabled = true;
       actionButton.textContent = entry.running ? "Stopping" : "Starting";
       try {
@@ -561,39 +594,150 @@
         } else {
           await service.up(entry, props);
         }
+        delete row.dataset.busy;
         await onRefresh();
       } catch (error) {
+        delete row.dataset.busy;
         actionButton.disabled = false;
         actionButton.textContent = entry.running ? "Stop" : "Start";
         onError(asError(error));
       }
     });
 
+    const menu = document.createElement("div");
+    menu.className = "pier-row-menu";
+    menu.popover = "auto";
+    menu.setAttribute("role", "menu");
+
+    const openUrlButton = document.createElement("button");
+    openUrlButton.className = "pier-row-menu-item";
+    openUrlButton.type = "button";
+    openUrlButton.setAttribute("role", "menuitem");
+    openUrlButton.textContent = "Open URL";
+    openUrlButton.addEventListener("click", () => {
+      const entry = getClosestPierUrlRow(openUrlButton)?.pierEntry || {};
+      closePierRowMenu(menu);
+      if (entry.running && entry.url) {
+        service.openUrl(entry, props, openUrlButton);
+      }
+    });
+
+    const copyUrlButton = document.createElement("button");
+    copyUrlButton.className = "pier-row-menu-item";
+    copyUrlButton.type = "button";
+    copyUrlButton.setAttribute("role", "menuitem");
+    copyUrlButton.textContent = "Copy URL";
+    copyUrlButton.addEventListener("click", async () => {
+      closePierRowMenu(menu);
+      try {
+        await copyText(getClosestPierUrlRow(copyUrlButton)?.pierEntry.url || "");
+      } catch (error) {
+        onError(asError(error));
+      }
+    });
+
+    const copyPathButton = document.createElement("button");
+    copyPathButton.className = "pier-row-menu-item";
+    copyPathButton.type = "button";
+    copyPathButton.setAttribute("role", "menuitem");
+    copyPathButton.textContent = "Copy worktree path";
+    copyPathButton.addEventListener("click", async () => {
+      closePierRowMenu(menu);
+      try {
+        await copyText(getClosestPierUrlRow(copyPathButton)?.pierEntry.worktreePath || "");
+      } catch (error) {
+        onError(asError(error));
+      }
+    });
+
+    const menuSeparator = document.createElement("div");
+    menuSeparator.className = "pier-row-menu-separator";
+    menuSeparator.setAttribute("role", "separator");
+
     const removeButton = document.createElement("button");
-    removeButton.className = "pier-remove-button";
+    removeButton.className = "pier-row-menu-item danger";
     removeButton.type = "button";
-    removeButton.textContent = "Remove";
+    removeButton.setAttribute("role", "menuitem");
+    removeButton.textContent = "Remove worktree…";
     removeButton.addEventListener("click", () => {
       const row = getClosestPierUrlRow(removeButton);
       const entry = row?.pierEntry || {};
-      if (!row || !entry.worktreePath || removeButton.disabled) {
+      closePierRowMenu(menu);
+      if (!row || !entry.worktreePath || removeButton.hidden) {
         return;
       }
 
       openPierRemoveWorktreeDialog(row.pierProject, entry, service, onRefresh, onError);
     });
 
+    menu.append(openUrlButton, copyUrlButton, copyPathButton, menuSeparator, removeButton);
+
+    const menuButton = document.createElement("button");
+    menuButton.className = "pier-menu-button";
+    menuButton.type = "button";
+    menuButton.textContent = "⋯";
+    menuButton.setAttribute("aria-haspopup", "menu");
+    menuButton.setAttribute("aria-expanded", "false");
+    menuButton.popoverTargetElement = menu;
+    menuButton.addEventListener("click", () => {
+      if (menu.matches(":popover-open")) {
+        return;
+      }
+
+      const rect = menuButton.getBoundingClientRect();
+      const menuWidth = 210;
+      menu.style.visibility = "hidden";
+      menu.style.left = `${Math.round(Math.max(12, Math.min(rect.right - menuWidth, globalScope.innerWidth - menuWidth - 12)))}px`;
+      menu.style.top = `${Math.round(Math.max(12, Math.min(rect.bottom + 6, globalScope.innerHeight - 190)))}px`;
+    });
+    let overlayRequest = 0;
+    menu.addEventListener("toggle", () => {
+      const request = ++overlayRequest;
+      const isOpen = menu.matches(":popover-open");
+      menuButton.setAttribute("aria-expanded", String(isOpen));
+
+      if (!isOpen) {
+        menu.style.visibility = "";
+        void props.overlay?.restore().catch((error) => {
+          console.error("Could not restore webapps after closing the Pier menu:", error);
+        });
+        return;
+      }
+
+      const revealMenu = () => {
+        if (request !== overlayRequest || !menu.matches(":popover-open")) {
+          return;
+        }
+        menu.style.visibility = "";
+        menu.querySelector<HTMLButtonElement>("button:not([hidden]):not(:disabled)")?.focus();
+      };
+      if (!props.overlay) {
+        revealMenu();
+        return;
+      }
+
+      void props.overlay.freeze(menu, { margin: 8 }).then(revealMenu).catch((error) => {
+        console.error("Could not freeze webapps below the Pier menu:", error);
+        revealMenu();
+      });
+    });
+
     const row = Object.assign(document.createElement("div"), {
       pierActionButton: actionButton,
+      pierCopyPathButton: copyPathButton,
+      pierCopyUrlButton: copyUrlButton,
       pierEntry: {},
       pierLink: link,
-      pierPathButton: pathButton,
-      pierPathText: pathText,
+      pierMenu: menu,
+      pierMenuButton: menuButton,
+      pierMenuSeparator: menuSeparator,
+      pierOpenUrlButton: openUrlButton,
       pierProject: {},
-      pierRemoveButton: removeButton
+      pierRemoveButton: removeButton,
+      pierStatusDot: statusDot
     });
     row.className = "pier-url-row";
-    row.append(link, pathButton, actionButton, removeButton);
+    row.append(identity, actionButton, menuButton, menu);
     return row;
   }
 
@@ -610,6 +754,7 @@
       .filter(isPierUrlRow)
       .flatMap((row) => row.dataset.key ? [[row.dataset.key, row] as const] : []));
     const nextKeys = new Set<string>();
+    const nextRows: PierUrlRow[] = [];
 
     for (const entry of urls) {
       const key = getPierUrlRowKey(entry);
@@ -618,7 +763,13 @@
       row.dataset.key = key;
       row.pierProject = project;
       updatePierUrlRow(row, entry);
-      list.append(row);
+      nextRows.push(row);
+    }
+
+    const rowsAlreadyMountedInOrder = nextRows.length === list.children.length &&
+      nextRows.every((row, index) => list.children[index] === row);
+    if (!rowsAlreadyMountedInOrder) {
+      list.append(...nextRows);
     }
 
     for (const [key, row] of existingRows) {
@@ -648,6 +799,11 @@
     const selectedEntryPoints = getSelectedEntryPoints(project, props, workloads);
     selector.replaceChildren();
     selector.hidden = entryPoints.length === 0;
+
+    const label = document.createElement("span");
+    label.className = "pier-entry-point-label";
+    label.textContent = "Tabs";
+    selector.append(label);
 
     for (const entryPoint of entryPoints) {
       const button = document.createElement("button");
@@ -981,17 +1137,25 @@
     title.className = "pier-widget-title";
     const heading = document.createElement("h3");
     heading.textContent = "Pier";
-    title.append(heading);
+    const workloadCount = document.createElement("span");
+    workloadCount.className = "pier-workload-count";
+    workloadCount.textContent = "0";
+    workloadCount.setAttribute("aria-label", "0 worktrees");
+    title.append(heading, workloadCount);
 
     const refreshButton = document.createElement("button");
-    refreshButton.className = "pier-refresh-button";
+    refreshButton.className = "pier-icon-button pier-refresh-button";
     refreshButton.type = "button";
-    refreshButton.textContent = "Refresh";
+    refreshButton.textContent = "↻";
+    refreshButton.title = "Refresh now";
+    refreshButton.setAttribute("aria-label", "Refresh now");
 
     const newButton = document.createElement("button");
-    newButton.className = "pier-refresh-button";
+    newButton.className = "pier-icon-button";
     newButton.type = "button";
-    newButton.textContent = "New";
+    newButton.textContent = "+";
+    newButton.title = "Create a worktree";
+    newButton.setAttribute("aria-label", "Create a worktree");
 
     const headerActions = document.createElement("div");
     headerActions.className = "pier-widget-actions";
@@ -1028,6 +1192,8 @@
 
       try {
         const urls = await service.listProjectWorkloads(project, props);
+        workloadCount.textContent = String(urls.length);
+        workloadCount.setAttribute("aria-label", `${urls.length} worktree${urls.length === 1 ? "" : "s"}`);
         body.hidden = urls.length > 0;
         body.textContent = urls.length ? "" : "No Pier worktree.";
         renderPierEntryPointButtons(entryPointSelector, urls, project, props, (error: Error) => {
@@ -1366,16 +1532,16 @@
 
         ctx.widgets.register({
           id: "boatyard.pier.urls",
-          name: "Pier URLs",
-          title: "Pier URLs",
+          name: "Pier",
+          title: "Pier",
           scope: "project",
           category: "Project",
           status: "stable",
           defaultVisible: false,
-          description: "Lists running Pier worktree URLs for the project.",
+          description: "Manages Pier worktree URLs and lifecycle actions.",
           layout: {
-            default: { columns: 3, rows: 2 },
-            min: { columns: 3, rows: 2 }
+            default: { columns: 4, rows: 4 },
+            min: { columns: 3, rows: 3 }
           },
           createElement: (project: PierProject, props: PierOptions) => createPierWidget(project, props, pierService)
         });

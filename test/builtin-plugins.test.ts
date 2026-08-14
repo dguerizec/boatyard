@@ -1578,6 +1578,7 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
   assert.deepEqual(plain(workloads), [
     {
       project: "sshadow",
+      primary: true,
       slug: "v1",
       url: "http://v1.sshadow.test",
       worktreePath,
@@ -1598,6 +1599,7 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
     },
     {
       project: "sshadow",
+      primary: false,
       slug: "stopped",
       url: "",
       worktreePath: `${sourcePath}/worktrees/stopped`,

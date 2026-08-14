@@ -220,10 +220,12 @@ const {
   hydrateWidgetLayouts
 } = createRendererWidgetBridge({
   boatyard: boatyardWindow.boatyard,
+  createOverlayFreezeScope: () => webAppSurfaces.createFreezeScope(),
   getState: () => state,
   getProjectPluginConfig,
   getGlobalPluginConfig,
   isGlobalWorkspace,
+  openUrl: (payload: UnknownRecord) => openWebAppOpenUrlDialog(payload),
   openProjectWebApp,
   createCard,
   createToolIcon,

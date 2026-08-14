@@ -17,12 +17,17 @@ type PierConfig = {
 
 type PierOptions = {
   globalPluginConfig?: PierConfig;
-  openProjectWebApp?: (webAppId: string, url: string) => boolean;
+  openUrl?: (url: string, options?: { sourceElement?: Element }) => unknown;
+  overlay?: {
+    freeze(element: Element, options?: { margin?: number }): Promise<void>;
+    restore(): Promise<void>;
+  };
   pluginConfig?: PierConfig;
 };
 
 type PierWorkload = {
   project?: string;
+  primary?: boolean;
   running?: boolean;
   slug?: string;
   status?: string;
@@ -61,12 +66,17 @@ type PierWorktreePayload = {
 
 type PierUrlRow = HTMLDivElement & {
   pierActionButton: HTMLButtonElement;
+  pierCopyPathButton: HTMLButtonElement;
+  pierCopyUrlButton: HTMLButtonElement;
   pierEntry: PierWorkload;
-  pierLink: HTMLAnchorElement;
-  pierPathButton: HTMLButtonElement;
-  pierPathText: HTMLSpanElement;
+  pierLink: HTMLButtonElement;
+  pierMenu: HTMLDivElement;
+  pierMenuButton: HTMLButtonElement;
+  pierMenuSeparator: HTMLDivElement;
+  pierOpenUrlButton: HTMLButtonElement;
   pierProject: PierProject;
   pierRemoveButton: HTMLButtonElement;
+  pierStatusDot: HTMLSpanElement;
 };
 
 type PierService = {
@@ -76,7 +86,7 @@ type PierService = {
   getProjectAvailability(project: PierProject): Promise<{ available: boolean; worktreePattern: string }>;
   isProjectEnabled(project: PierProject): Promise<boolean>;
   listProjectWorkloads(project: PierProject, options?: PierOptions): Promise<PierWorkload[]>;
-  openUrl(entry: PierWorkload | string, options?: PierOptions): unknown;
+  openUrl(entry: PierWorkload | string, options?: PierOptions, sourceElement?: Element): unknown;
   removeWorktree(project: PierProject, payload?: PierWorktreePayload): Promise<unknown> | undefined;
   up(workload: PierWorkload, options?: PierOptions): Promise<unknown>;
 };

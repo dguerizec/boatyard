@@ -6,6 +6,10 @@ import type {
 } from "./widgetSurfaceTypes.js";
 import type { BoatyardBridge, RendererProject, RendererState } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
+import type {
+  WidgetOverlayController,
+  WidgetOverlayFreezeScope
+} from "./widgetOverlay.js";
 
 export type WidgetSurfacesBridge = BoatyardBridge & {
   updateWidgetLayout(projectId: string | undefined, layout: PersistedWidgetLayout): Promise<unknown>;
@@ -20,10 +24,12 @@ export type WidgetSurfacesState = RendererState & {
 
 export type WidgetSurfacesOptions = {
   boatyard: WidgetSurfacesBridge;
+  createOverlayFreezeScope: () => WidgetOverlayFreezeScope;
   getState: () => WidgetSurfacesState;
   getProjectPluginConfig: (projectId: string | undefined, pluginId: string) => UnknownRecord;
   getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
   isGlobalWorkspace: (project: RendererProject | null | undefined) => boolean;
+  openUrl: (payload: UnknownRecord) => unknown;
   openProjectWebApp: (projectId: string | undefined, webAppId: string, url: string) => unknown;
   createCard: (content: unknown) => HTMLElement;
   createToolIcon: (name: string) => Node;
@@ -43,7 +49,9 @@ export type WidgetSurfacesOptions = {
 export type WidgetPluginProps = UnknownRecord & {
   allProjectPluginConfig: UnknownRecord;
   globalPluginConfig: UnknownRecord;
+  openUrl(url: string, options?: { sourceElement?: Element }): unknown;
   openProjectWebApp(webAppId: string, url?: string): unknown;
+  overlay: WidgetOverlayController;
   pluginConfig: UnknownRecord;
   project: RendererProject;
   projectId?: string;
