@@ -1,6 +1,52 @@
 {
-  "generatedForVersion": "0.10.0",
+  "generatedForVersion": "0.10.1",
   "releases": [
+    {
+      "version": "0.10.1",
+      "date": "2026-08-14",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Pier worktree action menu",
+          "body": "Worktree rows now include a compact menu for opening URLs, copying URLs, copying worktree paths, and removing removable worktrees."
+        },
+        {
+          "category": "Added",
+          "title": "Widget URL choices",
+          "body": "Pier URLs opened from the widget now use Boatyard's shared Open URL flow, including same-pane, split-pane, existing-pane, and saved-rule choices."
+        },
+        {
+          "category": "Changed",
+          "title": "Simpler Pier widget",
+          "body": "The Pier widget is now labeled \"Pier\", shows a worktree count, uses compact create and refresh controls, and keeps the main row focused on worktree names and status."
+        },
+        {
+          "category": "Changed",
+          "title": "Cleaner tab selection",
+          "body": "Pier entry point toggles are grouped under a clearer \"Tabs\" control and apply consistently across running worktrees."
+        },
+        {
+          "category": "Changed",
+          "title": "Primary worktree priority",
+          "body": "The primary project worktree is shown first, with other worktrees sorted predictably by name."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pier widget refreshes",
+          "body": "Refreshing Pier data now preserves existing rows when possible, avoiding unnecessary pane disruption while the widget updates."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pier menu overlays",
+          "body": "Opening Pier row menus now freezes overlapping web views while the menu is active, preventing embedded content from drawing over the menu."
+        },
+        {
+          "category": "Fixed",
+          "title": "Safer Pier actions",
+          "body": "Stopped worktrees no longer expose active Open URL actions, and the primary project worktree no longer shows a remove action."
+        }
+      ]
+    },
     {
       "version": "0.10.0",
       "date": "2026-08-13",

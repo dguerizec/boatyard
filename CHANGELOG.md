@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.10.1] - 2026-08-14
+
+### Summary
+
+- **v0.10.1: Pier Widget Controls** — Refines the Pier widget into a clearer worktree control surface with better URL opening, safer actions, and steadier refresh behavior.
+
+### Added
+
+- **Pier worktree action menu** — Worktree rows now include a compact menu for opening URLs, copying URLs, copying worktree paths, and removing removable worktrees.
+- **Widget URL choices** — Pier URLs opened from the widget now use Boatyard's shared Open URL flow, including same-pane, split-pane, existing-pane, and saved-rule choices.
+
+### Changed
+
+- **Simpler Pier widget** — The Pier widget is now labeled "Pier", shows a worktree count, uses compact create and refresh controls, and keeps the main row focused on worktree names and status.
+- **Cleaner tab selection** — Pier entry point toggles are grouped under a clearer "Tabs" control and apply consistently across running worktrees.
+- **Primary worktree priority** — The primary project worktree is shown first, with other worktrees sorted predictably by name.
+
+### Fixed
+
+- **Pier widget refreshes** — Refreshing Pier data now preserves existing rows when possible, avoiding unnecessary pane disruption while the widget updates.
+- **Pier menu overlays** — Opening Pier row menus now freezes overlapping web views while the menu is active, preventing embedded content from drawing over the menu.
+- **Safer Pier actions** — Stopped worktrees no longer expose active Open URL actions, and the primary project worktree no longer shows a remove action.
+
 ## [0.10.0] - 2026-08-13
 
 ### Summary
