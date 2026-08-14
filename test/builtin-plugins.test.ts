@@ -418,6 +418,7 @@ test("Built-in plugins register project integrations and widgets", () => {
   assert.equal(githubPane.isAvailable?.(githubContext), true);
   assert.equal(githubPane.parentLabel, "GitHub");
   assert.equal(githubPane.parentWebAppId, "boatyard.github.overview");
+  assert.equal(githubPane.paneTypeId, "repo");
   assert.deepEqual(plain(githubPane.replacesWebAppIds), ["repo"]);
   assert.equal(githubPane.showInMenu, false);
   assert.match(githubPane.iconUrl || "", /\/plugins\/github\/github-icon\.svg$/);

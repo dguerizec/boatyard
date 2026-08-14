@@ -66,6 +66,7 @@ export function createDefaultState(): ProjectStoreState {
       projects: {}
     },
     globalUrls: [],
+    layouts: [],
     paneLayouts: {},
     widgetLayouts: {},
     terminalSelections: {},

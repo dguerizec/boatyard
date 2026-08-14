@@ -552,6 +552,7 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
   if (!pane) {
     throw new Error("Pier pane was not registered.");
   }
+  assert.equal((pane as { paneTypeId?: string }).paneTypeId, "pier");
   assert.equal(pane.resolveWebApps({ project, projectConfig: {}, globalPluginConfig: {} }).length, 3);
 
   await buttons[1].trigger("click");

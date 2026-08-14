@@ -92,6 +92,10 @@ type BoatyardManualGlobal = typeof globalThis & {
             body: "Use vertical or horizontal split actions in a pane header to build a workbench layout for the current project."
           },
           {
+            title: "Reusable layouts",
+            body: "Save and apply proportional pane arrangements built from pane types. New layouts belong to the current project by default; enable Global when saving one that should be available everywhere. Matching open panes move into their new positions without reloading their current content; unavailable pane types become empty panes."
+          },
+          {
             title: "Tabs and home tabs",
             body: "Pane tabs include widgets, preview URLs, saved project URLs, terminals, plugin panes, and repository links. The Home menu can save useful sub-tabs. Integration panes can keep provider-specific section navigation visible above scrollable web content."
           },

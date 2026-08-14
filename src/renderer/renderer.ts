@@ -33,6 +33,7 @@ import type {
   RendererPaneNode,
   RendererProject,
   RendererState,
+  WorkspaceLayout,
 } from "./rendererTypes.js";
 import { createTerminalSurfaces } from "./terminalSurfaces.js";
 import { createToolIcon } from "./toolIcons.js";
@@ -45,6 +46,12 @@ import { createWebAppSurfaces } from "./webAppSurfaces.js";
 import { createVisibleWebAppTracker } from "./visibleWebAppTracker.js";
 import { registerWidgetRegistry } from "./widgetRegistry.js";
 import { createWorkspaceDashboardViews } from "./workspaceDashboardViews.js";
+import {
+  captureWorkspaceLayoutPane,
+  instantiateWorkspaceLayout,
+  resolveWorkspaceLayoutAspectRatio
+} from "./workspaceLayouts.js";
+import { createWorkspaceLayoutPicker } from "./workspaceLayoutPicker.js";
 import { createRendererWidgetBridge } from "./rendererWidgetBridge.js";
 import { rendererDomElements } from "./rendererDomElements.js";
 import { DEFAULT_WIDGET_PANE_ID, GLOBAL_WORKSPACE_ID, LEGACY_WIDGET_IDS, MIN_WIDGET_RAIL_WIDTH, UPDATE_POLL_INTERVAL_MS, WEBAPP_OPEN_SPLIT_RATIO, WEBAPP_SPLIT_RESIZER_SIZE, WIDGET_GRID_GAP, WIDGET_GRID_MAX_COLUMN_WIDTH, WIDGET_GRID_MIN_COLUMN_WIDTH, WIDGET_GRID_ROW_HEIGHT, WIDGET_GRID_SCROLL_GUARD } from "./rendererConstants.js";
@@ -57,7 +64,7 @@ registerPluginSettingsFields(window);
 
 const {
   addProjectButton, appShell, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, manualTourButton, pinnedProjects,
-  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, splitScreenButton, themeToggleButton, workspace, workspaceKicker, workspaceSummary, workspaceTitle
+  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, splitScreenButton, themeToggleButton, workspace, workspaceKicker, workspaceLayoutsButton, workspaceSummary, workspaceTitle
 } = rendererDomElements;
 
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
@@ -300,6 +307,189 @@ function getSelectedWebApp(project: RendererProject, paneId: string, webApps: un
     paneId,
     webApps as Parameters<typeof paneLayoutState.getSelectedWebApp>[2]
   );
+}
+
+function getPaneMasterType(project: RendererProject, pane: RendererPaneNode) {
+  const selectedWebAppId = paneLayoutState.getSelectedWebAppForPane(pane.id) || pane.selectedWebAppId;
+  const webApp = getProjectWebApps(project, pane.id).find((candidate) => candidate.id === selectedWebAppId);
+  return typeof webApp?.paneTypeId === "string" ? webApp.paneTypeId : null;
+}
+
+function isPaneMasterTypeAvailable(project: RendererProject, paneTypeId: string) {
+  return getProjectWebApps(project, "layout-preview").some((webApp) => webApp.paneTypeId === paneTypeId);
+}
+
+function getPaneMasterTypeLabel(project: RendererProject, paneTypeId: string) {
+  const webApp = getProjectWebApps(project, "layout-preview").find((candidate) => candidate.paneTypeId === paneTypeId);
+  return typeof webApp?.label === "string" && webApp.label.trim() ? webApp.label : paneTypeId;
+}
+
+function resolvePaneMasterType(project: RendererProject, paneTypeId: string, paneId: string) {
+  const webApps = getProjectWebApps(project, paneId);
+  const exact = webApps.find((webApp) => webApp.id === paneTypeId && webApp.paneTypeId === paneTypeId);
+  const providerDefault = webApps.find((webApp) => (
+    webApp.paneTypeId === paneTypeId && webApp.showInMenu !== false && !webApp.transient && !webApp.homeTab
+  ));
+  const providerFallback = webApps.find((webApp) => webApp.paneTypeId === paneTypeId);
+  return exact?.id || providerDefault?.id || providerFallback?.id || null;
+}
+
+async function captureCurrentWorkspaceLayout(
+  project: RendererProject,
+  name: string,
+  id: string = crypto.randomUUID(),
+  projectId: string | null = null
+): Promise<WorkspaceLayout> {
+  return {
+    id,
+    name,
+    paneLayout: captureWorkspaceLayoutPane(
+      getProjectPaneLayout(project),
+      (pane) => getPaneMasterType(project, pane)
+    ),
+    projectId
+  };
+}
+
+let workspaceLayoutToast: HTMLElement | null = null;
+let workspaceLayoutToastTimer: ReturnType<typeof setTimeout> | null = null;
+function acceptWorkspaceLayoutState(nextState: RendererState, projectId: string) {
+  const currentView = navigationController.getCurrentView();
+  const visibleProject = currentView === "project"
+    ? getCurrentProject()
+    : currentView === "global" ? getGlobalWorkspace() : null;
+  const shouldPreservePanes = visibleProject?.id === projectId;
+  state = nextState;
+  hydratePaneLayouts();
+  if (shouldPreservePanes) {
+    const updatedProject = currentView === "project"
+      ? getCurrentProject()
+      : getGlobalWorkspace();
+    if (updatedProject) {
+      renderPaneLayoutPreservingPanes(updatedProject);
+    }
+  }
+}
+
+function showWorkspaceLayoutUndo(undoToken: string, projectId: string) {
+  workspaceLayoutToast?.remove();
+  if (workspaceLayoutToastTimer) {
+    clearTimeout(workspaceLayoutToastTimer);
+  }
+  const toast = document.createElement("div");
+  toast.className = "workspace-layout-toast";
+  const message = document.createElement("span");
+  message.textContent = "Workspace layout applied.";
+  const undoButton = document.createElement("button");
+  undoButton.className = "secondary-button";
+  undoButton.type = "button";
+  undoButton.textContent = "Undo";
+  undoButton.addEventListener("click", async () => {
+    undoButton.disabled = true;
+    const restored = await boatyardWindow.boatyard.undoLayout(undoToken);
+    if (restored) {
+      acceptWorkspaceLayoutState(restored, projectId);
+    }
+    toast.remove();
+  });
+  toast.append(message, undoButton);
+  document.body.append(toast);
+  workspaceLayoutToast = toast;
+  workspaceLayoutToastTimer = setTimeout(() => {
+    toast.remove();
+    if (workspaceLayoutToast === toast) {
+      workspaceLayoutToast = null;
+    }
+  }, 12000);
+}
+
+async function applyWorkspaceLayout(project: RendererProject, layout: WorkspaceLayout) {
+  const projectId = String(project.id || "");
+  if (!projectId) {
+    throw new Error("The target project is missing an id.");
+  }
+  const paneLayout = instantiateWorkspaceLayout(layout, {
+    currentLayout: getProjectPaneLayout(project),
+    resolveCurrentPaneType: (pane) => getPaneMasterType(project, pane),
+    resolveCurrentWebAppId: (pane) => (
+      paneLayoutState.getSelectedWebAppForPane(pane.id) || pane.selectedWebAppId
+    ),
+    resolveDefaultPaneType: (paneTypeId, paneId) => (
+      resolvePaneMasterType(project, paneTypeId, paneId)
+    )
+  });
+  const result = await boatyardWindow.boatyard.applyLayout({ projectId, paneLayout });
+  acceptWorkspaceLayoutState(result.state, projectId);
+  showWorkspaceLayoutUndo(result.undoToken, projectId);
+}
+
+async function openWorkspaceLayoutLibrary(project: RendererProject) {
+  const projectId = String(project.id || "");
+  const projectScopeAvailable = Boolean(projectId && !isGlobalWorkspace(project));
+  const previewMetrics = await boatyardWindow.boatyard.getLayoutPreviewMetrics();
+  const picker = createWorkspaceLayoutPicker({
+    getLayouts: () => boatyardWindow.boatyard.listLayouts(projectScopeAvailable ? projectId : null),
+    getPaneTypeLabel: (paneTypeId) => getPaneMasterTypeLabel(project, paneTypeId),
+    getAspectRatio: () => resolveWorkspaceLayoutAspectRatio(previewMetrics),
+    isPaneTypeAvailable: (paneTypeId) => isPaneMasterTypeAvailable(project, paneTypeId),
+    onConfirm: (layout) => applyWorkspaceLayout(project, layout),
+    onDelete: async (layout) => {
+      if (window.confirm(`Delete the layout “${layout.name}”?`)) {
+        await boatyardWindow.boatyard.removeLayout(layout.id);
+      }
+    },
+    onSaveAs: async (name, scope) => {
+      const layout = await captureCurrentWorkspaceLayout(
+        project,
+        name,
+        crypto.randomUUID(),
+        scope === "project" ? projectId : null
+      );
+      return boatyardWindow.boatyard.saveLayout(layout);
+    },
+    onUpdate: async (layout) => {
+      const updated = await captureCurrentWorkspaceLayout(
+        project,
+        layout.name,
+        layout.id,
+        layout.projectId
+      );
+      return boatyardWindow.boatyard.saveLayout(updated);
+    },
+    projectScopeAvailable
+  });
+  await picker.refresh();
+  await showOverlayDialog(picker.dialog, {
+    freeze: "overlap",
+    freezeMargin: 16,
+    removeOnClose: true
+  });
+}
+
+async function chooseInitialWorkspaceLayout(project: RendererProject): Promise<WorkspaceLayout | null> {
+  let selected: WorkspaceLayout | null = null;
+  const previewMetrics = await boatyardWindow.boatyard.getLayoutPreviewMetrics();
+  const picker = createWorkspaceLayoutPicker({
+    confirmLabel: "Use this layout",
+    description: "Preview the initial workspace before creating the project.",
+    getLayouts: () => boatyardWindow.boatyard.listLayouts(),
+    getPaneTypeLabel: (paneTypeId) => getPaneMasterTypeLabel(project, paneTypeId),
+    getAspectRatio: () => resolveWorkspaceLayoutAspectRatio(previewMetrics),
+    isPaneTypeAvailable: (paneTypeId) => isPaneMasterTypeAvailable(project, paneTypeId),
+    onConfirm: (layout) => {
+      selected = layout;
+    },
+    title: "Choose the initial layout"
+  });
+  await picker.refresh();
+  const closed = new Promise<void>((resolve) => picker.dialog.addEventListener("close", () => resolve(), { once: true }));
+  await showOverlayDialog(picker.dialog, {
+    freeze: "overlap",
+    freezeMargin: 16,
+    removeOnClose: true
+  });
+  await closed;
+  return selected;
 }
 
 function invokeWebApp(action: string, ...payload: unknown[]) {
@@ -897,6 +1087,8 @@ function createProjectWidgetPanesForm(options: UnknownRecord) {
 
 const projectPageViews = createProjectPageViews({
   addProject: (values: UnknownRecord) => boatyardWindow.boatyard.addProject(values),
+  applyInitialLayout: applyWorkspaceLayout,
+  chooseInitialLayout: chooseInitialWorkspaceLayout,
   createProjectDangerZone,
   createProjectFormView,
   createProjectTerminalSettingsForm,
@@ -1046,6 +1238,16 @@ boatyardWindow.boatyard.onWorkspaceNavigationChanged?.((navigation) => {
   restoreNavigation(state.navigation || {});
   render();
   topbarWidgets.render();
+});
+
+workspaceLayoutsButton.addEventListener("click", () => {
+  const project = getCurrentProject() || getGlobalWorkspace() || ({
+    id: GLOBAL_WORKSPACE_ID,
+    isGlobalWorkspace: true,
+    name: "Global",
+    slug: "global"
+  } as RendererProject);
+  void openWorkspaceLayoutLibrary(project);
 });
 
 splitScreenButton.addEventListener("click", () => {

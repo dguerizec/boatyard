@@ -26,6 +26,7 @@ export const rendererDomElements = Object.freeze({
   sidebarUpdateNotice: requireElement<HTMLElement>("#sidebar-update-notice"),
   workspace: requireElement<HTMLElement>(".workspace"),
   workspaceKicker: requireElement<HTMLElement>("#workspace-kicker"),
+  workspaceLayoutsButton: requireElement<HTMLButtonElement>("#workspace-layouts"),
   workspaceSummary: requireElement<HTMLElement>("#workspace-summary"),
   workspaceTitle: requireElement<HTMLElement>("#workspace-title")
 });

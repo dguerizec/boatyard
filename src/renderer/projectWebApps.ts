@@ -18,6 +18,7 @@ type PluginPaneDefinition = UnknownRecord & {
   minWidth?: string;
   parentLabel?: string;
   parentWebAppId?: string;
+  paneTypeId?: string;
   pluginId?: string;
   replacesWebAppIds?: string[];
   navigation?: WebAppPaneNavigation;
@@ -74,6 +75,7 @@ export function createProjectWebApps({
       label: widgetPane.label || `Widgets ${index + 1}`,
       key: `${paneId}:widgets:${widgetPane.id}`,
       kind: "widgets",
+      paneTypeId: "widgets",
       minHeight: typeof widgetPane.minHeight === "string" ? widgetPane.minHeight : undefined,
       minWidth: typeof widgetPane.minWidth === "string" ? widgetPane.minWidth : undefined,
       widgetPane
@@ -114,7 +116,8 @@ export function createProjectWebApps({
         id: "terminal",
         label: "Terminal",
         key: `${paneId}:terminal`,
-        kind: "terminal"
+        kind: "terminal",
+        paneTypeId: "terminal"
       });
     }
 
@@ -124,7 +127,8 @@ export function createProjectWebApps({
       label: "Manual",
       key: `${paneId}:manual`,
       url: "https://boatyard.dev/doc/",
-      restoreUrl: false
+      restoreUrl: false,
+      paneTypeId: "manual"
     });
 
     function getPluginPaneContext(pluginPane: PluginPaneDefinition) {
@@ -158,6 +162,7 @@ export function createProjectWebApps({
         navigation: resolvePaneNavigation(pluginPane, context),
         parentLabel: pluginPane.parentLabel || "",
         parentWebAppId: pluginPane.parentWebAppId || "",
+        paneTypeId: pluginPane.paneTypeId || pluginPane.webAppId,
         pluginPane,
         showInMenu: pluginPane.showInMenu !== false
       });
@@ -190,6 +195,7 @@ export function createProjectWebApps({
             navigation: resolvePaneNavigation(pluginPane, context, webApp.navigation),
             parentLabel: webApp.parentLabel || pluginPane.parentLabel || "",
             parentWebAppId: webApp.parentWebAppId || pluginPane.parentWebAppId || "",
+            paneTypeId: webApp.paneTypeId || pluginPane.paneTypeId || pluginPane.webAppId,
             showInMenu: webApp.showInMenu ?? pluginPane.showInMenu !== false,
             url: webApp.url,
             restoreUrl: webApp.restoreUrl
@@ -216,6 +222,7 @@ export function createProjectWebApps({
         navigation: resolvePaneNavigation(pluginPane, context),
         parentLabel: pluginPane.parentLabel || "",
         parentWebAppId: pluginPane.parentWebAppId || "",
+        paneTypeId: pluginPane.paneTypeId || pluginPane.webAppId,
         showInMenu: pluginPane.showInMenu !== false,
         url
       });
@@ -227,6 +234,7 @@ export function createProjectWebApps({
         id: "repo",
         label: "Repo",
         key: `${paneId}:repo`,
+        paneTypeId: "repo",
         url: project.repoUrl
       });
     }
@@ -246,8 +254,23 @@ export function createProjectWebApps({
       });
     }
 
+    webApps.push({
+      icon: "square-dashed",
+      id: "empty",
+      key: `${paneId}:empty`,
+      kind: "empty",
+      label: "Empty pane",
+      paneTypeId: "empty"
+    });
+
+    const webAppsById = new Map(webApps.map((webApp) => [webApp.id, webApp]));
     return webApps.map((webApp) => ({
       ...webApp,
+      paneTypeId: webApp.paneTypeId || (
+        webApp.parentWebAppId
+          ? webAppsById.get(webApp.parentWebAppId)?.paneTypeId
+          : undefined
+      ),
       faviconUrl: getWebAppFavicon(webApp.key),
       projectId: project.id || ""
     }));

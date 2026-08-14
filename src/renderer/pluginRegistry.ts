@@ -141,6 +141,7 @@ export function registerPluginRegistry(globalScope: PluginRegistryWindow): Plugi
       minWidth,
       parentLabel: normalizeText(definition.parentLabel),
       parentWebAppId: normalizeText(definition.parentWebAppId),
+      paneTypeId: normalizeText(definition.paneTypeId || definition.webAppId || id),
       replacesWebAppIds: Array.isArray(definition.replacesWebAppIds)
         ? [...new Set(definition.replacesWebAppIds.map(normalizeText).filter(Boolean))]
         : [],

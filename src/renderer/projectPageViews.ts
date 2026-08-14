@@ -1,9 +1,12 @@
 import type { UnknownRecord } from "./rendererRecords";
 import type { RendererProject, RendererState } from "./rendererTypes";
+import type { WorkspaceLayout } from "./rendererTypes";
 import { createSettingsShell } from "./settingsShell.js";
 
 type ProjectPageViewsOptions = {
   addProject: (values: UnknownRecord) => Promise<RendererState>;
+  applyInitialLayout: (project: RendererProject, layout: WorkspaceLayout) => Promise<void>;
+  chooseInitialLayout: (project: RendererProject) => Promise<WorkspaceLayout | null>;
   createProjectDangerZone: (options: UnknownRecord) => HTMLElement;
   createProjectFormView: (options: UnknownRecord) => HTMLElement;
   createProjectTerminalSettingsForm: (options: UnknownRecord) => HTMLElement;
@@ -30,6 +33,8 @@ type ProjectPageViewsOptions = {
 
 export function createProjectPageViews({
   addProject,
+  applyInitialLayout,
+  chooseInitialLayout,
   createProjectDangerZone,
   createProjectFormView,
   createProjectTerminalSettingsForm,
@@ -76,6 +81,14 @@ export function createProjectPageViews({
       initialValues: {},
       onCancel: () => restoreReturnView(),
       onSubmit: async (values: UnknownRecord) => {
+        const initialLayout = await chooseInitialLayout({
+          ...values,
+          id: "__pending_project__",
+          urls: []
+        } as RendererProject);
+        if (!initialLayout) {
+          return;
+        }
         let nextState = await addProject({
           name: values.name,
           slug: values.slug,
@@ -95,6 +108,8 @@ export function createProjectPageViews({
           values.pluginConfig as UnknownRecord | undefined
         );
         setState(nextState);
+        const createdProject = nextState.projects.find((candidate) => candidate.id === project.id) || project;
+        await applyInitialLayout(createdProject, initialLayout);
         selectProject(project.id);
       }
     }));

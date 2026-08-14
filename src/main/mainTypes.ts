@@ -35,6 +35,7 @@ export type ProjectStoreInstance = {
   getAppState(): unknown;
   getState(): AppState;
   getStateForWorkspaceWindow(windowId: string): AppState;
+  listLayouts(projectId?: unknown): unknown[];
   getWebAppUrl(key: string): string;
   getWorkspaceWebAppUrl(windowId: string, key: string): string | null;
   getWindowState(): { bounds: Partial<Rectangle>; isMaximized?: boolean };
@@ -44,8 +45,10 @@ export type ProjectStoreInstance = {
   removeWorkspaceWindow(windowId: string): void;
   reconcileAppVersion(version: string): unknown;
   removeProject(id: string, workspaceWindowId?: string | null): unknown;
+  removeLayout(layoutId: string): boolean;
   reorderProjects(projectIds: unknown, workspaceWindowId?: string | null): unknown;
   updateGlobalPluginConfig(pluginId: string, patch: unknown, workspaceWindowId?: string | null): unknown;
+  saveLayout(layout: unknown): unknown;
   updateGlobalUrls(urls: unknown, workspaceWindowId?: string | null): unknown;
   updateNavigation(navigation: unknown): unknown;
   updateOnboarding(onboarding: unknown): unknown;

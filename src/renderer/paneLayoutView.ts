@@ -1011,7 +1011,7 @@ export function createPaneLayoutView({
       reusablePanes.delete(paneNode.id);
       pane.dataset.webAppMenuSignature = nextMenuSignature;
       syncReusedPaneActions(project, paneNode, pane);
-      if (!["dom", "terminal", "widgets"].includes(selectedWebApp.kind || "")) {
+      if (!["dom", "empty", "terminal", "widgets"].includes(selectedWebApp.kind || "")) {
         const host = getVisiblePaneHost(pane, selectedWebApp);
         if (host) {
           setVisibleWebAppHost(paneNode.id, {
@@ -1332,6 +1332,7 @@ export function createPaneLayoutView({
       const isTerminalPane = selectedWebApp.kind === "terminal";
       const isWidgetPane = selectedWebApp.kind === "widgets";
       const isDomPane = selectedWebApp.kind === "dom";
+      const isEmptyPane = selectedWebApp.kind === "empty";
       const paneNavigation = selectedWebApp.navigation;
       const useCompactBrowserControls = shouldUseCompactPaneBrowserControls(paneNavigation);
       const pluginPane = isDomPane ? selectedWebApp.pluginPane : undefined;
@@ -1359,7 +1360,7 @@ export function createPaneLayoutView({
       pane.dataset.minWidth = normalizePaneMinimumLength(selectedWebApp.minWidth) || normalizedDefaultPaneMinSize;
 
       const host = document.createElement("div") as PaneLayoutHost;
-      host.className = `webapp-host${isTerminalPane ? " terminal-pane-host" : ""}`;
+      host.className = `webapp-host${isTerminalPane ? " terminal-pane-host" : ""}${isEmptyPane ? " empty-pane-host" : ""}`;
       host.setAttribute("role", "region");
       host.setAttribute("aria-label", `${project.name} ${selectedWebApp.label}`);
       const pluginPaneProps = pluginPane ? {
@@ -1552,7 +1553,7 @@ export function createPaneLayoutView({
         }));
       }
 
-      if (!isTerminalPane && !isWidgetPane && !isDomPane) {
+      if (!isTerminalPane && !isWidgetPane && !isDomPane && !isEmptyPane) {
         const homeButton = document.createElement("button");
         homeButton.className = "webapp-tool-button";
         homeButton.type = "button";
@@ -1887,6 +1888,11 @@ export function createPaneLayoutView({
             }
           };
         }
+      } else if (isEmptyPane) {
+        const emptyMessage = document.createElement("p");
+        emptyMessage.className = "empty-pane-message";
+        emptyMessage.textContent = "Choose a pane type from the menu above.";
+        host.append(emptyMessage);
       } else {
         const visibleHost = isMobileDevViewportEnabled(selectedWebApp)
           ? createMobileDevViewport(host, selectedWebApp)

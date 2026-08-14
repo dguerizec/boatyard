@@ -28,6 +28,27 @@ export type WorkspaceSessionState = {
   windows: Record<string, WorkspaceWindowState>;
 };
 
+export type LayoutPaneNode = {
+  type: "pane";
+  id: string;
+  paneTypeId: string | null;
+} | {
+  type: "split";
+  id: string;
+  direction: "horizontal" | "vertical";
+  ratio: number;
+  first: LayoutPaneNode;
+  second: LayoutPaneNode;
+};
+
+export type WorkspaceLayout = {
+  builtIn?: boolean;
+  id: string;
+  name: string;
+  paneLayout: LayoutPaneNode;
+  projectId: string | null;
+};
+
 export type WebAppOpenRule = {
   pattern: string;
   target: string;
@@ -171,6 +192,7 @@ export type StoredProject = {
 export type ProjectStoreState = {
   app: AppState;
   globalUrls: ProjectUrl[];
+  layouts: WorkspaceLayout[];
   navigation: NavigationState;
   onboarding: OnboardingState;
   paneLayouts: Record<string, PaneLayoutNode>;

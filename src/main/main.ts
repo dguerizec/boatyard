@@ -57,6 +57,8 @@ const terminalSessionPrefix = process.env.BOATYARD_TERMINAL_SESSION_PREFIX || "b
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
 const DEFAULT_WEBAPP_BACKGROUND_COLOR = "#0b0f14";
+const WORKSPACE_MIN_WIDTH = 640;
+const WORKSPACE_MIN_HEIGHT = 480;
 
 if (process.platform === "linux") {
   // FileChooser portal versions below 4 ignore dialog.defaultPath.
@@ -124,6 +126,13 @@ const appThemeManager = createAppThemeManager({
   nativeTheme
 });
 const individuallyClosingWindowIds = new Set<string>();
+type WorkspaceLayoutUndoSnapshot = {
+  configuration: ConfigurationContext;
+  paneLayout: unknown;
+  projectId: string;
+  sourceWindowId: string;
+};
+const workspaceLayoutUndoSnapshots = new Map<string, WorkspaceLayoutUndoSnapshot>();
 let isQuitting = false;
 const terminalShutdownCoordinator = createTerminalShutdownCoordinator({
   getServices: () => [...configurationContexts.values()].map((configuration) => configuration.terminalService),
@@ -256,8 +265,8 @@ function getRestoredWindowBounds(bounds: Partial<Rectangle>) {
   const normalized = {
     x: Math.round(Number(bounds.x) || 0),
     y: Math.round(Number(bounds.y) || 0),
-    width: Math.max(920, Math.round(Number(bounds.width) || 1280)),
-    height: Math.max(620, Math.round(Number(bounds.height) || 800))
+    width: Math.max(WORKSPACE_MIN_WIDTH, Math.round(Number(bounds.width) || 1280)),
+    height: Math.max(WORKSPACE_MIN_HEIGHT, Math.round(Number(bounds.height) || 800))
   };
   const isVisibleOnAnyDisplay = screen.getAllDisplays().some((display: { workArea: Rectangle }) => {
     const workArea = display.workArea;
@@ -300,8 +309,8 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
 
   const window = new BrowserWindow({
     ...getRestoredWindowBounds(windowState.bounds),
-    minWidth: 920,
-    minHeight: 620,
+    minWidth: WORKSPACE_MIN_WIDTH,
+    minHeight: WORKSPACE_MIN_HEIGHT,
     title: "Boatyard",
     icon: path.join(__dirname, "../renderer/assets/boatyard-icon.png"),
     backgroundColor: getAppBackgroundColor(appThemeManager.getTheme()),
@@ -393,12 +402,16 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       });
       return;
     }
-    saveWindowState(workspaceWindow);
-    if (individuallyClosingWindowIds.delete(workspaceWindow.id)) {
+    const individuallyClosing = individuallyClosingWindowIds.delete(workspaceWindow.id);
+    if (!individuallyClosing) {
+      saveWindowState(workspaceWindow);
+    }
+    if (individuallyClosing) {
       configuration.store.removeWorkspaceWindow(workspaceWindow.id);
     }
     workspaceWindow.runtime.destroy();
   });
+  return workspaceWindow;
 }
 
 function saveWindowState(workspaceWindow: WorkspaceWindowRecord) {
@@ -1303,6 +1316,90 @@ function registerIpcHandlers() {
 
   ipcMain.handle("projects:add", (event: IpcMainInvokeEvent, projectConfig: unknown) => {
     return getConfigurationForEvent(event).store.addProject(projectConfig, getWorkspaceWindowIdForEvent(event));
+  });
+
+  ipcMain.handle("layouts:list", (event: IpcMainInvokeEvent, projectId: unknown = null) => {
+    return getConfigurationForEvent(event).store.listLayouts(projectId);
+  });
+
+  ipcMain.handle("layouts:preview-metrics", (event: IpcMainInvokeEvent) => {
+    const source = getWorkspaceWindowForWebContents(event.sender);
+    if (!source) {
+      throw new Error("Source workspace window is not available.");
+    }
+    const contentBounds = source.window.getContentBounds();
+    const getAspectRatio = (bounds: Rectangle) => bounds.width / Math.max(1, bounds.height);
+    return {
+      windowAspectRatio: getAspectRatio(contentBounds)
+    };
+  });
+
+  ipcMain.handle("layouts:save", (event: IpcMainInvokeEvent, layout: unknown) => {
+    return getConfigurationForEvent(event).store.saveLayout(layout);
+  });
+
+  ipcMain.handle("layouts:remove", (event: IpcMainInvokeEvent, layoutId: string) => {
+    return getConfigurationForEvent(event).store.removeLayout(layoutId);
+  });
+
+  ipcMain.handle("layouts:apply", (event: IpcMainInvokeEvent, payload: unknown) => {
+    const source = getWorkspaceWindowForWebContents(event.sender);
+    const value = payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload as UnknownRecord
+      : {};
+    const projectId = String(value.projectId || "").trim();
+    const paneLayout = value.paneLayout;
+    if (!source || !projectId || !paneLayout || typeof paneLayout !== "object" || Array.isArray(paneLayout)) {
+      throw new Error("A source window, project, and valid pane layout are required.");
+    }
+    const currentState = source.configuration.store.getStateForWorkspaceWindow(source.id) as UnknownRecord;
+    const currentPaneLayouts = currentState.paneLayouts && typeof currentState.paneLayouts === "object"
+      ? currentState.paneLayouts as UnknownRecord
+      : {};
+    const snapshotPaneLayout = currentPaneLayouts[projectId] || null;
+    const undoToken = crypto.randomUUID();
+    for (const [token, previous] of workspaceLayoutUndoSnapshots) {
+      if (previous.configuration === source.configuration && previous.sourceWindowId === source.id) {
+        workspaceLayoutUndoSnapshots.delete(token);
+      }
+    }
+    workspaceLayoutUndoSnapshots.set(undoToken, {
+      configuration: source.configuration,
+      paneLayout: structuredClone(snapshotPaneLayout),
+      projectId,
+      sourceWindowId: source.id,
+    });
+
+    try {
+      const applied = source.configuration.store.updateWorkspacePaneLayout(source.id, projectId, paneLayout);
+      if (!applied) {
+        throw new Error("The pane layout is invalid.");
+      }
+    } catch (error) {
+      workspaceLayoutUndoSnapshots.delete(undoToken);
+      source.configuration.store.updateWorkspacePaneLayout(source.id, projectId, snapshotPaneLayout);
+      throw error;
+    }
+
+    return {
+      state: source.configuration.store.getStateForWorkspaceWindow(source.id),
+      undoToken
+    };
+  });
+
+  ipcMain.handle("layouts:undo", (event: IpcMainInvokeEvent, undoToken: string) => {
+    const source = getWorkspaceWindowForWebContents(event.sender);
+    const snapshot = workspaceLayoutUndoSnapshots.get(String(undoToken || ""));
+    if (!source || !snapshot || snapshot.configuration !== source.configuration || snapshot.sourceWindowId !== source.id) {
+      return null;
+    }
+    source.configuration.store.updateWorkspacePaneLayout(
+      source.id,
+      snapshot.projectId,
+      snapshot.paneLayout
+    );
+    workspaceLayoutUndoSnapshots.delete(undoToken);
+    return source.configuration.store.getStateForWorkspaceWindow(source.id);
   });
 
   ipcMain.handle("projects:update", (event: IpcMainInvokeEvent, id: string, patch: unknown) => {

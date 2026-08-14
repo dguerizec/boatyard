@@ -1114,4 +1114,165 @@ test("ProjectStore migrates legacy apps state to projects", () => {
   assert.equal(state.projects[0].previewUrl, "https://legacy.example.test/");
 });
 
+test("ProjectStore exposes built-in layouts and persists portable custom layouts", () => {
+  const { filePath, store } = createTempStore();
+  store.load();
+
+  const builtIns = store.listLayouts();
+  assert.equal(builtIns.length, 1);
+  assert.equal(builtIns[0].id, "boatyard.single-pane");
+  assert.equal(builtIns[0].name, "Blank — single pane");
+  assert.equal(builtIns[0].builtIn, true);
+  assert.equal(builtIns[0].projectId, null);
+  assert.deepEqual(builtIns[0].paneLayout, {
+    type: "pane",
+    id: "pane-1",
+    paneTypeId: null
+  });
+
+  const saved = store.saveLayout({
+    name: "Development — wide",
+    paneLayout: {
+      type: "split",
+      id: "root",
+      direction: "vertical",
+      ratio: 0.65,
+      first: {
+        type: "pane",
+        id: "source",
+        paneTypeId: "pier",
+        selectedWebAppId: "pier:feature",
+        url: "https://feature.example.test/"
+      },
+      second: {
+        type: "pane",
+        id: "terminal",
+        paneTypeId: "terminal"
+      }
+    }
+  });
+
+  assert.equal(saved.name, "Development — wide");
+  assert.equal(saved.projectId, null);
+  assert.equal(saved.paneLayout.first.paneTypeId, "pier");
+  assert.equal("selectedWebAppId" in saved.paneLayout.first, false);
+  assert.equal("url" in saved.paneLayout.first, false);
+
+  const custom = new ProjectStore(filePath).load().layouts;
+  assert.equal(custom.length, 1);
+  assert.equal(custom[0].id, saved.id);
+  assert.equal(new ProjectStore(filePath).load().paneLayouts[saved.id], undefined);
+});
+
+test("ProjectStore keeps project layouts scoped and removes them with their project", () => {
+  const { filePath, store } = createTempStore();
+  store.load();
+
+  let state = store.addProject({
+    name: "First",
+    sourcePath: "/workspace/first"
+  });
+  const firstProjectId = state.projects[0].id;
+  state = store.addProject({
+    name: "Second",
+    sourcePath: "/workspace/second"
+  });
+  const secondProjectId = state.projects[1].id;
+
+  const globalLayout = store.saveLayout({
+    name: "Shared",
+    paneLayout: { type: "pane", id: "global-pane", paneTypeId: null },
+    projectId: null
+  });
+  const firstLayout = store.saveLayout({
+    name: "First project",
+    paneLayout: { type: "pane", id: "first-pane", paneTypeId: "terminal" },
+    projectId: firstProjectId
+  });
+  const secondLayout = store.saveLayout({
+    name: "Second project",
+    paneLayout: { type: "pane", id: "second-pane", paneTypeId: "twicc-plugin" },
+    projectId: secondProjectId
+  });
+
+  assert.deepEqual(
+    store.listLayouts().map((layout: { id: string }) => layout.id),
+    ["boatyard.single-pane", globalLayout.id]
+  );
+  assert.deepEqual(
+    store.listLayouts(firstProjectId).map((layout: { id: string }) => layout.id),
+    ["boatyard.single-pane", firstLayout.id, globalLayout.id]
+  );
+  assert.deepEqual(
+    store.listLayouts(secondProjectId).map((layout: { id: string }) => layout.id),
+    ["boatyard.single-pane", secondLayout.id, globalLayout.id]
+  );
+
+  const updatedFirstLayout = store.saveLayout({
+    id: firstLayout.id,
+    name: "First project updated",
+    paneLayout: { type: "pane", id: "updated-first-pane", paneTypeId: "terminal" }
+  });
+  assert.equal(updatedFirstLayout.projectId, firstProjectId);
+  assert.throws(() => store.saveLayout({
+    name: "Missing project",
+    paneLayout: { type: "pane", id: "missing-pane", paneTypeId: null },
+    projectId: "missing-project"
+  }), /project does not exist/);
+
+  const reloaded = new ProjectStore(filePath);
+  assert.equal(
+    reloaded.load().layouts.find((layout: { id: string }) => layout.id === firstLayout.id)?.projectId,
+    firstProjectId
+  );
+  state = reloaded.removeProject(firstProjectId);
+  assert.equal(state.layouts.some((layout: { id: string }) => layout.id === firstLayout.id), false);
+  assert.equal(state.layouts.some((layout: { id: string }) => layout.id === globalLayout.id), true);
+  assert.equal(state.layouts.some((layout: { id: string }) => layout.id === secondLayout.id), true);
+});
+
+test("ProjectStore migrates legacy window layouts to one proportional pane arrangement", () => {
+  const { store } = createTempStore();
+  store.load();
+
+  const saved = store.saveLayout({
+    name: "Legacy",
+    windows: [{
+      id: "first-window",
+      placement: { display: "secondary", x: 0.5, y: 0, width: 0.5, height: 1 },
+      paneLayout: { type: "pane", id: "kept-pane", paneTypeId: "twicc-plugin" }
+    }, {
+      id: "discarded-window",
+      paneLayout: { type: "pane", id: "discarded-pane", paneTypeId: "terminal" }
+    }]
+  });
+
+  assert.deepEqual(saved.paneLayout, {
+    type: "pane",
+    id: "kept-pane",
+    paneTypeId: "twicc-plugin"
+  });
+  assert.equal("windows" in saved, false);
+  assert.equal("placement" in saved, false);
+});
+
+test("ProjectStore protects built-in layouts and removes custom layouts", () => {
+  const { store } = createTempStore();
+  store.load();
+
+  assert.throws(() => store.saveLayout({
+    id: "boatyard.single-pane",
+    name: "Replacement",
+    paneLayout: { type: "pane", id: "pane", paneTypeId: null }
+  }), /cannot be overwritten/);
+
+  const custom = store.saveLayout({
+    name: "Disposable",
+    paneLayout: { type: "pane", id: "pane", paneTypeId: null }
+  });
+  assert.equal(store.removeLayout(custom.id), true);
+  assert.equal(store.removeLayout(custom.id), false);
+  assert.equal(store.removeLayout("boatyard.single-pane"), false);
+});
+
 export {};

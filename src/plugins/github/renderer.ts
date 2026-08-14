@@ -2102,6 +2102,7 @@
           kind: "wcv",
           parentLabel: "GitHub",
           parentWebAppId: GITHUB_OVERVIEW_WEBAPP_ID,
+          paneTypeId: "repo",
           replacesWebAppIds: ["repo"],
           scope: "project",
           showInMenu: false,

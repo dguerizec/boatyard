@@ -12,6 +12,7 @@ Documentation: [boatyard.dev/doc](https://boatyard.dev/doc/)
 - Reorder projects in the sidebar and unregister projects from Boatyard without deleting files on disk.
 - Persist app state across restarts, including the last active page, window bounds, widget pane layouts, pane splits, and loaded webapp URLs.
 - Open project webapps and widget grids in panes with navigation controls, editable URL bar for webapps, tab picker, split panes, close panes, and persisted pane layouts.
+- Save project-specific or global proportional pane layouts; matching open panes keep their current content while moving into the selected arrangement.
 - Manage a freeform widget grid with lock/unlock, drag-and-drop placement, resize handles, trash dropzone, and opt-in widget installation per project.
 - Use built-in project widgets for persistent tmux terminal tabs.
 - Extend projects with built-in plugins for GitHub, Pier, Twicc, and Hawser panes, widgets, settings, and services.

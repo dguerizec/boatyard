@@ -305,6 +305,8 @@ test("Plugin registry accepts dynamic WCV pane webapps", () => {
   registry.setEnabled("vendor.dynamic", true);
   const pane = registry.listPanes({ kind: "wcv" })[0];
 
+  assert.equal(pane.paneTypeId, "vendor.dynamic.pane");
+
   assert.deepEqual(
     plain(pane.resolveWebApps({
       project: {

@@ -330,6 +330,7 @@ declare global {
     minHeight?: string;
     minWidth?: string;
     navigation?: PluginPaneNavigation;
+    paneTypeId?: string;
     showInMenu?: boolean;
     url: string;
     restoreUrl?: boolean;
@@ -370,6 +371,7 @@ declare global {
     navigation?: PluginPaneNavigation;
     parentLabel?: unknown;
     parentWebAppId?: unknown;
+    paneTypeId?: unknown;
     replacesWebAppIds?: unknown;
     scope?: unknown;
     showInMenu?: unknown;
@@ -389,6 +391,7 @@ declare global {
     kind: "wcv" | "dom";
     parentLabel: string;
     parentWebAppId: string;
+    paneTypeId: string;
     replacesWebAppIds: string[];
     scope: string;
     showInMenu: boolean;

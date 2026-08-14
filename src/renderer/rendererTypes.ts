@@ -25,6 +25,7 @@ export type RendererState = UnknownRecord & {
     sidebarCollapsed?: boolean;
     view?: string;
   };
+  layouts?: WorkspaceLayout[];
   onboarding?: {
     completedVersion?: number;
   };
@@ -61,6 +62,7 @@ export type WebAppPaneNavigation = {
 export type WebAppDefinition = UnknownRecord & {
   backgroundColor?: string;
   faviconUrl?: string;
+  homeTab?: boolean;
   icon?: string;
   iconOnly?: boolean;
   iconUrl?: string;
@@ -73,10 +75,36 @@ export type WebAppDefinition = UnknownRecord & {
   navigation?: WebAppPaneNavigation;
   parentLabel?: string;
   parentWebAppId?: string;
+  paneTypeId?: string;
   restoreUrl?: boolean;
   showInMenu?: boolean;
   transient?: boolean;
   url?: string;
+};
+
+export type WorkspaceLayoutPaneNode = {
+  type: "pane";
+  id: string;
+  paneTypeId: string | null;
+} | {
+  type: "split";
+  id: string;
+  direction: "horizontal" | "vertical";
+  ratio: number;
+  first: WorkspaceLayoutPaneNode;
+  second: WorkspaceLayoutPaneNode;
+};
+
+export type WorkspaceLayout = {
+  id: string;
+  name: string;
+  builtIn?: boolean;
+  paneLayout: WorkspaceLayoutPaneNode;
+  projectId: string | null;
+};
+
+export type WorkspaceLayoutPreviewMetrics = {
+  windowAspectRatio: number;
 };
 
 export type RendererPaneLayoutNode = PaneLayoutNode;
@@ -163,11 +191,14 @@ export type ProjectSettingsViewsInstance = RendererModuleInstance & {
 
 export type BoatyardBridge = {
   addProject(values: UnknownRecord): Promise<RendererState>;
+  applyLayout(payload: UnknownRecord): Promise<{ state: RendererState; undoToken: string }>;
   createWorkspaceWindow?: () => Promise<boolean>;
   dismissChangelog?: () => Promise<unknown>;
   freezeWebApps(options?: unknown): Promise<unknown>;
   getChangelogHistory?: () => Promise<unknown>;
   getPendingChangelog?: () => Promise<unknown>;
+  getLayoutPreviewMetrics(): Promise<WorkspaceLayoutPreviewMetrics>;
+  listLayouts(projectId?: string | null): Promise<WorkspaceLayout[]>;
   getWebAppNavigationHistory?: (key: unknown) => Promise<unknown>;
   getState(): Promise<RendererState>;
   getUpdateInfo?: () => Promise<unknown>;
@@ -184,9 +215,11 @@ export type BoatyardBridge = {
   openExternal(url: string): unknown;
   prepareUpdate?: () => Promise<unknown>;
   removeProject(projectId: string): Promise<RendererState>;
+  removeLayout(layoutId: string): Promise<boolean>;
   reorderProjects(projectIds: string[]): Promise<RendererState>;
   restoreWebApps(token?: unknown): Promise<unknown>;
   restartToUpdate(update: UnknownRecord): Promise<unknown>;
+  saveLayout(layout: WorkspaceLayout): Promise<WorkspaceLayout>;
   setTheme?: (theme: "dark" | "light") => Promise<unknown>;
   setVisibleWebApps(...payload: unknown[]): Promise<unknown>;
   showWebApp(...payload: unknown[]): Promise<unknown>;
@@ -203,6 +236,7 @@ export type BoatyardBridge = {
   updateWebAppAutofill(...payload: unknown[]): Promise<unknown>;
   updateWebAppHomeTab(projectId: string, tab: UnknownRecord): Promise<RendererState>;
   updateWebAppHomeTabs(projectId: string, tabs: UnknownRecord[]): Promise<RendererState>;
+  undoLayout(undoToken: string): Promise<RendererState | null>;
 };
 
 export type ProjectNavBadgeRenderOptions = {

@@ -2,6 +2,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 import {
+  isBuiltInWorkspaceLayoutId,
+  listWorkspaceLayouts,
+  normalizeWorkspaceLayout,
+  normalizeWorkspaceLayouts
+} from "./layoutCatalog";
+
+import {
   normalizeProject,
   normalizeProjectUrls,
   normalizeProjectWidgetPanes,
@@ -54,6 +61,7 @@ import type {
   WidgetPosition,
   WidgetSize,
   WindowState,
+  WorkspaceLayout,
   WorkspaceWindowState
 } from "./storeTypes";
 
@@ -649,6 +657,7 @@ class ProjectStore {
       settings: this.state.settings,
       plugins: this.state.plugins,
       globalPluginConfig: this.state.pluginConfig.global,
+      layouts: this.state.layouts,
       topbarWidgets: this.state.topbarWidgets,
       onboarding: this.state.onboarding,
       app: this.state.app
@@ -740,6 +749,10 @@ class ProjectStore {
       plugins: normalizePluginsState(parsed.plugins),
       pluginConfig: normalizePluginConfig(parsed.pluginConfig, projectsWithHomeTabs),
       globalUrls: normalizeProjectUrls(parsed.globalUrls),
+      layouts: normalizeWorkspaceLayouts(
+        parsed.layouts,
+        new Set(projectsWithHomeTabs.map((project) => project.id))
+      ),
       paneLayouts: normalizePaneLayouts(parsed.paneLayouts),
       widgetLayouts: normalizeWidgetLayouts(parsed.widgetLayouts),
       terminalSelections: normalizeTerminalSelections(parsed.terminalSelections, projectsWithHomeTabs),
@@ -805,6 +818,57 @@ class ProjectStore {
 
   getState(): ProjectStoreState {
     return structuredClone(this.state);
+  }
+
+  listLayouts(projectId: unknown = null): WorkspaceLayout[] {
+    return listWorkspaceLayouts(this.state.layouts, projectId);
+  }
+
+  saveLayout(layout: unknown): WorkspaceLayout {
+    const source = toRecord(layout);
+    const requestedId = normalizeText(source.id);
+    if (requestedId && isBuiltInWorkspaceLayoutId(requestedId)) {
+      throw new Error("Built-in layouts cannot be overwritten.");
+    }
+    const id = requestedId || crypto.randomUUID();
+    const existing = requestedId
+      ? this.state.layouts.find((candidate) => candidate.id === requestedId)
+      : null;
+    const projectId = Object.prototype.hasOwnProperty.call(source, "projectId")
+      ? source.projectId
+      : existing?.projectId;
+    const normalized = normalizeWorkspaceLayout({ ...source, id, projectId });
+    if (!normalized) {
+      throw new Error("Layout name and a valid pane arrangement are required.");
+    }
+    if (
+      normalized.projectId &&
+      !this.state.projects.some((project) => project.id === normalized.projectId)
+    ) {
+      throw new Error("The layout project does not exist.");
+    }
+    const index = this.state.layouts.findIndex((candidate) => candidate.id === normalized.id);
+    if (index === -1) {
+      this.state.layouts.push(normalized);
+    } else {
+      this.state.layouts[index] = normalized;
+    }
+    this.save();
+    return structuredClone(normalized);
+  }
+
+  removeLayout(layoutId: unknown): boolean {
+    const id = normalizeText(layoutId);
+    if (!id || isBuiltInWorkspaceLayoutId(id)) {
+      return false;
+    }
+    const nextLayouts = this.state.layouts.filter((layout) => layout.id !== id);
+    if (nextLayouts.length === this.state.layouts.length) {
+      return false;
+    }
+    this.state.layouts = nextLayouts;
+    this.save();
+    return true;
   }
 
   getStateForWorkspaceWindow(windowId: unknown): ProjectStoreState {
@@ -1491,6 +1555,7 @@ class ProjectStore {
   removeProject(id: unknown, workspaceWindowId: unknown = null): ProjectStoreState {
     const projectId = String(id);
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
+    this.state.layouts = this.state.layouts.filter((layout) => layout.projectId !== projectId);
     delete this.state.paneLayouts[projectId];
     delete this.state.widgetLayouts[projectId];
     delete this.state.terminalSelections[projectId];
