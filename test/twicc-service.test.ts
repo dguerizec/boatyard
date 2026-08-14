@@ -1042,9 +1042,12 @@ test("loadTwiccProjects can feed source path URL detection", async () => {
   );
 });
 
-test("createTwiccProject registers the source path and returns the exact project", async () => {
+test("createTwiccProject names and trusts the project through the CLI", async () => {
   const calls: ExecCall[] = [];
-  const result = await createTwiccProject("/workspace/projects/app", {
+  const result = await createTwiccProject({
+    name: "Example app",
+    sourcePath: "/workspace/projects/app"
+  }, {
     execFileAsync: async (command: string, args: string[]) => {
       calls.push({ command, args });
       if (args[0] === "create-project") {
@@ -1063,7 +1066,11 @@ test("createTwiccProject registers the source path and returns the exact project
   assert.deepEqual(calls, [
     {
       command: "twicc",
-      args: ["create-project", "/workspace/projects/app"]
+      args: ["create-project", "/workspace/projects/app", "--name", "Example app"]
+    },
+    {
+      command: "twicc",
+      args: ["update-project", "/workspace/projects/app", "--trust"]
     },
     {
       command: "twicc",
@@ -1074,9 +1081,12 @@ test("createTwiccProject registers the source path and returns the exact project
   assert.equal(result.url, "http://localhost:3500/project/-workspace-projects-app");
 });
 
-test("createTwiccProject can use Twicc RPC without the local CLI", async () => {
+test("createTwiccProject names and trusts the project through Twicc RPC", async () => {
   const calls: Array<{ body: Record<string, unknown>; url: string }> = [];
-  const result = await createTwiccProject("/workspace/projects/app", {
+  const result = await createTwiccProject({
+    name: "Example app",
+    sourcePath: "/workspace/projects/app"
+  }, {
     globalConfig: {
       twiccBaseUrl: "https://twicc.example/root",
       twiccApiToken: "secret-token"
@@ -1106,7 +1116,17 @@ test("createTwiccProject can use Twicc RPC without the local CLI", async () => {
   assert.deepEqual(calls, [
     {
       url: "https://twicc.example/root/rpc/create-project",
-      body: { directory: "/workspace/projects/app" }
+      body: {
+        directory: "/workspace/projects/app",
+        name: "Example app"
+      }
+    },
+    {
+      url: "https://twicc.example/root/rpc/update-project",
+      body: {
+        project_id: "/workspace/projects/app",
+        trust: true
+      }
     },
     {
       url: "https://twicc.example/root/rpc/projects",
@@ -1118,6 +1138,31 @@ test("createTwiccProject can use Twicc RPC without the local CLI", async () => {
   ]);
   assert.equal(result.matchType, "exact");
   assert.equal(result.url, "https://twicc.example/project/-workspace-projects-app");
+});
+
+test("createTwiccProject does not retry creation after Twicc RPC created the project", async () => {
+  const cliCalls: ExecCall[] = [];
+
+  await assert.rejects(createTwiccProject({
+    name: "Example app",
+    sourcePath: "/workspace/projects/app"
+  }, {
+    execFileAsync: async (command: string, args: string[]) => {
+      cliCalls.push({ command, args });
+      return { stdout: "" };
+    },
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example"
+    },
+    fetch: createRpcFetch((url) => {
+      if (url.endsWith("/rpc/create-project")) {
+        return { exit_code: 0, result: null, error: null };
+      }
+      return { exit_code: 1, result: null, error: "Trust update failed." };
+    })
+  }), /Trust update failed/);
+
+  assert.deepEqual(cliCalls, []);
 });
 
 export {};

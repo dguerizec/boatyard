@@ -100,6 +100,7 @@ type TwiccProjectCacheOptions = {
 };
 type TwiccProjectCacheGetOptions = { force?: boolean; projectIds?: string[] };
 type TwiccProjectInspection = { id: string; matchType: "exact" | "parent"; url: string };
+type TwiccProjectCreationInput = { name?: unknown; sourcePath?: unknown };
 type BoatyardProject = { id?: string; sourcePath?: string };
 type TwiccSessionCreationInput = {
   attachments?: unknown;
@@ -1241,24 +1242,41 @@ function inspectTwiccProjectFromProjects(
     : null;
 }
 
-async function createTwiccProjectFromRpc(sourcePath: string, options: TwiccCommandOptions): Promise<TwiccProjectInspection | null> {
-  await rpcCommand("create-project", {
-    directory: sourcePath
-  }, options);
-  const projects = await loadTwiccProjectsFromRpc(options);
-  return inspectTwiccProjectFromProjects(sourcePath, projects, options.globalConfig?.twiccBaseUrl);
-}
-
-async function createTwiccProject(sourcePath: unknown, { execFileAsync, ...options }: TwiccCommandOptions): Promise<TwiccProjectInspection | null> {
-  const normalizedSourcePath = normalizePathForMatch(sourcePath);
+async function createTwiccProject(
+  input: TwiccProjectCreationInput,
+  { execFileAsync, ...options }: TwiccCommandOptions
+): Promise<TwiccProjectInspection | null> {
+  const normalizedSourcePath = normalizePathForMatch(input?.sourcePath);
   if (!normalizedSourcePath) {
     throw new Error("Source path is required to create a TwiCC project.");
   }
+  const name = normalizeText(input?.name);
+  if (!name) {
+    throw new Error("Project name is required to create a TwiCC project.");
+  }
 
   if (shouldUseRpc(options)) {
+    let createdViaRpc = false;
     try {
-      return await createTwiccProjectFromRpc(normalizedSourcePath, options);
-    } catch {
+      await rpcCommand("create-project", {
+        directory: normalizedSourcePath,
+        name
+      }, options);
+      createdViaRpc = true;
+      await rpcCommand("update-project", {
+        project_id: normalizedSourcePath,
+        trust: true
+      }, options);
+      const projects = await loadTwiccProjectsFromRpc(options);
+      return inspectTwiccProjectFromProjects(
+        normalizedSourcePath,
+        projects,
+        options.globalConfig?.twiccBaseUrl
+      );
+    } catch (error) {
+      if (createdViaRpc) {
+        throw error;
+      }
       // Fall back for older/local setups where only the CLI is available.
     }
   }
@@ -1267,7 +1285,11 @@ async function createTwiccProject(sourcePath: unknown, { execFileAsync, ...optio
     throw new Error("TwiCC command runner is required.");
   }
 
-  await execFileAsync("twicc", ["create-project", normalizedSourcePath], {
+  await execFileAsync("twicc", ["create-project", normalizedSourcePath, "--name", name], {
+    timeout: 30000,
+    windowsHide: true
+  });
+  await execFileAsync("twicc", ["update-project", normalizedSourcePath, "--trust"], {
     timeout: 30000,
     windowsHide: true
   });

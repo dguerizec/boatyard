@@ -213,6 +213,7 @@
   };
   type TwiccProjectFieldContext = {
     coreFields: {
+      name?: unknown;
       sourcePath?: unknown;
     };
     fields: TwiccSettingsFields;
@@ -3658,15 +3659,20 @@
               action: {
                 label: "Create",
                 pendingLabel: "Creating...",
-                message: "TwiCC project not found. Create it?",
+                message: "TwiCC project not found. Create it as a trusted project?",
                 async run({ coreFields, fields, globalConfig }: TwiccProjectFieldContext) {
                   const sourcePath = String(coreFields.sourcePath || "").trim();
                   if (!sourcePath) {
                     throw new Error("Source path is required to create a TwiCC project.");
                   }
+                  const name = String(coreFields.name || "").trim();
+                  if (!name) {
+                    throw new Error("Project name is required to create a TwiCC project.");
+                  }
 
                   const created = asCreatedProject(await invokePlugin("createProject", {
                     globalConfig: globalConfig || latestGlobalConfig,
+                    name,
                     sourcePath
                   }));
                   if (!created?.url) {

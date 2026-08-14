@@ -26,7 +26,7 @@ type TwiccState = {
   projects?: BoatyardProject[];
 };
 type GlobalConfigPayload = { globalConfig?: Record<string, unknown> };
-type SourcePathPayload = { sourcePath?: unknown };
+type SourcePathPayload = { name?: unknown; sourcePath?: unknown };
 type SessionFlowPayload = GlobalConfigPayload & { project?: unknown };
 type SessionFlowSessionPayload = GlobalConfigPayload & { sessionId?: unknown };
 type SessionTitlePayload = SessionFlowSessionPayload & { title?: unknown };
@@ -58,8 +58,8 @@ function activate(ctx: TwiccPluginContext) {
     state: ctx.getState()
   }));
 
-  ctx.actions.handle<SourcePathPayload & GlobalConfigPayload>("createProject", async ({ sourcePath, globalConfig } = {}) => {
-    const project = await createTwiccProject(sourcePath, {
+  ctx.actions.handle<SourcePathPayload & GlobalConfigPayload>("createProject", async ({ name, sourcePath, globalConfig } = {}) => {
+    const project = await createTwiccProject({ name, sourcePath }, {
       execFileAsync: ctx.execFileAsync,
       globalConfig
     });

@@ -51,6 +51,8 @@ type PluginSection = {
 type PluginField = {
   action?: {
     label: string;
+    message?: string;
+    run?(context: unknown): Promise<void>;
   };
   defaultValue?: unknown;
   key: string;
@@ -95,7 +97,7 @@ type BuiltinRendererContext = {
     BoatyardPluginRegistry?: LooseVmValue;
     BoatyardWidgetRegistry?: LooseVmValue;
     boatyard: {
-      invokePlugin(pluginId: string, actionName: string): Promise<unknown>;
+      invokePlugin(pluginId: string, actionName: string, payload?: unknown): Promise<unknown>;
       onPluginEvent(): () => void;
       openExternal(): void;
       writeClipboardText(): void;
@@ -869,6 +871,57 @@ test("Twicc project settings offer project creation for a missing source path wi
 
   assert.deepEqual(actionVisibility, [true]);
   assert.equal(values.twiccProjectUrl, "http://localhost:3500/project/restored-project");
+  const section = registry
+    .listProjectSettingsSections()
+    .find((candidate: PluginSection) => candidate.id === "boatyard.twicc.project");
+  const field = section.fields.find((candidate: PluginField) => candidate.key === "twiccProjectUrl");
+  assert.equal(field.action.message, "TwiCC project not found. Create it as a trusted project?");
+});
+
+test("Twicc project creation forwards the Boatyard project name", async () => {
+  const { context, registry } = loadRendererPluginContext();
+  const invocations: Array<{ actionName: string; payload: unknown; pluginId: string }> = [];
+  const values: Record<string, string> = {};
+
+  context.window.boatyard.invokePlugin = async (pluginId: string, actionName: string, payload: unknown) => {
+    invocations.push({ actionName, payload, pluginId });
+    return { url: "http://localhost:3500/project/example-app" };
+  };
+  registry.applyEnabledState({});
+  invocations.length = 0;
+  const section = registry
+    .listProjectSettingsSections()
+    .find((candidate: PluginSection) => candidate.id === "boatyard.twicc.project");
+  const field = section.fields.find((candidate: PluginField) => candidate.key === "twiccProjectUrl");
+
+  await field.action.run({
+    coreFields: {
+      name: "Example app",
+      sourcePath: "/workspace/projects/example-app"
+    },
+    fields: {
+      setActionVisible: () => {},
+      setValue: (key: string, value: string) => {
+        values[key] = value;
+      }
+    },
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example"
+    }
+  });
+
+  assert.deepEqual(plain(invocations), [{
+    pluginId: "boatyard.twicc",
+    actionName: "createProject",
+    payload: {
+      globalConfig: {
+        twiccBaseUrl: "https://twicc.example"
+      },
+      name: "Example app",
+      sourcePath: "/workspace/projects/example-app"
+    }
+  }]);
+  assert.equal(values.twiccProjectUrl, "http://localhost:3500/project/example-app");
 });
 
 test("Twicc project nav badge matches the configured Twicc project URL", async () => {
