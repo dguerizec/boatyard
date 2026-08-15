@@ -658,6 +658,47 @@ test("getTwiccSessionFlow lets persisted annotations override inferred lanes", (
   assert.equal(sessions[0].order, 3);
 });
 
+test("getTwiccSessionFlow keeps externally started sessions in progress before process discovery", () => {
+  const sessions = getTwiccSessionFlow([
+    {
+      id: "new-external-session",
+      last_started_at: "2026-08-15T12:00:00Z"
+    },
+    {
+      id: "restarted-external-session",
+      last_started_at: "2026-08-15T12:00:00Z",
+      last_stopped_at: "2026-08-15T11:00:00Z"
+    },
+    {
+      id: "stopped-external-session",
+      last_started_at: "2026-08-15T10:00:00Z",
+      last_stopped_at: "2026-08-15T11:00:00Z"
+    },
+    {
+      id: "explicitly-done-session",
+      annotations: {
+        boatyard: {
+          sessionFlowLane: "testing"
+        }
+      },
+      last_started_at: "2026-08-15T12:00:00Z"
+    }
+  ], []);
+
+  assert.deepEqual(
+    Object.fromEntries(sessions.map((session: { id: string; lane: string }) => [
+      session.id,
+      session.lane
+    ])),
+    {
+      "new-external-session": "in_progress",
+      "restarted-external-session": "in_progress",
+      "stopped-external-session": "testing",
+      "explicitly-done-session": "testing"
+    }
+  );
+});
+
 test("updateTwiccSessionTitle persists a trimmed title through the CLI", async () => {
   const result = await updateTwiccSessionTitle("session-1", "  Clear session title  ", {
     execFileAsync: async (command: string, args: string[]) => {

@@ -38,6 +38,8 @@ type TwiccSession = {
   git_branch?: string;
   id?: string;
   last_new_content_at?: string;
+  last_started_at?: string;
+  last_stopped_at?: string;
   last_updated_at?: string;
   mtime?: number;
   pinned?: unknown;
@@ -486,6 +488,13 @@ function getSessionActivityTime(session: TwiccSession): number {
   return timestamps.length ? Math.max(...timestamps) : 0;
 }
 
+function hasOpenSessionRun(session: TwiccSession): boolean {
+  const startedAt = Date.parse(String(session.last_started_at || ""));
+  const stoppedAt = Date.parse(String(session.last_stopped_at || ""));
+  return Number.isFinite(startedAt)
+    && (!Number.isFinite(stoppedAt) || startedAt > stoppedAt);
+}
+
 function getTwiccSessionFlow(
   sessions: unknown,
   processes: unknown
@@ -508,7 +517,7 @@ function getTwiccSessionFlow(
       const annotatedLane = getAnnotatedSessionFlowLane(session);
       const activityTime = getSessionActivityTime(session);
       const lane = annotatedLane
-        || (activeStates.has(processState)
+        || (activeStates.has(processState) || hasOpenSessionRun(session)
           ? "in_progress"
           : session.pinned
             ? "backlog"
