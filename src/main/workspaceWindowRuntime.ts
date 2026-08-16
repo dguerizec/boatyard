@@ -1,9 +1,11 @@
 import type {
   ContextMenuParams,
+  Event as ElectronEvent,
   HandlerDetails,
   Rectangle,
   WebContents as ElectronWebContents,
-  BrowserWindow as ElectronBrowserWindow
+  BrowserWindow as ElectronBrowserWindow,
+  WebContentsView as ElectronWebContentsView
 } from "electron";
 import type {
   ProjectStoreInstance,
@@ -31,7 +33,12 @@ const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
 
 type WebAppFreeze = { all: boolean; keys: Set<string>; rect: Rectangle | null };
 
+type WorkspaceWebAppItem = WebAppItem & {
+  webContents: ElectronWebContents;
+};
+
 type WorkspaceWindowRuntimeOptions = {
+  createWebContentsView?(): ElectronWebContentsView;
   id: string;
   openExternalUrl(url: unknown): unknown;
   store: ProjectStoreInstance;
@@ -79,19 +86,29 @@ export class WorkspaceWindowRuntime {
   readonly window: ElectronBrowserWindow;
   private readonly openExternalUrl: WorkspaceWindowRuntimeOptions["openExternalUrl"];
   private readonly store: ProjectStoreInstance;
+  private readonly createWebContentsView: () => ElectronWebContentsView;
   private theme: AppTheme;
-  private readonly webAppViews = new Map<string, WebAppItem>();
+  private readonly webAppViews = new Map<string, WorkspaceWebAppItem>();
   private activeWebAppKey: string | null = null;
   private visibleWebAppKeys = new Set<string>();
   private readonly webAppFreezes = new Map<number, WebAppFreeze>();
   private nextWebAppFreezeToken = 1;
 
-  constructor({ id, openExternalUrl, store, theme, window }: WorkspaceWindowRuntimeOptions) {
+  constructor({ createWebContentsView, id, openExternalUrl, store, theme, window }: WorkspaceWindowRuntimeOptions) {
     this.id = id;
     this.openExternalUrl = openExternalUrl;
     this.store = store;
     this.theme = normalizeAppTheme(theme);
     this.window = window;
+    this.createWebContentsView = createWebContentsView || (() => new WebContentsView({
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        partition: WEBAPP_SESSION_PARTITION,
+        preload: path.join(__dirname, "webappPreload.js"),
+        sandbox: true
+      }
+    }));
   }
 
   private sendToRenderer(channel: string, payload: unknown) {
@@ -129,7 +146,7 @@ export class WorkspaceWindowRuntime {
     });
   }
 
-  private loadWebAppUrl(webApp: WebAppItem | undefined, url: unknown) {
+  private loadWebAppUrl(webApp: WorkspaceWebAppItem | undefined, url: unknown) {
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(String(url || ""));
@@ -137,12 +154,12 @@ export class WorkspaceWindowRuntime {
       return false;
     }
 
-    if (!["http:", "https:"].includes(parsedUrl.protocol) || !webApp || webApp.view.webContents.isDestroyed()) {
+    if (!["http:", "https:"].includes(parsedUrl.protocol) || !webApp || webApp.webContents.isDestroyed()) {
       return false;
     }
 
     webApp.url = parsedUrl.toString();
-    webApp.view.webContents.loadURL(webApp.url).catch((error: Error) => {
+    webApp.webContents.loadURL(webApp.url).catch((error: Error) => {
       console.warn(`Could not load webapp ${webApp.url}: ${error.message}`);
     });
     return true;
@@ -166,47 +183,48 @@ export class WorkspaceWindowRuntime {
     return { action: "deny" as const };
   }
 
-  private ensureWebAppView(key: string): WebAppItem {
+  private ensureWebAppView(key: string): WorkspaceWebAppItem {
     const existing = this.webAppViews.get(key);
-    if (existing) {
+    if (existing && !existing.webContents.isDestroyed()) {
       return existing;
     }
-
-    const view = new WebContentsView({
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        partition: WEBAPP_SESSION_PARTITION,
-        preload: path.join(__dirname, "webappPreload.js"),
-        sandbox: true
+    if (existing) {
+      this.webAppViews.delete(key);
+      try {
+        this.window.contentView.removeChildView(existing.view);
+      } catch (error) {
+        console.warn(`Could not detach stale webapp view: ${(error as Error).message}`);
       }
-    });
+    }
+
+    const view = this.createWebContentsView();
+    const webContents = view.webContents;
     view.setBackgroundColor(getWebAppBackgroundColor(null, this.theme));
-    view.webContents.setWindowOpenHandler((details: HandlerDetails) => this.handleWebAppWindowOpen(key, details));
-    view.webContents.on("context-menu", (_event: Event, params: ContextMenuParams) => {
-      void createWebAppContextMenu(view.webContents, params, {
+    webContents.setWindowOpenHandler((details: HandlerDetails) => this.handleWebAppWindowOpen(key, details));
+    webContents.on("context-menu", (_event: ElectronEvent, params: ContextMenuParams) => {
+      void createWebAppContextMenu(webContents, params, {
         getSourceKey: (webContents) => this.getWebAppForWebContents(webContents)?.key || "",
         openExternalUrl: this.openExternalUrl,
         sendOpenUrlRequest: (sourceKey: unknown, url: unknown, source: string) => this.sendWebAppOpenUrlRequest(sourceKey, url, source)
       }).then((menu) => {
-        if (!view.webContents.isDestroyed()) {
+        if (!webContents.isDestroyed()) {
           menu.popup({ window: this.window });
         }
       });
     });
-    view.webContents.on("did-navigate", (_event: Event, url: string) => {
+    webContents.on("did-navigate", (_event: ElectronEvent, url: string) => {
       this.persistWebAppUrl(key, url);
     });
-    view.webContents.on("did-navigate-in-page", (_event: Event, url: string, isMainFrame: boolean) => {
+    webContents.on("did-navigate-in-page", (_event: ElectronEvent, url: string, isMainFrame: boolean) => {
       if (isMainFrame) {
         this.persistWebAppUrl(key, url);
       }
     });
-    view.webContents.on("did-finish-load", () => {
-      this.sendWebAppLoaded(key, view.webContents.getURL());
+    webContents.on("did-finish-load", () => {
+      this.sendWebAppLoaded(key, webContents.getURL());
     });
-    view.webContents.on("page-favicon-updated", (_event: Event, favicons: string[]) => {
-      const url = view.webContents.getURL();
+    webContents.on("page-favicon-updated", (_event: ElectronEvent, favicons: string[]) => {
+      const url = webContents.getURL();
       this.store.updateWorkspaceWebAppState(this.id, key, {
         faviconPageUrl: url,
         faviconUrl: favicons[0] || "",
@@ -218,20 +236,31 @@ export class WorkspaceWindowRuntime {
         url
       });
     });
-    view.webContents.on("did-fail-load", (_event: Event, errorCode: number, errorDescription: string, validatedUrl: string, isMainFrame: boolean) => {
+    webContents.on("did-fail-load", (_event: ElectronEvent, errorCode: number, errorDescription: string, validatedUrl: string, isMainFrame: boolean) => {
       if (isMainFrame) {
-        this.sendWebAppLoaded(key, validatedUrl || view.webContents.getURL(), `failed:${errorCode}:${errorDescription}`);
+        this.sendWebAppLoaded(key, validatedUrl || webContents.getURL(), `failed:${errorCode}:${errorDescription}`);
       }
     });
-    view.webContents.on("dom-ready", () => {
+    webContents.on("dom-ready", () => {
       const item = this.webAppViews.get(key);
-      void applyDefaultWebAppScrollbarStyle(view.webContents);
-      view.webContents.send("webapp:autofill-enabled", item?.autofillEnabled === true);
+      void applyDefaultWebAppScrollbarStyle(webContents);
+      webContents.send("webapp:autofill-enabled", item?.autofillEnabled === true);
+    });
+    webContents.once("destroyed", () => {
+      if (this.webAppViews.get(key)?.webContents === webContents) {
+        this.webAppViews.delete(key);
+        try {
+          this.window.contentView.removeChildView(view);
+        } catch (error) {
+          console.warn(`Could not detach destroyed webapp view: ${(error as Error).message}`);
+        }
+      }
     });
 
     this.window.contentView.addChildView(view);
-    const item: WebAppItem = {
+    const item: WorkspaceWebAppItem = {
       view,
+      webContents,
       url: null,
       backgroundColor: null,
       bounds: null,
@@ -245,7 +274,7 @@ export class WorkspaceWindowRuntime {
 
   getWebAppForWebContents(webContents: ElectronWebContents): WebAppLookup | null {
     for (const [key, item] of this.webAppViews) {
-      if (item.view.webContents.id === webContents.id) {
+      if (item.webContents.id === webContents.id) {
         return { key, item };
       }
     }
@@ -298,26 +327,26 @@ export class WorkspaceWindowRuntime {
     this.activeWebAppKey = String(key);
 
     const requestedUrl = new URL(nextUrl).toString();
-    const currentUrl = webApp.view.webContents.getURL();
+    const currentUrl = webApp.webContents.getURL();
     if (webApp.url !== requestedUrl && currentUrl !== requestedUrl) {
       this.loadWebAppUrl(webApp, requestedUrl);
-    } else if (!webApp.view.webContents.isLoadingMainFrame()) {
-      this.sendWebAppLoaded(key, webApp.view.webContents.getURL());
+    } else if (!webApp.webContents.isLoadingMainFrame()) {
+      this.sendWebAppLoaded(key, webApp.webContents.getURL());
     }
   }
 
   listWebContentsViewResources() {
     return [...this.webAppViews.entries()].flatMap(([key, item]) => {
-      if (item.view.webContents.isDestroyed()) {
+      if (item.webContents.isDestroyed()) {
         return [];
       }
-      const pid = item.view.webContents.getOSProcessId();
+      const pid = item.webContents.getOSProcessId();
       return [{
         key,
         label: item.label,
         pid: Number.isInteger(pid) && pid > 0 ? pid : 0,
         projectId: item.projectId,
-        url: item.view.webContents.getURL() || item.url || "",
+        url: item.webContents.getURL() || item.url || "",
         windowId: this.id
       }];
     });
@@ -347,11 +376,11 @@ export class WorkspaceWindowRuntime {
 
   getWebAppNavigationHistory(key: unknown) {
     const webApp = this.webAppViews.get(String(key || ""));
-    if (!webApp || webApp.view.webContents.isDestroyed()) {
+    if (!webApp || webApp.webContents.isDestroyed()) {
       return { activeIndex: -1, entries: [] };
     }
 
-    const history = webApp.view.webContents.navigationHistory;
+    const history = webApp.webContents.navigationHistory;
     return {
       activeIndex: history.getActiveIndex(),
       entries: history.getAllEntries().map((entry, index) => ({ index, title: entry.title || "", url: entry.url || "" }))
@@ -360,7 +389,7 @@ export class WorkspaceWindowRuntime {
 
   async navigateWebApp(key: unknown, action: string, url: string) {
     const webApp = this.webAppViews.get(String(key || ""));
-    if (!webApp || webApp.view.webContents.isDestroyed()) {
+    if (!webApp || webApp.webContents.isDestroyed()) {
       return false;
     }
 
@@ -368,7 +397,7 @@ export class WorkspaceWindowRuntime {
       return this.loadWebAppUrl(webApp, url);
     }
 
-    const history = webApp.view.webContents.navigationHistory;
+    const history = webApp.webContents.navigationHistory;
     if (action === "history-index") {
       const index = Number(url);
       if (Number.isInteger(index) && index >= 0 && index < history.length() && index !== history.getActiveIndex()) {
@@ -377,21 +406,21 @@ export class WorkspaceWindowRuntime {
       }
       return false;
     }
-    if (action === "back" && webApp.view.webContents.canGoBack()) {
-      webApp.view.webContents.goBack();
+    if (action === "back" && webApp.webContents.canGoBack()) {
+      webApp.webContents.goBack();
       return true;
     }
-    if (action === "forward" && webApp.view.webContents.canGoForward()) {
-      webApp.view.webContents.goForward();
+    if (action === "forward" && webApp.webContents.canGoForward()) {
+      webApp.webContents.goForward();
       return true;
     }
     if (action === "refresh") {
-      webApp.view.webContents.reload();
+      webApp.webContents.reload();
       return true;
     }
     if (action === "hard-refresh") {
-      await webApp.view.webContents.session.clearCache();
-      webApp.view.webContents.reloadIgnoringCache();
+      await webApp.webContents.session.clearCache();
+      webApp.webContents.reloadIgnoringCache();
       return true;
     }
     return false;
@@ -399,12 +428,12 @@ export class WorkspaceWindowRuntime {
 
   updateWebAppAutofill(key: unknown, enabled: unknown) {
     const webApp = this.webAppViews.get(String(key || ""));
-    if (!webApp || webApp.view.webContents.isDestroyed()) {
+    if (!webApp || webApp.webContents.isDestroyed()) {
       return false;
     }
 
     webApp.autofillEnabled = enabled === true;
-    webApp.view.webContents.send("webapp:autofill-enabled", webApp.autofillEnabled);
+    webApp.webContents.send("webapp:autofill-enabled", webApp.autofillEnabled);
     this.sendToRenderer("webapp:autofill-changed", { key: String(key), enabled: webApp.autofillEnabled });
     return webApp.autofillEnabled;
   }
@@ -457,11 +486,11 @@ export class WorkspaceWindowRuntime {
 
   private async captureWebAppForFreeze(key: string): Promise<WebAppCapture | null> {
     const item = this.webAppViews.get(key);
-    if (!item || item.view.webContents.isDestroyed()) {
+    if (!item || item.webContents.isDestroyed()) {
       return null;
     }
     try {
-      const image = await withTimeout(item.view.webContents.capturePage(), WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS, "capture timed out");
+      const image = await withTimeout(item.webContents.capturePage(), WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS, "capture timed out");
       if (image.isEmpty()) {
         return null;
       }
@@ -500,19 +529,25 @@ export class WorkspaceWindowRuntime {
   }
 
   destroy() {
-    for (const item of this.webAppViews.values()) {
+    const items = [...this.webAppViews.values()];
+    this.webAppViews.clear();
+    this.activeWebAppKey = null;
+    this.visibleWebAppKeys = new Set();
+    this.webAppFreezes.clear();
+
+    for (const item of items) {
       try {
         this.window.contentView.removeChildView(item.view);
       } catch (error) {
         console.warn(`Could not detach webapp view: ${(error as Error).message}`);
       }
-      if (!item.view.webContents.isDestroyed()) {
-        item.view.webContents.close();
+      try {
+        if (!item.webContents.isDestroyed()) {
+          item.webContents.close();
+        }
+      } catch (error) {
+        console.warn(`Could not close webapp contents: ${(error as Error).message}`);
       }
     }
-    this.webAppViews.clear();
-    this.activeWebAppKey = null;
-    this.visibleWebAppKeys = new Set();
-    this.webAppFreezes.clear();
   }
 }
