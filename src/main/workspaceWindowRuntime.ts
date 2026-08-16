@@ -30,6 +30,7 @@ const path = require("node:path");
 
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
+const WEBAPP_POPUP_RESERVATION_TIMEOUT_MS = 100;
 
 type WebAppFreeze = { all: boolean; keys: Set<string>; rect: Rectangle | null };
 
@@ -89,6 +90,7 @@ export class WorkspaceWindowRuntime {
   private readonly createWebContentsView: () => ElectronWebContentsView;
   private theme: AppTheme;
   private readonly webAppViews = new Map<string, WorkspaceWebAppItem>();
+  private readonly webAppPopupReservations = new Map<string, ReturnType<typeof setTimeout>>();
   private activeWebAppKey: string | null = null;
   private visibleWebAppKeys = new Set<string>();
   private readonly webAppFreezes = new Map<number, WebAppFreeze>();
@@ -175,12 +177,50 @@ export class WorkspaceWindowRuntime {
 
   private handleWebAppWindowOpen(key: string, details: HandlerDetails) {
     const url = details?.url || "";
+
+    // Electron reports window.open("about:blank", "_blank") from a user click as
+    // an unnamed foreground tab. Allow only that blank reservation: the page can
+    // later navigate its WindowProxy after asynchronous work completes.
+    if (url === "about:blank" && !details?.frameName && details?.disposition === "foreground-tab" && !details?.features && this.consumeWebAppPopupReservation(key)) {
+      return { action: "allow" as const };
+    }
+
     const webApp = this.webAppViews.get(key);
 
     if (!this.sendWebAppOpenUrlRequestFromItem(key, webApp, url, details?.disposition || "window-open")) {
       this.openExternalUrl(url);
     }
     return { action: "deny" as const };
+  }
+
+  private consumeWebAppPopupReservation(key: string) {
+    const timeout = this.webAppPopupReservations.get(key);
+    if (!timeout) {
+      return false;
+    }
+
+    clearTimeout(timeout);
+    this.webAppPopupReservations.delete(key);
+    return true;
+  }
+
+  reserveWebAppPopup(webContents: ElectronWebContents) {
+    const webApp = this.getWebAppForWebContents(webContents);
+    if (!webApp) {
+      return false;
+    }
+
+    const existing = this.webAppPopupReservations.get(webApp.key);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timeout = setTimeout(() => {
+      if (this.webAppPopupReservations.get(webApp.key) === timeout) {
+        this.webAppPopupReservations.delete(webApp.key);
+      }
+    }, WEBAPP_POPUP_RESERVATION_TIMEOUT_MS);
+    this.webAppPopupReservations.set(webApp.key, timeout);
+    return true;
   }
 
   private ensureWebAppView(key: string): WorkspaceWebAppItem {
@@ -529,6 +569,10 @@ export class WorkspaceWindowRuntime {
   }
 
   destroy() {
+    for (const timeout of this.webAppPopupReservations.values()) {
+      clearTimeout(timeout);
+    }
+    this.webAppPopupReservations.clear();
     const items = [...this.webAppViews.values()];
     this.webAppViews.clear();
     this.activeWebAppKey = null;

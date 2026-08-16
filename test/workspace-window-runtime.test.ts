@@ -23,6 +23,7 @@ class MockWebContents extends EventEmitter {
   };
   private destroyed = false;
   private url = "";
+  windowOpenHandler: ((details: { disposition: string; features: string; frameName: string; url: string }) => unknown) | null = null;
 
   close() {
     this.closeCount += 1;
@@ -54,7 +55,9 @@ class MockWebContents extends EventEmitter {
 
   send() {}
 
-  setWindowOpenHandler() {}
+  setWindowOpenHandler(handler: (details: { disposition: string; features: string; frameName: string; url: string }) => unknown) {
+    this.windowOpenHandler = handler;
+  }
 }
 
 class MockWebContentsView {
@@ -78,6 +81,8 @@ class MockWebContentsView {
 
 function createRuntime() {
   const views: MockWebContentsView[] = [];
+  const rendererMessages: Array<{ channel: string; payload: unknown }> = [];
+  const externalUrls: unknown[] = [];
   const window = {
     contentView: {
       addChildView() {},
@@ -88,7 +93,9 @@ function createRuntime() {
     setBackgroundColor() {},
     webContents: {
       isDestroyed: () => false,
-      send() {}
+      send(channel: string, payload: unknown) {
+        rendererMessages.push({ channel, payload });
+      }
     }
   };
   const runtime = new WorkspaceWindowRuntime({
@@ -98,7 +105,9 @@ function createRuntime() {
       return view;
     },
     id: "window-1",
-    openExternalUrl() {},
+    openExternalUrl(url: unknown) {
+      externalUrls.push(url);
+    },
     store: {
       getWorkspaceWebAppUrl: () => null,
       updateWorkspaceWebAppState() {}
@@ -106,7 +115,7 @@ function createRuntime() {
     window
   });
 
-  return { runtime, views };
+  return { externalUrls, rendererMessages, runtime, views };
 }
 
 function showWebApp(runtime: typeof WorkspaceWindowRuntime) {
@@ -160,4 +169,125 @@ test("workspace runtime navigates through Electron navigation history", async ()
   assert.equal(await runtime.navigateWebApp("project:twicc", "forward", ""), true);
   assert.equal(webContents.backCount, 1);
   assert.equal(webContents.forwardCount, 1);
+});
+
+test("workspace runtime preserves a deferred user popup WindowProxy", () => {
+  const { externalUrls, rendererMessages, runtime, views } = createRuntime();
+
+  showWebApp(runtime);
+  const handler = views[0].contents.windowOpenHandler;
+  assert.ok(handler);
+
+  assert.deepEqual(handler({
+    disposition: "foreground-tab",
+    features: "",
+    frameName: "",
+    url: "about:blank"
+  }), { action: "deny" });
+  rendererMessages.length = 0;
+  assert.equal(runtime.reserveWebAppPopup(views[0].contents), true);
+  assert.deepEqual(handler({
+    disposition: "foreground-tab",
+    features: "",
+    frameName: "",
+    url: "about:blank"
+  }), { action: "allow" });
+  assert.deepEqual(handler({
+    disposition: "foreground-tab",
+    features: "",
+    frameName: "",
+    url: "about:blank"
+  }), { action: "deny" });
+  assert.equal(rendererMessages.length, 1);
+  assert.deepEqual(externalUrls, []);
+});
+
+test("workspace runtime expires an unused deferred popup reservation", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { runtime, views } = createRuntime();
+
+  showWebApp(runtime);
+  const handler = views[0].contents.windowOpenHandler;
+  assert.ok(handler);
+  assert.equal(runtime.reserveWebAppPopup(views[0].contents), true);
+
+  t.mock.timers.tick(100);
+  assert.deepEqual(handler({
+    disposition: "foreground-tab",
+    features: "",
+    frameName: "",
+    url: "about:blank"
+  }), { action: "deny" });
+});
+
+test("workspace runtime does not share deferred popup reservations between panes", () => {
+  const { runtime, views } = createRuntime();
+
+  showWebApp(runtime);
+  runtime.showWebApp({
+    bounds: { height: 600, width: 800, x: 0, y: 0 },
+    key: "project:github",
+    url: "https://github.example.test/project"
+  });
+  const firstHandler = views[0].contents.windowOpenHandler;
+  const secondHandler = views[1].contents.windowOpenHandler;
+  assert.ok(firstHandler);
+  assert.ok(secondHandler);
+  assert.equal(runtime.reserveWebAppPopup(views[0].contents), true);
+
+  assert.deepEqual(secondHandler({
+    disposition: "foreground-tab",
+    features: "",
+    frameName: "",
+    url: "about:blank"
+  }), { action: "deny" });
+  assert.deepEqual(firstHandler({
+    disposition: "foreground-tab",
+    features: "",
+    frameName: "",
+    url: "about:blank"
+  }), { action: "allow" });
+});
+
+test("workspace runtime keeps ordinary and non-blank popups in the existing navigation flow", () => {
+  const { externalUrls, rendererMessages, runtime, views } = createRuntime();
+
+  showWebApp(runtime);
+  const handler = views[0].contents.windowOpenHandler;
+  assert.ok(handler);
+
+  assert.deepEqual(handler({
+    disposition: "foreground-tab",
+    features: "",
+    frameName: "_blank",
+    url: "https://popup.example.test/"
+  }), { action: "deny" });
+  assert.deepEqual(rendererMessages, [{
+    channel: "webapp:open-url-requested",
+    payload: {
+      sourceWebAppKey: "project:twicc",
+      sourceWindowId: "window-1",
+      url: "https://popup.example.test/",
+      source: "foreground-tab",
+      target: "",
+      sourceUrl: "https://twicc.example.test/project",
+      sourceBounds: { height: 600, width: 800, x: 0, y: 0 }
+    }
+  }]);
+  assert.deepEqual(externalUrls, []);
+});
+
+test("workspace runtime denies blank popup requests that are not the deferred user-popup shape", () => {
+  const { runtime, views } = createRuntime();
+
+  showWebApp(runtime);
+  const handler = views[0].contents.windowOpenHandler;
+  assert.ok(handler);
+
+  assert.deepEqual(handler({
+    disposition: "foreground-tab",
+    features: "popup",
+    frameName: "",
+    url: "about:blank"
+  }), { action: "deny" });
 });

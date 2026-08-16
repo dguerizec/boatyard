@@ -211,6 +211,14 @@ function installModifiedLinkClickCapture(): void {
   }, true);
 }
 
+function installPopupReservationCapture(): void {
+  document.addEventListener("click", (event) => {
+    if (event.isTrusted) {
+      ipcRenderer.sendSync("webapp:reserve-popup");
+    }
+  }, true);
+}
+
 function installSubmitCapture(): void {
   document.addEventListener("submit", (event) => {
     maybeSaveCredentialFrom(event.target);
@@ -267,6 +275,7 @@ ipcRenderer.on("webapp:autofill-enabled", (_event: IpcRendererEvent, enabled: un
 
 window.addEventListener("DOMContentLoaded", () => {
   installModifiedLinkClickCapture();
+  installPopupReservationCapture();
   installSubmitCapture();
   scheduleAutofill();
 

@@ -1139,6 +1139,10 @@ void [
 ];
 
 function registerIpcHandlers() {
+  ipcMain.on("webapp:reserve-popup", (event: IpcMainEvent) => {
+    event.returnValue = getWorkspaceWindowForWebAppContents(event.sender)?.runtime.reserveWebAppPopup(event.sender) || false;
+  });
+
   ipcMain.on("webapp:modified-link-click", (event: IpcMainEvent, payload: unknown) => {
     const source = payload && typeof payload === "object" && !Array.isArray(payload)
       ? payload as UnknownRecord
