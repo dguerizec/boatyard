@@ -172,6 +172,37 @@ test("workspace runtime navigates through Electron navigation history", async ()
   assert.equal(webContents.forwardCount, 1);
 });
 
+test("workspace runtime preserves live navigation when a fixed webapp is resynchronized", async () => {
+  const { runtime, views } = createRuntime();
+  const showFixedWebApp = (url = "http://main.example.test/") => runtime.showWebApp({
+    bounds: { height: 600, width: 800, x: 0, y: 0 },
+    key: "project:pier:main",
+    restoreUrl: false,
+    url
+  });
+
+  showFixedWebApp();
+  const webContents = views[0].contents;
+  assert.equal(await runtime.navigateWebApp(
+    "project:pier:main",
+    "open",
+    "https://google.com/"
+  ), true);
+
+  showFixedWebApp();
+  assert.deepEqual(webContents.loadedUrls, [
+    "http://main.example.test/",
+    "https://google.com/"
+  ]);
+
+  showFixedWebApp("http://renamed.example.test/");
+  assert.deepEqual(webContents.loadedUrls, [
+    "http://main.example.test/",
+    "https://google.com/",
+    "http://renamed.example.test/"
+  ]);
+});
+
 test("workspace runtime preserves a deferred user popup WindowProxy", () => {
   const { externalUrls, rendererMessages, runtime, views } = createRuntime();
 

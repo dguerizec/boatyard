@@ -28,6 +28,7 @@ import { cleanupOrphanedTerminalClientSessions } from "./terminalClientSessionLi
 import { createTerminalShutdownCoordinator } from "./terminalShutdown.js";
 import { getLiveWindowWebContents } from "./browserWindowTarget.js";
 import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
+import { resolveWebAppShowNavigation } from "./webAppShowNavigation.js";
 import { McpRendererBroker, McpRendererError } from "./mcpRendererBroker.js";
 import { McpServerService } from "./mcpServer.js";
 import { McpAgentConnectionInstaller } from "./mcpAgentConnectionInstaller.js";
@@ -865,6 +866,7 @@ function ensureWebAppView(key: string): WebAppItem {
   const item: WebAppItem = {
     view,
     url: null,
+    configuredUrl: null,
     bounds: null,
     autofillEnabled: false,
     label: "",
@@ -907,18 +909,30 @@ function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, label,
     throw new Error("Webapp key is required.");
   }
 
-  const restoredUrl = store.getWebAppUrl(String(key));
-  const nextUrl = restoreUrl === false ? url : (restoredUrl || url);
-  if (!nextUrl) {
+  if (!url) {
     throw new Error("Webapp URL is required.");
   }
-  const parsedUrl = new URL(nextUrl);
 
-  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+  const parsedConfiguredUrl = new URL(url);
+  const configuredUrl = parsedConfiguredUrl.toString();
+
+  if (!["http:", "https:"].includes(parsedConfiguredUrl.protocol)) {
     throw new Error("Only http and https webapps are supported.");
   }
 
+  const restoredUrl = store.getWebAppUrl(String(key));
   const webApp = ensureWebAppView(String(key));
+  const nextUrl = resolveWebAppShowNavigation({
+    configuredUrl,
+    previousConfiguredUrl: webApp.configuredUrl,
+    restoredUrl,
+    restoreUrl
+  });
+  const parsedUrl = nextUrl ? new URL(nextUrl) : null;
+  if (parsedUrl && !["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw new Error("Only http and https webapps are supported.");
+  }
+  webApp.configuredUrl = configuredUrl;
   if (typeof autofillEnabled === "boolean") {
     webApp.autofillEnabled = autofillEnabled;
   }
@@ -938,7 +952,7 @@ function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, label,
   activeWebAppKey = String(key);
 
   const currentUrl = webApp.view.webContents.getURL();
-  if (webApp.url !== parsedUrl.toString() && currentUrl !== parsedUrl.toString()) {
+  if (parsedUrl && webApp.url !== parsedUrl.toString() && currentUrl !== parsedUrl.toString()) {
     loadWebAppUrl(webApp, parsedUrl.toString());
   } else if (!webApp.view.webContents.isLoadingMainFrame()) {
     sendWebAppLoaded(key, webApp.view.webContents.getURL());

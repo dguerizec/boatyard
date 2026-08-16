@@ -262,6 +262,52 @@ test("same-origin URL updates preserve the cached page favicon", () => {
   });
 });
 
+test("fixed webapps ignore restored URLs but expose later live navigation", () => {
+  withFakeDocument(() => {
+    const project = {
+      id: "project-1",
+      sourcePath: "/workspace/example"
+    };
+    const runtime = createRendererWebAppRuntime({
+      boatyard: {} as never,
+      findFirstPaneNode: () => null,
+      findPaneNode: () => null,
+      findPaneNodeBySelectedWebApp: () => null,
+      getCurrentProject: () => project,
+      getCurrentView: () => "project",
+      getGlobalPluginConfig: () => ({}),
+      getGlobalWorkspace: () => project,
+      getPaneLayout: () => ({ type: "pane", id: "pane-1" }),
+      getPluginPaneDefinitions: () => [],
+      getProjectPluginConfig: () => ({}),
+      getProjectWidgetPanes: () => [],
+      getProjects: () => [project],
+      getSettings: () => ({}),
+      isGlobalWorkspace: () => false,
+      paneLayoutState: {
+        setSelectedWebAppForPane: () => undefined,
+        setSelectedWebAppForProject: () => undefined
+      },
+      persistPaneLayout: () => undefined,
+      renderWorkspacePaneArea: () => undefined
+    });
+    const webApp = {
+      id: "pier:main",
+      key: "pane-1:pier:main",
+      restoreUrl: false,
+      url: "http://main.example.test/"
+    };
+
+    runtime.hydrateCurrentWebAppUrls({
+      [webApp.key]: { url: "https://stale.example.test/" }
+    });
+    assert.equal(runtime.getCurrentWebAppUrl(webApp), "http://main.example.test/");
+
+    runtime.setCurrentWebAppUrl(webApp.key, "https://google.com/");
+    assert.equal(runtime.getCurrentWebAppUrl(webApp), "https://google.com/");
+  });
+});
+
 test("opening an already selected webapp preserves the other pane surfaces", async () => {
   const project = {
     id: "project-1",

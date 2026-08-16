@@ -19,6 +19,7 @@ import type {
 import { getLiveWindowWebContents } from "./browserWindowTarget.js";
 import { createWebAppContextMenu } from "./webAppContextMenu.js";
 import { applyDefaultWebAppScrollbarStyle } from "./webAppScrollbars.js";
+import { resolveWebAppShowNavigation } from "./webAppShowNavigation.js";
 import {
   getAppBackgroundColor,
   getWebAppBackgroundColor,
@@ -301,6 +302,7 @@ export class WorkspaceWindowRuntime {
       view,
       webContents,
       url: null,
+      configuredUrl: null,
       backgroundColor: null,
       bounds: null,
       autofillEnabled: false,
@@ -342,13 +344,22 @@ export class WorkspaceWindowRuntime {
       throw new Error("Webapp key is required.");
     }
 
-    const restoredUrl = this.store.getWorkspaceWebAppUrl(this.id, String(key));
-    const nextUrl = restoreUrl === false ? url : (restoredUrl || url);
-    if (!nextUrl) {
+    if (!url) {
       throw new Error("Webapp URL is required.");
     }
 
+    const configuredUrl = new URL(url).toString();
+    const restoredUrl = this.store.getWorkspaceWebAppUrl(this.id, String(key));
+
     const webApp = this.ensureWebAppView(String(key));
+    const nextUrl = resolveWebAppShowNavigation({
+      configuredUrl,
+      previousConfiguredUrl: webApp.configuredUrl,
+      restoredUrl,
+      restoreUrl
+    });
+    const requestedUrl = nextUrl ? new URL(nextUrl).toString() : null;
+    webApp.configuredUrl = configuredUrl;
     if (typeof autofillEnabled === "boolean") {
       webApp.autofillEnabled = autofillEnabled;
     }
@@ -365,9 +376,8 @@ export class WorkspaceWindowRuntime {
     webApp.view.setVisible(this.visibleWebAppKeys.has(String(key)) && !this.isWebAppKeyFrozen(String(key)));
     this.activeWebAppKey = String(key);
 
-    const requestedUrl = new URL(nextUrl).toString();
     const currentUrl = webApp.webContents.getURL();
-    if (webApp.url !== requestedUrl && currentUrl !== requestedUrl) {
+    if (requestedUrl && webApp.url !== requestedUrl && currentUrl !== requestedUrl) {
       this.loadWebAppUrl(webApp, requestedUrl);
     } else if (!webApp.webContents.isLoadingMainFrame()) {
       this.sendWebAppLoaded(key, webApp.webContents.getURL());

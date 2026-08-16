@@ -84,6 +84,7 @@ export function createRendererWebAppRuntime({
   renderWorkspacePaneArea
 }: RendererWebAppRuntimeOptions) {
   const currentWebAppUrlsByKey = new Map<string, string>();
+  const liveWebAppUrlKeys = new Set<string>();
   const currentWebAppFaviconsByKey = new Map<string, CurrentWebAppFavicon>();
   const webAppAutofillEnabledByKey = new Map<string, boolean>();
 
@@ -104,6 +105,7 @@ export function createRendererWebAppRuntime({
 
   function hydrateCurrentWebAppUrls(webApps: RendererState["webApps"] = {}) {
     currentWebAppUrlsByKey.clear();
+    liveWebAppUrlKeys.clear();
     currentWebAppFaviconsByKey.clear();
     for (const [key, webApp] of Object.entries(webApps || {})) {
       if (webApp.url) {
@@ -158,7 +160,7 @@ export function createRendererWebAppRuntime({
   }
 
   function getCurrentWebAppUrl(webApp: WebAppDefinition) {
-    if (webApp.restoreUrl === false) {
+    if (webApp.restoreUrl === false && !liveWebAppUrlKeys.has(webApp.key || "")) {
       return webApp.url;
     }
 
@@ -252,6 +254,7 @@ export function createRendererWebAppRuntime({
       const previousUrl = currentWebAppUrlsByKey.get(key) || "";
       const currentFavicon = currentWebAppFaviconsByKey.get(key);
       currentWebAppUrlsByKey.set(key, url);
+      liveWebAppUrlKeys.add(key);
 
       if (currentFavicon && haveSamePaneOrigin(currentFavicon.pageUrl || previousUrl, url)) {
         currentFavicon.pageUrl = url;

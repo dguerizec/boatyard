@@ -115,6 +115,7 @@ export type WebAppItem = {
   autofillEnabled: boolean;
   backgroundColor?: unknown;
   bounds: Rectangle | null;
+  configuredUrl: string | null;
   label: string;
   projectId: string;
   url: string | null;
