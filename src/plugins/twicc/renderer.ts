@@ -14,6 +14,9 @@
   type TwiccConfig = {
     twiccApiToken?: string;
     twiccBaseUrl?: string;
+    twiccPaneBrowserControls?: string;
+    twiccPaneSidebarDefaultState?: string;
+    twiccPaneSidebarPosition?: string;
     twiccProjectStatusDisplay?: string;
     twiccProjectUrl?: string;
     twiccTopbarUsageDisplay?: string;
@@ -294,6 +297,22 @@
     { value: "charts", label: "Charts only" },
     { value: "chartsWithValues", label: "Charts with values" },
     { value: "bars", label: "Usage and pace bars" }
+  ];
+  const TWICC_PANE_BROWSER_CONTROLS_DEFAULT = "compact";
+  const TWICC_PANE_BROWSER_CONTROLS_OPTIONS = [
+    { value: "compact", label: "Compact menu" },
+    { value: "full", label: "Full toolbar" },
+    { value: "hidden", label: "Hidden" }
+  ];
+  const TWICC_PANE_SIDEBAR_POSITION_DEFAULT = "left";
+  const TWICC_PANE_SIDEBAR_POSITION_OPTIONS = [
+    { value: "left", label: "Left" },
+    { value: "right", label: "Right" }
+  ];
+  const TWICC_PANE_SIDEBAR_DEFAULT_STATE_DEFAULT = "open";
+  const TWICC_PANE_SIDEBAR_DEFAULT_STATE_OPTIONS = [
+    { value: "open", label: "Open" },
+    { value: "closed", label: "Closed" }
   ];
   let projectProcessStatuses: Record<string, TwiccProjectStatus> = {};
   let nextSessionFlowSurfaceId = 0;
@@ -3387,6 +3406,50 @@
     };
   }
 
+  function renderSessionFlowSidePanel(
+    container: HTMLElement,
+    props: TwiccSessionFlowPaneOptions = {}
+  ): () => void {
+    const surface = createSessionFlowSurface(props.project || {}, {
+      ...props,
+      pluginConfig: props.pluginConfig || props.projectConfig
+    });
+    surface.classList.add("twicc-session-flow-sidebar");
+    container.append(surface);
+    return () => {
+      surface.cleanup?.();
+      surface.remove();
+    };
+  }
+
+  function resolveTwiccPaneNavigation({ globalPluginConfig }: PluginPaneResolveContext): PluginPaneNavigation {
+    const configuredMode = String((globalPluginConfig as TwiccConfig | undefined)?.twiccPaneBrowserControls || "");
+    const browserControls = TWICC_PANE_BROWSER_CONTROLS_OPTIONS.some(({ value }) => value === configuredMode)
+      ? configuredMode as "compact" | "full" | "hidden"
+      : TWICC_PANE_BROWSER_CONTROLS_DEFAULT;
+    return {
+      browserControls,
+      items: [],
+      showAddressBar: true,
+      showHomeButton: true
+    };
+  }
+
+  function resolveTwiccPaneSidePanel(
+    { globalPluginConfig }: PluginPaneResolveContext
+  ): PluginPaneSidePanel {
+    const config = globalPluginConfig as TwiccConfig | undefined;
+    return {
+      defaultOpen: config?.twiccPaneSidebarDefaultState !== "closed",
+      defaultWidth: 360,
+      maxWidth: 720,
+      minMainWidth: 360,
+      minWidth: 280,
+      position: config?.twiccPaneSidebarPosition === "right" ? "right" : "left",
+      title: "Sessions"
+    };
+  }
+
   function renderSessionFlowHeaderActions(
     container: HTMLElement,
     props: TwiccSessionFlowPaneOptions = {}
@@ -3719,6 +3782,33 @@
               defaultValue: TWICC_TOPBAR_USAGE_DISPLAY_DEFAULT,
               options: TWICC_TOPBAR_USAGE_DISPLAY_OPTIONS,
               description: "Choose how the Twicc usage widget renders in the top bar."
+            },
+            {
+              key: "twiccPaneSidebarPosition",
+              label: "Pane sidebar position",
+              type: "select",
+              valueType: "text",
+              defaultValue: TWICC_PANE_SIDEBAR_POSITION_DEFAULT,
+              options: TWICC_PANE_SIDEBAR_POSITION_OPTIONS,
+              description: "Choose which side of the Twicc conversation contains Session Flow."
+            },
+            {
+              key: "twiccPaneSidebarDefaultState",
+              label: "Pane sidebar initial state",
+              type: "select",
+              valueType: "text",
+              defaultValue: TWICC_PANE_SIDEBAR_DEFAULT_STATE_DEFAULT,
+              options: TWICC_PANE_SIDEBAR_DEFAULT_STATE_OPTIONS,
+              description: "Choose the initial state for panes that do not have a saved sidebar preference."
+            },
+            {
+              key: "twiccPaneBrowserControls",
+              label: "Pane browser controls",
+              type: "select",
+              valueType: "text",
+              defaultValue: TWICC_PANE_BROWSER_CONTROLS_DEFAULT,
+              options: TWICC_PANE_BROWSER_CONTROLS_OPTIONS,
+              description: "Keep browser navigation in a compact menu, show the full toolbar, or hide it."
             }
           ]
         });
@@ -3787,6 +3877,9 @@
           iconUrl: twiccIconUrl,
           kind: "wcv",
           scope: "project",
+          renderSidePanel: renderSessionFlowSidePanel,
+          resolveNavigation: resolveTwiccPaneNavigation,
+          resolveSidePanel: resolveTwiccPaneSidePanel,
           resolveUrl({ project, projectConfig }: PluginPaneResolveContext) {
             return twiccService.getProjectUrl(project || {}, { pluginConfig: projectConfig });
           }

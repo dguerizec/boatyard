@@ -444,6 +444,12 @@ test("project webapps expose built-in icons and leave URL panes eligible for fav
             }],
             showAddressBar: false
           }),
+          renderSidePanel: () => {},
+          resolveSidePanel: () => ({
+            defaultOpen: true,
+            position: "left",
+            title: "Sessions"
+          }),
           resolveUrl: () => "https://twicc.example.test/project/example",
           title: "Twicc",
           webAppId: "twicc-plugin"
@@ -516,6 +522,22 @@ test("project webapps expose built-in icons and leave URL panes eligible for fav
         webAppId: "twicc-plugin"
       }],
       showAddressBar: false
+    }
+  );
+  assert.equal(
+    typeof webApps.find((webApp: { id?: string }) => webApp.id === "twicc-plugin")?.pluginPane?.renderSidePanel,
+    "function"
+  );
+  assert.deepEqual(
+    webApps.find((webApp: { id?: string }) => webApp.id === "twicc-plugin")?.sidePanel,
+    {
+      defaultOpen: true,
+      defaultWidth: 360,
+      maxWidth: 720,
+      minMainWidth: 360,
+      minWidth: 280,
+      position: "left",
+      title: "Sessions"
     }
   );
   assert.deepEqual(

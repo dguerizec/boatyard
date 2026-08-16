@@ -54,9 +54,20 @@ export type WebAppPaneNavigationItem = {
 };
 
 export type WebAppPaneNavigation = {
+  browserControls?: "compact" | "full" | "hidden";
   items: WebAppPaneNavigationItem[];
   showAddressBar?: boolean;
   showHomeButton?: boolean;
+};
+
+export type WebAppPaneSidePanel = {
+  defaultOpen: boolean;
+  defaultWidth: number;
+  maxWidth: number;
+  minMainWidth: number;
+  minWidth: number;
+  position: "left" | "right";
+  title: string;
 };
 
 export type WebAppDefinition = UnknownRecord & {
@@ -73,11 +84,13 @@ export type WebAppDefinition = UnknownRecord & {
   minWidth?: string;
   mobileDev?: boolean;
   navigation?: WebAppPaneNavigation;
+  pluginPane?: UnknownRecord;
   parentLabel?: string;
   parentWebAppId?: string;
   paneTypeId?: string;
   restoreUrl?: boolean;
   showInMenu?: boolean;
+  sidePanel?: WebAppPaneSidePanel;
   transient?: boolean;
   url?: string;
 };

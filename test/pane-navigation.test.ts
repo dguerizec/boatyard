@@ -5,6 +5,7 @@ const { readFileSync } = require("node:fs");
 const test = require("node:test");
 const {
   isPaneNavigationItemActive,
+  shouldHidePaneBrowserControls,
   shouldUseCompactPaneBrowserControls
 } = require(`${process.cwd()}/build/renderer/paneNavigation`);
 
@@ -17,6 +18,15 @@ test("pane navigation uses compact browser controls when the address bar is hidd
     items: [{ id: "overview", label: "Overview" }],
     showAddressBar: true
   }), false);
+  assert.equal(shouldUseCompactPaneBrowserControls({
+    browserControls: "compact",
+    items: [],
+    showAddressBar: true
+  }), true);
+  assert.equal(shouldHidePaneBrowserControls({
+    browserControls: "hidden",
+    items: []
+  }), true);
   assert.equal(shouldUseCompactPaneBrowserControls(undefined), false);
 });
 
@@ -27,7 +37,7 @@ test("compact browser controls overlay preserves primary and secondary navigatio
   const styles = readFileSync(`${process.cwd()}/src/renderer/styles.css`, "utf8");
 
   assert.match(view, /compactBrowserControlsButton\.disabled = isDomPane/);
-  assert.match(view, /compactBrowserControlsOverlay\.append\(\.\.\.browserControlButtons\)/);
+  assert.match(view, /compactBrowserControlsOverlay\.append\([\s\S]*?\.\.\.browserControlButtons,[\s\S]*?showAddressBar/);
   assert.match(view, /button\.addEventListener\("click", \(\) => closeCompactBrowserControls\(\)\)/);
   assert.match(view, /event\.key !== "Escape" \|\| isWebAppTabMenuOpen\(\)/);
   assert.match(view, /target\.closest\("\.webapp-tab-menu"\)/);
@@ -45,6 +55,7 @@ test("compact browser controls overlay preserves primary and secondary navigatio
   assert.match(styles, /\.webapp-browser-controls-overlay\s*\{[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*hidden;[^}]*scrollbar-width:\s*none;/s);
   assert.match(styles, /\.webapp-browser-controls-overlay::\-webkit-scrollbar\s*\{[^}]*display:\s*none;/s);
   assert.match(styles, /\.webapp-browser-controls-overlay \.webapp-tool-button\s*\{[^}]*height:\s*28px;[^}]*min-height:\s*28px;/s);
+  assert.match(styles, /\.webapp-browser-controls-overlay \.webapp-url\s*\{[^}]*height:\s*28px;/s);
   assert.match(styles, /\.webapp-navigation-history-menu \.webapp-tab-menu-item\s*\{[^}]*height:\s*26px;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s);
 });
 

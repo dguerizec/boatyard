@@ -7,6 +7,11 @@
       "features": [
         {
           "category": "Added",
+          "title": "Integrated TwiCC Session Flow",
+          "body": "TwiCC conversation panes now include a configurable Session Flow sidebar with a remembered open state and draggable width, plus compact browser controls by default."
+        },
+        {
+          "category": "Added",
           "title": "Workspace layout library",
           "body": "Save, preview, update, delete, and apply reusable pane arrangements for a project or across all projects."
         },

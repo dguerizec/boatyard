@@ -2,13 +2,15 @@ import type {
   RendererPaneNode,
   RendererProject,
   WebAppPaneNavigation,
-  WebAppPaneNavigationItem
+  WebAppPaneNavigationItem,
+  WebAppPaneSidePanel
 } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type { WidgetLayout, WidgetPane } from "./widgetSurfaceTypes.js";
 import { createPaneIconLabel, shouldUseIconOnlyPaneTab } from "./paneIcons.js";
 import {
   isPaneNavigationItemActive,
+  shouldHidePaneBrowserControls,
   shouldUseCompactPaneBrowserControls
 } from "./paneNavigation.js";
 import {
@@ -26,9 +28,21 @@ import {
   resolvePaneMinimumPixels,
   type PaneMinimumAxis
 } from "./paneSplitGeometry.js";
+import {
+  clampPaneSidePanelWidth,
+  getPaneSidePanelStorageKey,
+  resizePaneSidePanelWidth
+} from "./paneSidePanel.js";
+import { attachPanePointerResize } from "./panePointerResize.js";
 
 type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
+};
+
+type PaneSidePanelState = {
+  open: boolean;
+  saved: boolean;
+  width: number;
 };
 
 type PaneSplitSide = "first" | "second";
@@ -95,9 +109,11 @@ type PaneWebApp = UnknownRecord & {
   navigation?: WebAppPaneNavigation;
   pluginPane?: {
     pluginId: string;
-    render(host: HTMLElement, props: UnknownRecord): unknown;
+    render?(host: HTMLElement, props: UnknownRecord): unknown;
     renderHeaderActions?(container: HTMLElement, props: UnknownRecord): unknown;
+    renderSidePanel?(container: HTMLElement, props: UnknownRecord): unknown;
   };
+  sidePanel?: WebAppPaneSidePanel;
   url?: string;
   widgetPane?: WidgetPane;
 };
@@ -121,6 +137,8 @@ type PaneReuseOptions = {
 
 type PaneReuseState = {
   mobileDev?: string;
+  navigation?: string;
+  sidePanel?: string;
   webAppId?: string;
   webAppKind?: string;
   webAppMenuSignature?: string;
@@ -222,6 +240,8 @@ export function canReusePaneElement(
   return current.webAppId === next.webAppId &&
     current.webAppKind === next.webAppKind &&
     current.mobileDev === next.mobileDev &&
+    current.navigation === next.navigation &&
+    current.sidePanel === next.sidePanel &&
     (
       options.allowWebAppMenuChanges === true ||
       current.webAppMenuSignature === next.webAppMenuSignature
@@ -276,6 +296,8 @@ export function createPaneLayoutView({
   }: PaneLayoutViewOptions) {
     const mobileDevViewports = new Map<string, MobileDevViewportState>();
     const mobileDevStoragePrefix = "boatyard.mobile-dev-viewport:";
+    const paneSidePanelStates = new Map<string, PaneSidePanelState>();
+    const paneSidePanelStoragePrefix = "boatyard.pane-side-panel:";
     const mobileDevRulerWidth = 32;
     const mobileDevRulerHeight = 24;
     const mobileDevHostPadding = 20;
@@ -403,6 +425,61 @@ export function createPaneLayoutView({
 
     function isMobileDevViewportEnabled(webApp: PaneWebApp) {
       return webApp.mobileDev === true && getMobileDevViewportState(webApp).enabled;
+    }
+
+    function getPaneSidePanelState(project: RendererProject, webApp: PaneWebApp) {
+      const sidePanel = webApp.sidePanel;
+      if (!sidePanel) {
+        return null;
+      }
+
+      const key = getPaneSidePanelStorageKey(project.id, webApp.key || webApp.id);
+      const existing = paneSidePanelStates.get(key);
+      if (existing) {
+        if (!existing.saved) {
+          existing.open = sidePanel.defaultOpen;
+          existing.width = sidePanel.defaultWidth;
+        }
+        return { key, state: existing };
+      }
+
+      let persisted: Partial<PaneSidePanelState> = {};
+      let saved = false;
+      try {
+        const raw = window.localStorage?.getItem(`${paneSidePanelStoragePrefix}${key}`);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          saved = true;
+          const record = parsed as UnknownRecord;
+          const width = Math.round(Number(record.width));
+          persisted = {
+            ...(typeof record.open === "boolean" ? { open: record.open } : {}),
+            ...(Number.isFinite(width) && width > 0 ? { width } : {})
+          };
+        }
+      } catch {
+        // Pane-local presentation state can fall back to its configured defaults.
+      }
+
+      const state = {
+        open: persisted.open ?? sidePanel.defaultOpen,
+        saved,
+        width: persisted.width || sidePanel.defaultWidth
+      };
+      paneSidePanelStates.set(key, state);
+      return { key, state };
+    }
+
+    function persistPaneSidePanelState(key: string, state: PaneSidePanelState) {
+      state.saved = true;
+      try {
+        window.localStorage?.setItem(`${paneSidePanelStoragePrefix}${key}`, JSON.stringify({
+          open: state.open,
+          width: state.width
+        }));
+      } catch {
+        // Keep the current presentation in memory when browser storage is unavailable.
+      }
     }
 
     function getPaneElements() {
@@ -880,22 +957,18 @@ export function createPaneLayoutView({
       return panes;
     }
 
-    function getDirectPaneHost(pane: HTMLElement) {
+    function getDirectPaneHost(pane: HTMLElement): PaneLayoutHost | null {
       return Array.from(pane.children)
-        .find((child): child is HTMLElement => child instanceof HTMLElement && child.classList.contains("webapp-host")) || null;
+        .find((child): child is PaneLayoutHost => child instanceof HTMLElement && child.classList.contains("webapp-host")) || null;
     }
 
-    function getVisiblePaneHost(pane: HTMLElement, selectedWebApp: PaneWebApp) {
+    function getVisiblePaneHost(pane: HTMLElement) {
       const directHost = getDirectPaneHost(pane);
       if (!directHost) {
         return null;
       }
 
-      if (!isMobileDevViewportEnabled(selectedWebApp)) {
-        return directHost;
-      }
-
-      return directHost.querySelector<HTMLElement>(".webapp-mobile-dev-viewport") || directHost;
+      return directHost.querySelector<HTMLElement>("[data-webapp-viewport=\"true\"]") || directHost;
     }
 
     function getWebAppMenuSignature(webApps: PaneWebApp[]) {
@@ -1001,6 +1074,8 @@ export function createPaneLayoutView({
       const nextMenuSignature = getWebAppMenuSignature(webApps);
       if (!canReusePaneElement(pane.dataset, {
         mobileDev: String(isMobileDevViewportEnabled(selectedWebApp)),
+        navigation: JSON.stringify(selectedWebApp.navigation || null),
+        sidePanel: JSON.stringify(selectedWebApp.sidePanel || null),
         webAppId: selectedWebApp.id,
         webAppKind: selectedWebApp.kind,
         webAppMenuSignature: nextMenuSignature
@@ -1012,7 +1087,7 @@ export function createPaneLayoutView({
       pane.dataset.webAppMenuSignature = nextMenuSignature;
       syncReusedPaneActions(project, paneNode, pane);
       if (!["dom", "empty", "terminal", "widgets"].includes(selectedWebApp.kind || "")) {
-        const host = getVisiblePaneHost(pane, selectedWebApp);
+        const host = getVisiblePaneHost(pane);
         if (host) {
           setVisibleWebAppHost(paneNode.id, {
             webApp: selectedWebApp,
@@ -1034,6 +1109,9 @@ export function createPaneLayoutView({
         reusablePanes,
         options
       );
+      for (const detachedPane of reusablePanes.values()) {
+        getDirectPaneHost(detachedPane)?.boatyardCleanup?.();
+      }
       const currentPaneLayoutElement = dashboardGrid.lastElementChild;
       if (!currentPaneLayoutElement) {
         dashboardGrid.append(paneLayoutElement);
@@ -1215,41 +1293,33 @@ export function createPaneLayoutView({
       widthLabel: HTMLElement,
       heightLabel: HTMLElement
     ) {
-      handle.addEventListener("pointerdown", (event) => {
-        if (event.target instanceof Element && event.target.closest("button")) {
-          return;
-        }
-
-        event.preventDefault();
-        handle.setPointerCapture(event.pointerId);
-        const startX = event.clientX;
-        const startY = event.clientY;
-        const startWidth = state.width;
-        const startHeight = state.height;
-
-        function onPointerMove(moveEvent: PointerEvent) {
+      let startWidth = state.width;
+      let startHeight = state.height;
+      return attachPanePointerResize(handle, {
+        canStart(event) {
+          if (event.target instanceof Element && event.target.closest("button")) {
+            return false;
+          }
+          startWidth = state.width;
+          startHeight = state.height;
+          return true;
+        },
+        onMove(moveEvent, origin) {
           const rect = host.getBoundingClientRect();
           const maxWidth = Math.max(160, Math.floor(rect.width - mobileDevHostPadding - mobileDevRulerWidth - 2));
           const maxHeight = Math.max(160, Math.floor(rect.height - mobileDevHostPadding - mobileDevRulerHeight - 2));
           if (axis === "x") {
-            state.width = clamp(Math.round(startWidth + moveEvent.clientX - startX), 160, maxWidth);
+            state.width = clamp(Math.round(startWidth + moveEvent.clientX - origin.clientX), 160, maxWidth);
           } else {
-            state.height = clamp(Math.round(startHeight + moveEvent.clientY - startY), 160, maxHeight);
+            state.height = clamp(Math.round(startHeight + moveEvent.clientY - origin.clientY), 160, maxHeight);
           }
           updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
           queueWebAppSync();
-        }
-
-        function onPointerUp(upEvent: PointerEvent) {
-          handle.releasePointerCapture(upEvent.pointerId);
-          document.removeEventListener("pointermove", onPointerMove);
-          document.removeEventListener("pointerup", onPointerUp);
+        },
+        onCommit() {
           persistMobileDevViewportState(key, state);
           queueWebAppSync();
         }
-
-        document.addEventListener("pointermove", onPointerMove);
-        document.addEventListener("pointerup", onPointerUp);
       });
     }
 
@@ -1293,10 +1363,12 @@ export function createPaneLayoutView({
       host.append(bookmarkList, shell);
       updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
       renderMobileDevBookmarks(key, state, bookmarkList, viewport, widthLabel, heightLabel);
-      attachMobileDevResizeHandle(topRuler, key, "x", host, state, viewport, widthLabel, heightLabel);
-      attachMobileDevResizeHandle(leftRuler, key, "y", host, state, viewport, widthLabel, heightLabel);
-      attachMobileDevResizeHandle(rightHandle, key, "x", host, state, viewport, widthLabel, heightLabel);
-      attachMobileDevResizeHandle(bottomHandle, key, "y", host, state, viewport, widthLabel, heightLabel);
+      const resizeCleanups = [
+        attachMobileDevResizeHandle(topRuler, key, "x", host, state, viewport, widthLabel, heightLabel),
+        attachMobileDevResizeHandle(leftRuler, key, "y", host, state, viewport, widthLabel, heightLabel),
+        attachMobileDevResizeHandle(rightHandle, key, "x", host, state, viewport, widthLabel, heightLabel),
+        attachMobileDevResizeHandle(bottomHandle, key, "y", host, state, viewport, widthLabel, heightLabel)
+      ];
       window.requestAnimationFrame(() => {
         fitMobileDevViewportToHost(host, state);
         updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
@@ -1305,7 +1377,130 @@ export function createPaneLayoutView({
         queueWebAppSync();
       });
 
-      return viewport;
+      return {
+        cleanup() {
+          resizeCleanups.forEach((cleanup) => cleanup());
+        },
+        viewport
+      };
+    }
+
+    function createResizableWebAppSidePanel(
+      host: HTMLElement,
+      sidePanel: WebAppPaneSidePanel,
+      state: PaneSidePanelState,
+      persistKey: string
+    ) {
+      const shell = document.createElement("div");
+      shell.className = "webapp-side-panel-shell";
+      shell.dataset.position = sidePanel.position;
+
+      const viewport = document.createElement("div");
+      viewport.className = "webapp-side-panel-viewport";
+
+      const panel = document.createElement("aside");
+      panel.className = "webapp-side-panel";
+      panel.setAttribute("aria-label", sidePanel.title);
+
+      const separator = document.createElement("div");
+      separator.className = "webapp-side-panel-separator";
+      separator.tabIndex = 0;
+      separator.setAttribute("role", "separator");
+      separator.setAttribute("aria-label", `Resize ${sidePanel.title}`);
+      separator.setAttribute("aria-orientation", "vertical");
+
+      if (sidePanel.position === "right") {
+        shell.append(viewport, separator, panel);
+      } else {
+        shell.append(panel, separator, viewport);
+      }
+      host.append(shell);
+
+      function applySize({ clampToHost = true } = {}) {
+        const containerWidth = shell.getBoundingClientRect().width;
+        const appliedWidth = clampToHost && containerWidth > 0
+          ? clampPaneSidePanelWidth(state.width, containerWidth, sidePanel)
+          : state.width;
+        panel.hidden = !state.open;
+        separator.hidden = !state.open;
+        panel.style.width = state.open ? `${appliedWidth}px` : "0px";
+        shell.dataset.open = String(state.open);
+        separator.setAttribute("aria-valuemin", String(sidePanel.minWidth));
+        separator.setAttribute("aria-valuemax", String(sidePanel.maxWidth));
+        separator.setAttribute("aria-valuenow", String(appliedWidth));
+      }
+
+      let startWidth = state.width;
+      const cleanupPointerResize = attachPanePointerResize(separator, {
+        canStart() {
+          startWidth = state.width;
+          return state.open;
+        },
+        onMove(moveEvent, origin) {
+          state.width = resizePaneSidePanelWidth({
+            clientX: moveEvent.clientX,
+            containerWidth: shell.getBoundingClientRect().width,
+            position: sidePanel.position,
+            sidePanel,
+            startClientX: origin.clientX,
+            startWidth
+          });
+          applySize({ clampToHost: false });
+          queueWebAppSync();
+        },
+        onCommit() {
+          persistPaneSidePanelState(persistKey, state);
+          queueWebAppSync();
+        }
+      });
+
+      const handleSeparatorKeyDown = (event: KeyboardEvent) => {
+        if (!state.open || !["ArrowLeft", "ArrowRight"].includes(event.key)) {
+          return;
+        }
+        event.preventDefault();
+        const direction = event.key === "ArrowRight" ? 1 : -1;
+        const panelDirection = sidePanel.position === "right" ? -direction : direction;
+        state.width = clampPaneSidePanelWidth(
+          state.width + panelDirection * 16,
+          shell.getBoundingClientRect().width,
+          sidePanel
+        );
+        applySize({ clampToHost: false });
+        persistPaneSidePanelState(persistKey, state);
+        queueWebAppSync();
+      };
+      separator.addEventListener("keydown", handleSeparatorKeyDown);
+
+      let resizeObserver: ResizeObserver | null = null;
+      if (typeof ResizeObserver === "function") {
+        resizeObserver = new ResizeObserver(() => {
+          applySize();
+          queueWebAppSync();
+        });
+        resizeObserver.observe(shell);
+      }
+
+      applySize({ clampToHost: false });
+      window.requestAnimationFrame(() => {
+        applySize();
+        queueWebAppSync();
+      });
+
+      return {
+        cleanup() {
+          resizeObserver?.disconnect();
+          cleanupPointerResize();
+          separator.removeEventListener("keydown", handleSeparatorKeyDown);
+        },
+        panel,
+        sync() {
+          applySize();
+          persistPaneSidePanelState(persistKey, state);
+          queueWebAppSync();
+        },
+        viewport
+      };
     }
 
     function applySplitRatio(splitElement: HTMLElement, splitNode: PaneLayoutNode) {
@@ -1335,7 +1530,10 @@ export function createPaneLayoutView({
       const isEmptyPane = selectedWebApp.kind === "empty";
       const paneNavigation = selectedWebApp.navigation;
       const useCompactBrowserControls = shouldUseCompactPaneBrowserControls(paneNavigation);
-      const pluginPane = isDomPane ? selectedWebApp.pluginPane : undefined;
+      const hideBrowserControls = shouldHidePaneBrowserControls(paneNavigation);
+      const pluginPane = selectedWebApp.pluginPane;
+      const sidePanelStateEntry = getPaneSidePanelState(project, selectedWebApp);
+      let syncPaneSidePanelLayout: (() => void) | null = null;
       const widgetPane = isWidgetPane ? selectedWebApp.widgetPane : undefined;
       const widgetFallbackWidth = isWidgetPane
         ? Math.max(minWidgetRailWidth, Math.round((dashboardGrid.getBoundingClientRect().width || window.innerWidth) / 2))
@@ -1355,6 +1553,8 @@ export function createPaneLayoutView({
         pane.dataset.webAppKind = selectedWebApp.kind;
       }
       pane.dataset.mobileDev = String(isMobileDevViewportEnabled(selectedWebApp));
+      pane.dataset.navigation = JSON.stringify(selectedWebApp.navigation || null);
+      pane.dataset.sidePanel = JSON.stringify(selectedWebApp.sidePanel || null);
       pane.dataset.webAppMenuSignature = getWebAppMenuSignature(webApps);
       pane.dataset.minHeight = normalizePaneMinimumLength(selectedWebApp.minHeight) || normalizedDefaultPaneMinSize;
       pane.dataset.minWidth = normalizePaneMinimumLength(selectedWebApp.minWidth) || normalizedDefaultPaneMinSize;
@@ -1535,12 +1735,37 @@ export function createPaneLayoutView({
         tabs.append(compactBrowserControls);
       }
 
-      if (pluginPane?.renderHeaderActions && pluginPaneProps) {
+      if ((pluginPane?.renderHeaderActions || sidePanelStateEntry) && pluginPaneProps) {
         const headerActions = document.createElement("div");
         headerActions.className = "plugin-pane-header-actions";
-        const cleanup = pluginPane.renderHeaderActions(headerActions, pluginPaneProps);
-        if (typeof cleanup === "function") {
-          pluginPaneCleanupCallbacks.push(cleanup as () => void);
+        if (sidePanelStateEntry && selectedWebApp.sidePanel) {
+          const sidePanelButton = document.createElement("button");
+          sidePanelButton.className = "webapp-tool-button webapp-side-panel-button";
+          sidePanelButton.type = "button";
+          const syncSidePanelButton = () => {
+            const open = sidePanelStateEntry.state.open;
+            const action = open ? "Hide" : "Show";
+            sidePanelButton.title = `${action} ${selectedWebApp.sidePanel?.title || "side panel"}`;
+            sidePanelButton.setAttribute("aria-label", sidePanelButton.title);
+            sidePanelButton.setAttribute("aria-pressed", String(open));
+            sidePanelButton.classList.toggle("active", open);
+          };
+          sidePanelButton.append(createToolIcon(
+            selectedWebApp.sidePanel.position === "right" ? "panelRight" : "panelLeft"
+          ));
+          sidePanelButton.addEventListener("click", () => {
+            sidePanelStateEntry.state.open = !sidePanelStateEntry.state.open;
+            syncSidePanelButton();
+            syncPaneSidePanelLayout?.();
+          });
+          syncSidePanelButton();
+          headerActions.append(sidePanelButton);
+        }
+        if (pluginPane?.renderHeaderActions) {
+          const cleanup = pluginPane.renderHeaderActions(headerActions, pluginPaneProps);
+          if (typeof cleanup === "function") {
+            pluginPaneCleanupCallbacks.push(cleanup as () => void);
+          }
         }
         if (headerActions.childNodes.length) {
           tabs.append(headerActions);
@@ -1553,7 +1778,7 @@ export function createPaneLayoutView({
         }));
       }
 
-      if (!isTerminalPane && !isWidgetPane && !isDomPane && !isEmptyPane) {
+      if (!isTerminalPane && !isWidgetPane && !isDomPane && !isEmptyPane && !hideBrowserControls) {
         const homeButton = document.createElement("button");
         homeButton.className = "webapp-tool-button";
         homeButton.type = "button";
@@ -1692,7 +1917,10 @@ export function createPaneLayoutView({
           for (const button of browserControlButtons) {
             button.addEventListener("click", () => closeCompactBrowserControls());
           }
-          compactBrowserControlsOverlay.append(...browserControlButtons);
+          compactBrowserControlsOverlay.append(
+            ...browserControlButtons,
+            ...(paneNavigation?.showAddressBar === false ? [] : [activeUrl])
+          );
         } else {
           tabs.append(
             ...browserControlButtons,
@@ -1872,7 +2100,7 @@ export function createPaneLayoutView({
       } else if (widgetPane) {
         host.append(createWidgetPaneSurface(project, widgetPane));
       } else if (isDomPane) {
-        if (!pluginPane || !pluginPaneProps) {
+        if (!pluginPane?.render || !pluginPaneProps) {
           host.textContent = "Plugin pane is unavailable.";
           queueWebAppSync();
           return pane;
@@ -1881,26 +2109,52 @@ export function createPaneLayoutView({
         if (typeof cleanup === "function") {
           pluginPaneCleanupCallbacks.push(cleanup as () => void);
         }
-        if (pluginPaneCleanupCallbacks.length) {
-          host.boatyardCleanup = () => {
-            for (const callback of pluginPaneCleanupCallbacks) {
-              callback();
-            }
-          };
-        }
       } else if (isEmptyPane) {
         const emptyMessage = document.createElement("p");
         emptyMessage.className = "empty-pane-message";
         emptyMessage.textContent = "Choose a pane type from the menu above.";
         host.append(emptyMessage);
       } else {
-        const visibleHost = isMobileDevViewportEnabled(selectedWebApp)
-          ? createMobileDevViewport(host, selectedWebApp)
-          : host;
+        let webAppHost: HTMLElement = host;
+        if (
+          selectedWebApp.sidePanel &&
+          sidePanelStateEntry &&
+          pluginPane?.renderSidePanel &&
+          pluginPaneProps
+        ) {
+          const sidePanelLayout = createResizableWebAppSidePanel(
+            host,
+            selectedWebApp.sidePanel,
+            sidePanelStateEntry.state,
+            sidePanelStateEntry.key
+          );
+          const cleanup = pluginPane.renderSidePanel(sidePanelLayout.panel, pluginPaneProps);
+          if (typeof cleanup === "function") {
+            pluginPaneCleanupCallbacks.push(cleanup as () => void);
+          }
+          pluginPaneCleanupCallbacks.push(sidePanelLayout.cleanup);
+          syncPaneSidePanelLayout = sidePanelLayout.sync;
+          webAppHost = sidePanelLayout.viewport;
+        }
+        let visibleHost = webAppHost;
+        if (isMobileDevViewportEnabled(selectedWebApp)) {
+          const mobileDevViewport = createMobileDevViewport(webAppHost, selectedWebApp);
+          pluginPaneCleanupCallbacks.push(mobileDevViewport.cleanup);
+          visibleHost = mobileDevViewport.viewport;
+        }
+        visibleHost.dataset.webappViewport = "true";
         setVisibleWebAppHost(paneNode.id, {
           webApp: selectedWebApp,
           host: visibleHost
         } as VisiblePaneWebAppEntry);
+      }
+
+      if (pluginPaneCleanupCallbacks.length) {
+        host.boatyardCleanup = () => {
+          for (const callback of pluginPaneCleanupCallbacks) {
+            callback();
+          }
+        };
       }
 
       queueWebAppSync();

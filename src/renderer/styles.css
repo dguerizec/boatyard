@@ -3283,6 +3283,14 @@ body.sidebar-collapsed .workspace {
   min-height: 28px;
 }
 
+.webapp-browser-controls-overlay .webapp-url {
+  flex: 0 0 min(360px, 38vw);
+  width: min(360px, 38vw);
+  height: 28px;
+  border-color: var(--line);
+  background: var(--input);
+}
+
 .webapp-browser-controls-overlay[hidden] {
   display: none;
 }
@@ -3730,6 +3738,60 @@ body.sidebar-collapsed .workspace {
   min-height: 0;
   background: var(--canvas);
   overflow: hidden;
+}
+
+.webapp-side-panel-shell {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.webapp-side-panel-viewport {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+.webapp-side-panel {
+  min-width: 0;
+  min-height: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
+  background: var(--canvas);
+}
+
+.webapp-side-panel-separator {
+  position: relative;
+  z-index: 3;
+  width: 1px;
+  min-width: 1px;
+  flex: 0 0 1px;
+  background: var(--line);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.webapp-side-panel-separator::before {
+  position: absolute;
+  inset: 0 -4px;
+  content: "";
+}
+
+.webapp-side-panel-separator:hover,
+.webapp-side-panel-separator:focus-visible {
+  background: var(--accent);
+  outline: none;
+}
+
+.webapp-side-panel[hidden],
+.webapp-side-panel-separator[hidden] {
+  display: none;
 }
 
 .webapp-host.mobile-dev-host {

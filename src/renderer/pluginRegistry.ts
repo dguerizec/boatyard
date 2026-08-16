@@ -111,12 +111,28 @@ export function registerPluginRegistry(globalScope: PluginRegistryWindow): Plugi
       throw new Error(`Pane ${id} renderHeaderActions must be a function.`);
     }
 
+    if (definition.renderSidePanel !== undefined && typeof definition.renderSidePanel !== "function") {
+      throw new Error(`Pane ${id} renderSidePanel must be a function.`);
+    }
+
+    if (definition.renderSidePanel !== undefined && requestedKind !== "wcv") {
+      throw new Error(`Pane ${id} renderSidePanel is only available for WCV panes.`);
+    }
+
     if (definition.isAvailable !== undefined && typeof definition.isAvailable !== "function") {
       throw new Error(`Pane ${id} isAvailable must be a function.`);
     }
 
     if (definition.resolveNavigation !== undefined && typeof definition.resolveNavigation !== "function") {
       throw new Error(`Pane ${id} resolveNavigation must be a function.`);
+    }
+
+    if (definition.resolveSidePanel !== undefined && typeof definition.resolveSidePanel !== "function") {
+      throw new Error(`Pane ${id} resolveSidePanel must be a function.`);
+    }
+
+    if (definition.resolveSidePanel !== undefined && typeof definition.renderSidePanel !== "function") {
+      throw new Error(`Pane ${id} resolveSidePanel requires renderSidePanel.`);
     }
 
     const minHeight = normalizePaneMinimumLength(definition.minHeight);

@@ -102,6 +102,15 @@
   box-shadow: none;
 }
 
+.twicc-session-flow-widget.twicc-session-flow-sidebar {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 8px;
+  box-shadow: none;
+}
+
 .twicc-session-flow-board {
   min-width: 0;
   min-height: 0;

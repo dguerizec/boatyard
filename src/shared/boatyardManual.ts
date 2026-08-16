@@ -101,7 +101,7 @@ type BoatyardManualGlobal = typeof globalThis & {
           },
           {
             title: "Navigation and focus",
-            body: "Use Back, Forward, Refresh, Hard reload, and the editable address field for embedded webapps. Expand a pane group when you need to focus it, then shrink it to restore the saved split layout."
+            body: "Use Back, Forward, Refresh, Hard reload, and the editable address field for embedded webapps. Integration panes can keep these controls in a compact menu or hide them when their URLs are implementation details. Expand a pane group when you need to focus it, then shrink it to restore the saved split layout."
           },
           {
             title: "Mobile previews",
@@ -185,7 +185,7 @@ type BoatyardManualGlobal = typeof globalThis & {
         entries: [
           {
             title: "Built-in integrations",
-            body: "Boatyard includes GitHub, Pier, TwiCC, Hawser, Telegram, and Color Palette integrations when their plugin files are present. GitHub adds a repository pane with sticky section navigation and an Overview that reuses the Actions and Pull Requests widget views."
+            body: "Boatyard includes GitHub, Pier, TwiCC, Hawser, Telegram, and Color Palette integrations when their plugin files are present. GitHub adds a repository pane with sticky section navigation and an Overview that reuses the Actions and Pull Requests widget views. The TwiCC conversation pane includes a configurable, resizable Session Flow sidebar while preserving the standalone pane and widget."
           },
           {
             title: "Integration settings",
@@ -193,7 +193,7 @@ type BoatyardManualGlobal = typeof globalThis & {
           },
           {
             title: "Plugin API",
-            body: "Use the plugin API to contribute panes, widgets, status indicators, settings sections, and background services."
+            body: "Use the plugin API to contribute panes, WCV side panels, widgets, status indicators, settings sections, and background services."
           }
         ]
       },

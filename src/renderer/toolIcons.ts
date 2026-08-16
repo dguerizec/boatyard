@@ -77,6 +77,14 @@ const TOOL_ICONS: Record<string, string[]> = {
     "M9 7l-5 5 5 5",
     "M15 7l5 5-5 5"
   ],
+  panelLeft: [
+    "M4 4h16v16H4z",
+    "M9 4v16"
+  ],
+  panelRight: [
+    "M4 4h16v16H4z",
+    "M15 4v16"
+  ],
   pencil: [
     "M12 20h9",
     "M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"

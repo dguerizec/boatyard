@@ -29,9 +29,16 @@ type PluginPane = {
   replacesWebAppIds?: string[];
   showInMenu?: boolean;
   renderHeaderActions?: (container: unknown, props?: Record<string, unknown>) => unknown;
+  renderSidePanel?: (container: unknown, props?: Record<string, unknown>) => unknown;
   resolveNavigation?: (context: unknown) => {
+    browserControls?: "compact" | "full" | "hidden";
     items: Array<{ activeUrlPatterns?: string[]; id: string; label: string; url?: string; webAppId?: string }>;
     showAddressBar?: boolean;
+  } | null;
+  resolveSidePanel?: (context: unknown) => {
+    defaultOpen?: boolean;
+    position?: "left" | "right";
+    title?: string;
   } | null;
   title?: string;
   resolveUrl(context: unknown): string;
@@ -478,6 +485,45 @@ test("Built-in plugins register project integrations and widgets", () => {
     .listPanes({ scope: "project", kind: "wcv" })
     .find((pane: PluginPane) => pane.id === "boatyard.twicc.pane");
   assert.match(twiccPane.iconUrl || "", /\/plugins\/twicc\/twicc-icon\.svg$/);
+  assert.equal(typeof twiccPane.renderSidePanel, "function");
+  assert.deepEqual(plain(twiccPane.resolveNavigation?.({ globalPluginConfig: {} })), {
+    browserControls: "compact",
+    items: [],
+    showAddressBar: true,
+    showHomeButton: true
+  });
+  assert.deepEqual(plain(twiccPane.resolveSidePanel?.({ globalPluginConfig: {} })), {
+    defaultOpen: true,
+    defaultWidth: 360,
+    maxWidth: 720,
+    minMainWidth: 360,
+    minWidth: 280,
+    position: "left",
+    title: "Sessions"
+  });
+  assert.equal(
+    twiccPane.resolveNavigation?.({
+      globalPluginConfig: { twiccPaneBrowserControls: "hidden" }
+    })?.browserControls,
+    "hidden"
+  );
+  assert.deepEqual(
+    plain(twiccPane.resolveSidePanel?.({
+      globalPluginConfig: {
+        twiccPaneSidebarDefaultState: "closed",
+        twiccPaneSidebarPosition: "right"
+      }
+    })),
+    {
+      defaultOpen: false,
+      defaultWidth: 360,
+      maxWidth: 720,
+      minMainWidth: 360,
+      minWidth: 280,
+      position: "right",
+      title: "Sessions"
+    }
+  );
   assert.match(
     fs.readFileSync(path.join(process.cwd(), "src", "plugins", "twicc", "twicc-icon.svg"), "utf8"),
     /fill="#3178c0"/
@@ -717,6 +763,22 @@ test("Twicc global settings expose connection and project status display fields"
     { value: "charts", label: "Charts only" },
     { value: "chartsWithValues", label: "Charts with values" },
     { value: "bars", label: "Usage and pace bars" }
+  ]);
+  assert.equal(fields.twiccPaneSidebarPosition.defaultValue, "left");
+  assert.deepEqual(plain(fields.twiccPaneSidebarPosition.options), [
+    { value: "left", label: "Left" },
+    { value: "right", label: "Right" }
+  ]);
+  assert.equal(fields.twiccPaneSidebarDefaultState.defaultValue, "open");
+  assert.deepEqual(plain(fields.twiccPaneSidebarDefaultState.options), [
+    { value: "open", label: "Open" },
+    { value: "closed", label: "Closed" }
+  ]);
+  assert.equal(fields.twiccPaneBrowserControls.defaultValue, "compact");
+  assert.deepEqual(plain(fields.twiccPaneBrowserControls.options), [
+    { value: "compact", label: "Compact menu" },
+    { value: "full", label: "Full toolbar" },
+    { value: "hidden", label: "Hidden" }
   ]);
 });
 

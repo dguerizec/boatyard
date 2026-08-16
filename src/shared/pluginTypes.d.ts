@@ -345,9 +345,20 @@ declare global {
   };
 
   type PluginPaneNavigation = {
+    browserControls?: "compact" | "full" | "hidden";
     items: PluginPaneNavigationItem[];
     showAddressBar?: boolean;
     showHomeButton?: boolean;
+  };
+
+  type PluginPaneSidePanel = {
+    defaultOpen?: boolean;
+    defaultWidth?: number;
+    maxWidth?: number;
+    minMainWidth?: number;
+    minWidth?: number;
+    position?: "left" | "right";
+    title?: string;
   };
 
   type PluginPaneResolveContext = {
@@ -379,7 +390,9 @@ declare global {
     webAppId?: unknown;
     render?: (container: HTMLElement, props?: PluginRegistryRecord) => unknown;
     renderHeaderActions?: (container: HTMLElement, props?: PluginRegistryRecord) => unknown;
+    renderSidePanel?: (container: HTMLElement, props?: PluginRegistryRecord) => unknown;
     resolveNavigation?: (context: PluginPaneResolveContext) => PluginPaneNavigation | null | undefined;
+    resolveSidePanel?: (context: PluginPaneResolveContext) => PluginPaneSidePanel | null | undefined;
     resolveUrl?: (context: PluginPaneResolveContext) => string;
     resolveWebApps?: (context: PluginPaneResolveContext) => PluginPaneWebApp[];
   };

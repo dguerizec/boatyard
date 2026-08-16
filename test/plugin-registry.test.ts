@@ -34,6 +34,7 @@ type ProjectContext = {
 type RenderContainer = {
   headerRendered?: boolean;
   rendered?: boolean;
+  sidePanelRendered?: boolean;
 };
 type ProjectFormInspectedEvent = {
   coreFields: {
@@ -131,6 +132,14 @@ test("Plugin registry activates plugins and records contributions", () => {
               webAppId: "preview"
             }]
           }),
+          renderSidePanel(container: RenderContainer) {
+            container.sidePanelRendered = true;
+          },
+          resolveSidePanel: () => ({
+            defaultOpen: true,
+            position: "left",
+            title: "Tools"
+          }),
           resolveUrl: ({ project }: ProjectContext) => project.previewUrl,
         });
         ctx.projectNavBadges.register({
@@ -172,6 +181,13 @@ test("Plugin registry activates plugins and records contributions", () => {
       project: { previewUrl: "https://demo.example", slug: "demo" }
     }).items[0].label,
     "Preview"
+  );
+  const sidePanelContainer: RenderContainer = {};
+  registry.listPanes({ kind: "wcv" })[0].renderSidePanel(sidePanelContainer);
+  assert.equal(sidePanelContainer.sidePanelRendered, true);
+  assert.deepEqual(
+    plain(registry.listPanes({ kind: "wcv" })[0].resolveSidePanel({})),
+    { defaultOpen: true, position: "left", title: "Tools" }
   );
   assert.equal(registry.listProjectNavBadges()[0].id, "vendor.preview.badge");
   assert.equal(widgetRegistry.get("vendor.preview.widget").name, "Preview");

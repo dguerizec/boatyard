@@ -13,7 +13,15 @@ function matchesUrlPattern(url: string, pattern: string) {
 }
 
 export function shouldUseCompactPaneBrowserControls(navigation?: WebAppPaneNavigation) {
+  if (navigation?.browserControls) {
+    return navigation.browserControls === "compact";
+  }
+
   return Boolean(navigation?.items.length && navigation.showAddressBar === false);
+}
+
+export function shouldHidePaneBrowserControls(navigation?: WebAppPaneNavigation) {
+  return navigation?.browserControls === "hidden";
 }
 
 export function isPaneNavigationItemActive(

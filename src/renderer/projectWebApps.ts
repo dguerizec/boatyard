@@ -6,6 +6,7 @@ import type {
   WebAppPaneNavigation
 } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
+import { normalizePaneSidePanel } from "./paneSidePanel.js";
 
 type PluginPaneDefinition = UnknownRecord & {
   icon?: string;
@@ -23,6 +24,9 @@ type PluginPaneDefinition = UnknownRecord & {
   replacesWebAppIds?: string[];
   navigation?: WebAppPaneNavigation;
   resolveNavigation?: (context: UnknownRecord) => WebAppPaneNavigation | null | undefined;
+  renderHeaderActions?: (container: HTMLElement, props: UnknownRecord) => unknown;
+  renderSidePanel?: (container: HTMLElement, props: UnknownRecord) => unknown;
+  resolveSidePanel?: (context: UnknownRecord) => unknown;
   resolveUrl?: (context: UnknownRecord) => string;
   resolveWebApps?: (context: UnknownRecord) => WebAppDefinition[];
   showInMenu?: boolean;
@@ -51,9 +55,25 @@ function resolvePaneNavigation(
       ? pluginPane.resolveNavigation(context)
       : pluginPane.navigation
   );
-  return navigation && Array.isArray(navigation.items) && navigation.items.length
+  return navigation && Array.isArray(navigation.items) && (
+    navigation.items.length > 0 ||
+    navigation.browserControls === "compact" ||
+    navigation.browserControls === "hidden" ||
+    navigation.browserControls === "full"
+  )
     ? navigation
     : undefined;
+}
+
+function resolvePaneSidePanel(pluginPane: PluginPaneDefinition, context: UnknownRecord) {
+  if (typeof pluginPane.renderSidePanel !== "function") {
+    return undefined;
+  }
+
+  const value = typeof pluginPane.resolveSidePanel === "function"
+    ? pluginPane.resolveSidePanel(context)
+    : {};
+  return normalizePaneSidePanel(value) || undefined;
 }
 
 export function createProjectWebApps({
@@ -196,7 +216,9 @@ export function createProjectWebApps({
             parentLabel: webApp.parentLabel || pluginPane.parentLabel || "",
             parentWebAppId: webApp.parentWebAppId || pluginPane.parentWebAppId || "",
             paneTypeId: webApp.paneTypeId || pluginPane.paneTypeId || pluginPane.webAppId,
+            pluginPane,
             showInMenu: webApp.showInMenu ?? pluginPane.showInMenu !== false,
+            sidePanel: resolvePaneSidePanel(pluginPane, context),
             url: webApp.url,
             restoreUrl: webApp.restoreUrl
           });
@@ -223,7 +245,9 @@ export function createProjectWebApps({
         parentLabel: pluginPane.parentLabel || "",
         parentWebAppId: pluginPane.parentWebAppId || "",
         paneTypeId: pluginPane.paneTypeId || pluginPane.webAppId,
+        pluginPane,
         showInMenu: pluginPane.showInMenu !== false,
+        sidePanel: resolvePaneSidePanel(pluginPane, context),
         url
       });
     }
