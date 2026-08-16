@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.11.0] - 2026-08-16
+
+### Summary
+
+- **v0.11.0: Reusable Layouts** — Adds reusable workspace layouts while improving TwiCC session visibility and embedded webapp reliability.
+
+### Added
+
+- **Workspace layout library** — Save, preview, update, delete, and apply reusable pane arrangements for a project or across all projects.
+- **Initial project layouts** — Choose a saved pane layout while creating a project, with unavailable pane types opening as empty panes.
+- **Layout undo** — Applying a layout now keeps matching open panes loaded and offers a quick undo.
+- **TwiCC session indicators** — Session Flow cards now show when TwiCC is working, waiting for input, or has an unread response.
+
+### Changed
+
+- **Trusted TwiCC project creation** — TwiCC projects created from Boatyard now use the Boatyard project name and are created as trusted projects.
+- **Compact workspace windows** — Boatyard now supports smaller workspace window sizes for tighter workbench layouts.
+
+### Fixed
+
+- **New TwiCC sessions** — Newly started TwiCC sessions now stay in progress instead of appearing done too early.
+- **Webapp navigation** — Back and Forward actions now use Electron's navigation history APIs for more reliable embedded browsing.
+- **Deferred webapp popups** — Popups opened from trusted clicks are preserved when a page completes the popup flow asynchronously.
+- **Webapp lifecycle cleanup** — Stale or destroyed embedded web views are now detached and closed more reliably.
+- **Mobile viewport settings** — Mobile development viewport state is now isolated per pane, preventing one pane from overwriting another.
+
 ## [0.10.1] - 2026-08-14
 
 ### Summary
