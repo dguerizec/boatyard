@@ -7,6 +7,7 @@ import {
   getGlobalPluginStatusGroup,
   matchesGlobalPluginFilter
 } from "./globalPluginSettingsFilters.js";
+import { createMcpSkillSettings } from "./mcpSkillSettings.js";
 import type { BoatyardBridge } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 
@@ -522,6 +523,7 @@ export function createGlobalSettingsViews({
       applyButton.type = "submit";
       applyButton.textContent = "Apply";
       actions.append(rotateButton, applyButton);
+      const skillSettings = createMcpSkillSettings({ boatyard });
 
       function applyStatus(value: unknown) {
         const next = value && typeof value === "object" && !Array.isArray(value)
@@ -586,7 +588,8 @@ export function createGlobalSettingsViews({
         tokenRow.label,
         status,
         error,
-        actions
+        actions,
+        skillSettings
       );
       applyFormControls(form);
       shell.append(form);

@@ -47,6 +47,11 @@ contextBridge.exposeInMainWorld("boatyard", {
   getMcpStatus: () => ipcRenderer.invoke("mcp:status"),
   updateMcpSettings: (settings: unknown) => ipcRenderer.invoke("mcp:settings:update", settings),
   rotateMcpToken: () => ipcRenderer.invoke("mcp:token:rotate"),
+  listMcpSkillTargets: () => ipcRenderer.invoke("mcp:skill:list"),
+  installMcpSkill: (targetId: unknown) => ipcRenderer.invoke("mcp:skill:install", targetId),
+  uninstallMcpSkill: (targetId: unknown, force: unknown = false) => (
+    ipcRenderer.invoke("mcp:skill:uninstall", targetId, force)
+  ),
   onMcpRequest: (callback: BridgeCallback): Unsubscribe => {
     const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("mcp:request", listener);

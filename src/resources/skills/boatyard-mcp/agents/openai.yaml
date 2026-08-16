@@ -1,0 +1,9 @@
+interface:
+  display_name: "Boatyard MCP"
+  short_description: "Control Boatyard panes through its local MCP"
+  default_prompt: "Use $boatyard-mcp to inspect the active Boatyard layout and select the requested pane entry."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "boatyard"
+      description: "Authenticated local Boatyard pane controls"

@@ -1712,6 +1712,127 @@ body.sidebar-collapsed .workspace {
   gap: 8px;
 }
 
+.mcp-skill-settings {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(var(--contrast-rgb), 0.1);
+}
+
+.mcp-skill-heading {
+  display: grid;
+  gap: 5px;
+}
+
+.mcp-skill-heading h4,
+.mcp-skill-heading p,
+.mcp-skill-target h5,
+.mcp-skill-target p {
+  margin: 0;
+}
+
+.mcp-skill-heading h4 {
+  font-size: 14px;
+}
+
+.mcp-skill-heading p,
+.mcp-skill-target p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.mcp-skill-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-skill-target {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(var(--deep-rgb), 0.66);
+}
+
+.mcp-skill-target-summary {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.mcp-skill-target-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mcp-skill-target-title h5 {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-skill-status {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-height: 18px;
+  align-items: center;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mcp-skill-status.installed {
+  border-color: rgba(var(--accent-rgb), 0.52);
+  color: var(--success-text);
+}
+
+.mcp-skill-status.updateAvailable,
+.mcp-skill-status.modified {
+  border-color: rgba(250, 204, 21, 0.5);
+  color: var(--warning-text);
+}
+
+.mcp-skill-status.conflict,
+.mcp-skill-status.unavailable {
+  border-color: rgba(248, 113, 113, 0.52);
+  color: var(--danger-text);
+}
+
+.mcp-skill-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-skill-target-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-skill-target-actions .secondary-button,
+.mcp-skill-target-actions .danger-button {
+  min-height: 30px;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
 .plugin-settings-button,
 .plugin-reload-button {
   min-height: 24px;
@@ -4547,6 +4668,14 @@ textarea.form-control {
 
   .settings-category-page .installed-widget-list {
     grid-template-columns: 1fr;
+  }
+
+  .mcp-skill-target {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-skill-target-actions {
+    justify-content: flex-start;
   }
 
   .workspace-layout-save-row,

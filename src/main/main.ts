@@ -29,6 +29,7 @@ import { createTerminalShutdownCoordinator } from "./terminalShutdown.js";
 import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
 import { McpRendererBroker, McpRendererError } from "./mcpRendererBroker.js";
 import { McpServerService } from "./mcpServer.js";
+import { McpSkillInstaller } from "./mcpSkillInstaller.js";
 import { McpSettingsStore } from "./mcpSettingsStore.js";
 import {
   DEFAULT_PROFILE_NAME,
@@ -106,6 +107,7 @@ let store: ProjectStoreInstance;
 let pluginHost: PluginHostInstance;
 let updateManager: UpdateManagerInstance;
 let mcpServerService: McpServerService;
+let mcpSkillInstaller: McpSkillInstaller;
 let mcpSettingsStore: McpSettingsStore;
 type ConfigurationContext = {
   configDirectory: string;
@@ -1260,6 +1262,24 @@ function registerIpcHandlers() {
     return mcpServerService.configure();
   });
 
+  ipcMain.handle("mcp:skill:list", (event: IpcMainInvokeEvent) => {
+    getConfigurationForEvent(event);
+    return mcpSkillInstaller.list();
+  });
+
+  ipcMain.handle("mcp:skill:install", (event: IpcMainInvokeEvent, targetId: unknown) => {
+    getConfigurationForEvent(event);
+    return mcpSkillInstaller.install(targetId);
+  });
+
+  ipcMain.handle(
+    "mcp:skill:uninstall",
+    (event: IpcMainInvokeEvent, targetId: unknown, force: unknown) => {
+      getConfigurationForEvent(event);
+      return mcpSkillInstaller.uninstall(targetId, { force: force === true });
+    }
+  );
+
   ipcMain.handle("theme:set", (event: IpcMainInvokeEvent, theme: unknown) => {
     if (!getWorkspaceWindowForWebContents(event.sender)) {
       throw new Error("Application theme changes may only originate from a workspace window.");
@@ -1720,6 +1740,10 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   secretStore.load();
   mcpSettingsStore = new McpSettingsStore(path.join(initialLaunchDescriptor.configurationRoot, "mcp.json"));
   mcpSettingsStore.load();
+  mcpSkillInstaller = new McpSkillInstaller({
+    homeDirectory: app.getPath("home"),
+    sourceDirectory: path.join(__dirname, "..", "resources", "skills", "boatyard-mcp")
+  });
   mcpServerService = new McpServerService({
     api: {
       listWindows: listMcpWindows,

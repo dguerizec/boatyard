@@ -218,6 +218,8 @@ export type BoatyardBridge = {
   getWebAppNavigationHistory?: (key: unknown) => Promise<unknown>;
   getState(): Promise<RendererState>;
   getMcpStatus?: () => Promise<UnknownRecord>;
+  installMcpSkill?: (targetId: string) => Promise<unknown>;
+  listMcpSkillTargets?: () => Promise<unknown>;
   getUpdateInfo?: () => Promise<unknown>;
   hideWebApp(): Promise<unknown>;
   navigateWebApp(...payload: unknown[]): Promise<unknown>;
@@ -257,6 +259,7 @@ export type BoatyardBridge = {
   updateWebAppHomeTab(projectId: string, tab: UnknownRecord): Promise<RendererState>;
   updateWebAppHomeTabs(projectId: string, tabs: UnknownRecord[]): Promise<RendererState>;
   rotateMcpToken?: () => Promise<UnknownRecord>;
+  uninstallMcpSkill?: (targetId: string, force?: boolean) => Promise<unknown>;
   writeClipboardText?: (text: string) => Promise<unknown>;
   undoLayout(undoToken: string): Promise<RendererState | null>;
 };

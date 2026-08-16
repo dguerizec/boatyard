@@ -8,8 +8,10 @@ const copyExtensions = new Set([
   ".css",
   ".html",
   ".json",
+  ".md",
   ".png",
-  ".svg"
+  ".svg",
+  ".yaml"
 ]);
 
 function run(command: string, args: string[]) {
