@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld("boatyard", {
   uninstallMcpSkill: (targetId: unknown, force: unknown = false) => (
     ipcRenderer.invoke("mcp:skill:uninstall", targetId, force)
   ),
+  listMcpAgentConnections: () => ipcRenderer.invoke("mcp:connection:list"),
+  installMcpAgentConnection: (targetId: unknown) => ipcRenderer.invoke("mcp:connection:install", targetId),
+  uninstallMcpAgentConnection: (targetId: unknown, force: unknown = false) => (
+    ipcRenderer.invoke("mcp:connection:uninstall", targetId, force)
+  ),
   onMcpRequest: (callback: BridgeCallback): Unsubscribe => {
     const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
     ipcRenderer.on("mcp:request", listener);

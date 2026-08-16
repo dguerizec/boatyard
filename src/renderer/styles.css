@@ -1751,9 +1751,7 @@ body.sidebar-collapsed .workspace {
 .mcp-skill-target {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -1769,6 +1767,7 @@ body.sidebar-collapsed .workspace {
 .mcp-skill-target-title {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   min-width: 0;
 }
@@ -1778,6 +1777,27 @@ body.sidebar-collapsed .workspace {
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mcp-integration-resource {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(var(--contrast-rgb), 0.08);
+}
+
+.mcp-integration-resource-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mcp-integration-resource-title strong {
+  font-size: 11px;
 }
 
 .mcp-skill-status {
@@ -4671,10 +4691,14 @@ textarea.form-control {
   }
 
   .mcp-skill-target {
+    gap: 12px;
+  }
+
+  .mcp-integration-resource {
     grid-template-columns: 1fr;
   }
 
-  .mcp-skill-target-actions {
+  .mcp-integration-resource > .mcp-skill-target-actions {
     justify-content: flex-start;
   }
 

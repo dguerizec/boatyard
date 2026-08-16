@@ -9,11 +9,13 @@ Use the local Boatyard MCP server to inspect the active UI layout and select exa
 
 ## Connect the client
 
-Connection is a user-controlled setup step. In Boatyard, open **Global settings > MCP**, enable the server, and copy the displayed endpoint and bearer token. Never print, log, commit, or include the token in a response.
+Connection is a user-controlled setup step. In Boatyard, open **Global settings > MCP**, enable the server, then install both the skill and MCP connection for the agent. Boatyard creates a separate token for each agent and revokes that token when the connection is uninstalled. Restart the agent after installing or updating the connection.
 
-Use the endpoint shown by Boatyard instead of assuming the default port. Configure the connection under the server name `boatyard` so this skill and the MCP dependency use the same identifier.
+Never print, log, commit, or include an MCP token in a response. Do not read Boatyard's private settings or an agent configuration file to recover one.
 
-### Codex
+If the one-click connection cannot be used, the user can configure a connection manually with the endpoint and manual bearer token displayed by Boatyard. Use the endpoint shown by Boatyard instead of assuming the default port. Configure it under the server name `boatyard` so this skill and its MCP dependency use the same identifier.
+
+### Manual Codex setup
 
 Make the copied token available in the environment that launches Codex, then register the Streamable HTTP server:
 
@@ -22,18 +24,18 @@ export BOATYARD_MCP_TOKEN="<copied token>"
 codex mcp add boatyard --url "<copied endpoint>" --bearer-token-env-var BOATYARD_MCP_TOKEN
 ```
 
-### Claude Code
+### Manual Claude Code setup
 
 Make `BOATYARD_MCP_TOKEN` available whenever Claude Code starts. Preserve the literal environment-variable placeholder in the stored header:
 
 ```bash
 export BOATYARD_MCP_TOKEN="<copied token>"
 claude mcp add --transport http --scope user \
-  --header 'Authorization: Bearer ${BOATYARD_MCP_TOKEN}' \
-  boatyard "<copied endpoint>"
+  boatyard "<copied endpoint>" \
+  --header 'Authorization: Bearer ${BOATYARD_MCP_TOKEN}'
 ```
 
-### Hermes
+### Manual Hermes setup
 
 Run the interactive connection command and paste the copied token when Hermes asks for the bearer token:
 
@@ -41,7 +43,7 @@ Run the interactive connection command and paste the copied token when Hermes as
 hermes mcp add boatyard --url "<copied endpoint>" --auth header
 ```
 
-If the Boatyard tools are unavailable, stop and tell the user that the `boatyard` MCP connection must be enabled or repaired. Do not work around a missing connection by reading Boatyard's private configuration or token files.
+If the Boatyard tools are unavailable, stop and tell the user that the `boatyard` MCP connection must be enabled, installed, or repaired. Do not work around a missing connection by reading Boatyard's private configuration or token files.
 
 ## Inspect panes
 

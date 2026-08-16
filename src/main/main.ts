@@ -29,6 +29,7 @@ import { createTerminalShutdownCoordinator } from "./terminalShutdown.js";
 import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
 import { McpRendererBroker, McpRendererError } from "./mcpRendererBroker.js";
 import { McpServerService } from "./mcpServer.js";
+import { McpAgentConnectionInstaller } from "./mcpAgentConnectionInstaller.js";
 import { McpSkillInstaller } from "./mcpSkillInstaller.js";
 import { McpSettingsStore } from "./mcpSettingsStore.js";
 import {
@@ -107,6 +108,7 @@ let store: ProjectStoreInstance;
 let pluginHost: PluginHostInstance;
 let updateManager: UpdateManagerInstance;
 let mcpServerService: McpServerService;
+let mcpAgentConnectionInstaller: McpAgentConnectionInstaller;
 let mcpSkillInstaller: McpSkillInstaller;
 let mcpSettingsStore: McpSettingsStore;
 type ConfigurationContext = {
@@ -1280,6 +1282,24 @@ function registerIpcHandlers() {
     }
   );
 
+  ipcMain.handle("mcp:connection:list", (event: IpcMainInvokeEvent) => {
+    getConfigurationForEvent(event);
+    return mcpAgentConnectionInstaller.list();
+  });
+
+  ipcMain.handle("mcp:connection:install", (event: IpcMainInvokeEvent, targetId: unknown) => {
+    getConfigurationForEvent(event);
+    return mcpAgentConnectionInstaller.install(targetId);
+  });
+
+  ipcMain.handle(
+    "mcp:connection:uninstall",
+    (event: IpcMainInvokeEvent, targetId: unknown, force: unknown) => {
+      getConfigurationForEvent(event);
+      return mcpAgentConnectionInstaller.uninstall(targetId, { force: force === true });
+    }
+  );
+
   ipcMain.handle("theme:set", (event: IpcMainInvokeEvent, theme: unknown) => {
     if (!getWorkspaceWindowForWebContents(event.sender)) {
       throw new Error("Application theme changes may only originate from a workspace window.");
@@ -1740,6 +1760,13 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   secretStore.load();
   mcpSettingsStore = new McpSettingsStore(path.join(initialLaunchDescriptor.configurationRoot, "mcp.json"));
   mcpSettingsStore.load();
+  mcpAgentConnectionInstaller = new McpAgentConnectionInstaller({
+    getEndpoint: () => `http://127.0.0.1:${mcpSettingsStore.get().port}/mcp`,
+    getManagedToken: (targetId) => mcpSettingsStore.get().managedClientTokens[targetId],
+    getOrCreateManagedToken: (targetId) => mcpSettingsStore.getOrCreateManagedClientToken(targetId),
+    homeDirectory: app.getPath("home"),
+    revokeManagedToken: (targetId) => mcpSettingsStore.revokeManagedClientToken(targetId)
+  });
   mcpSkillInstaller = new McpSkillInstaller({
     homeDirectory: app.getPath("home"),
     sourceDirectory: path.join(__dirname, "..", "resources", "skills", "boatyard-mcp")

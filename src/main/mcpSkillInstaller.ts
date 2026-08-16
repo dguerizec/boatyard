@@ -11,13 +11,14 @@ import {
   writeFileSync
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { MCP_AGENT_TARGETS, type McpAgentTargetId } from "./mcpAgentTargets.js";
 
 const MANIFEST_FILE_NAME = ".boatyard-managed.json";
 const MANIFEST_SCHEMA_VERSION = 1;
 
 export const MCP_SKILL_ID = "boatyard-mcp";
 
-export type McpSkillTargetId = "codex" | "claude-code" | "hermes";
+export type McpSkillTargetId = McpAgentTargetId;
 export type McpSkillStatusState =
   | "conflict"
   | "installed"
@@ -251,23 +252,16 @@ export class McpSkillInstaller {
       environment.HERMES_HOME,
       join(homeDirectory, ".hermes")
     );
-    this.targets = [
-      {
-        id: "codex",
-        installPath: join(homeDirectory, ".agents", "skills", MCP_SKILL_ID),
-        label: "Codex"
-      },
-      {
-        id: "claude-code",
-        installPath: join(claudeRoot, "skills", MCP_SKILL_ID),
-        label: "Claude Code"
-      },
-      {
-        id: "hermes",
-        installPath: join(hermesRoot, "skills", MCP_SKILL_ID),
-        label: "Hermes"
-      }
-    ];
+    const installPaths: Record<McpAgentTargetId, string> = {
+      codex: join(homeDirectory, ".agents", "skills", MCP_SKILL_ID),
+      "claude-code": join(claudeRoot, "skills", MCP_SKILL_ID),
+      hermes: join(hermesRoot, "skills", MCP_SKILL_ID)
+    };
+    this.targets = MCP_AGENT_TARGETS.map(({ id, label }) => ({
+      id,
+      installPath: installPaths[id],
+      label
+    }));
   }
 
   list(): McpSkillTargetStatus[] {

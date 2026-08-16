@@ -1,11 +1,13 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { isMcpAgentTargetId, type McpAgentTargetId } from "./mcpAgentTargets.js";
 
 export const DEFAULT_MCP_PORT = 4319;
 
 export type McpSettings = {
   enabled: boolean;
+  managedClientTokens: Partial<Record<McpAgentTargetId, string>>;
   port: number;
   token: string;
 };
@@ -23,6 +25,7 @@ export class McpSettingsStore {
   private readonly filePath: string;
   private settings: McpSettings = {
     enabled: false,
+    managedClientTokens: {},
     port: DEFAULT_MCP_PORT,
     token: createToken()
   };
@@ -40,8 +43,19 @@ export class McpSettingsStore {
           ? parsed as Record<string, unknown>
           : {};
         const token = typeof source.token === "string" ? source.token.trim() : "";
+        const managedClientTokens: Partial<Record<McpAgentTargetId, string>> = {};
+        const managedSource = source.managedClientTokens;
+        if (managedSource && typeof managedSource === "object" && !Array.isArray(managedSource)) {
+          for (const [targetId, value] of Object.entries(managedSource as Record<string, unknown>)) {
+            const managedToken = typeof value === "string" ? value.trim() : "";
+            if (isMcpAgentTargetId(targetId) && managedToken) {
+              managedClientTokens[targetId] = managedToken;
+            }
+          }
+        }
         this.settings = {
           enabled: source.enabled === true,
+          managedClientTokens,
           port: normalizePort(source.port),
           token: token || createToken()
         };
@@ -60,7 +74,10 @@ export class McpSettingsStore {
   }
 
   get(): McpSettings {
-    return { ...this.settings };
+    return {
+      ...this.settings,
+      managedClientTokens: { ...this.settings.managedClientTokens }
+    };
   }
 
   update(patch: Record<string, unknown>): McpSettings {
@@ -81,6 +98,34 @@ export class McpSettingsStore {
     this.settings = { ...this.settings, token: createToken() };
     this.save();
     return this.get();
+  }
+
+  getOrCreateManagedClientToken(targetId: McpAgentTargetId): string {
+    const existing = this.settings.managedClientTokens[targetId];
+    if (existing) {
+      return existing;
+    }
+    const token = createToken();
+    this.settings = {
+      ...this.settings,
+      managedClientTokens: {
+        ...this.settings.managedClientTokens,
+        [targetId]: token
+      }
+    };
+    this.save();
+    return token;
+  }
+
+  revokeManagedClientToken(targetId: McpAgentTargetId): boolean {
+    if (!this.settings.managedClientTokens[targetId]) {
+      return false;
+    }
+    const managedClientTokens = { ...this.settings.managedClientTokens };
+    delete managedClientTokens[targetId];
+    this.settings = { ...this.settings, managedClientTokens };
+    this.save();
+    return true;
   }
 
   private save(): void {

@@ -24,6 +24,7 @@ function parseMcpResponse(text: string): Record<string, unknown> {
 test("MCP server requires a bearer token and accepts Streamable HTTP initialization", async () => {
   const settings: McpSettings = {
     enabled: true,
+    managedClientTokens: { codex: "codex-managed-token-with-sufficient-entropy" },
     port: await reservePort(),
     token: "test-token-with-sufficient-entropy"
   };
@@ -39,6 +40,7 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
   try {
     const status = await service.configure();
     assert.equal(status.listening, true);
+    assert.equal("managedClientTokens" in status, false);
 
     const unauthorized = await fetch(status.endpoint);
     assert.equal(unauthorized.status, 401);
@@ -85,6 +87,38 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
       "list_pane_types",
       "assign_pane_type"
     ]);
+
+    const managedClientResponse = await fetch(status.endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json, text/event-stream",
+        Authorization: `Bearer ${settings.managedClientTokens.codex}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "boatyard-managed-test", version: "1" }
+        }
+      })
+    });
+    assert.equal(managedClientResponse.status, 200);
+
+    settings.managedClientTokens = {};
+    const revokedClientResponse = await fetch(status.endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json, text/event-stream",
+        Authorization: "Bearer codex-managed-token-with-sufficient-entropy",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/list", params: {} })
+    });
+    assert.equal(revokedClientResponse.status, 401);
   } finally {
     await service.stop();
   }

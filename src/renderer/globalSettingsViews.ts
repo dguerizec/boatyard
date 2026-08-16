@@ -539,6 +539,7 @@ export function createGlobalSettingsViews({
         status.textContent = next.listening === true
           ? "Listening on localhost."
           : next.enabled === true ? "Enabled, but not listening." : "Disabled.";
+        skillSettings.dispatchEvent(new CustomEvent("mcp-status-changed"));
       }
 
       form.addEventListener("submit", async (event) => {
@@ -562,7 +563,7 @@ export function createGlobalSettingsViews({
       });
 
       rotateButton.addEventListener("click", async () => {
-        if (!window.confirm("Rotate the MCP token? Existing agent connections will stop authenticating.")) {
+        if (!window.confirm("Rotate the manual MCP token? Agent connections installed by Boatyard use separate managed tokens and will keep working.")) {
           return;
         }
         error.hidden = true;

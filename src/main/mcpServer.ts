@@ -25,10 +25,13 @@ type McpServerServiceOptions = {
   version: string;
 };
 
-export type McpServerStatus = McpSettings & {
+export type McpServerStatus = {
+  enabled: boolean;
   endpoint: string;
   error: string | null;
   listening: boolean;
+  port: number;
+  token: string;
 };
 
 function jsonResult(value: unknown) {
@@ -55,14 +58,20 @@ function errorResult(error: unknown) {
   };
 }
 
-function tokenMatches(authorization: string | undefined, expectedToken: string): boolean {
+function tokenMatchesAny(authorization: string | undefined, expectedTokens: string[]): boolean {
   const match = String(authorization || "").match(/^Bearer\s+(.+)$/i);
   if (!match) {
     return false;
   }
   const actual = Buffer.from(match[1], "utf8");
-  const expected = Buffer.from(expectedToken, "utf8");
-  return actual.length === expected.length && timingSafeEqual(actual, expected);
+  let matches = false;
+  for (const expectedToken of expectedTokens) {
+    const expected = Buffer.from(expectedToken, "utf8");
+    if (actual.length === expected.length && timingSafeEqual(actual, expected)) {
+      matches = true;
+    }
+  }
+  return matches;
 }
 
 export class McpServerService {
@@ -83,10 +92,12 @@ export class McpServerService {
   getStatus(): McpServerStatus {
     const settings = this.getSettings();
     return {
-      ...settings,
+      enabled: settings.enabled,
       endpoint: `http://127.0.0.1:${settings.port}/mcp`,
       error: this.error,
-      listening: Boolean(this.httpServer?.listening)
+      listening: Boolean(this.httpServer?.listening),
+      port: settings.port,
+      token: settings.token
     };
   }
 
@@ -212,7 +223,11 @@ export class McpServerService {
       if (!validateHost(request, response) || !validateOrigin(request, response)) {
         return;
       }
-      if (!tokenMatches(request.headers.authorization, this.getSettings().token)) {
+      const currentSettings = this.getSettings();
+      if (!tokenMatchesAny(request.headers.authorization, [
+        currentSettings.token,
+        ...Object.values(currentSettings.managedClientTokens).filter((token): token is string => Boolean(token))
+      ])) {
         response.writeHead(401, {
           "Content-Type": "application/json",
           "WWW-Authenticate": "Bearer"
