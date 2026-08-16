@@ -3,18 +3,21 @@
   align-self: center;
 }
 
-.project-twicc-status.working {
+.project-twicc-status.working,
+.twicc-session-flow-status.working {
   border-color: rgba(96, 165, 250, 0.55);
   color: #93c5fd;
 }
 
-.project-twicc-status.input {
+.project-twicc-status.input,
+.twicc-session-flow-status.input {
   border-color: rgba(250, 204, 21, 0.58);
   color: var(--warning-text);
   animation: twicc-status-input-pulse 1s linear infinite;
 }
 
-.project-twicc-status.done {
+.project-twicc-status.done,
+.twicc-session-flow-status.unread {
   border-color: rgba(var(--accent-rgb), 0.42);
   color: #6fcf9f;
 }
@@ -29,7 +32,8 @@
   border-color: transparent;
 }
 
-.project-twicc-status.icon-only::before {
+.project-twicc-status.icon-only::before,
+.twicc-session-flow-status::before {
   width: 16px;
   height: 13px;
   content: "";
@@ -39,11 +43,13 @@
   transform-origin: center;
 }
 
-.project-twicc-status.icon-only.working::before {
+.project-twicc-status.icon-only.working::before,
+.twicc-session-flow-status.working::before {
   animation: twicc-status-working-spin 1s linear infinite;
 }
 
-.project-twicc-status.done.needs-attention {
+.project-twicc-status.done.needs-attention,
+.twicc-session-flow-status.unread {
   animation: twicc-status-done-pulse 1.4s ease-in-out infinite;
 }
 
@@ -689,7 +695,19 @@
   text-transform: uppercase;
 }
 
-.twicc-session-flow-current-badge[hidden] {
+.twicc-session-flow-status {
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  min-height: 18px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.twicc-session-flow-current-badge[hidden],
+.twicc-session-flow-status[hidden] {
   display: none;
 }
 

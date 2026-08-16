@@ -59,6 +59,7 @@ type TwiccSessionFlowItem = {
   lastActivityAt: string;
   order: number | null;
   processState: string;
+  processStateChangedAt: string;
   provider: string;
   title: string;
   totalCost: number;
@@ -531,6 +532,7 @@ function getTwiccSessionFlow(
         lastActivityAt: activityTime ? new Date(activityTime).toISOString() : "",
         order: getAnnotatedSessionFlowOrder(session),
         processState,
+        processStateChangedAt: String(process?.last_state_change_at || "").trim(),
         provider: String(session.provider || "").trim(),
         title: String(session.title || "Untitled session").trim() || "Untitled session",
         totalCost: Number(session.total_cost) || 0,

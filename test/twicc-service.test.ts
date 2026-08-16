@@ -610,6 +610,7 @@ test("getTwiccSessionFlow classifies every visible unarchived project session", 
   ], [
     {
       session_id: "active",
+      last_state_change_at: "2026-07-20T12:00:01Z",
       state: "assistant_turn"
     }
   ]);
@@ -632,11 +633,16 @@ test("getTwiccSessionFlow classifies every visible unarchived project session", 
     lastActivityAt: "2026-08-01T11:00:00.000Z",
     order: null,
     processState: "",
+    processStateChangedAt: "",
     provider: "codex",
     title: "Recently finished task",
     totalCost: 1.25,
     userMessageCount: 7
   });
+  assert.equal(
+    sessions.find((session: { id: string }) => session.id === "active")?.processStateChangedAt,
+    "2026-07-20T12:00:01Z"
+  );
 });
 
 test("getTwiccSessionFlow lets persisted annotations override inferred lanes", () => {

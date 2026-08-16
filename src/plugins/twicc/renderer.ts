@@ -32,6 +32,7 @@
 
   type TwiccSessionFlowOrientation = "horizontal" | "vertical";
   type TwiccSessionFlowLane = "backlog" | "in_progress" | "testing";
+  type TwiccSessionFlowIndicatorState = "" | "input" | "unread" | "working";
   type TwiccSessionFlowItem = {
     branch?: string;
     contextUsage?: number;
@@ -40,6 +41,7 @@
     lastActivityAt?: string;
     order?: number;
     processState?: string;
+    processStateChangedAt?: string;
     provider?: string;
     title: string;
     totalCost?: number;
@@ -297,6 +299,8 @@
   let nextSessionFlowSurfaceId = 0;
   const retainedDoneProjectStatuses = new Map<string, TwiccProjectStatus>();
   const acknowledgedDoneProjectSignatures = new Map<string, string>();
+  const acknowledgedSessionUnreadSignatures = new Map<string, string>();
+  const retainedSessionUnreadSignatures = new Map<string, string>();
   const sessionCreationDraftCache = new Map<string, TwiccCachedSessionCreationDraft>();
   let projectStatusRefreshTimer: number | null = null;
   let latestGlobalConfig: TwiccConfig = {};
@@ -523,6 +527,8 @@
     projectProcessStatuses = {};
     retainedDoneProjectStatuses.clear();
     acknowledgedDoneProjectSignatures.clear();
+    acknowledgedSessionUnreadSignatures.clear();
+    retainedSessionUnreadSignatures.clear();
     dispatchProjectBadgeChange();
   }
 
@@ -1349,6 +1355,7 @@
       lastActivityAt: String(value.lastActivityAt || "").trim(),
       order: Number.isInteger(order) && Number(order) >= 0 ? order : undefined,
       processState: String(value.processState || "").trim(),
+      processStateChangedAt: String(value.processStateChangedAt || "").trim(),
       provider: String(value.provider || "").trim(),
       title: String(value.title || "Untitled session").trim() || "Untitled session",
       totalCost: normalizeOptionalNumber(value.totalCost) || 0,
@@ -1377,6 +1384,58 @@
       status: String(value.status || "created").trim() || "created",
       title: String(value.title || "Untitled session").trim() || "Untitled session"
     };
+  }
+
+  function getSessionFlowUnreadSignature(session: TwiccSessionFlowItem): string {
+    return session.processState === "user_turn"
+      ? [session.id, session.processStateChangedAt || session.lastActivityAt || ""].join("\u0000")
+      : "";
+  }
+
+  function acknowledgeSessionFlowUnread(session: TwiccSessionFlowItem): void {
+    const signature = getSessionFlowUnreadSignature(session)
+      || retainedSessionUnreadSignatures.get(session.id)
+      || "";
+    if (signature) {
+      acknowledgedSessionUnreadSignatures.set(session.id, signature);
+      retainedSessionUnreadSignatures.delete(session.id);
+    }
+  }
+
+  function getSessionFlowIndicatorState(session: TwiccSessionFlowItem): TwiccSessionFlowIndicatorState {
+    if (session.processState === "assistant_turn" || session.processState === "starting") {
+      retainedSessionUnreadSignatures.delete(session.id);
+      return "working";
+    }
+    if (session.processState === "awaiting_user_input") {
+      retainedSessionUnreadSignatures.delete(session.id);
+      return "input";
+    }
+    const liveUnreadSignature = getSessionFlowUnreadSignature(session);
+    if (liveUnreadSignature) {
+      if (acknowledgedSessionUnreadSignatures.get(session.id) === liveUnreadSignature) {
+        retainedSessionUnreadSignatures.delete(session.id);
+      } else {
+        retainedSessionUnreadSignatures.set(session.id, liveUnreadSignature);
+      }
+    }
+    const unreadSignature = liveUnreadSignature
+      || retainedSessionUnreadSignatures.get(session.id)
+      || "";
+    return unreadSignature
+      && acknowledgedSessionUnreadSignatures.get(session.id) !== unreadSignature
+      ? "unread"
+      : "";
+  }
+
+  function getSessionFlowIndicatorLabel(state: TwiccSessionFlowIndicatorState): string {
+    if (state === "input") {
+      return "TwiCC is waiting for input";
+    }
+    if (state === "unread") {
+      return "Unread TwiCC response";
+    }
+    return state === "working" ? "TwiCC is working" : "";
   }
 
   function normalizeSessionCreationOptions(value: unknown): TwiccSessionCreationOptions {
@@ -2820,6 +2879,7 @@
           lane: "in_progress",
           lastActivityAt: new Date(createdAt).toISOString(),
           processState: "starting",
+          processStateChangedAt: new Date(createdAt).toISOString(),
           provider: created.provider,
           title: created.title,
           totalCost: 0,
@@ -2956,6 +3016,10 @@
       card.className = "twicc-session-flow-card";
       const isCurrentSession = session.id === activeSessionId;
       const isEditingTitle = session.id === editingSessionId;
+      if (isCurrentSession) {
+        acknowledgeSessionFlowUnread(session);
+      }
+      const indicatorState = isCurrentSession ? "" : getSessionFlowIndicatorState(session);
       let dragStarted = false;
       let pendingOpenTimer: number | null = null;
       const cancelPendingOpen = (): void => {
@@ -3030,6 +3094,19 @@
       currentBadge.className = "twicc-session-flow-current-badge";
       currentBadge.textContent = "Open";
       currentBadge.hidden = !isCurrentSession;
+      const statusIndicator = document.createElement("span");
+      statusIndicator.className = ["twicc-session-flow-status", indicatorState]
+        .filter(Boolean)
+        .join(" ");
+      statusIndicator.hidden = !indicatorState;
+      if (indicatorState) {
+        const indicatorLabel = getSessionFlowIndicatorLabel(indicatorState);
+        statusIndicator.title = indicatorLabel;
+        statusIndicator.setAttribute("aria-label", indicatorLabel);
+        statusIndicator.setAttribute("role", "img");
+      } else {
+        statusIndicator.setAttribute("aria-hidden", "true");
+      }
       const move = document.createElement("button");
       move.type = "button";
       move.className = "twicc-session-flow-move";
@@ -3037,7 +3114,7 @@
       move.title = `Move ${session.title}`;
       move.setAttribute("aria-label", move.title);
       move.addEventListener("click", (event) => openMoveMenu(event, session));
-      main.append(provider, title, currentBadge, move);
+      main.append(provider, title, statusIndicator, currentBadge, move);
 
       const meta = document.createElement("div");
       meta.className = "twicc-session-flow-meta";

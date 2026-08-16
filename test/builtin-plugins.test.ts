@@ -130,19 +130,23 @@ function loadRendererPluginEnvironment(twiccProjectProcessStatuses: unknown = {
   return loadRendererPluginContext(twiccProjectProcessStatuses, mockFetch).registry;
 }
 
-function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
-  "twicc-project": {
-    state: "working",
-    count: 1,
-    sessions: [
-      {
-        id: "session-id",
-        title: "Working session",
-        state: "working"
-      }
-    ]
-  }
-}, mockFetch: MockFetch = async () => ({ ok: true, json: async (): Promise<unknown[]> => [] })) {
+function loadRendererPluginContext(
+  twiccProjectProcessStatuses: unknown = {
+    "twicc-project": {
+      state: "working",
+      count: 1,
+      sessions: [
+        {
+          id: "session-id",
+          title: "Working session",
+          state: "working"
+        }
+      ]
+    }
+  },
+  mockFetch: MockFetch = async () => ({ ok: true, json: async (): Promise<unknown[]> => [] }),
+  exposeTwiccSessionFlowStatus = false
+) {
   const intervalCallbacks: Array<() => void | Promise<void>> = [];
   const context: BuiltinRendererContext = {
     CustomEvent: class MockCustomEvent {
@@ -244,7 +248,18 @@ function loadRendererPluginContext(twiccProjectProcessStatuses: unknown = {
     ...builtinPluginDirs.map(readBuiltinPluginRendererPath)
   ]) {
     context.document.currentScript = { src: pathToFileURL(file).href };
-    vm.runInContext(fs.readFileSync(file, "utf8"), context);
+    let source = fs.readFileSync(file, "utf8");
+    if (exposeTwiccSessionFlowStatus && file.endsWith(path.join("twicc", "renderer.js"))) {
+      source = source.replace(
+        /\}\)\(window\);\s*$/,
+        `globalScope.__twiccSessionFlowStatusTest = {
+          acknowledge: acknowledgeSessionFlowUnread,
+          getState: getSessionFlowIndicatorState
+        };
+      })(window);`
+      );
+    }
+    vm.runInContext(source, context);
   }
   context.document.currentScript = null;
 
@@ -979,11 +994,11 @@ test("Twicc working and input icons use distinct status animations", () => {
 
   assert.match(
     styles,
-    /\.project-twicc-status\.icon-only\.working::before\s*\{\s*animation: twicc-status-working-spin 1s linear infinite/
+    /\.project-twicc-status\.icon-only\.working::before,\s*\.twicc-session-flow-status\.working::before\s*\{\s*animation: twicc-status-working-spin 1s linear infinite/
   );
   assert.match(
     styles,
-    /\.project-twicc-status\.input\s*\{[\s\S]*?animation: twicc-status-input-pulse 1s linear infinite/
+    /\.project-twicc-status\.input,\s*\.twicc-session-flow-status\.input\s*\{[\s\S]*?animation: twicc-status-input-pulse 1s linear infinite/
   );
   assert.match(
     styles,
@@ -992,8 +1007,36 @@ test("Twicc working and input icons use distinct status animations", () => {
   assert.match(styles, /@keyframes twicc-status-input-pulse[\s\S]*opacity: 1[\s\S]*opacity: 0/);
   assert.match(
     styles,
-    /\.project-twicc-status\.done\.needs-attention\s*\{\s*animation: twicc-status-done-pulse 1\.4s ease-in-out infinite/
+    /\.project-twicc-status\.done\.needs-attention,\s*\.twicc-session-flow-status\.unread\s*\{\s*animation: twicc-status-done-pulse 1\.4s ease-in-out infinite/
   );
+});
+
+test("Twicc session indicators retain and acknowledge unread responses by state change", () => {
+  const { context } = loadRendererPluginContext(undefined, undefined, true);
+  const status = context.window.__twiccSessionFlowStatusTest as unknown as {
+    acknowledge(session: Record<string, unknown>): void;
+    getState(session: Record<string, unknown>): string;
+  };
+  const session = {
+    id: "session-1",
+    lastActivityAt: "2026-08-16T09:00:00Z",
+    processState: "user_turn",
+    processStateChangedAt: "2026-08-16T09:00:01Z"
+  };
+
+  assert.equal(status.getState({ ...session, processState: "assistant_turn" }), "working");
+  assert.equal(status.getState({ ...session, processState: "starting" }), "working");
+  assert.equal(status.getState({ ...session, processState: "awaiting_user_input" }), "input");
+  assert.equal(status.getState(session), "unread");
+  assert.equal(status.getState({ ...session, processState: "" }), "unread");
+
+  status.acknowledge(session);
+  assert.equal(status.getState(session), "");
+  assert.equal(status.getState({ ...session, processState: "" }), "");
+  assert.equal(status.getState({
+    ...session,
+    processStateChangedAt: "2026-08-16T10:00:01Z"
+  }), "unread");
 });
 
 test("Twicc session flow widget exposes three draggable lanes and an archive target", () => {
@@ -1027,6 +1070,11 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(styles, /\.twicc-session-flow-composer/);
   assert.match(styles, /\.twicc-session-flow-card\.current-session/);
   assert.match(styles, /\.twicc-session-flow-current-badge/);
+  assert.match(styles, /\.twicc-session-flow-status\.working/);
+  assert.match(styles, /\.twicc-session-flow-status\.input/);
+  assert.match(styles, /\.twicc-session-flow-status\.unread/);
+  assert.match(styles, /\.twicc-session-flow-status\.working::before\s*\{\s*animation: twicc-status-working-spin/);
+  assert.match(styles, /\.twicc-session-flow-status\.unread\s*\{\s*animation: twicc-status-done-pulse/);
   assert.match(styles, /\.twicc-session-flow-insertion-placeholder/);
   assert.doesNotMatch(styles, /\.twicc-session-flow-heading::before/);
   assert.match(styles, /\.twicc-session-flow-heading::after/);
@@ -1090,6 +1138,9 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /BoatyardOverlayDialog\?\.show/);
   assert.match(renderer, /card\.setAttribute\("aria-current", "true"\)/);
   assert.match(renderer, /sessionId === activeSessionId/);
+  assert.match(renderer, /if \(isCurrentSession\) \{\s*acknowledgeSessionFlowUnread\(session\)/);
+  assert.match(renderer, /const indicatorState = isCurrentSession \? "" : getSessionFlowIndicatorState\(session\)/);
+  assert.match(renderer, /main\.append\(provider, title, statusIndicator, currentBadge, move\)/);
   assert.match(rendererEventBindings, /boatyard:webapp-url-changed/);
   assert.match(renderer, /badge\.textContent = "Pier lifecycle"/);
 });
