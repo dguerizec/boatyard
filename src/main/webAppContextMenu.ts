@@ -213,16 +213,17 @@ export async function createWebAppContextMenu(
     template.push({ type: "separator" });
   }
 
+  const history = webContents.navigationHistory;
   template.push(
     {
       label: "Back",
-      enabled: webContents.canGoBack(),
-      click: () => webContents.goBack()
+      enabled: history.canGoBack(),
+      click: () => history.goBack()
     },
     {
       label: "Forward",
-      enabled: webContents.canGoForward(),
-      click: () => webContents.goForward()
+      enabled: history.canGoForward(),
+      click: () => history.goForward()
     },
     {
       label: "Reload",

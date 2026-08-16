@@ -406,12 +406,12 @@ export class WorkspaceWindowRuntime {
       }
       return false;
     }
-    if (action === "back" && webApp.webContents.canGoBack()) {
-      webApp.webContents.goBack();
+    if (action === "back" && history.canGoBack()) {
+      history.goBack();
       return true;
     }
-    if (action === "forward" && webApp.webContents.canGoForward()) {
-      webApp.webContents.goForward();
+    if (action === "forward" && history.canGoForward()) {
+      history.goForward();
       return true;
     }
     if (action === "refresh") {

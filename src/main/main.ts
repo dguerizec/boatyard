@@ -910,9 +910,9 @@ async function navigateWebApp(key: unknown, action: string, url: string) {
     return loadWebAppUrl(webApp, parsedUrl.toString());
   }
 
+  const history = webApp.view.webContents.navigationHistory;
   if (action === "history-index") {
     const index = Number(url);
-    const history = webApp.view.webContents.navigationHistory;
     if (Number.isInteger(index) && index >= 0 && index < history.length() && index !== history.getActiveIndex()) {
       history.goToIndex(index);
       return true;
@@ -921,16 +921,16 @@ async function navigateWebApp(key: unknown, action: string, url: string) {
   }
 
   if (action === "back") {
-    if (webApp.view.webContents.canGoBack()) {
-      webApp.view.webContents.goBack();
+    if (history.canGoBack()) {
+      history.goBack();
       return true;
     }
     return false;
   }
 
   if (action === "forward") {
-    if (webApp.view.webContents.canGoForward()) {
-      webApp.view.webContents.goForward();
+    if (history.canGoForward()) {
+      history.goForward();
       return true;
     }
     return false;

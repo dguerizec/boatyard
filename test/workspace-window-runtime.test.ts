@@ -8,7 +8,19 @@ class MockWebContents extends EventEmitter {
   private static nextId = 1;
   readonly id = MockWebContents.nextId++;
   readonly loadedUrls: string[] = [];
+  backCount = 0;
   closeCount = 0;
+  forwardCount = 0;
+  readonly navigationHistory = {
+    canGoBack: () => true,
+    canGoForward: () => true,
+    goBack: () => {
+      this.backCount += 1;
+    },
+    goForward: () => {
+      this.forwardCount += 1;
+    }
+  };
   private destroyed = false;
   private url = "";
 
@@ -136,4 +148,16 @@ test("workspace runtime teardown closes detached contents once and is idempotent
   assert.equal(webContents.closeCount, 1);
   assert.doesNotThrow(() => runtime.destroy());
   assert.equal(webContents.closeCount, 1);
+});
+
+test("workspace runtime navigates through Electron navigation history", async () => {
+  const { runtime, views } = createRuntime();
+
+  showWebApp(runtime);
+  const webContents = views[0].contents;
+
+  assert.equal(await runtime.navigateWebApp("project:twicc", "back", ""), true);
+  assert.equal(await runtime.navigateWebApp("project:twicc", "forward", ""), true);
+  assert.equal(webContents.backCount, 1);
+  assert.equal(webContents.forwardCount, 1);
 });
