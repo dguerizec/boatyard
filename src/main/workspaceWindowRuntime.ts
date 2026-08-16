@@ -16,6 +16,7 @@ import type {
   WebAppLookup,
   WebAppOpenOptions
 } from "./mainTypes.js";
+import { getLiveWindowWebContents } from "./browserWindowTarget.js";
 import { createWebAppContextMenu } from "./webAppContextMenu.js";
 import { applyDefaultWebAppScrollbarStyle } from "./webAppScrollbars.js";
 import {
@@ -114,17 +115,16 @@ export class WorkspaceWindowRuntime {
   }
 
   private sendToRenderer(channel: string, payload: unknown) {
-    if (!this.window.webContents.isDestroyed()) {
-      this.window.webContents.send(channel, payload);
+    const webContents = getLiveWindowWebContents(this.window);
+    if (!webContents) {
+      return false;
     }
+    webContents.send(channel, payload);
+    return true;
   }
 
   private sendWebAppOpenUrlRequest(sourceWebAppKey: unknown, url: unknown, source = "window-open", options: WebAppOpenOptions = {}) {
-    if (this.window.webContents.isDestroyed()) {
-      return false;
-    }
-
-    this.sendToRenderer("webapp:open-url-requested", {
+    return this.sendToRenderer("webapp:open-url-requested", {
       sourceWebAppKey: String(sourceWebAppKey || ""),
       sourceWindowId: this.id,
       url: String(url || ""),
@@ -133,7 +133,6 @@ export class WorkspaceWindowRuntime {
       sourceUrl: String(options.sourceUrl || ""),
       sourceBounds: options.sourceBounds || null
     });
-    return true;
   }
 
   private sendWebAppOpenUrlRequestFromItem(key: string, webApp: WebAppItem | undefined, url: unknown, source: string, options: WebAppOpenOptions = {}) {

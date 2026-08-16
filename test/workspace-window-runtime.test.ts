@@ -90,6 +90,7 @@ function createRuntime() {
         view.detach();
       }
     },
+    isDestroyed: () => false,
     setBackgroundColor() {},
     webContents: {
       isDestroyed: () => false,

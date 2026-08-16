@@ -26,6 +26,7 @@ import { createWebAppContextMenu } from "./webAppContextMenu.js";
 import { createAppThemeManager, getAppBackgroundColor } from "./appTheme.js";
 import { cleanupOrphanedTerminalClientSessions } from "./terminalClientSessionLifecycle.js";
 import { createTerminalShutdownCoordinator } from "./terminalShutdown.js";
+import { getLiveWindowWebContents } from "./browserWindowTarget.js";
 import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
 import { McpRendererBroker, McpRendererError } from "./mcpRendererBroker.js";
 import { McpServerService } from "./mcpServer.js";
@@ -380,6 +381,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       sandbox: false
     }
   });
+  const rendererWebContentsId = window.webContents.id;
   mainWindow = window;
   const workspaceWindow: WorkspaceWindowRecord = {
     configuration,
@@ -430,9 +432,15 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     }
   });
   window.on("closed", () => {
-    mcpRendererBroker.rejectTarget(window.webContents.id);
     workspaceWindows.delete(getWorkspaceWindowRegistryKey(configuration, workspaceWindow.id));
-    mainWindow = null;
+    if (workspaceWindow.saveStateTimer) {
+      clearTimeout(workspaceWindow.saveStateTimer);
+      workspaceWindow.saveStateTimer = null;
+    }
+    if (mainWindow === window) {
+      mainWindow = getPrimaryWorkspaceWindow()?.window || null;
+    }
+    mcpRendererBroker.rejectTarget(rendererWebContentsId);
   });
 
   window.on("move", () => scheduleWindowStateSave(workspaceWindow));
@@ -463,6 +471,10 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       return;
     }
     const individuallyClosing = individuallyClosingWindowIds.delete(workspaceWindow.id);
+    if (workspaceWindow.saveStateTimer) {
+      clearTimeout(workspaceWindow.saveStateTimer);
+      workspaceWindow.saveStateTimer = null;
+    }
     if (!individuallyClosing) {
       saveWindowState(workspaceWindow);
     }
@@ -490,15 +502,19 @@ function scheduleWindowStateSave(workspaceWindow: WorkspaceWindowRecord) {
   if (workspaceWindow.saveStateTimer) {
     clearTimeout(workspaceWindow.saveStateTimer);
   }
-  workspaceWindow.saveStateTimer = setTimeout(() => saveWindowState(workspaceWindow), 250);
+  workspaceWindow.saveStateTimer = setTimeout(() => {
+    workspaceWindow.saveStateTimer = null;
+    saveWindowState(workspaceWindow);
+  }, 250);
 }
 
 function sendWorkspaceNavigation(configuration: ConfigurationContext, windowId: string, navigation: unknown) {
   const workspaceWindow = workspaceWindows.get(getWorkspaceWindowRegistryKey(configuration, windowId));
-  if (!workspaceWindow || workspaceWindow.window.webContents.isDestroyed()) {
+  const webContents = workspaceWindow ? getLiveWindowWebContents(workspaceWindow.window) : null;
+  if (!webContents) {
     return;
   }
-  workspaceWindow.window.webContents.send("workspace:navigation-changed", navigation);
+  webContents.send("workspace:navigation-changed", navigation);
 }
 
 function getWorkspaceWindowsForConfiguration(configuration: ConfigurationContext) {
@@ -507,9 +523,7 @@ function getWorkspaceWindowsForConfiguration(configuration: ConfigurationContext
 
 function sendToConfiguration(configuration: ConfigurationContext, channel: string, payload: unknown) {
   for (const workspaceWindow of getWorkspaceWindowsForConfiguration(configuration)) {
-    if (!workspaceWindow.window.webContents.isDestroyed()) {
-      workspaceWindow.window.webContents.send(channel, payload);
-    }
+    getLiveWindowWebContents(workspaceWindow.window)?.send(channel, payload);
   }
 }
 
