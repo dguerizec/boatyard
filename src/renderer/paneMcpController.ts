@@ -5,8 +5,10 @@ import type { RendererProject, WebAppDefinition } from "./rendererTypes.js";
 export type PaneMcpErrorCode =
   | "INVALID_REQUEST"
   | "LAYOUT_CHANGED"
+  | "PANE_NAVIGATION_NOT_AVAILABLE"
   | "PANE_NOT_FOUND"
   | "PANE_TYPE_NOT_AVAILABLE"
+  | "PANE_VIEWPORT_NOT_AVAILABLE"
   | "PROJECT_NOT_FOUND";
 
 export class PaneMcpError extends Error {
@@ -20,9 +22,16 @@ export class PaneMcpError extends Error {
 }
 
 type PaneMcpControllerOptions = {
-  assignWebAppToPane: (project: RendererProject, pane: PaneNode, webApp: WebAppDefinition) => void;
+  assignWebAppToPane: (
+    project: RendererProject,
+    pane: PaneNode,
+    webApp: WebAppDefinition,
+    options?: { render?: boolean }
+  ) => void;
   findPaneNode: (layout: PaneLayoutNode, paneId: string) => PaneNode | null;
+  getCurrentWebAppUrl: (webApp: WebAppDefinition) => string | undefined;
   getGlobalWorkspace: () => RendererProject;
+  getMobileDevViewport: (webApp: WebAppDefinition) => PaneMobileViewport | null;
   getProjectById: (projectId: string) => RendererProject | null | undefined;
   getProjectPaneLayout: (project: RendererProject) => PaneLayoutNode;
   getProjectWebApps: (project: RendererProject, paneId: string) => WebAppDefinition[];
@@ -31,9 +40,39 @@ type PaneMcpControllerOptions = {
     paneId: string,
     webApps: WebAppDefinition[]
   ) => WebAppDefinition;
+  navigateWebApp: (key: string, action: string, url: string) => Promise<boolean>;
+  normalizeAddressInput: (value: string) => string;
+  setCurrentWebAppUrl: (key: string, url: string) => void;
+  updateMobileDevViewport: (
+    project: RendererProject,
+    paneId: string,
+    webApp: WebAppDefinition,
+    update: PaneMobileViewportUpdate
+  ) => PaneMobileViewport | null;
 };
 
 type PaneMcpInput = Record<string, unknown>;
+
+type PaneMobileViewport = {
+  enabled: boolean;
+  height: number;
+  width: number;
+};
+
+type PaneMobileViewportUpdate = {
+  enabled?: boolean;
+  height?: number;
+  width?: number;
+};
+
+const NAVIGATION_ACTIONS = {
+  back: "back",
+  forward: "forward",
+  hard_refresh: "hard-refresh",
+  home: "home",
+  open: "open",
+  refresh: "refresh"
+} as const;
 
 function requiredString(input: PaneMcpInput, key: string): string {
   const value = typeof input[key] === "string" ? input[key].trim() : "";
@@ -53,6 +92,41 @@ function getPaneTypeId(webApp: WebAppDefinition): string | null {
   return paneTypeId || choiceId || null;
 }
 
+function getExpectedRevision(input: PaneMcpInput): string {
+  return typeof input.expectedRevision === "string" ? input.expectedRevision.trim() : "";
+}
+
+function getViewportUpdate(input: PaneMcpInput): PaneMobileViewportUpdate | null {
+  if (input.viewport === undefined) {
+    return null;
+  }
+  if (!input.viewport || typeof input.viewport !== "object" || Array.isArray(input.viewport)) {
+    throw new PaneMcpError("INVALID_REQUEST", "viewport must be an object.");
+  }
+  const source = input.viewport as PaneMcpInput;
+  const update: PaneMobileViewportUpdate = {};
+  if (Object.hasOwn(source, "enabled")) {
+    if (typeof source.enabled !== "boolean") {
+      throw new PaneMcpError("INVALID_REQUEST", "viewport.enabled must be a boolean.");
+    }
+    update.enabled = source.enabled;
+  }
+  for (const key of ["height", "width"] as const) {
+    if (!Object.hasOwn(source, key)) {
+      continue;
+    }
+    const value = source[key];
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 160 || value > 8192) {
+      throw new PaneMcpError("INVALID_REQUEST", `viewport.${key} must be an integer from 160 to 8192.`);
+    }
+    update[key] = Number(value);
+  }
+  if (Object.keys(update).length === 0) {
+    throw new PaneMcpError("INVALID_REQUEST", "viewport must change enabled, height, or width.");
+  }
+  return update;
+}
+
 function hashRevision(value: unknown): string {
   const serialized = JSON.stringify(value);
   let hash = 0xcbf29ce484222325n;
@@ -66,11 +140,17 @@ function hashRevision(value: unknown): string {
 export function createPaneMcpController({
   assignWebAppToPane,
   findPaneNode,
+  getCurrentWebAppUrl,
   getGlobalWorkspace,
+  getMobileDevViewport,
   getProjectById,
   getProjectPaneLayout,
   getProjectWebApps,
-  getSelectedWebApp
+  getSelectedWebApp,
+  navigateWebApp,
+  normalizeAddressInput,
+  setCurrentWebAppUrl,
+  updateMobileDevViewport
 }: PaneMcpControllerOptions) {
   function resolveProject(projectId: string): RendererProject {
     const project = projectId === "__global__" ? getGlobalWorkspace() : getProjectById(projectId);
@@ -94,21 +174,50 @@ export function createPaneMcpController({
 
     const webApps = getProjectWebApps(project, node.id);
     const selectedWebApp = getSelectedWebApp(project, node.id, webApps);
+    const key = String(selectedWebApp.key || "");
+    const homeUrl = String(selectedWebApp.url || "");
     return {
       type: "pane",
       id: node.id,
       choiceId: selectedWebApp.id || null,
       paneTypeId: getPaneTypeId(selectedWebApp),
-      label: getChoiceLabel(selectedWebApp)
+      label: getChoiceLabel(selectedWebApp),
+      viewport: getMobileDevViewport(selectedWebApp),
+      navigation: {
+        available: Boolean(key && homeUrl),
+        currentUrl: key && homeUrl ? getCurrentWebAppUrl(selectedWebApp) || homeUrl : null,
+        homeUrl: homeUrl || null
+      }
+    };
+  }
+
+  function describeRevisionNode(project: RendererProject, node: PaneLayoutNode): Record<string, unknown> {
+    if (node.type === "split") {
+      return {
+        type: "split",
+        id: node.id,
+        direction: node.direction,
+        ratio: node.ratio,
+        first: describeRevisionNode(project, node.first),
+        second: describeRevisionNode(project, node.second)
+      };
+    }
+    const webApps = getProjectWebApps(project, node.id);
+    const selectedWebApp = getSelectedWebApp(project, node.id, webApps);
+    return {
+      type: "pane",
+      id: node.id,
+      choiceId: selectedWebApp.id || null
     };
   }
 
   function describeProjectLayout(project: RendererProject) {
-    const layout = describeLayoutNode(project, getProjectPaneLayout(project));
+    const paneLayout = getProjectPaneLayout(project);
+    const layout = describeLayoutNode(project, paneLayout);
     return {
       projectId: String(project.id || ""),
       projectName: String(project.name || project.slug || project.id || ""),
-      revision: hashRevision(layout),
+      revision: hashRevision(describeRevisionNode(project, paneLayout)),
       layout
     };
   }
@@ -140,12 +249,20 @@ export function createPaneMcpController({
       label: group.label,
       selectable: group.webApp.menuOnly !== true,
       selected: group.webApp.id === selectedChoiceId,
+      capabilities: {
+        navigation: Boolean(group.webApp.key && group.webApp.url),
+        viewport: group.webApp.mobileDev === true
+      },
       children: group.children.map((child) => ({
         choiceId: String(child.webApp.id || ""),
         paneTypeId: getPaneTypeId(child.webApp),
         label: child.label,
         selectable: child.webApp.menuOnly !== true,
-        selected: child.webApp.id === selectedChoiceId
+        selected: child.webApp.id === selectedChoiceId,
+        capabilities: {
+          navigation: Boolean(child.webApp.key && child.webApp.url),
+          viewport: child.webApp.mobileDev === true
+        }
       }))
     }));
     return {
@@ -157,17 +274,17 @@ export function createPaneMcpController({
     };
   }
 
-  function assignPaneType(input: PaneMcpInput) {
-    const choiceId = requiredString(input, "choiceId");
-    const expectedRevision = typeof input.expectedRevision === "string" ? input.expectedRevision.trim() : "";
-    const { layoutDescription, pane, paneId, project, webApps } = getPaneContext(input);
-    if (expectedRevision && expectedRevision !== layoutDescription.revision) {
+  function assertExpectedRevision(input: PaneMcpInput, currentRevision: string) {
+    const expectedRevision = getExpectedRevision(input);
+    if (expectedRevision && expectedRevision !== currentRevision) {
       throw new PaneMcpError(
         "LAYOUT_CHANGED",
-        `The active layout changed (expected ${expectedRevision}, current ${layoutDescription.revision}).`
+        `The active layout changed (expected ${expectedRevision}, current ${currentRevision}).`
       );
     }
+  }
 
+  function resolveSelectableWebApp(webApps: WebAppDefinition[], paneId: string, choiceId: string) {
     const selectableChoiceIds = new Set(
       buildPaneTypeCatalog(webApps).flatMap((group) => [
         ...(group.webApp.menuOnly === true ? [] : [String(group.webApp.id || "")]),
@@ -183,33 +300,111 @@ export function createPaneMcpController({
         `Pane choice ${choiceId} is not currently available for pane ${paneId}.`
       );
     }
+    return webApp;
+  }
 
-    assignWebAppToPane(project, pane, webApp);
+  function updatePane(input: PaneMcpInput) {
+    const choiceId = typeof input.choiceId === "string" ? input.choiceId.trim() : "";
+    const viewportUpdate = getViewportUpdate(input);
+    if (!choiceId && !viewportUpdate) {
+      throw new PaneMcpError("INVALID_REQUEST", "update_pane requires choiceId or viewport.");
+    }
+    const { layoutDescription, pane, paneId, project, selectedWebApp, webApps } = getPaneContext(input);
+    assertExpectedRevision(input, layoutDescription.revision);
+    const targetWebApp = choiceId
+      ? resolveSelectableWebApp(webApps, paneId, choiceId)
+      : selectedWebApp;
+    if (viewportUpdate && targetWebApp.mobileDev !== true) {
+      throw new PaneMcpError(
+        "PANE_VIEWPORT_NOT_AVAILABLE",
+        `Pane choice ${String(targetWebApp.id || "")} does not provide a mobile viewport.`
+      );
+    }
+
+    if (choiceId && targetWebApp.id !== selectedWebApp.id) {
+      assignWebAppToPane(project, pane, targetWebApp, { render: !viewportUpdate });
+    }
+    const viewport = viewportUpdate
+      ? updateMobileDevViewport(project, paneId, targetWebApp, viewportUpdate)
+      : getMobileDevViewport(targetWebApp);
     return {
       ...describeProjectLayout(project),
       paneId,
-      assignedChoiceId: choiceId,
-      paneTypeId: getPaneTypeId(webApp)
+      updatedChoiceId: String(targetWebApp.id || ""),
+      paneTypeId: getPaneTypeId(targetWebApp),
+      viewport
     };
   }
 
-  function handle(operation: string, input: PaneMcpInput) {
+  async function navigatePane(input: PaneMcpInput) {
+    const action = requiredString(input, "action") as keyof typeof NAVIGATION_ACTIONS;
+    const runtimeAction = NAVIGATION_ACTIONS[action];
+    if (!runtimeAction) {
+      throw new PaneMcpError("INVALID_REQUEST", `Unsupported navigation action: ${action}.`);
+    }
+    const { layoutDescription, paneId, project, selectedWebApp } = getPaneContext(input);
+    assertExpectedRevision(input, layoutDescription.revision);
+    const key = String(selectedWebApp.key || "");
+    const homeUrl = String(selectedWebApp.url || "");
+    if (!key || !homeUrl) {
+      throw new PaneMcpError(
+        "PANE_NAVIGATION_NOT_AVAILABLE",
+        `Pane choice ${String(selectedWebApp.id || "")} does not provide web navigation.`
+      );
+    }
+
+    let targetUrl = "";
+    if (action === "open") {
+      try {
+        targetUrl = normalizeAddressInput(requiredString(input, "url"));
+      } catch (error) {
+        throw new PaneMcpError(
+          "INVALID_REQUEST",
+          error instanceof Error ? error.message : "url is invalid."
+        );
+      }
+    } else if (action === "home") {
+      targetUrl = homeUrl;
+    }
+    const navigated = await navigateWebApp(key, runtimeAction, targetUrl);
+    if (!navigated) {
+      throw new PaneMcpError(
+        "PANE_NAVIGATION_NOT_AVAILABLE",
+        `Navigation action ${action} is not currently available in pane ${paneId}.`
+      );
+    }
+    if (targetUrl) {
+      setCurrentWebAppUrl(key, targetUrl);
+    }
+    return {
+      ...describeProjectLayout(project),
+      paneId,
+      action,
+      navigated: true
+    };
+  }
+
+  async function handle(operation: string, input: PaneMcpInput) {
     if (operation === "get_pane_layout") {
       return getPaneLayout(input);
     }
     if (operation === "list_pane_types") {
       return listPaneTypes(input);
     }
-    if (operation === "assign_pane_type") {
-      return assignPaneType(input);
+    if (operation === "update_pane") {
+      return updatePane(input);
+    }
+    if (operation === "navigate_pane") {
+      return navigatePane(input);
     }
     throw new PaneMcpError("INVALID_REQUEST", `Unsupported pane operation: ${operation}.`);
   }
 
   return Object.freeze({
-    assignPaneType,
     getPaneLayout,
     handle,
-    listPaneTypes
+    listPaneTypes,
+    navigatePane,
+    updatePane
   });
 }

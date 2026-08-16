@@ -763,15 +763,33 @@ const webAppMenus = createWebAppMenus({
 });
 
 const paneMcpController = createPaneMcpController({
-  assignWebAppToPane: (project, pane, webApp) => webAppMenus.assignWebAppToPane(project, pane, webApp),
+  assignWebAppToPane: (project, pane, webApp, options) => {
+    const visibleProject = webAppRuntime.getVisibleWebAppProject();
+    webAppMenus.assignWebAppToPane(project, pane, webApp, {
+      render: options?.render !== false && visibleProject?.id === project.id
+    });
+  },
   findPaneNode: (layout, paneId) => findPaneNode(layout, paneId),
+  getCurrentWebAppUrl: (webApp) => getCurrentWebAppUrl(webApp),
   getGlobalWorkspace,
+  getMobileDevViewport: (webApp) => paneLayoutView.describeMobileDevViewport(webApp),
   getProjectById,
   getProjectPaneLayout,
   getProjectWebApps,
   getSelectedWebApp: (project, paneId, webApps) => (
     getSelectedWebApp(project, paneId, webApps) as WebAppDefinition
-  )
+  ),
+  navigateWebApp: async (key, action, url) => (
+    await boatyardWindow.boatyard.navigateWebApp(key, action, url) === true
+  ),
+  normalizeAddressInput,
+  setCurrentWebAppUrl: (key, url) => webAppRuntime.setCurrentWebAppUrl(key, url),
+  updateMobileDevViewport: (project, paneId, webApp, update) => {
+    const visibleProject = webAppRuntime.getVisibleWebAppProject();
+    return paneLayoutView.updateMobileDevViewport(project, paneId, webApp, update, {
+      render: visibleProject?.id === project.id
+    });
+  }
 });
 
 boatyardWindow.boatyard.onMcpRequest?.((payload) => {
@@ -786,12 +804,9 @@ boatyardWindow.boatyard.onMcpRequest?.((payload) => {
   if (!requestId) {
     return;
   }
-  try {
-    boatyardWindow.boatyard.respondMcpRequest?.({
-      requestId,
-      result: paneMcpController.handle(operation, input)
-    });
-  } catch (error) {
+  void paneMcpController.handle(operation, input).then((result) => {
+    boatyardWindow.boatyard.respondMcpRequest?.({ requestId, result });
+  }).catch((error) => {
     boatyardWindow.boatyard.respondMcpRequest?.({
       requestId,
       error: {
@@ -799,7 +814,7 @@ boatyardWindow.boatyard.onMcpRequest?.((payload) => {
         message: error instanceof Error ? error.message : String(error)
       }
     });
-  }
+  });
 });
 
 function applyWebAppOpenChoice(payload: UnknownRecord, choice: UnknownRecord) {

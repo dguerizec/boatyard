@@ -118,6 +118,12 @@ type PaneWebApp = UnknownRecord & {
   widgetPane?: WidgetPane;
 };
 
+type MobileDevWebApp = {
+  id?: string;
+  key?: string;
+  mobileDev?: boolean;
+};
+
 type VisiblePaneWebAppEntry = {
   host: HTMLElement;
   webApp: {
@@ -133,6 +139,7 @@ type PaneElementReuseMap = Map<string, HTMLElement>;
 
 type PaneReuseOptions = {
   allowWebAppMenuChanges?: boolean;
+  forcePaneIds?: string[];
 };
 
 type PaneReuseState = {
@@ -154,6 +161,12 @@ type MobileDevViewportState = {
   enabled: boolean;
   height: number;
   width: number;
+};
+
+type MobileDevViewportUpdate = {
+  enabled?: boolean;
+  height?: number;
+  width?: number;
 };
 
 type PaneLayoutViewOptions = {
@@ -235,8 +248,12 @@ type PaneLayoutViewOptions = {
 export function canReusePaneElement(
   current: PaneReuseState,
   next: PaneReuseState,
-  options: PaneReuseOptions = {}
+  options: PaneReuseOptions = {},
+  paneId = ""
 ) {
+  if (paneId && options.forcePaneIds?.includes(paneId)) {
+    return false;
+  }
   return current.webAppId === next.webAppId &&
     current.webAppKind === next.webAppKind &&
     current.mobileDev === next.mobileDev &&
@@ -248,7 +265,7 @@ export function canReusePaneElement(
     );
 }
 
-export function getMobileDevViewportKey(webApp: Pick<PaneWebApp, "id" | "key">) {
+export function getMobileDevViewportKey(webApp: Pick<MobileDevWebApp, "id" | "key">) {
   return webApp.key || webApp.id || "";
 }
 
@@ -402,7 +419,7 @@ export function createPaneLayoutView({
       }
     }
 
-    function getMobileDevViewportState(webApp: PaneWebApp) {
+    function getMobileDevViewportState(webApp: MobileDevWebApp) {
       const key = getMobileDevViewportKey(webApp);
       const existing = mobileDevViewports.get(key);
       if (existing) {
@@ -410,7 +427,7 @@ export function createPaneLayoutView({
       }
 
       const persisted = readPersistedMobileDevViewportState(key);
-      const legacyPersisted = key !== webApp.id
+      const legacyPersisted = webApp.id && key !== webApp.id
         ? readPersistedMobileDevViewportState(webApp.id)
         : {};
       const state = {
@@ -423,8 +440,57 @@ export function createPaneLayoutView({
       return state;
     }
 
-    function isMobileDevViewportEnabled(webApp: PaneWebApp) {
+    function isMobileDevViewportEnabled(webApp: MobileDevWebApp) {
       return webApp.mobileDev === true && getMobileDevViewportState(webApp).enabled;
+    }
+
+    function describeMobileDevViewport(webApp: MobileDevWebApp) {
+      if (webApp.mobileDev !== true) {
+        return null;
+      }
+      const state = getMobileDevViewportState(webApp);
+      return {
+        enabled: state.enabled,
+        height: state.height,
+        width: state.width
+      };
+    }
+
+    function updateMobileDevViewport(
+      project: RendererProject,
+      paneId: string,
+      webApp: MobileDevWebApp,
+      update: MobileDevViewportUpdate,
+      options: { render?: boolean } = {}
+    ) {
+      if (webApp.mobileDev !== true) {
+        return null;
+      }
+      const state = getMobileDevViewportState(webApp);
+      if (typeof update.enabled === "boolean") {
+        state.enabled = update.enabled;
+      }
+      if (typeof update.width === "number") {
+        state.width = Math.max(160, Math.round(update.width));
+      }
+      if (typeof update.height === "number") {
+        state.height = Math.max(160, Math.round(update.height));
+      }
+
+      if (options.render !== false) {
+        const pane = dashboardGrid.querySelector<HTMLElement>(
+          `.webapp-pane[data-pane-id="${CSS.escape(paneId)}"]`
+        );
+        const host = pane ? getDirectPaneHost(pane) : null;
+        if (host) {
+          fitMobileDevViewportToHost(host, state);
+        }
+      }
+      persistMobileDevViewportState(getMobileDevViewportKey(webApp), state);
+      if (options.render !== false) {
+        renderPaneLayoutPreservingPanes(project, { forcePaneIds: [paneId] });
+      }
+      return describeMobileDevViewport(webApp);
     }
 
     function getPaneSidePanelState(project: RendererProject, webApp: PaneWebApp) {
@@ -1079,7 +1145,7 @@ export function createPaneLayoutView({
         webAppId: selectedWebApp.id,
         webAppKind: selectedWebApp.kind,
         webAppMenuSignature: nextMenuSignature
-      }, options)) {
+      }, options, paneNode.id)) {
         return null;
       }
 
@@ -2198,6 +2264,8 @@ export function createPaneLayoutView({
 
     return {
       createPaneLayout,
+      describeMobileDevViewport,
+      updateMobileDevViewport,
       renderPaneLayoutPreservingPanes
     };
 }

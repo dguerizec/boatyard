@@ -981,12 +981,19 @@ export function createWebAppMenus({
       return hasProtocol ? trimmed : `${isLocalhost ? "http" : "https"}://${trimmed}`;
     }
 
-    function assignWebAppToPane(project: RendererProject, paneNode: MenuPaneNode, webApp: MenuWebApp) {
+    function assignWebAppToPane(
+      project: RendererProject,
+      paneNode: MenuPaneNode,
+      webApp: MenuWebApp,
+      options: { render?: boolean } = {}
+    ) {
       setSelectedWebAppForPane(paneNode.id, webApp.id);
       paneNode.selectedWebAppId = webApp.id;
       setSelectedWebAppForProject(project.id, webApp.id);
       persistPaneLayout(project);
-      renderPaneLayoutPreservingPanes(project);
+      if (options.render !== false) {
+        renderPaneLayoutPreservingPanes(project);
+      }
     }
 
     async function renameWidgetPane(

@@ -167,7 +167,19 @@ export type PaneLayoutStateInstance = RendererModuleInstance & {
 
 export type PaneLayoutViewInstance = RendererModuleInstance & {
   createPaneLayout(project: RendererProject, node: RendererPaneLayoutNode): HTMLElement;
+  describeMobileDevViewport(webApp: WebAppDefinition): {
+    enabled: boolean;
+    height: number;
+    width: number;
+  } | null;
   renderPaneLayoutPreservingPanes(project: RendererProject, options?: UnknownRecord): void;
+  updateMobileDevViewport(
+    project: RendererProject,
+    paneId: string,
+    webApp: WebAppDefinition,
+    update: { enabled?: boolean; height?: number; width?: number },
+    options?: { render?: boolean }
+  ): { enabled: boolean; height: number; width: number } | null;
 };
 
 export type WidgetSurfacesInstance = RendererModuleInstance & {
@@ -176,7 +188,12 @@ export type WidgetSurfacesInstance = RendererModuleInstance & {
 
 export type WebAppMenusInstance = RendererModuleInstance & {
   applyWebAppOpenChoice(payload: UnknownRecord, choice: UnknownRecord): Promise<unknown>;
-  assignWebAppToPane(project: RendererProject, pane: RendererPaneNode, webApp: WebAppDefinition): void;
+  assignWebAppToPane(
+    project: RendererProject,
+    pane: RendererPaneNode,
+    webApp: WebAppDefinition,
+    options?: { render?: boolean }
+  ): void;
 };
 
 export type UpdateViewsInstance = RendererModuleInstance & {

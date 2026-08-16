@@ -85,7 +85,8 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
       "list_windows",
       "get_pane_layout",
       "list_pane_types",
-      "assign_pane_type"
+      "update_pane",
+      "navigate_pane"
     ]);
 
     const managedClientResponse = await fetch(status.endpoint, {

@@ -18,6 +18,7 @@ test("the packaged app build contains the complete Boatyard MCP skill", () => {
   assert.match(buildSkill, /claude mcp add --transport http/);
   assert.match(buildSkill, /hermes mcp add boatyard/);
   assert.match(buildSkill, /list_windows/);
-  assert.match(buildSkill, /assign_pane_type/);
+  assert.match(buildSkill, /update_pane/);
+  assert.match(buildSkill, /navigate_pane/);
   assert.match(buildMetadata, /value: "boatyard"/);
 });

@@ -162,27 +162,52 @@ export class McpServerService {
     };
     protocolServer.registerTool("get_pane_layout", {
       title: "Get active pane layout",
-      description: "Read the active split tree and exact pane choice selected in every pane.",
+      description: "Read the active split tree, selected choice, mobile viewport, and web navigation state of every pane.",
       inputSchema: z.object(targetSchema),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
     }, async (input) => this.invokePane("get_pane_layout", input));
     protocolServer.registerTool("list_pane_types", {
       title: "List pane choices",
-      description: "List every exact entry and subtype currently selectable in a pane's Boatyard dropdown.",
+      description: "List every exact entry and subtype currently selectable in a pane's Boatyard dropdown, including its capabilities.",
       inputSchema: z.object({ ...targetSchema, paneId: z.string().min(1) }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
     }, async (input) => this.invokePane("list_pane_types", input));
-    protocolServer.registerTool("assign_pane_type", {
-      title: "Assign pane choice",
-      description: "Select an exact dropdown entry in an existing pane. Optionally reject the change if the layout revision moved.",
+    const viewportSchema = z.object({
+      enabled: z.boolean().optional().describe("Whether the mobile viewport is enabled"),
+      height: z.number().int().min(160).max(8192).optional().describe("Viewport height in CSS pixels"),
+      width: z.number().int().min(160).max(8192).optional().describe("Viewport width in CSS pixels")
+    }).refine((viewport) => Object.values(viewport).some((value) => value !== undefined), {
+      message: "viewport must change enabled, height, or width"
+    });
+    protocolServer.registerTool("update_pane", {
+      title: "Update pane",
+      description: "Select an exact dropdown entry and/or configure its mobile viewport in one request. Optionally reject stale changes with the layout revision.",
       inputSchema: z.object({
         ...targetSchema,
         paneId: z.string().min(1),
-        choiceId: z.string().min(1),
+        choiceId: z.string().min(1).optional(),
+        viewport: viewportSchema.optional(),
         expectedRevision: z.string().min(1).optional()
+      }).refine((input) => Boolean(input.choiceId || input.viewport), {
+        message: "choiceId or viewport is required"
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
-    }, async (input) => this.invokePane("assign_pane_type", input));
+    }, async (input) => this.invokePane("update_pane", input));
+    protocolServer.registerTool("navigate_pane", {
+      title: "Navigate pane",
+      description: "Use the selected web pane's visible browser actions. The open action requires a URL.",
+      inputSchema: z.object({
+        ...targetSchema,
+        paneId: z.string().min(1),
+        action: z.enum(["open", "home", "back", "forward", "refresh", "hard_refresh"]),
+        url: z.string().min(1).optional(),
+        expectedRevision: z.string().min(1).optional()
+      }).refine((input) => input.action !== "open" || Boolean(input.url), {
+        message: "url is required for the open action",
+        path: ["url"]
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
+    }, async (input) => this.invokePane("navigate_pane", input));
     return protocolServer;
   }
 

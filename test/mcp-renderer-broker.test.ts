@@ -23,7 +23,7 @@ test("MCP renderer broker preserves renderer error codes", async () => {
     id: 7,
     isDestroyed: () => false,
     send: (_channel, payload) => { sent = payload as Record<string, unknown>; }
-  }, "assign_pane_type", {});
+  }, "update_pane", {});
   broker.acceptResponse(7, {
     requestId: sent.requestId,
     error: { code: "LAYOUT_CHANGED", message: "Layout changed." }
