@@ -44,6 +44,15 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateGlobalPluginConfig: (pluginId: string, patch: unknown) => ipcRenderer.invoke("global-plugin-config:update", pluginId, patch),
   updateProjectPluginConfig: (projectId: string, pluginId: string, patch: unknown) => ipcRenderer.invoke("project-plugin-config:update", projectId, pluginId, patch),
   updatePaneLayout: (projectId: string | null | undefined, layout: unknown) => ipcRenderer.invoke("pane-layout:update", projectId, layout),
+  getMcpStatus: () => ipcRenderer.invoke("mcp:status"),
+  updateMcpSettings: (settings: unknown) => ipcRenderer.invoke("mcp:settings:update", settings),
+  rotateMcpToken: () => ipcRenderer.invoke("mcp:token:rotate"),
+  onMcpRequest: (callback: BridgeCallback): Unsubscribe => {
+    const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("mcp:request", listener);
+    return () => ipcRenderer.removeListener("mcp:request", listener);
+  },
+  respondMcpRequest: (payload: unknown) => ipcRenderer.send("mcp:response", payload),
   updateWidgetLayout: (projectId: string | null | undefined, layout: unknown) => ipcRenderer.invoke("widget-layout:update", projectId, layout),
   updateTopbarWidgets: (topbarWidgets: unknown) => ipcRenderer.invoke("topbar-widgets:update", topbarWidgets),
   listTerminalTabs: (projectId: string) => ipcRenderer.invoke("terminal:tabs", projectId),

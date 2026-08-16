@@ -12,13 +12,17 @@ import type {
 import type { UnknownRecord } from "./rendererRecords.js";
 import type { WidgetPane } from "./widgetSurfaceTypes.js";
 import { createPaneIconLabel } from "./paneIcons.js";
+import {
+  buildPaneTypeCatalog,
+  getPaneMenuWebApps as filterPaneMenuWebApps
+} from "./paneTypeCatalog.js";
 
 type WebAppMenuElement = HTMLDivElement & {
   cleanup?: () => void;
 };
 
 export function getPaneMenuWebApps(webApps: WebAppDefinition[]) {
-  return webApps.filter((webApp) => webApp.showInMenu !== false);
+  return filterPaneMenuWebApps(webApps);
 }
 
   type WebAppBounds = {
@@ -93,17 +97,6 @@ export function getPaneMenuWebApps(webApps: WebAppDefinition[]) {
   type WebAppOpenChoice = WebAppOpenRule & {
     applyGlobally?: boolean;
     persist?: boolean;
-  };
-
-  type WebAppTabMenuChild = {
-    label: string;
-    webApp: MenuWebApp;
-  };
-
-  type WebAppTabMenuGroup = {
-    children: WebAppTabMenuChild[];
-    label: string;
-    webApp: MenuWebApp;
   };
 
   type WebAppNavigationEntry = {
@@ -988,7 +981,7 @@ export function createWebAppMenus({
       return hasProtocol ? trimmed : `${isLocalhost ? "http" : "https"}://${trimmed}`;
     }
 
-    function selectWebApp(project: RendererProject, paneNode: MenuPaneNode, webApp: MenuWebApp) {
+    function assignWebAppToPane(project: RendererProject, paneNode: MenuPaneNode, webApp: MenuWebApp) {
       setSelectedWebAppForPane(paneNode.id, webApp.id);
       paneNode.selectedWebAppId = webApp.id;
       setSelectedWebAppForProject(project.id, webApp.id);
@@ -1089,7 +1082,7 @@ export function createWebAppMenus({
         button.textContent = String(webApp.label || "");
         button.addEventListener("click", () => {
           if (webApp.id !== selectedWebApp.id) {
-            selectWebApp(project, paneNode, webApp);
+            assignWebAppToPane(project, paneNode, webApp);
           }
         });
         if (!isGlobalWorkspace(project)) {
@@ -1141,135 +1134,6 @@ export function createWebAppMenus({
       menu.style.top = `${Math.round(rect.bottom + 6)}px`;
       menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 220))}px`;
 
-      function getMenuLabel(webApp: MenuWebApp) {
-        return String(webApp.label || webApp.id || "");
-      }
-
-      function parseGroupedWebAppLabel(webApp: MenuWebApp) {
-        const match = getMenuLabel(webApp).match(/^([^:]{2,40}):\s*(.+)$/);
-        if (!match) {
-          return null;
-        }
-
-        return {
-          group: match[1].trim(),
-          label: match[2].trim()
-        };
-      }
-
-      function getChildLabel(parentLabel: string, child: MenuWebApp) {
-        const label = getMenuLabel(child);
-        const parsed = parseGroupedWebAppLabel(child);
-        return parsed?.group === parentLabel ? parsed.label : label;
-      }
-
-      function buildWebAppTabMenuGroups() {
-        const menuWebApps = getPaneMenuWebApps(webApps) as MenuWebApp[];
-        const rootWebApps = menuWebApps.filter((webApp: MenuWebApp) => !webApp.parentWebAppId);
-        const rootByLabel = new Map(rootWebApps.map((webApp) => [getMenuLabel(webApp), webApp]));
-        const childrenByParentId = new Map<string, WebAppTabMenuChild[]>();
-        const groupedRootWebApps = new WeakSet<MenuWebApp>();
-        const prefixChildrenByParentId = new Map<string, WebAppTabMenuChild[]>();
-        const virtualPrefixChildren = new Map<string, WebAppTabMenuChild[]>();
-        const virtualPrefixByWebApp = new WeakMap<MenuWebApp, string>();
-
-        for (const webApp of menuWebApps.filter((candidate: MenuWebApp) => candidate.parentWebAppId)) {
-          const parentWebAppId = webApp.parentWebAppId;
-          if (!parentWebAppId) {
-            continue;
-          }
-
-          const children = childrenByParentId.get(parentWebAppId) || [];
-          children.push({
-            label: getMenuLabel(webApp),
-            webApp
-          });
-          childrenByParentId.set(parentWebAppId, children);
-        }
-
-        for (const webApp of rootWebApps) {
-          const parsed = parseGroupedWebAppLabel(webApp);
-          if (!parsed) {
-            continue;
-          }
-
-          const parentWebApp = rootByLabel.get(parsed.group);
-          if (parentWebApp && parentWebApp !== webApp && parentWebApp.id) {
-            const children = prefixChildrenByParentId.get(parentWebApp.id) || [];
-            children.push({
-              label: parsed.label,
-              webApp
-            });
-            prefixChildrenByParentId.set(parentWebApp.id, children);
-            groupedRootWebApps.add(webApp);
-            continue;
-          }
-
-          if (parsed.group === "URL") {
-            const children = virtualPrefixChildren.get(parsed.group) || [];
-            children.push({
-              label: parsed.label,
-              webApp
-            });
-            virtualPrefixChildren.set(parsed.group, children);
-            virtualPrefixByWebApp.set(webApp, parsed.group);
-            groupedRootWebApps.add(webApp);
-          }
-        }
-
-        const groups: WebAppTabMenuGroup[] = [];
-        const emittedVirtualPrefixes = new Set<string>();
-
-        for (const webApp of rootWebApps) {
-          if (groupedRootWebApps.has(webApp)) {
-            const virtualPrefix = virtualPrefixByWebApp.get(webApp);
-            if (virtualPrefix && !emittedVirtualPrefixes.has(virtualPrefix)) {
-              groups.push({
-                label: virtualPrefix,
-                webApp: {
-                  icon: virtualPrefix === "URL" ? "link" : undefined,
-                  id: `menu:${virtualPrefix.toLowerCase()}`,
-                  label: virtualPrefix,
-                  menuOnly: true
-                },
-                children: virtualPrefixChildren.get(virtualPrefix) || []
-              });
-              emittedVirtualPrefixes.add(virtualPrefix);
-            }
-            continue;
-          }
-
-          const label = getMenuLabel(webApp);
-          const webAppId = webApp.id || "";
-          groups.push({
-            label,
-            webApp,
-            children: [
-              ...(webAppId ? childrenByParentId.get(webAppId) || [] : []).map((child) => ({
-                ...child,
-                label: getChildLabel(label, child.webApp)
-              })),
-              ...(webAppId ? prefixChildrenByParentId.get(webAppId) || [] : [])
-            ]
-          });
-        }
-
-        const rootIds = new Set(rootWebApps.map((webApp) => webApp.id).filter(Boolean));
-        for (const [parentId, children] of childrenByParentId) {
-          if (rootIds.has(parentId)) {
-            continue;
-          }
-
-          groups.push(...children.map((child) => ({
-            label: child.label,
-            webApp: child.webApp,
-            children: []
-          })));
-        }
-
-        return groups;
-      }
-
       function createWebAppTabMenuItem(
         webApp: MenuWebApp,
         label: string,
@@ -1302,12 +1166,12 @@ export function createWebAppMenus({
           }
 
           closeWebAppTabMenu();
-          selectWebApp(project, paneNode, webApp);
+          assignWebAppToPane(project, paneNode, webApp);
         });
         return item;
       }
 
-      for (const group of buildWebAppTabMenuGroups()) {
+      for (const group of buildPaneTypeCatalog(webApps)) {
         if (!group.children.length) {
           menu.append(createWebAppTabMenuItem(group.webApp, group.label));
           continue;
@@ -1850,6 +1714,7 @@ export function createWebAppMenus({
     return {
       applyWebAppOpenChoice,
       applyMatchingWebAppOpenRule,
+      assignWebAppToPane,
       closeWebAppTabMenu,
       createWidgetPaneTabs,
       normalizeAddressInput,

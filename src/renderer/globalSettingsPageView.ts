@@ -4,6 +4,7 @@ import { createSettingsShell } from "./settingsShell.js";
 type GlobalSettingsPageViewOptions = {
   closeTerminalTabMenu: () => void;
   closeWidgetAddMenu: () => void;
+  createGlobalMcpSettingsForm: () => HTMLElement;
   createGlobalPasswordManagerSettingsForm: (options: UnknownRecord) => HTMLElement;
   createGlobalPluginsSettingsView: () => HTMLElement;
   createGlobalPresentationSettingsForm: (options: UnknownRecord) => HTMLElement;
@@ -31,6 +32,7 @@ type GlobalSettingsPageViewOptions = {
 export function createGlobalSettingsPageView({
   closeTerminalTabMenu,
   closeWidgetAddMenu,
+  createGlobalMcpSettingsForm,
   createGlobalPasswordManagerSettingsForm,
   createGlobalPluginsSettingsView,
   createGlobalPresentationSettingsForm,
@@ -98,6 +100,7 @@ export function createGlobalSettingsPageView({
         await updateSettings(values);
       }
     });
+    const mcpSettings = createGlobalMcpSettingsForm();
     const openRulesSettings = createGlobalWebAppOpenRulesSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
@@ -192,6 +195,15 @@ export function createGlobalSettingsPageView({
           badge: String(widgetCount),
           keywords: ["extensions", "panes", "dashboard"],
           elements: [widgetsSettings]
+        },
+        {
+          id: "mcp",
+          label: "MCP",
+          description: "Local agent access to active pane layouts.",
+          group: "system",
+          icon: "plug",
+          keywords: ["agents", "panes", "streamable http", "token"],
+          elements: [mcpSettings]
         },
         {
           id: "about",

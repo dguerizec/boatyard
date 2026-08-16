@@ -17,6 +17,8 @@
     "src/renderer/manualViews.ts",
     "src/renderer/onboardingTour.ts",
     "src/renderer/paneNavigation.ts",
+    "src/renderer/paneMcpController.ts",
+    "src/renderer/paneTypeCatalog.ts",
     "src/renderer/paneLayoutState.ts",
     "src/renderer/paneLayoutView.ts",
     "src/renderer/pluginLoader.ts",

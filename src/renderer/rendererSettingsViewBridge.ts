@@ -90,6 +90,7 @@ export function createRendererSettingsViewBridge({
   });
 
   return Object.freeze({
+    createGlobalMcpSettingsForm: globalSettingsViews.createGlobalMcpSettingsForm,
     createGlobalPasswordManagerSettingsForm: globalSettingsViews.createGlobalPasswordManagerSettingsForm,
     createGlobalPluginsSettingsView: globalSettingsViews.createGlobalPluginsSettingsView,
     createGlobalPresentationSettingsForm: globalSettingsViews.createGlobalPresentationSettingsForm,

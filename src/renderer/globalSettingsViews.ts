@@ -420,6 +420,185 @@ export function createGlobalSettingsViews({
       return shell;
     }
 
+    function createGlobalMcpSettingsForm() {
+      const shell = document.createElement("section");
+      shell.className = "project-form-page mcp-settings";
+      const form = document.createElement("form");
+      form.className = "project-form";
+
+      const heading = document.createElement("div");
+      heading.className = "form-heading";
+      const title = document.createElement("h3");
+      title.textContent = "MCP server";
+      const copy = document.createElement("p");
+      copy.textContent = "Let authenticated local agents inspect active pane layouts and select pane entries.";
+      heading.append(title, copy);
+
+      const enableLabel = document.createElement("label");
+      enableLabel.className = "switch-row";
+      const enableCopy = document.createElement("span");
+      enableCopy.className = "switch-copy";
+      enableCopy.innerHTML = "<strong>Enable local MCP server</strong><small>Listen only on 127.0.0.1 using Streamable HTTP and bearer-token authentication.</small>";
+      const enableInput = document.createElement("input");
+      enableInput.type = "checkbox";
+      enableInput.name = "mcpEnabled";
+      const switchTrack = document.createElement("span");
+      switchTrack.className = "switch-track";
+      switchTrack.setAttribute("aria-hidden", "true");
+      enableLabel.append(enableCopy, enableInput, switchTrack);
+
+      const portLabel = document.createElement("label");
+      portLabel.textContent = "Port";
+      const portInput = document.createElement("input");
+      portInput.type = "number";
+      portInput.name = "mcpPort";
+      portInput.min = "1024";
+      portInput.max = "65535";
+      portInput.required = true;
+      portLabel.append(portInput);
+
+      function createReadOnlyRow(labelText: string, input: HTMLInputElement) {
+        const label = document.createElement("label");
+        label.textContent = labelText;
+        const control = document.createElement("div");
+        control.className = "path-picker";
+        input.readOnly = true;
+        input.autocomplete = "off";
+        const copyButton = document.createElement("button");
+        copyButton.className = "secondary-button";
+        copyButton.type = "button";
+        copyButton.textContent = "Copy";
+        copyButton.addEventListener("click", async () => {
+          try {
+            if (!boatyard.writeClipboardText) {
+              throw new Error("Clipboard access is unavailable.");
+            }
+            await boatyard.writeClipboardText(input.value);
+            copyButton.textContent = "Copied";
+            setTimeout(() => { copyButton.textContent = "Copy"; }, 1200);
+          } catch (copyError) {
+            error.textContent = asErrorMessage(copyError);
+            error.hidden = false;
+          }
+        });
+        control.append(input, copyButton);
+        label.append(control);
+        return { label, control };
+      }
+
+      const endpointInput = document.createElement("input");
+      endpointInput.type = "text";
+      const endpointRow = createReadOnlyRow("Endpoint", endpointInput);
+      const tokenInput = document.createElement("input");
+      tokenInput.type = "password";
+      const tokenRow = createReadOnlyRow("Bearer token", tokenInput);
+      const revealButton = document.createElement("button");
+      revealButton.className = "secondary-button";
+      revealButton.type = "button";
+      revealButton.textContent = "Reveal";
+      revealButton.addEventListener("click", () => {
+        const revealing = tokenInput.type === "password";
+        tokenInput.type = revealing ? "text" : "password";
+        revealButton.textContent = revealing ? "Hide" : "Reveal";
+      });
+      tokenRow.control.append(revealButton);
+
+      const status = document.createElement("p");
+      status.className = "form-hint";
+      status.setAttribute("role", "status");
+      const error = document.createElement("p");
+      error.className = "form-error";
+      error.setAttribute("role", "alert");
+      error.hidden = true;
+
+      const actions = document.createElement("div");
+      actions.className = "form-actions";
+      const rotateButton = document.createElement("button");
+      rotateButton.className = "secondary-button";
+      rotateButton.type = "button";
+      rotateButton.textContent = "Rotate token";
+      const applyButton = document.createElement("button");
+      applyButton.className = "primary-button";
+      applyButton.type = "submit";
+      applyButton.textContent = "Apply";
+      actions.append(rotateButton, applyButton);
+
+      function applyStatus(value: unknown) {
+        const next = value && typeof value === "object" && !Array.isArray(value)
+          ? value as UnknownRecord
+          : {};
+        enableInput.checked = next.enabled === true;
+        portInput.value = String(next.port || "");
+        endpointInput.value = String(next.endpoint || "");
+        tokenInput.value = String(next.token || "");
+        const serviceError = String(next.error || "");
+        error.textContent = serviceError;
+        error.hidden = !serviceError;
+        status.textContent = next.listening === true
+          ? "Listening on localhost."
+          : next.enabled === true ? "Enabled, but not listening." : "Disabled.";
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        error.hidden = true;
+        applyButton.disabled = true;
+        try {
+          if (!boatyard.updateMcpSettings) {
+            throw new Error("MCP settings are unavailable.");
+          }
+          applyStatus(await boatyard.updateMcpSettings({
+            enabled: enableInput.checked,
+            port: Number(portInput.value)
+          }));
+        } catch (submitError) {
+          error.textContent = asErrorMessage(submitError);
+          error.hidden = false;
+        } finally {
+          applyButton.disabled = false;
+        }
+      });
+
+      rotateButton.addEventListener("click", async () => {
+        if (!window.confirm("Rotate the MCP token? Existing agent connections will stop authenticating.")) {
+          return;
+        }
+        error.hidden = true;
+        rotateButton.disabled = true;
+        try {
+          if (!boatyard.rotateMcpToken) {
+            throw new Error("MCP token rotation is unavailable.");
+          }
+          applyStatus(await boatyard.rotateMcpToken());
+        } catch (rotateError) {
+          error.textContent = asErrorMessage(rotateError);
+          error.hidden = false;
+        } finally {
+          rotateButton.disabled = false;
+        }
+      });
+
+      form.append(
+        heading,
+        enableLabel,
+        portLabel,
+        endpointRow.label,
+        tokenRow.label,
+        status,
+        error,
+        actions
+      );
+      applyFormControls(form);
+      shell.append(form);
+      if (boatyard.getMcpStatus) {
+        void boatyard.getMcpStatus().then(applyStatus).catch((loadError: unknown) => {
+          error.textContent = asErrorMessage(loadError);
+          error.hidden = false;
+        });
+      }
+      return shell;
+    }
+
     function createGlobalWebAppOpenRulesSettingsForm({ settings, onSubmit }: GlobalSettingsFormOptions) {
       return webAppOpenRulesSettings.createGlobalWebAppOpenRulesSettingsForm({ settings, onSubmit });
     }
@@ -948,6 +1127,7 @@ export function createGlobalSettingsViews({
     }
 
     return {
+      createGlobalMcpSettingsForm,
       createGlobalPasswordManagerSettingsForm,
       createGlobalPluginsSettingsView,
       createGlobalPresentationSettingsForm,

@@ -82,6 +82,7 @@ export type WebAppDefinition = UnknownRecord & {
   label?: unknown;
   minHeight?: string;
   minWidth?: string;
+  menuOnly?: boolean;
   mobileDev?: boolean;
   navigation?: WebAppPaneNavigation;
   pluginPane?: UnknownRecord;
@@ -175,6 +176,7 @@ export type WidgetSurfacesInstance = RendererModuleInstance & {
 
 export type WebAppMenusInstance = RendererModuleInstance & {
   applyWebAppOpenChoice(payload: UnknownRecord, choice: UnknownRecord): Promise<unknown>;
+  assignWebAppToPane(project: RendererProject, pane: RendererPaneNode, webApp: WebAppDefinition): void;
 };
 
 export type UpdateViewsInstance = RendererModuleInstance & {
@@ -182,6 +184,7 @@ export type UpdateViewsInstance = RendererModuleInstance & {
 };
 
 export type GlobalSettingsViewsInstance = RendererModuleInstance & {
+  createGlobalMcpSettingsForm(): HTMLElement;
   createGlobalPasswordManagerSettingsForm(options: UnknownRecord): HTMLElement;
   createGlobalPresentationSettingsForm(options: UnknownRecord): HTMLElement;
   createGlobalProjectsSettingsForm(options: UnknownRecord): HTMLElement;
@@ -214,11 +217,13 @@ export type BoatyardBridge = {
   listLayouts(projectId?: string | null): Promise<WorkspaceLayout[]>;
   getWebAppNavigationHistory?: (key: unknown) => Promise<unknown>;
   getState(): Promise<RendererState>;
+  getMcpStatus?: () => Promise<UnknownRecord>;
   getUpdateInfo?: () => Promise<unknown>;
   hideWebApp(): Promise<unknown>;
   navigateWebApp(...payload: unknown[]): Promise<unknown>;
   onTerminalData(callback: (payload: { terminalId: unknown; data: unknown }) => void): void;
   onTerminalExit(callback: (payload: { terminalId: unknown; projectId: unknown; windowId: unknown }) => void): void;
+  onMcpRequest?: (callback: (payload: unknown) => void) => void;
   onWebAppAutofillChanged?: (callback: (payload: { enabled?: boolean; key?: string }) => void) => void;
   onWebAppFaviconChanged?: (callback: (payload: { favicons?: string[]; key?: string; url?: string }) => void) => void;
   onWebAppLoaded?: (callback: (payload: { key?: string; url?: string }) => void) => void;
@@ -232,6 +237,7 @@ export type BoatyardBridge = {
   reorderProjects(projectIds: string[]): Promise<RendererState>;
   restoreWebApps(token?: unknown): Promise<unknown>;
   restartToUpdate(update: UnknownRecord): Promise<unknown>;
+  respondMcpRequest?: (payload: unknown) => void;
   saveLayout(layout: WorkspaceLayout): Promise<WorkspaceLayout>;
   setTheme?: (theme: "dark" | "light") => Promise<unknown>;
   setVisibleWebApps(...payload: unknown[]): Promise<unknown>;
@@ -241,6 +247,7 @@ export type BoatyardBridge = {
   updateNavigation(values: UnknownRecord): Promise<UnknownRecord>;
   updateOnboarding(values: UnknownRecord): Promise<RendererState["onboarding"]>;
   updatePaneLayout(projectId: string | null | undefined, layout: unknown): Promise<RendererState>;
+  updateMcpSettings?: (settings: UnknownRecord) => Promise<UnknownRecord>;
   updateTopbarWidgets(topbarWidgets: unknown): Promise<{ order: string[] }>;
   updatePluginEnabled(pluginId: string, enabled: boolean): Promise<RendererState>;
   updateProject(projectId: string, values: UnknownRecord): Promise<RendererState>;
@@ -249,6 +256,8 @@ export type BoatyardBridge = {
   updateWebAppAutofill(...payload: unknown[]): Promise<unknown>;
   updateWebAppHomeTab(projectId: string, tab: UnknownRecord): Promise<RendererState>;
   updateWebAppHomeTabs(projectId: string, tabs: UnknownRecord[]): Promise<RendererState>;
+  rotateMcpToken?: () => Promise<UnknownRecord>;
+  writeClipboardText?: (text: string) => Promise<unknown>;
   undoLayout(undoToken: string): Promise<RendererState | null>;
 };
 

@@ -2,6 +2,7 @@ import { createGlobalSettingsPageView } from "./globalSettingsPageView.js";
 import { hasActiveSettingsInteraction } from "./settingsFormController.js";
 import { createOnboardingTour } from "./onboardingTour.js";
 import { createPaneLayoutState } from "./paneLayoutState.js";
+import { createPaneMcpController, PaneMcpError } from "./paneMcpController.js";
 import { createPaneLayoutView } from "./paneLayoutView.js";
 import { registerPluginRegistry } from "./pluginRegistry.js";
 import { registerPluginSettingsFields } from "./pluginSettingsFields.js";
@@ -33,6 +34,7 @@ import type {
   RendererPaneNode,
   RendererProject,
   RendererState,
+  WebAppDefinition,
   WorkspaceLayout,
 } from "./rendererTypes.js";
 import { createTerminalSurfaces } from "./terminalSurfaces.js";
@@ -636,6 +638,7 @@ function renderGlobalPaneArea() {
 }
 
 const {
+  createGlobalMcpSettingsForm,
   createGlobalPasswordManagerSettingsForm,
   createGlobalPluginsSettingsView,
   createGlobalPresentationSettingsForm,
@@ -649,6 +652,7 @@ const {
 const globalSettingsPageView = createGlobalSettingsPageView({
   closeTerminalTabMenu,
   closeWidgetAddMenu,
+  createGlobalMcpSettingsForm,
   createGlobalPasswordManagerSettingsForm,
   createGlobalPluginsSettingsView,
   createGlobalPresentationSettingsForm,
@@ -756,6 +760,46 @@ const webAppMenus = createWebAppMenus({
   clamp,
   isGlobalWorkspace,
   isWebAppLoaded: (key) => Boolean(key && webAppLoadTracker.hasLoadedKey(key))
+});
+
+const paneMcpController = createPaneMcpController({
+  assignWebAppToPane: (project, pane, webApp) => webAppMenus.assignWebAppToPane(project, pane, webApp),
+  findPaneNode: (layout, paneId) => findPaneNode(layout, paneId),
+  getGlobalWorkspace,
+  getProjectById,
+  getProjectPaneLayout,
+  getProjectWebApps,
+  getSelectedWebApp: (project, paneId, webApps) => (
+    getSelectedWebApp(project, paneId, webApps) as WebAppDefinition
+  )
+});
+
+boatyardWindow.boatyard.onMcpRequest?.((payload) => {
+  const request = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as UnknownRecord
+    : {};
+  const requestId = typeof request.requestId === "string" ? request.requestId : "";
+  const operation = typeof request.operation === "string" ? request.operation : "";
+  const input = request.input && typeof request.input === "object" && !Array.isArray(request.input)
+    ? request.input as UnknownRecord
+    : {};
+  if (!requestId) {
+    return;
+  }
+  try {
+    boatyardWindow.boatyard.respondMcpRequest?.({
+      requestId,
+      result: paneMcpController.handle(operation, input)
+    });
+  } catch (error) {
+    boatyardWindow.boatyard.respondMcpRequest?.({
+      requestId,
+      error: {
+        code: error instanceof PaneMcpError ? error.code : "RENDERER_ERROR",
+        message: error instanceof Error ? error.message : String(error)
+      }
+    });
+  }
 });
 
 function applyWebAppOpenChoice(payload: UnknownRecord, choice: UnknownRecord) {

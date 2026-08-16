@@ -27,6 +27,9 @@ import { createAppThemeManager, getAppBackgroundColor } from "./appTheme.js";
 import { cleanupOrphanedTerminalClientSessions } from "./terminalClientSessionLifecycle.js";
 import { createTerminalShutdownCoordinator } from "./terminalShutdown.js";
 import { WorkspaceWindowRuntime } from "./workspaceWindowRuntime.js";
+import { McpRendererBroker, McpRendererError } from "./mcpRendererBroker.js";
+import { McpServerService } from "./mcpServer.js";
+import { McpSettingsStore } from "./mcpSettingsStore.js";
 import {
   DEFAULT_PROFILE_NAME,
   PROFILES_DIRECTORY_NAME,
@@ -40,6 +43,7 @@ import {
 } from "./launchDescriptor.js";
 
 const { execFile } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const path = require("node:path");
 const { promisify } = require("node:util");
 const { app, BrowserWindow, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, nativeTheme, screen, shell } = require("electron");
@@ -101,6 +105,8 @@ let secretStore: {
 let store: ProjectStoreInstance;
 let pluginHost: PluginHostInstance;
 let updateManager: UpdateManagerInstance;
+let mcpServerService: McpServerService;
+let mcpSettingsStore: McpSettingsStore;
 type ConfigurationContext = {
   configDirectory: string;
   passwordManager: PasswordManagerInstance;
@@ -121,6 +127,7 @@ type WorkspaceWindowRecord = {
   window: ElectronBrowserWindow;
 };
 const workspaceWindows = new Map<string, WorkspaceWindowRecord>();
+const mcpRendererBroker = new McpRendererBroker();
 const appThemeManager = createAppThemeManager({
   getTargets: () => [...workspaceWindows.values()].map((workspaceWindow) => workspaceWindow.runtime),
   nativeTheme
@@ -235,6 +242,54 @@ function getPrimaryWorkspaceWindow() {
 
 function getWorkspaceWindowRegistryKey(configuration: ConfigurationContext, windowId: string) {
   return `${configuration.configDirectory}\u0000${windowId}`;
+}
+
+function getMcpContextId(configuration: ConfigurationContext): string {
+  return createHash("sha256").update(configuration.configDirectory).digest("hex").slice(0, 16);
+}
+
+function listMcpWindows() {
+  return {
+    windows: [...workspaceWindows.values()].map((workspaceWindow) => {
+      const windowState = workspaceWindow.configuration.store.getStateForWorkspaceWindow(workspaceWindow.id);
+      const navigation = windowState.navigation && typeof windowState.navigation === "object"
+        ? windowState.navigation as UnknownRecord
+        : {};
+      return {
+        contextId: getMcpContextId(workspaceWindow.configuration),
+        contextLabel: path.basename(workspaceWindow.configuration.configDirectory),
+        windowId: workspaceWindow.id,
+        title: workspaceWindow.window.getTitle(),
+        focused: workspaceWindow.window.isFocused(),
+        activeProjectId: typeof navigation.projectId === "string" ? navigation.projectId : null,
+        projects: [
+          { id: "__global__", name: "Global" },
+          ...windowState.projects.map((project: MainProject) => ({
+            id: String(project.id || ""),
+            name: String(project.name || project.slug || project.id || "")
+          })).filter((project: { id: string }) => project.id)
+        ]
+      };
+    })
+  };
+}
+
+function requestMcpPane(
+  contextId: string,
+  windowId: string,
+  operation: string,
+  input: Record<string, unknown>
+) {
+  const workspaceWindow = [...workspaceWindows.values()].find((candidate) => (
+    getMcpContextId(candidate.configuration) === contextId && candidate.id === windowId
+  ));
+  if (!workspaceWindow) {
+    throw new McpRendererError(
+      "WINDOW_NOT_AVAILABLE",
+      `Boatyard window ${windowId} is not open in context ${contextId}.`
+    );
+  }
+  return mcpRendererBroker.request(workspaceWindow.window.webContents, operation, input);
 }
 
 function getConfigurationForWebContents(webContents: ElectronWebContents) {
@@ -371,6 +426,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     }
   });
   window.on("closed", () => {
+    mcpRendererBroker.rejectTarget(window.webContents.id);
     workspaceWindows.delete(getWorkspaceWindowRegistryKey(configuration, workspaceWindow.id));
     mainWindow = null;
   });
@@ -1152,6 +1208,10 @@ void [
 ];
 
 function registerIpcHandlers() {
+  ipcMain.on("mcp:response", (event: IpcMainEvent, payload: unknown) => {
+    mcpRendererBroker.acceptResponse(event.sender.id, payload);
+  });
+
   ipcMain.on("webapp:reserve-popup", (event: IpcMainEvent) => {
     event.returnValue = getWorkspaceWindowForWebAppContents(event.sender)?.runtime.reserveWebAppPopup(event.sender) || false;
   });
@@ -1178,6 +1238,26 @@ function registerIpcHandlers() {
     const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
     const configuration = getConfigurationForEvent(event);
     return workspaceWindow ? configuration.store.getStateForWorkspaceWindow(workspaceWindow.id) : configuration.store.getState();
+  });
+
+  ipcMain.handle("mcp:status", (event: IpcMainInvokeEvent) => {
+    getConfigurationForEvent(event);
+    return mcpServerService.getStatus();
+  });
+
+  ipcMain.handle("mcp:settings:update", async (event: IpcMainInvokeEvent, patch: unknown) => {
+    getConfigurationForEvent(event);
+    const source = patch && typeof patch === "object" && !Array.isArray(patch)
+      ? patch as UnknownRecord
+      : {};
+    mcpSettingsStore.update(source);
+    return mcpServerService.configure();
+  });
+
+  ipcMain.handle("mcp:token:rotate", async (event: IpcMainInvokeEvent) => {
+    getConfigurationForEvent(event);
+    mcpSettingsStore.rotateToken();
+    return mcpServerService.configure();
   });
 
   ipcMain.handle("theme:set", (event: IpcMainInvokeEvent, theme: unknown) => {
@@ -1599,6 +1679,8 @@ function registerIpcHandlers() {
 if (isPrimaryInstance) {
   app.on("before-quit", (event: Event) => {
     isQuitting = true;
+    mcpRendererBroker.close();
+    void mcpServerService?.stop();
     terminalShutdownCoordinator.handleBeforeQuit(event);
   });
 
@@ -1636,6 +1718,16 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   migrateConfigurationRootToProfiles(initialLaunchDescriptor.configurationRoot);
   secretStore = new SecretStore(path.join(initialLaunchDescriptor.configurationRoot, "secrets.json"));
   secretStore.load();
+  mcpSettingsStore = new McpSettingsStore(path.join(initialLaunchDescriptor.configurationRoot, "mcp.json"));
+  mcpSettingsStore.load();
+  mcpServerService = new McpServerService({
+    api: {
+      listWindows: listMcpWindows,
+      requestPane: requestMcpPane
+    },
+    getSettings: () => mcpSettingsStore.get(),
+    version: app.getVersion()
+  });
   migrateLegacyConfigurationIntoItsProfile();
   const initialConfiguration = await createConfigurationContext(initialLaunchDescriptor.configDirectory);
   store = initialConfiguration.store;
@@ -1649,6 +1741,7 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   }
   registerIpcHandlers();
   restoreConfigurationWindows(initialConfiguration);
+  await mcpServerService.configure();
   launchRoutingReady = true;
   for (const descriptor of pendingLaunchDescriptors.splice(0)) {
     await routeLaunchRequest(descriptor);

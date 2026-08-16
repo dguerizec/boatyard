@@ -7,6 +7,8 @@
     "rootDir": "."
   },
   "include": [
+    "src/shared/pluginTypes.d.ts",
+    "src/renderer/rendererGlobals.d.ts",
     "test/**/*.ts"
   ],
   "exclude": [
