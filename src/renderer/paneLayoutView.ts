@@ -228,6 +228,10 @@ export function canReusePaneElement(
     );
 }
 
+export function getMobileDevViewportKey(webApp: Pick<PaneWebApp, "id" | "key">) {
+  return webApp.key || webApp.id || "";
+}
+
 export function createPaneLayoutView({
     minWidgetRailWidth,
     webAppSplitResizerSize,
@@ -298,10 +302,6 @@ export function createPaneLayoutView({
 
     function getLayoutMinimumSize(node: PaneLayoutNode, axis: PaneMinimumAxis) {
       return getPaneLayoutMinimumSize(node, axis, webAppSplitResizerSize, getPaneMinimumSize);
-    }
-
-    function getMobileDevViewportKey(webApp: PaneWebApp) {
-      return webApp.id || webApp.key || "";
     }
 
     function getProjectWebAppState(project: RendererProject, webAppId: string) {
@@ -388,11 +388,14 @@ export function createPaneLayoutView({
       }
 
       const persisted = readPersistedMobileDevViewportState(key);
+      const legacyPersisted = key !== webApp.id
+        ? readPersistedMobileDevViewportState(webApp.id)
+        : {};
       const state = {
-        bookmarks: persisted.bookmarks || [],
+        bookmarks: persisted.bookmarks || legacyPersisted.bookmarks || [],
         enabled: persisted.enabled === true,
-        height: persisted.height || 844,
-        width: persisted.width || 390
+        height: persisted.height || legacyPersisted.height || 844,
+        width: persisted.width || legacyPersisted.width || 390
       };
       mobileDevViewports.set(key, state);
       return state;
