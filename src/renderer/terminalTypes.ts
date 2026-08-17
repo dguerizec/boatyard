@@ -4,6 +4,13 @@ export type TerminalTab = {
   name?: string;
 };
 
+export type TerminalWorktree = {
+  branch?: string;
+  detached?: boolean;
+  name: string;
+  path: string;
+};
+
 export type TerminalTabMenu = HTMLDivElement & {
   cleanup?: () => void;
 };

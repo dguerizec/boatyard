@@ -1,4 +1,4 @@
-import { createTerminalTabDom } from "./terminalTabDom.js";
+import { createTerminalTabDom, TERMINAL_TAB_RENAME_TOOLTIP } from "./terminalTabDom.js";
 import { createTerminalTabMenuController } from "./terminalTabMenu.js";
 import { createTerminalSelectionBridge } from "./terminalSelectionBridge.js";
 import { createTerminalAttachmentCoordinator } from "./terminalAttachmentCoordinator.js";
@@ -10,7 +10,7 @@ import {
   getTerminalTheme,
   getXtermConstructor
 } from "./terminalXtermRuntime.js";
-import type { TerminalCard, TerminalTab } from "./terminalTypes.js";
+import type { TerminalCard, TerminalTab, TerminalWorktree } from "./terminalTypes.js";
 import type { RendererProject } from "./rendererTypes.js";
 import type { TerminalCloseFocus, TerminalDataPayload, TerminalExitPayload, TerminalOutputSession, TerminalSurfaceOptions, TerminalSurfaceSession, TerminalSurfacesOptions, TerminalTabSyncTimer } from "./terminalSurfaceTypes.js";
 import { createTerminalSelectionStore } from "./terminalSelectionStore.js";
@@ -60,6 +60,7 @@ export function createTerminalSurfaces({
       getTerminalTabButtons,
       getTerminalTabDropPosition,
       getTerminalTabList,
+      updateTerminalTabButtonTitles,
       updateTerminalTabDropMarker,
       updateTerminalTabScrollControls
     } = createTerminalTabDom({
@@ -67,12 +68,15 @@ export function createTerminalSurfaces({
     });
     const {
       closeTerminalTabMenu,
-      openTerminalTabContextMenu
+      openTerminalTabContextMenu,
+      openTerminalWorktreeMenu
     } = createTerminalTabMenuController({
       clamp,
       closeTerminalTab,
       createTerminalTab,
+      createTerminalWorktreeTab,
       editTerminalTabName,
+      listTerminalWorktrees,
       setTerminalStatus
     });
 
@@ -106,10 +110,33 @@ export function createTerminalSurfaces({
       };
     }
 
+    function normalizeTerminalWorktree(value: unknown): TerminalWorktree | null {
+      const source = isRecord(value) ? value : {};
+      const name = String(source.name || "").trim();
+      const worktreePath = String(source.path || "").trim();
+      if (!name || !worktreePath) {
+        return null;
+      }
+
+      return {
+        branch: String(source.branch || "").trim() || undefined,
+        detached: source.detached === true,
+        name,
+        path: worktreePath
+      };
+    }
+
     async function listTerminalTabs(projectId: string): Promise<TerminalTab[]> {
       const tabs = await boatyard.listTerminalTabs(projectId);
       return Array.isArray(tabs)
         ? tabs.map(normalizeTerminalTab).filter((tab): tab is TerminalTab => Boolean(tab))
+        : [];
+    }
+
+    async function listTerminalWorktrees(project: RendererProject): Promise<TerminalWorktree[]> {
+      const worktrees = await boatyard.listTerminalWorktrees(project.id || "");
+      return Array.isArray(worktrees)
+        ? worktrees.map(normalizeTerminalWorktree).filter((worktree): worktree is TerminalWorktree => Boolean(worktree))
         : [];
     }
 
@@ -385,10 +412,13 @@ export function createTerminalSurfaces({
           const windowId = tabButton.dataset.windowId;
           const tab = windowId ? tabsById.get(windowId) : undefined;
           if (tab) {
-            tabButton.textContent = tab.name || `shell ${tab.index}`;
+            const tabName = tab.name || `shell ${tab.index}`;
+            tabButton.textContent = tabName;
+            tabButton.dataset.terminalTabName = tabName;
           }
           tabButton.classList.toggle("active", tabButton.dataset.windowId === session.activeWindowId);
         }
+        updateTerminalTabButtonTitles(session.card);
       }
     }
 
@@ -644,8 +674,10 @@ export function createTerminalSurfaces({
           tabButton.classList.toggle("active", tab.id === selectedTab?.id);
           tabButton.type = "button";
           tabButton.dataset.windowId = tab.id;
-          tabButton.textContent = tab.name || `shell ${tab.index}`;
-          tabButton.title = "Double-click to rename shell";
+          const tabName = tab.name || `shell ${tab.index}`;
+          tabButton.dataset.terminalTabName = tabName;
+          tabButton.textContent = tabName;
+          tabButton.title = TERMINAL_TAB_RENAME_TOOLTIP;
           attachTerminalTabDragHandlers(tab, tabButton, tabList);
           tabButton.addEventListener("click", () => {
             selectTerminalTab(project, card, tab).catch((error: unknown) => {
@@ -699,13 +731,13 @@ export function createTerminalSurfaces({
       await refreshTerminalTabs(project, card, activeWindowId, orderedTabs, { focus });
     }
 
-    async function createTerminalTab(
+    async function finishTerminalTabCreation(
       project: RendererProject,
       card: TerminalCard,
+      tab: TerminalTab,
       insertAfterWindowId: string | null = null
     ) {
       const projectId = project.id || "";
-      const tab = await boatyard.createTerminalTab(projectId, "shell");
       let tabs = await listTerminalTabs(projectId);
 
       if (insertAfterWindowId) {
@@ -718,6 +750,25 @@ export function createTerminalSurfaces({
       }
 
       await refreshTerminalTabs(project, card, tab.id, tabs, { focus: true });
+    }
+
+    async function createTerminalTab(
+      project: RendererProject,
+      card: TerminalCard,
+      insertAfterWindowId: string | null = null
+    ) {
+      const tab = await boatyard.createTerminalTab(project.id || "", "shell");
+      await finishTerminalTabCreation(project, card, tab, insertAfterWindowId);
+    }
+
+    async function createTerminalWorktreeTab(
+      project: RendererProject,
+      card: TerminalCard,
+      insertAfterWindowId: string | null,
+      worktree: TerminalWorktree
+    ) {
+      const tab = await boatyard.createTerminalWorktreeTab(project.id || "", worktree.path);
+      await finishTerminalTabCreation(project, card, tab, insertAfterWindowId);
     }
 
     async function closeTerminalTab(project: RendererProject, card: TerminalCard, windowId: unknown) {
@@ -928,12 +979,21 @@ export function createTerminalSurfaces({
       const addButton = document.createElement("button");
       addButton.className = "terminal-action";
       addButton.type = "button";
-      addButton.title = "New shell";
+      addButton.title = "New shell (right-click for worktrees)";
       addButton.setAttribute("aria-label", "New shell");
       addButton.textContent = "+";
       addButton.addEventListener("click", async () => {
+        closeTerminalTabMenu();
         const activeWindowId = getTerminalSurfaceSession(card)?.activeWindowId || null;
         await createTerminalTab(project, card, activeWindowId);
+      });
+      addButton.addEventListener("contextmenu", (event) => {
+        const activeWindowId = getTerminalSurfaceSession(card)?.activeWindowId || null;
+        openTerminalWorktreeMenu(event, {
+          project,
+          card,
+          insertAfterWindowId: activeWindowId
+        });
       });
 
       if (tabsContainer || actionsContainer) {

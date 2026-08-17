@@ -1619,6 +1619,18 @@ function registerIpcHandlers() {
     return getConfigurationForEvent(event).terminalService.createTab(projectId, name);
   });
 
+  ipcMain.handle("terminal:worktrees", (event: IpcMainInvokeEvent, projectId: string) => {
+    return getConfigurationForEvent(event).terminalService.listWorktrees(projectId);
+  });
+
+  ipcMain.handle("terminal:create-worktree-tab", (
+    event: IpcMainInvokeEvent,
+    projectId: string,
+    worktreePath: unknown
+  ) => {
+    return getConfigurationForEvent(event).terminalService.createWorktreeTab(projectId, worktreePath);
+  });
+
   ipcMain.handle("terminal:rename-tab", (event: IpcMainInvokeEvent, projectId: string, windowId: string, name: string) => {
     return getConfigurationForEvent(event).terminalService.renameTab(projectId, windowId, name);
   });

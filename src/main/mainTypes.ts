@@ -78,9 +78,11 @@ export type TerminalServiceInstance = {
   attach(projectId: string, windowId: string, size: unknown): unknown;
   closeTab(projectId: string, windowId: string): unknown;
   createTab(projectId: string, name: string): unknown;
+  createWorktreeTab(projectId: string, worktreePath: unknown): unknown;
   detach(terminalId: string): Promise<void>;
   detachAll(): Promise<void>;
   listTabs(projectId: string): unknown;
+  listWorktrees(projectId: string): unknown;
   renameTab(projectId: string, windowId: string, name: string): unknown;
   resize(terminalId: string, size: unknown): unknown;
   write(terminalId: string, data: string): void;

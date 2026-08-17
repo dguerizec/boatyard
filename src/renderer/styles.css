@@ -3780,6 +3780,28 @@ body.sidebar-collapsed .workspace {
   border-color: rgba(var(--accent-rgb), 0.65);
 }
 
+.terminal-worktree-menu-item {
+  justify-content: space-between;
+}
+
+.terminal-worktree-menu-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-worktree-menu-item small {
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  color: var(--text-subtle);
+  font-size: 10px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .webapp-tool-button {
   flex: 0 0 32px;
   width: 32px;

@@ -9,6 +9,12 @@ type TerminalTabDropPosition = {
   insertAfter: boolean;
 };
 
+export const TERMINAL_TAB_RENAME_TOOLTIP = "Double-click to rename shell";
+
+export function getTerminalTabTitle(name: string, scrollWidth: number, clientWidth: number) {
+  return scrollWidth > clientWidth ? name : TERMINAL_TAB_RENAME_TOOLTIP;
+}
+
 export function createTerminalTabDom({ createToolIcon }: TerminalTabDomOptions) {
   function getTerminalTabList(card: TerminalCard | HTMLElement | null | undefined) {
     const terminalCard = card as TerminalCard | null | undefined;
@@ -19,7 +25,21 @@ export function createTerminalTabDom({ createToolIcon }: TerminalTabDomOptions) 
     return [...(getTerminalTabList(card)?.querySelectorAll<HTMLElement>(".terminal-tab") || [])];
   }
 
+  function updateTerminalTabButtonTitles(card: TerminalCard | null | undefined) {
+    if (!card) {
+      return;
+    }
+
+    for (const tabButton of getTerminalTabButtons(card)) {
+      const name = tabButton.dataset.terminalTabName;
+      if (tabButton.tagName === "BUTTON" && name) {
+        tabButton.title = getTerminalTabTitle(name, tabButton.scrollWidth, tabButton.clientWidth);
+      }
+    }
+  }
+
   function updateTerminalTabScrollControls(card: TerminalCard | null | undefined) {
+    updateTerminalTabButtonTitles(card);
     const controls = card?.terminalTabsScrollControls;
     if (!controls) {
       return;
@@ -200,6 +220,7 @@ export function createTerminalTabDom({ createToolIcon }: TerminalTabDomOptions) 
     getTerminalTabButtons,
     getTerminalTabDropPosition,
     getTerminalTabList,
+    updateTerminalTabButtonTitles,
     updateTerminalTabDropMarker,
     updateTerminalTabScrollControls
   });

@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateTopbarWidgets: (topbarWidgets: unknown) => ipcRenderer.invoke("topbar-widgets:update", topbarWidgets),
   listTerminalTabs: (projectId: string) => ipcRenderer.invoke("terminal:tabs", projectId),
   createTerminalTab: (projectId: string, name: string) => ipcRenderer.invoke("terminal:create-tab", projectId, name),
+  listTerminalWorktrees: (projectId: string) => ipcRenderer.invoke("terminal:worktrees", projectId),
+  createTerminalWorktreeTab: (projectId: string, worktreePath: unknown) => (
+    ipcRenderer.invoke("terminal:create-worktree-tab", projectId, worktreePath)
+  ),
   renameTerminalTab: (projectId: string, windowId: string, name: string) => ipcRenderer.invoke("terminal:rename-tab", projectId, windowId, name),
   closeTerminalTab: (projectId: string, windowId: string) => ipcRenderer.invoke("terminal:close-tab", projectId, windowId),
   attachTerminal: (projectId: string, windowId: string, size: unknown) => ipcRenderer.invoke("terminal:attach", projectId, windowId, size),

@@ -1,4 +1,4 @@
-import type { TerminalCard, TerminalTab } from "./terminalTypes.js";
+import type { TerminalCard, TerminalTab, TerminalWorktree } from "./terminalTypes.js";
 import type { BoatyardBridge, RendererProject, RendererState } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 
@@ -9,8 +9,10 @@ export type TerminalSurfacesBridge = BoatyardBridge & {
   }>;
   closeTerminalTab(projectId: string, windowId: string): Promise<TerminalTab[]>;
   createTerminalTab(projectId: string, name: string): Promise<TerminalTab>;
+  createTerminalWorktreeTab(projectId: string, worktreePath: string): Promise<TerminalTab>;
   detachTerminal(terminalId: string): Promise<unknown>;
   listTerminalTabs(projectId: string): Promise<unknown>;
+  listTerminalWorktrees(projectId: string): Promise<unknown>;
   readTerminalSelection: () => Promise<string>;
   renameTerminalTab(projectId: string, windowId: string, name: string): Promise<unknown>;
   resizeTerminal(terminalId: string, size: unknown): Promise<unknown> | unknown;
@@ -23,6 +25,8 @@ export type TerminalSurfacesBridge = BoatyardBridge & {
   writeTerminal(terminalId: string, data: string): Promise<unknown> | unknown;
   writeTerminalSelection: (selection: string) => Promise<unknown>;
 };
+
+export type { TerminalWorktree };
 
 export type TerminalState = RendererState & {
   terminalSelections?: Record<string, Record<string, string>>;

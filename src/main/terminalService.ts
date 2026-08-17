@@ -2,8 +2,10 @@
 
 const { execFile } = require("node:child_process");
 const { randomUUID } = require("node:crypto");
+const path = require("node:path");
 const { promisify } = require("node:util");
 const pty = require("node-pty");
+import { parseGitWorktrees, type GitWorktreeEntry } from "./gitWorktrees.js";
 import {
   getProjectTmuxSessionName,
   getTerminalClientSessionName,
@@ -28,6 +30,12 @@ type TerminalTab = {
   index: number;
   name: string;
   cwd: string;
+};
+type TerminalWorktree = {
+  branch: string;
+  detached: boolean;
+  name: string;
+  path: string;
 };
 type TerminalSize = {
   cols?: number;
@@ -55,6 +63,10 @@ const execFileAsync = promisify(execFile);
 
 function getProjectCwd(project: TerminalProject): string {
   return String(project.sourcePath || process.cwd()).trim() || process.cwd();
+}
+
+function getWorktreeName(worktree: GitWorktreeEntry): string {
+  return path.basename(path.resolve(worktree.path)) || worktree.branch || "worktree";
 }
 
 function parseTerminalEnv(text: unknown, label = "terminal environment"): Record<string, string> {
@@ -270,14 +282,38 @@ class TerminalService {
       });
   }
 
-  async createTab(projectId: string, name: unknown = "shell"): Promise<TerminalTab> {
+  async listWorktrees(projectId: string): Promise<TerminalWorktree[]> {
     const project = this.getProject(projectId);
+
+    try {
+      const { stdout } = await execFileAsync("git", ["worktree", "list", "--porcelain"], {
+        cwd: getProjectCwd(project),
+        timeout: 10000,
+        windowsHide: true
+      });
+      return parseGitWorktrees(stdout)
+        .filter((worktree) => worktree.usable)
+        .map((worktree) => ({
+          branch: worktree.branch,
+          detached: worktree.detached,
+          name: getWorktreeName(worktree),
+          path: worktree.path
+        }));
+    } catch (error) {
+      throw new Error(`Could not inspect Git worktrees: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async createTabInDirectory(
+    project: TerminalProject,
+    name: string,
+    cwd: string
+  ): Promise<TerminalTab> {
     const session = await this.ensureProjectSession(project);
     const tabs = await this.listSessionTabs(session);
     const nextIndex = tabs.reduce((maxIndex, tab) => (
       Number.isFinite(tab.index) ? Math.max(maxIndex, tab.index) : maxIndex
     ), 0) + 1;
-    const tabName = slugifyTmuxName(name, "shell");
     const envArgs = getTmuxEnvironmentArgs(this.getProjectTerminalEnv(project));
     const output = await runTmux([
       "new-window",
@@ -287,18 +323,42 @@ class TerminalService {
       "-t",
       `${session}:${nextIndex}`,
       "-n",
-      tabName,
+      name,
       ...envArgs,
       "-c",
-      getProjectCwd(project)
+      cwd
     ]);
-    const [id, index, windowName, cwd] = output.split("\t");
+    const [id, index, windowName, currentDirectory] = output.split("\t");
     return {
       id,
       index: Number(index),
       name: windowName,
-      cwd
+      cwd: currentDirectory
     };
+  }
+
+  async createTab(projectId: string, name: unknown = "shell"): Promise<TerminalTab> {
+    const project = this.getProject(projectId);
+    const tabName = slugifyTmuxName(name, "shell");
+    return this.createTabInDirectory(project, tabName, getProjectCwd(project));
+  }
+
+  async createWorktreeTab(projectId: string, worktreePath: unknown): Promise<TerminalTab> {
+    const normalizedPath = String(worktreePath || "").trim();
+    if (!normalizedPath) {
+      throw new Error("Worktree path is required.");
+    }
+
+    const project = this.getProject(projectId);
+    const worktrees = await this.listWorktrees(projectId);
+    const selectedWorktree = worktrees.find((worktree) => (
+      path.resolve(worktree.path) === path.resolve(normalizedPath)
+    ));
+    if (!selectedWorktree) {
+      throw new Error("The selected worktree is no longer available for this project.");
+    }
+
+    return this.createTabInDirectory(project, selectedWorktree.name, selectedWorktree.path);
   }
 
   async renameTab(projectId: string, windowId: string, name: unknown): Promise<TerminalTab | null> {
