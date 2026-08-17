@@ -89,6 +89,7 @@ export function registerWidgetRegistry(globalScope: WidgetRegistryWindow): Widge
       status,
       description: normalizeText(definition.description),
       provider: normalizeText(definition.provider || "Boatyard"),
+      defaultVisible: false,
       layout: normalizeLayout(definition.layout),
       requires: Array.isArray(definition.requires) ? definition.requires : [],
     };

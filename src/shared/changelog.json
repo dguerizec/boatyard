@@ -7,6 +7,11 @@
       "features": [
         {
           "category": "Added",
+          "title": "Git worktree widget",
+          "body": "Projects can now list primary, linked, detached, and prunable worktrees directly through Git without requiring Pier."
+        },
+        {
+          "category": "Added",
           "title": "Integrated TwiCC Session Flow",
           "body": "TwiCC conversation panes now include a configurable Session Flow sidebar with a remembered open state and draggable width, plus compact browser controls by default."
         },

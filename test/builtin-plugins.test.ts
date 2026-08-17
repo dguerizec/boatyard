@@ -10,7 +10,7 @@ const { resolveFieldDefault } = require(`${process.cwd()}/build/renderer/pluginS
 const { registerPluginRegistry } = require(`${process.cwd()}/build/renderer/pluginRegistry`);
 const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widgetRegistry`);
 
-const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette", "github", "system-resources"];
+const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette", "github", "git-worktrees", "system-resources"];
 
 type MockFetch = (...args: unknown[]) => Promise<unknown>;
 
@@ -343,7 +343,7 @@ function createTestResourceUi() {
 }
 
 test("Built-in plugins register project integrations and widgets", () => {
-  const registry = loadRendererPluginEnvironment();
+  const { context, registry } = loadRendererPluginContext();
 
   registry.applyEnabledState({});
 
@@ -583,6 +583,28 @@ test("Built-in plugins register project integrations and widgets", () => {
     plain(githubPlugin.contributes.globalSettings),
     ["boatyard.github.global"]
   );
+  const gitWorktreesPlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.gitWorktrees");
+  assert.deepEqual(
+    plain(gitWorktreesPlugin.contributes.widgets),
+    ["boatyard.gitWorktrees.list"]
+  );
+  const gitWorktreesWidget = context.window.BoatyardWidgetRegistry?.get("boatyard.gitWorktrees.list");
+  if (!gitWorktreesWidget) {
+    throw new Error("Git worktrees widget was not registered.");
+  }
+  assert.equal(gitWorktreesWidget.name, "Git worktrees");
+  assert.equal(gitWorktreesWidget.status, "stable");
+  assert.equal(gitWorktreesWidget.defaultVisible, false);
+  assert.equal(
+    context.window.BoatyardWidgetRegistry?.list().every((widget: { defaultVisible?: boolean }) => (
+      widget.defaultVisible === false
+    )),
+    true
+  );
+  assert.deepEqual(plain(gitWorktreesWidget.layout), {
+    default: { columns: 4, rows: 3 },
+    min: { columns: 3, rows: 2 }
+  });
 
   registry.setEnabled("boatyard.pier", false);
   assert.deepEqual(

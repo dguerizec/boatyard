@@ -35,6 +35,7 @@ test("Widget registry normalizes and filters definitions", () => {
     name: "Terminal",
     scopes: ["project", "global"],
     status: "stable",
+    defaultVisible: true,
     category: "Developer tools",
     layout: {
       default: { columns: 2, rows: 3 },
@@ -53,6 +54,7 @@ test("Widget registry normalizes and filters definitions", () => {
     min: { columns: 1, rows: 1 }
   });
   assert.equal(first.status, "stable");
+  assert.equal(first.defaultVisible, false);
   assert.deepEqual(plain(first.scopes), ["project", "global"]);
   assert.equal(registry.get("project-terminal").name, "Terminal");
   assert.deepEqual(

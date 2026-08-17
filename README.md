@@ -15,13 +15,14 @@ Documentation: [boatyard.dev/doc](https://boatyard.dev/doc/)
 - Save project-specific or global proportional pane layouts; matching open panes keep their current content while moving into the selected arrangement.
 - Manage a freeform widget grid with lock/unlock, drag-and-drop placement, resize handles, trash dropzone, and opt-in widget installation per project.
 - Use built-in project widgets for persistent tmux terminal tabs.
-- Extend projects with built-in plugins for GitHub, Pier, Twicc, and Hawser panes, widgets, settings, and services.
+- Extend projects with built-in plugins for Git worktrees, GitHub, Pier, Twicc, and Hawser panes, widgets, settings, and services.
 - Configure global settings for projects base path, webapp overlay blur, password handling, plugins, and installed widgets.
 
 ## Requirements
 
 - Node.js 22 or newer
 - npm
+- Git, for project and worktree inspection
 - tmux, for the terminal widget
 
 Optional plugin dependencies:
