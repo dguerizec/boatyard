@@ -579,8 +579,8 @@
     );
     const readDoneStatus = liveDoneStatus || (!options.isActiveProject ? retainedDoneStatus : null);
     const status = liveInputStatus
-      || (needsAttention ? doneStatus : null)
       || liveWorkingStatus
+      || (needsAttention ? doneStatus : null)
       || readDoneStatus;
     if (!status?.state) {
       return null;

@@ -1336,7 +1336,7 @@ test("Twicc done project nav badge stops requesting attention after the project 
   assert.equal(inactiveAgainElement.textContent, "Done");
 });
 
-test("Twicc project nav badge prioritizes unread completion over working and read completion below it", async () => {
+test("Twicc project nav badge prioritizes input and working before unread completion", async () => {
   const twiccProjectProcessStatuses: Record<string, unknown> = {
     "twicc-project": {
       state: "working",
@@ -1375,7 +1375,7 @@ test("Twicc project nav badge prioritizes unread completion over working and rea
 
   assert.equal(
     badge.render({ ...input, isActiveProject: false }).className,
-    "project-nav-badge project-twicc-status done needs-attention"
+    "project-nav-badge project-twicc-status working"
   );
   assert.equal(
     badge.render({ ...input, isActiveProject: true }).className,
@@ -1443,6 +1443,23 @@ test("Twicc project nav badge prioritizes unread completion over working and rea
         id: "working-session",
         lastStateChangeAt: "2026-07-30T10:01:00Z",
         state: "working"
+      }
+    ]
+  };
+  await refreshIntervals();
+  assert.equal(
+    badge.render({ ...input, isActiveProject: false }).className,
+    "project-nav-badge project-twicc-status working"
+  );
+
+  twiccProjectProcessStatuses["twicc-project"] = {
+    state: "done",
+    count: 1,
+    sessions: [
+      {
+        id: "done-session",
+        lastStateChangeAt: "2026-07-30T10:02:00Z",
+        state: "done"
       }
     ]
   };
