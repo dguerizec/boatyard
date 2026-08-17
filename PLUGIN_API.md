@@ -20,8 +20,8 @@ Boatyard internals directly.
 
 ## Non-Goals
 
-- Boatyard does not define domain-specific APIs for external tools such as Twicc,
-  Hawser, or Pier.
+- Boatyard does not define domain-specific APIs for external tools such as Twicc
+  or Pier.
 - Boatyard does not run plugin-provided install commands without explicit user
   confirmation.
 - Boatyard does not expose its internal store, renderer globals, Electron
@@ -147,8 +147,7 @@ app or corrupt unrelated plugin state.
 ## Plugin Status
 
 Plugins own their domain-specific status. For example, the Twicc plugin knows
-how to detect Twicc, the Hawser plugin knows how to detect Hawser, and the Pier
-plugin knows how to detect Pier.
+how to detect Twicc, and the Pier plugin knows how to detect Pier.
 
 Boatyard only provides generic status publication.
 
@@ -375,8 +374,8 @@ global if the surface supports it.
 
 ```js
 ctx.widgets.register({
-  id: "boatyard.hawser.inbox",
-  title: "Hawser Inbox",
+  id: "example.status",
+  title: "Project Status",
   scope: "project",
   category: "Agents",
   layout: {
@@ -385,7 +384,7 @@ ctx.widgets.register({
     max: { columns: 4, rows: 8 }
   },
   createElement(project, props) {
-    return createHawserWidget(project, props);
+    return createStatusWidget(project, props);
   }
 });
 ```
@@ -601,7 +600,7 @@ plugin's fields.
 `boatyard.projectForm.coreFieldChanged` is emitted when a core project field
 changes in the project form. The payload includes `field`, `value`, `source`,
 and `coreFields` with the current `name`, `slug`, `sourcePath`, `gitUrl`,
-`repoUrl`, `devBranch`, `twiccUrl`, and `hawserMainSession` values.
+`repoUrl`, `devBranch`, and `twiccUrl` values.
 
 Boatyard events SHOULD be typed and versioned. Plugin events SHOULD be
 namespaced by plugin id.
@@ -709,19 +708,6 @@ Contributions:
 The plugin MAY set status to `unavailable` if Twicc is not detected, and MAY
 provide an install action that runs `uvx twicc@latest` through `ctx.system.exec`
 after user confirmation.
-
-## Example: Hawser Plugin
-
-The Hawser plugin owns Hawser detection and configuration.
-
-Contributions:
-
-- global or project settings for Hawser main session,
-- project widget for inbox/task status,
-- optional service consumption of `boatyard.twicc.api`.
-
-The Hawser widget SHOULD continue to work in a reduced mode when the Twicc
-service is unavailable.
 
 ## Example: Pier Plugin
 

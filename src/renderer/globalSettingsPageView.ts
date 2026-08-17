@@ -183,7 +183,7 @@ export function createGlobalSettingsPageView({
           group: "extensions",
           icon: "plug",
           badge: String(pluginCount),
-          keywords: ["extensions", "Pier", "Twicc", "Hawser", "Telegram"],
+          keywords: ["extensions", "Pier", "Twicc", "Telegram"],
           elements: [pluginsSettings]
         },
         {

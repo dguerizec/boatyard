@@ -27,7 +27,7 @@ test("global plugin filtering matches identity, status, and summary", () => {
   assert.equal(matchesGlobalPluginFilter(plugin, "twicc", "all"), true);
   assert.equal(matchesGlobalPluginFilter(plugin, "local", "ready"), true);
   assert.equal(matchesGlobalPluginFilter(plugin, "", "attention"), false);
-  assert.equal(matchesGlobalPluginFilter(plugin, "hawser", "all"), false);
+  assert.equal(matchesGlobalPluginFilter(plugin, "telegram", "all"), false);
 });
 
 export {};

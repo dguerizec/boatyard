@@ -15,7 +15,7 @@ Documentation: [boatyard.dev/doc](https://boatyard.dev/doc/)
 - Save project-specific or global proportional pane layouts; matching open panes keep their current content while moving into the selected arrangement.
 - Manage a freeform widget grid with lock/unlock, drag-and-drop placement, resize handles, trash dropzone, and opt-in widget installation per project.
 - Use built-in project widgets for persistent tmux terminal tabs.
-- Extend projects with built-in plugins for Git worktrees, GitHub, Pier, Twicc, and Hawser panes, widgets, settings, and services.
+- Extend projects with built-in plugins for Git worktrees, GitHub, Pier, Twicc, and Telegram panes, widgets, settings, and services.
 - Configure global settings for projects base path, webapp overlay blur, password handling, plugins, and installed widgets.
 
 ## Requirements
@@ -29,7 +29,6 @@ Optional plugin dependencies:
 
 - [Twicc](https://github.com/twidi/twicc), for Twicc project/session panes, widgets, and project creation helpers.
 - [Pier](https://github.com/LeoPartt/pier), for Pier preview panes and URL widgets.
-- [Hawser](https://github.com/dguerizec/hawser), for Hawser inbox panes, widgets, and task/session links.
 - [GitHub CLI](https://cli.github.com/), authenticated with `gh auth login`, for read-only GitHub Actions, pull request widgets, and project status icons.
 - Telegram API credentials, for Telegram project topic panes and widgets.
 
@@ -162,7 +161,6 @@ Implemented built-in plugins:
 - `boatyard.github`: a repository pane with sticky Overview, Code, Issues, Pull requests, Actions, and Settings navigation; an Overview pane that reuses the Actions and Pull Requests widget views; the standalone project widgets; and a priority-driven project status icon. GitHub projects migrate legacy Repo pane selections to the GitHub Code surface, while the generic Repo pane remains available with a Git icon for other Git hosts. The section positions stay fixed while repository views expose browser controls through a dismissible overlay, including the existing right-click history and hard-reload actions. These surfaces use the project's repository URL, share cached refreshes, hidden workflow state, and filter behavior, and route API work through a plugin-local priority queue with a shared rate-limit cooldown. Review and CI states remain independent. Completed workflow results appear only after Boatyard has observed the workflow running, then remain until the project is selected again.
 - `boatyard.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
 - `boatyard.twicc`: Twicc conversation pane with a configurable, resizable Session Flow sidebar and compact browser controls; standalone Session Flow pane and widget; global/project settings; project creation action; and service.
-- `boatyard.hawser`: Hawser pane, inbox widget, global/project settings, and service.
 - `boatyard.telegram`: Telegram project topic pane, widget, global/project settings, and service.
 
 ## Development
@@ -172,7 +170,7 @@ npm run lint
 npm test
 ```
 
-`npm run lint` performs JavaScript syntax checks with Node. `npm test` runs the store, plugin registry, widget registry, terminal service, GitHub service and widget renderer, Twicc service, Hawser service, and plugin field tests.
+`npm run lint` performs JavaScript syntax checks with Node. `npm test` runs the store, plugin registry, widget registry, terminal service, GitHub service and widget renderer, Twicc service, and plugin field tests.
 
 The smoke entrypoint is also available:
 

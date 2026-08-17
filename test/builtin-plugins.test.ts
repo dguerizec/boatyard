@@ -10,7 +10,7 @@ const { resolveFieldDefault } = require(`${process.cwd()}/build/renderer/pluginS
 const { registerPluginRegistry } = require(`${process.cwd()}/build/renderer/pluginRegistry`);
 const { registerWidgetRegistry } = require(`${process.cwd()}/build/renderer/widgetRegistry`);
 
-const builtinPluginDirs = ["twicc", "pier", "hawser", "telegram", "color-palette", "github", "git-worktrees", "system-resources"];
+const builtinPluginDirs = ["twicc", "pier", "telegram", "color-palette", "github", "git-worktrees", "system-resources"];
 
 type MockFetch = (...args: unknown[]) => Promise<unknown>;
 
@@ -181,15 +181,6 @@ function loadRendererPluginContext(
           if (pluginId === "boatyard.twicc" && actionName === "projectProcessStatuses") {
             return twiccProjectProcessStatuses;
           }
-          if (pluginId === "boatyard.hawser" && actionName === "statusForConfig") {
-            return {
-              state: "ready",
-              summary: "Hawser service is available."
-            };
-          }
-          if (pluginId === "boatyard.hawser" && actionName === "widgetDataForConfig") {
-            return {};
-          }
           if (pluginId === "boatyard.telegram" && actionName === "status") {
             return {
               state: "notConfigured",
@@ -351,11 +342,10 @@ test("Built-in plugins register project integrations and widgets", () => {
   assert.equal(registry.getService("boatyard.twicc.systemResources").kind, "boatyard.resourceProvider");
   assert.equal(typeof registry.getService("boatyard.pier").listProjectWorkloads, "function");
   assert.equal(typeof registry.getService("boatyard.pier").getProjectAvailability, "function");
-  assert.equal(registry.getService("boatyard.hawser.api").version, "0.1.0");
   assert.equal(registry.getService("boatyard.telegram").version, "0.1.0");
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane: PluginPane) => pane.id).sort()),
-    ["boatyard.github.repository", "boatyard.hawser.pane", "boatyard.pier.preview", "boatyard.twicc.pane"]
+    ["boatyard.github.repository", "boatyard.pier.preview", "boatyard.twicc.pane"]
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "dom" }).map((pane: PluginPane) => pane.id).sort()),
@@ -410,7 +400,7 @@ test("Built-in plugins register project integrations and widgets", () => {
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "wcv" }).map((pane: PluginPane) => pane.key).sort()),
-    ["github", "hawser", "pier", "twicc-plugin"]
+    ["github", "pier", "twicc-plugin"]
   );
   const githubPane = registry
     .listPanes({ scope: "project", kind: "wcv" })
@@ -553,7 +543,6 @@ test("Built-in plugins register project integrations and widgets", () => {
     plain(registry.listGlobalSettingsSections().map((section: PluginSection) => section.id).sort()),
     [
       "boatyard.github.global",
-      "boatyard.hawser.global",
       "boatyard.pier.global",
       "boatyard.telegram.global",
       "boatyard.twicc.global"
@@ -1582,22 +1571,6 @@ test("Twicc done project nav badge is retained until the project is opened", asy
   );
 
   assert.equal(badge.render({ ...input, isActiveProject: true }), null);
-});
-
-test("Hawser global settings expose a copyable install command", () => {
-  const registry = loadRendererPluginEnvironment();
-
-  registry.applyEnabledState({});
-  const hawserSection = registry
-    .listGlobalSettingsSections()
-    .find((section: PluginSection) => section.id === "boatyard.hawser.global");
-  const fields = fieldMap(hawserSection.fields.map((field: PluginField) => [field.key, field]));
-
-  assert.equal(fields.hawserDefaultRuntime.defaultValue, "codex");
-  assert.equal(fields.hawserInstallCommand.persist, false);
-  assert.equal(fields.hawserInstallCommand.readOnly, true);
-  assert.match(fields.hawserInstallCommand.defaultValue, /^bash <\(curl -fsSL https:\/\/raw\.githubusercontent\.com\/dguerizec\/hawser\/main\/install\.sh\)/);
-  assert.equal(fields.hawserInstallCommand.action.label, "Copy");
 });
 
 test("Pier project settings only default the Pier project name", () => {

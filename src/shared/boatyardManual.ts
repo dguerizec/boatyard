@@ -185,7 +185,7 @@ type BoatyardManualGlobal = typeof globalThis & {
         entries: [
           {
             title: "Built-in integrations",
-            body: "Boatyard includes GitHub, Pier, TwiCC, Hawser, Telegram, and Color Palette integrations when their plugin files are present. GitHub adds a repository pane with sticky section navigation and an Overview that reuses the Actions and Pull Requests widget views. The TwiCC conversation pane includes a configurable, resizable Session Flow sidebar while preserving the standalone pane and widget."
+            body: "Boatyard includes GitHub, Pier, TwiCC, Telegram, and Color Palette integrations when their plugin files are present. GitHub adds a repository pane with sticky section navigation and an Overview that reuses the Actions and Pull Requests widget views. The TwiCC conversation pane includes a configurable, resizable Session Flow sidebar while preserving the standalone pane and widget."
           },
           {
             title: "Integration settings",

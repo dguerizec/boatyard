@@ -579,33 +579,33 @@ test("ProjectStore persists project webapp home tabs", () => {
   }).projects[0].id;
   const state = store.updateWebAppHomeTab(projectId, {
     id: "home:health",
-    parentWebAppId: "hawser",
-    parentLabel: "Hawser",
+    parentWebAppId: "monitoring",
+    parentLabel: "Monitoring",
     label: "Health",
-    url: "localhost:60082/api/health"
+    url: "localhost:8080/api/health"
   });
 
   assert.deepEqual(state.projects[0].webAppHomeTabs, [{
     id: "home:health",
-    parentWebAppId: "hawser",
-    parentLabel: "Hawser",
+    parentWebAppId: "monitoring",
+    parentLabel: "Monitoring",
     label: "Health",
-    url: "http://localhost:60082/api/health"
+    url: "http://localhost:8080/api/health"
   }]);
 
   const updated = store.updateWebAppHomeTabs(projectId, [{
     id: "home:health",
-    parentWebAppId: "hawser",
-    parentLabel: "Hawser",
+    parentWebAppId: "monitoring",
+    parentLabel: "Monitoring",
     label: "Status",
-    url: "localhost:60082/status"
+    url: "localhost:8080/status"
   }]);
   assert.deepEqual(updated.projects[0].webAppHomeTabs, [{
     id: "home:health",
-    parentWebAppId: "hawser",
-    parentLabel: "Hawser",
+    parentWebAppId: "monitoring",
+    parentLabel: "Monitoring",
     label: "Status",
-    url: "http://localhost:60082/status"
+    url: "http://localhost:8080/status"
   }]);
 
   const reloaded = new ProjectStore(filePath);
@@ -613,10 +613,10 @@ test("ProjectStore persists project webapp home tabs", () => {
   assert.deepEqual(reloaded.updateWebAppHomeTabs(projectId, []).projects[0].webAppHomeTabs, []);
   reloaded.updateWebAppHomeTab(projectId, {
     id: "home:health",
-    parentWebAppId: "hawser",
-    parentLabel: "Hawser",
+    parentWebAppId: "monitoring",
+    parentLabel: "Monitoring",
     label: "Health",
-    url: "localhost:60082/api/health"
+    url: "localhost:8080/api/health"
   });
   assert.equal(reloaded.removeProject(projectId).projects.some((project: StoreProject) => project.id === projectId), false);
 });
@@ -632,10 +632,10 @@ test("ProjectStore migrates top-level webapp home tabs into projects", () => {
     webAppHomeTabs: {
       "project-id": [{
         id: "home:health",
-        parentWebAppId: "hawser",
-        parentLabel: "Hawser",
+        parentWebAppId: "monitoring",
+        parentLabel: "Monitoring",
         label: "Health",
-        url: "localhost:60082/api/health"
+        url: "localhost:8080/api/health"
       }]
     }
   })}\n`);
@@ -643,10 +643,10 @@ test("ProjectStore migrates top-level webapp home tabs into projects", () => {
   const state = new ProjectStore(filePath).load();
   assert.deepEqual(state.projects[0].webAppHomeTabs, [{
     id: "home:health",
-    parentWebAppId: "hawser",
-    parentLabel: "Hawser",
+    parentWebAppId: "monitoring",
+    parentLabel: "Monitoring",
     label: "Health",
-    url: "http://localhost:60082/api/health"
+    url: "http://localhost:8080/api/health"
   }]);
   assert.equal(state.webAppHomeTabs, undefined);
 });

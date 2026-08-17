@@ -395,29 +395,29 @@ test("normalizeWebAppHomeTabs keeps project scoped home tabs", () => {
   assert.deepEqual(normalizeWebAppHomeTabs({
     "project-id": [{
       id: " home:demo ",
-      parentWebAppId: " hawser ",
-      parentLabel: " Hawser ",
+      parentWebAppId: " monitoring ",
+      parentLabel: " Monitoring ",
       label: " Localhost ",
-      url: "localhost:60082/api/health"
+      url: "localhost:8080/api/health"
     }, {
       id: "home:invalid",
-      parentWebAppId: "hawser",
+      parentWebAppId: "monitoring",
       label: "Invalid",
       url: "file:///workspace/example"
     }],
     "unknown-project": [{
       id: "home:ignored",
-      parentWebAppId: "hawser",
+      parentWebAppId: "monitoring",
       label: "Ignored",
       url: "example.com"
     }]
   }, [{ id: "project-id" }]), {
     "project-id": [{
       id: "home:demo",
-      parentWebAppId: "hawser",
-      parentLabel: "Hawser",
+      parentWebAppId: "monitoring",
+      parentLabel: "Monitoring",
       label: "Localhost",
-      url: "http://localhost:60082/api/health"
+      url: "http://localhost:8080/api/health"
     }]
   });
 });
@@ -445,9 +445,9 @@ test("normalizePaneLayoutNode preserves physically constrained split ratios and 
       transientWebApp: {
         id: " transient:health ",
         label: " Health ",
-        parentLabel: " Hawser ",
-        parentWebAppId: "boatyard.hawser",
-        url: "http://localhost:60082/api/health"
+        parentLabel: " Monitoring ",
+        parentWebAppId: "boatyard.monitoring",
+        url: "http://localhost:8080/api/health"
       }
     }
   }), {
@@ -472,9 +472,9 @@ test("normalizePaneLayoutNode preserves physically constrained split ratios and 
       transientWebApp: {
         id: "transient:health",
         label: "Health",
-        parentLabel: "Hawser",
-        parentWebAppId: "boatyard.hawser",
-        url: "http://localhost:60082/api/health"
+        parentLabel: "Monitoring",
+        parentWebAppId: "boatyard.monitoring",
+        url: "http://localhost:8080/api/health"
       }
     }
   });

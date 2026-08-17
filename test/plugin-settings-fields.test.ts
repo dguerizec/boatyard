@@ -23,7 +23,7 @@ test("plugin settings fields persist dynamic defaults when user value is empty",
   };
 
   assert.equal(
-    readFieldValue({ key: "hawserMainSession", label: "Hawser main session" }, input),
+    readFieldValue({ key: "defaultBranch", label: "Default branch" }, input),
     "boatyard:main"
   );
 });
@@ -37,7 +37,7 @@ test("plugin settings fields keep explicit user values over dynamic defaults", (
   };
 
   assert.equal(
-    readFieldValue({ key: "hawserMainSession", label: "Hawser main session" }, input),
+    readFieldValue({ key: "defaultBranch", label: "Default branch" }, input),
     "custom:session"
   );
 });
