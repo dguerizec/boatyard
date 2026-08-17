@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.12.0] - 2026-08-17
+
+### Summary
+
+- **v0.12.0: Agent Workspace Controls** — Adds MCP-powered pane automation, Git worktree tools, and a TwiCC sidebar while tightening embedded app reliability.
+
+### Added
+
+- **MCP pane controls** — Agents can inspect panes, switch pane types, adjust mobile viewport settings, and navigate web panes through authenticated local MCP controls.
+- **Managed MCP connections** — Boatyard can install MCP agent connections and the matching Boatyard MCP skill from Global Settings.
+- **Session Flow sidebar** — TwiCC panes now include a resizable Session Flow side panel for keeping conversation context visible beside the active pane.
+- **Git worktrees widget** — A new widget shows repository worktrees inside Boatyard.
+- **Worktree terminal launcher** — Terminal tabs can now be launched directly for Git worktrees.
+
+### Fixed
+
+- **Window shutdown stability** — Renderer messages are now guarded during window shutdown to avoid sends into closed windows.
+- **Pier pane navigation** — Manually navigated Pier web panes now keep their live URL instead of being forced back during refresh.
+- **TwiCC project status** — TwiCC panes now prioritize active working status instead of showing a project as idle too early.
+
+### Removed
+
+- **Hawser integration** — The built-in Hawser plugin and its settings have been removed.
+
+### Documentation
+
+- **Plugin and MCP docs** — Updated the plugin API, README, manual, and bundled Boatyard MCP skill documentation.
+
 ## [0.11.0] - 2026-08-16
 
 ### Summary
