@@ -8,6 +8,7 @@ const {
   archiveTwiccSession,
   archiveTwiccSessionFromRpc,
   buildTwiccProjectUrl,
+  buildTwiccSessionUrl,
   createTwiccSession,
   createTwiccSessionFromRpc,
   createTwiccProject,
@@ -22,9 +23,12 @@ const {
   loadTwiccProjectProcessStatuses,
   loadTwiccProjectsFromRpc,
   loadTwiccProjects,
+  loadTwiccSessionFromRpc,
+  loadTwiccSession,
   loadTwiccSessionsFromRpc,
   loadTwiccSessions,
   reorderTwiccSessionFlow,
+  resolveTwiccSessionNavigationTarget,
   updateTwiccSessionFlowLaneFromRpc,
   updateTwiccSessionFlowLane,
   updateTwiccSessionFlowPositionFromRpc,
@@ -292,6 +296,56 @@ test("loadTwiccSessionsFromRpc returns project sessions from configured Twicc UR
   });
 
   assert.deepEqual(sessions, [{ id: "session-1", title: "Implement feature" }]);
+});
+
+test("loadTwiccSession returns one session from the CLI", async () => {
+  const session = await loadTwiccSession("session-1", {
+    execFileAsync: async (command: string, args: string[]) => {
+      assert.equal(command, "twicc");
+      assert.deepEqual(args, ["session", "session-1"]);
+      return {
+        stdout: JSON.stringify({
+          id: "session-1",
+          project_id: "twicc-project",
+          title: "Implement feature"
+        })
+      };
+    }
+  });
+
+  assert.deepEqual(session, {
+    id: "session-1",
+    project_id: "twicc-project",
+    title: "Implement feature"
+  });
+});
+
+test("loadTwiccSessionFromRpc resolves a session through configured Twicc", async () => {
+  const session = await loadTwiccSessionFromRpc("session-1", {
+    globalConfig: {
+      twiccBaseUrl: "https://twicc.example",
+      twiccApiToken: "secret-token"
+    },
+    fetch: createRpcFetch((url, init) => {
+      assert.equal(url, "https://twicc.example/rpc/session");
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        session_id: "session-1"
+      });
+      return {
+        exit_code: 0,
+        result: {
+          id: "session-1",
+          project_id: "twicc-project"
+        },
+        error: null
+      };
+    })
+  });
+
+  assert.deepEqual(session, {
+    id: "session-1",
+    project_id: "twicc-project"
+  });
 });
 
 test("createTwiccSession creates a session in a new worktree through the CLI", async () => {
@@ -956,6 +1010,101 @@ test("getTwiccProjectProcessStatuses groups processes by project with state prio
   assert.equal(statuses["project-a"].sessions[0].state, "done");
   assert.equal(statuses["project-a"].sessions[1].state, "input");
   assert.equal(statuses["project-b"].state, "working");
+  assert.equal(statuses["project-b"].sessions[0].projectId, "project-b");
+});
+
+test("resolveTwiccSessionNavigationTarget prefers the exact Boatyard worktree project", () => {
+  const twiccProjects = [
+    {
+      id: "twicc-parent",
+      directory: "/workspace/project",
+      git_root: "/workspace/project"
+    },
+    {
+      id: "twicc-worktree",
+      directory: "/workspace/project/worktrees/feature",
+      git_root: "/workspace/project/worktrees/feature",
+      worktree_of: "twicc-parent"
+    }
+  ];
+  const boatyardProjects = [
+    { id: "boatyard-parent", sourcePath: "/workspace/project" },
+    { id: "boatyard-worktree", sourcePath: "/workspace/project/worktrees/feature" }
+  ];
+
+  assert.deepEqual(resolveTwiccSessionNavigationTarget(
+    {
+      project_id: "twicc-worktree",
+      session_id: "session-1"
+    },
+    twiccProjects,
+    boatyardProjects,
+    {
+      "boatyard-parent": {
+        "boatyard.twicc": {
+          twiccProjectUrl: "https://twicc.example/project/twicc-parent"
+        }
+      },
+      "boatyard-worktree": {
+        "boatyard.twicc": {
+          twiccProjectUrl: "https://twicc.example/project/twicc-worktree"
+        }
+      }
+    },
+    "https://twicc.example"
+  ), {
+    boatyardProjectId: "boatyard-worktree",
+    sessionId: "session-1",
+    twiccProjectId: "twicc-worktree",
+    url: "https://twicc.example/project/twicc-worktree/session/session-1"
+  });
+});
+
+test("resolveTwiccSessionNavigationTarget falls back from an unregistered worktree to its parent project", () => {
+  const target = resolveTwiccSessionNavigationTarget(
+    {
+      id: "session-1",
+      project_id: "twicc-worktree"
+    },
+    [
+      {
+        id: "twicc-parent",
+        directory: "/workspace/project",
+        git_root: "/workspace/project"
+      },
+      {
+        id: "twicc-worktree",
+        directory: "/workspace/project/worktrees/feature",
+        git_root: "/workspace/project/worktrees/feature",
+        worktree_of: "twicc-parent"
+      }
+    ],
+    [{ id: "boatyard-parent", sourcePath: "/workspace/project" }],
+    {
+      "boatyard-parent": {
+        "boatyard.twicc": {
+          twiccProjectUrl: "https://twicc.example/project/twicc-parent"
+        }
+      }
+    },
+    "https://twicc.example",
+    "twicc-parent"
+  );
+
+  assert.deepEqual(target, {
+    boatyardProjectId: "boatyard-parent",
+    sessionId: "session-1",
+    sourceBoatyardProjectId: "boatyard-parent",
+    twiccProjectId: "twicc-worktree",
+    url: "https://twicc.example/project/twicc-worktree/session/session-1"
+  });
+});
+
+test("buildTwiccSessionUrl encodes project and session identifiers", () => {
+  assert.equal(
+    buildTwiccSessionUrl("project/name", "session id", "https://twicc.example/base"),
+    "https://twicc.example/project/project%2Fname/session/session%20id"
+  );
 });
 
 test("aliasTwiccProjectProcessStatuses exposes statuses by Boatyard project id", () => {

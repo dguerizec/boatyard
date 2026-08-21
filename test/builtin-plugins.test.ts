@@ -101,6 +101,7 @@ type BuiltinRendererContext = {
   queueMicrotask(callback: () => void): void;
   setInterval(callback: () => void): number;
   window: Record<string, unknown> & {
+    addEventListener(type: string, listener: (event: unknown) => void): void;
     BoatyardPluginRegistry?: LooseVmValue;
     BoatyardWidgetRegistry?: LooseVmValue;
     boatyard: {
@@ -110,6 +111,8 @@ type BuiltinRendererContext = {
       writeClipboardText(): void;
     };
     clearInterval(): void;
+    dispatchEvent(event: { type: string }): void;
+    removeEventListener(type: string, listener: (event: unknown) => void): void;
     setInterval(callback: () => void): number;
     window?: BuiltinRendererContext["window"];
   };
@@ -155,6 +158,7 @@ function loadRendererPluginContext(
   exposeTwiccSessionFlowStatus = false
 ) {
   const intervalCallbacks: Array<() => void | Promise<void>> = [];
+  const windowEventListeners = new Map<string, Set<(event: unknown) => void>>();
   const context: BuiltinRendererContext = {
     CustomEvent: class MockCustomEvent {
       detail: unknown;
@@ -174,6 +178,11 @@ function loadRendererPluginContext(
     },
     URL,
     window: {
+      addEventListener(type, listener) {
+        const listeners = windowEventListeners.get(type) || new Set();
+        listeners.add(listener);
+        windowEventListeners.set(type, listeners);
+      },
       boatyard: {
         openExternal: () => {},
         writeClipboardText: () => {},
@@ -211,6 +220,14 @@ function loadRendererPluginContext(
           return null;
         },
         onPluginEvent: () => (() => {})
+      },
+      dispatchEvent(event) {
+        for (const listener of windowEventListeners.get(event.type) || []) {
+          listener(event);
+        }
+      },
+      removeEventListener(type, listener) {
+        windowEventListeners.get(type)?.delete(listener);
       },
       setInterval: (callback) => {
         intervalCallbacks.push(callback);
@@ -668,6 +685,265 @@ test("Twicc service extracts the current session id from a pane URL", () => {
     "session-123"
   );
   assert.equal(service.getSessionIdFromUrl("http://localhost:3500/project/project-1"), "");
+});
+
+test("Twicc plugin routes session URL changes through the generic project webapp activator", async () => {
+  const { context, registry } = loadRendererPluginContext();
+  const resolvedPayloads: unknown[] = [];
+  const activations: unknown[][] = [];
+  context.window.boatyard.invokePlugin = async (pluginId: string, actionName: string, payload: unknown) => {
+    if (pluginId === "boatyard.twicc" && actionName === "projectProcessStatuses") {
+      return {};
+    }
+    if (pluginId === "boatyard.twicc" && actionName === "resolveSessionNavigationTarget") {
+      resolvedPayloads.push(payload);
+      return {
+        boatyardProjectId: "boatyard-target",
+        sessionId: "session-1",
+        sourceBoatyardProjectId: "boatyard-source",
+        twiccProjectId: "twicc-target",
+        url: "http://localhost:3500/project/twicc-target/session/session-1"
+      };
+    }
+    return null;
+  };
+  context.window.BoatyardPaneNavigation = {
+    activateProjectWebApp(...args: unknown[]) {
+      activations.push(args);
+      return true;
+    }
+  };
+  registry.applyEnabledState({});
+
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:github",
+      url: "http://localhost:3500/project/current/session/session-1"
+    }
+  }));
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      url: "http://localhost:3500/project/current"
+    }
+  }));
+  assert.deepEqual(resolvedPayloads, []);
+
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      previousUrl: "http://localhost:3500/project/current/session/source-session",
+      sourceProjectId: "boatyard-source",
+      url: "http://localhost:3500/project/current/session/session-1"
+    }
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(plain(resolvedPayloads), [{
+    globalConfig: {},
+    sessionId: "session-1",
+    sourceTwiccProjectId: "current"
+  }]);
+  assert.deepEqual(plain(activations), [[
+    "boatyard-target",
+    "twicc-plugin",
+    "http://localhost:3500/project/twicc-target/session/session-1",
+    {
+      restoreSourceWebAppUrl: "http://localhost:3500/project/current/session/source-session",
+      sourceWebAppKey: "pane-1:twicc-plugin"
+    }
+  ]]);
+
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      url: "http://localhost:3500/project/current/session/session-1"
+    }
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolvedPayloads.length, 1);
+  assert.equal(activations.length, 1);
+
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      previousUrl: "http://localhost:3500/project/current/session/session-1",
+      url: "http://localhost:3500/project/current/session/source-session"
+    }
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolvedPayloads.length, 1);
+  assert.equal(activations.length, 1);
+
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      previousUrl: "http://localhost:3500/project/current/session/source-session",
+      url: "http://localhost:3500/project/canonical/session/source-session"
+    }
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolvedPayloads.length, 1);
+  assert.equal(activations.length, 1);
+
+  registry.setEnabled("boatyard.twicc", false);
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      url: "http://localhost:3500/project/current/session/session-2"
+    }
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resolvedPayloads.length, 1);
+});
+
+test("Twicc plugin uses resolved source ownership for same-project navigation", async () => {
+  const { context, registry } = loadRendererPluginContext();
+  const resolvedPayloads: unknown[] = [];
+  const activations: unknown[][] = [];
+  context.window.boatyard.invokePlugin = async (pluginId: string, actionName: string, payload: unknown) => {
+    if (pluginId === "boatyard.twicc" && actionName === "projectProcessStatuses") {
+      return {};
+    }
+    if (pluginId === "boatyard.twicc" && actionName === "resolveSessionNavigationTarget") {
+      resolvedPayloads.push(payload);
+      return {
+        boatyardProjectId: "boatyard-project",
+        sessionId: "target-session",
+        sourceBoatyardProjectId: "boatyard-project",
+        twiccProjectId: "twicc-project",
+        url: "http://localhost:3500/project/twicc-project/session/target-session"
+      };
+    }
+    return null;
+  };
+  context.window.BoatyardPaneNavigation = {
+    activateProjectWebApp(...args: unknown[]) {
+      activations.push(args);
+      return true;
+    }
+  };
+  registry.applyEnabledState({});
+
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      previousUrl: "http://localhost:3500/project/twicc-project/session/source-session",
+      url: "http://localhost:3500/project/twicc-project/session/target-session"
+    }
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(plain(resolvedPayloads), [{
+    globalConfig: {},
+    sessionId: "target-session",
+    sourceTwiccProjectId: "twicc-project"
+  }]);
+  assert.deepEqual(activations, []);
+});
+
+test("Twicc plugin ignores a stale navigation resolution after a newer URL change", async () => {
+  const { context, registry } = loadRendererPluginContext();
+  const activations: unknown[][] = [];
+  let resolveInitialNavigation!: (value: unknown) => void;
+  const initialNavigation = new Promise((resolve) => {
+    resolveInitialNavigation = resolve;
+  });
+  context.window.boatyard.invokePlugin = async (pluginId: string, actionName: string, payload: unknown) => {
+    if (pluginId === "boatyard.twicc" && actionName === "projectProcessStatuses") {
+      return {};
+    }
+    if (pluginId !== "boatyard.twicc" || actionName !== "resolveSessionNavigationTarget") {
+      return null;
+    }
+    const sessionId = String((payload as { sessionId?: unknown })?.sessionId || "");
+    if (sessionId === "source-session") {
+      return initialNavigation;
+    }
+    return {
+      boatyardProjectId: "boatyard-project",
+      sessionId: "target-session",
+      sourceBoatyardProjectId: "boatyard-project",
+      twiccProjectId: "twicc-project",
+      url: "http://localhost:3500/project/twicc-project/session/target-session"
+    };
+  };
+  context.window.BoatyardPaneNavigation = {
+    activateProjectWebApp(...args: unknown[]) {
+      activations.push(args);
+      return true;
+    }
+  };
+  registry.applyEnabledState({});
+
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      url: "http://localhost:3500/project/twicc-project/session/source-session"
+    }
+  }));
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      previousUrl: "http://localhost:3500/project/twicc-project/session/source-session",
+      url: "http://localhost:3500/project/twicc-project/session/target-session"
+    }
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+  resolveInitialNavigation({
+    boatyardProjectId: "boatyard-project",
+    sessionId: "source-session",
+    twiccProjectId: "twicc-project",
+    url: "http://localhost:3500/project/twicc-project/session/source-session"
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(activations, []);
+});
+
+test("Twicc plugin leaves same-project session navigation to the existing pane", async () => {
+  const { context, registry } = loadRendererPluginContext();
+  const resolvedPayloads: unknown[] = [];
+  const activations: unknown[][] = [];
+  context.window.boatyard.invokePlugin = async (pluginId: string, actionName: string, payload: unknown) => {
+    if (pluginId === "boatyard.twicc" && actionName === "projectProcessStatuses") {
+      return {};
+    }
+    if (pluginId === "boatyard.twicc" && actionName === "resolveSessionNavigationTarget") {
+      resolvedPayloads.push(payload);
+      return {
+        boatyardProjectId: "boatyard-parent",
+        sessionId: "worktree-session",
+        sourceBoatyardProjectId: "boatyard-parent",
+        twiccProjectId: "twicc-worktree",
+        url: "http://localhost:3500/project/twicc-worktree/session/worktree-session"
+      };
+    }
+    return null;
+  };
+  context.window.BoatyardPaneNavigation = {
+    activateProjectWebApp(...args: unknown[]) {
+      activations.push(args);
+      return true;
+    }
+  };
+  registry.applyEnabledState({});
+
+  context.window.dispatchEvent(new context.CustomEvent("boatyard:webapp-url-changed", {
+    detail: {
+      key: "pane-1:twicc-plugin",
+      previousUrl: "http://localhost:3500/project/twicc-parent/session/source-session",
+      url: "http://localhost:3500/project/twicc-parent/session/worktree-session"
+    }
+  }));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(plain(resolvedPayloads), [{
+    globalConfig: {},
+    sessionId: "worktree-session",
+    sourceTwiccProjectId: "twicc-parent"
+  }]);
+  assert.deepEqual(activations, []);
 });
 
 test("TwiCC resources render overview and project session details", () => {
@@ -1201,6 +1477,7 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /invokePlugin\("renameSession"/);
   assert.match(renderer, /card\.draggable = !isEditingTitle/);
   assert.match(renderer, /card\.addEventListener\("click"/);
+  assert.match(renderer, /BoatyardPaneNavigation\?\.openProjectWebAppInPage/);
   assert.match(renderer, /card\.addEventListener\("dblclick"/);
   assert.match(renderer, /event\.key === "F2"/);
   assert.match(renderer, /card\.setAttribute\("aria-keyshortcuts", "F2"\)/);
@@ -1225,6 +1502,7 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(renderer, /const indicatorState = isCurrentSession \? "" : getSessionFlowIndicatorState\(session\)/);
   assert.match(renderer, /main\.append\(provider, title, statusIndicator, currentBadge, move\)/);
   assert.match(rendererEventBindings, /boatyard:webapp-url-changed/);
+  assert.match(rendererEventBindings, /detail: \{ key, previousUrl, sourceProjectId, url \}/);
   assert.match(renderer, /badge\.textContent = "Pier lifecycle"/);
 });
 

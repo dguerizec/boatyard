@@ -71,6 +71,7 @@ type TwiccNormalizedProcessState = "input" | "working" | "done";
 type TwiccSessionStatus = {
   id: string;
   lastStateChangeAt: string;
+  projectId?: string;
   rawState: string;
   state: TwiccNormalizedProcessState;
   title: string;
@@ -106,6 +107,14 @@ type TwiccProjectCacheGetOptions = { force?: boolean; projectIds?: string[] };
 type TwiccProjectInspection = { id: string; matchType: "exact" | "parent"; url: string };
 type TwiccProjectCreationInput = { name?: unknown; sourcePath?: unknown };
 type BoatyardProject = { id?: string; sourcePath?: string };
+type BoatyardProjectPluginConfig = Record<string, Record<string, Record<string, unknown> | undefined> | undefined>;
+type TwiccSessionNavigationTarget = {
+  boatyardProjectId: string;
+  sessionId: string;
+  sourceBoatyardProjectId?: string;
+  twiccProjectId: string;
+  url: string;
+};
 type TwiccSessionCreationInput = {
   attachments?: unknown;
   project?: unknown;
@@ -211,6 +220,37 @@ function buildTwiccProjectUrl(projectId: unknown, baseUrl = DEFAULT_TWICC_BASE_U
     parsed.search = "";
     parsed.hash = "";
     return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function buildTwiccSessionUrl(
+  projectId: unknown,
+  sessionId: unknown,
+  baseUrl = DEFAULT_TWICC_BASE_URL
+): string {
+  const projectUrl = buildTwiccProjectUrl(projectId, baseUrl);
+  const normalizedSessionId = normalizeText(sessionId);
+  if (!projectUrl || !normalizedSessionId) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(projectUrl);
+    parsed.pathname = `${parsed.pathname.replace(/\/+$/g, "")}/session/${encodeURIComponent(normalizedSessionId)}`;
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function getTwiccProjectIdFromUrl(value: unknown): string {
+  try {
+    const segments = new URL(String(value || ""), DEFAULT_TWICC_BASE_URL).pathname.split("/").filter(Boolean);
+    const projectSegmentIndex = segments.indexOf("project");
+    const projectId = projectSegmentIndex === -1 ? "" : segments[projectSegmentIndex + 1] || "";
+    return projectId ? decodeURIComponent(projectId) : "";
   } catch {
     return "";
   }
@@ -443,6 +483,54 @@ async function loadTwiccSessions(
     return Array.isArray(sessions) ? sessions.filter(isTwiccSession) : [];
   } catch {
     return [];
+  }
+}
+
+async function loadTwiccSessionFromRpc(
+  sessionId: unknown,
+  options: TwiccCommandOptions = {}
+): Promise<TwiccSession | null> {
+  const normalizedSessionId = normalizeText(sessionId);
+  if (!normalizedSessionId) {
+    return null;
+  }
+
+  const session = await rpcCommand("session", {
+    session_id: normalizedSessionId
+  }, options);
+  return isTwiccSession(session) ? session : null;
+}
+
+async function loadTwiccSession(
+  sessionId: unknown,
+  { execFileAsync, ...options }: TwiccCommandOptions = {}
+): Promise<TwiccSession | null> {
+  const normalizedSessionId = normalizeText(sessionId);
+  if (!normalizedSessionId) {
+    return null;
+  }
+
+  if (shouldUseRpc(options)) {
+    try {
+      return await loadTwiccSessionFromRpc(normalizedSessionId, options);
+    } catch {
+      // Fall back for older/local setups where only the CLI is available.
+    }
+  }
+
+  if (typeof execFileAsync !== "function") {
+    return null;
+  }
+
+  try {
+    const { stdout } = await execFileAsync("twicc", ["session", normalizedSessionId], {
+      timeout: 5000,
+      windowsHide: true
+    });
+    const session = JSON.parse(String(stdout || "null"));
+    return isTwiccSession(session) ? session : null;
+  } catch {
+    return null;
   }
 }
 
@@ -1082,6 +1170,7 @@ function getTwiccProjectProcessStatuses(processes: unknown): TwiccProjectProcess
     current.count += 1;
     current.sessions.push({
       id: process.session_id || "",
+      projectId,
       title: process.session_title || "",
       state,
       rawState: process.state || "",
@@ -1186,6 +1275,115 @@ function aliasTwiccProjectProcessStatuses(
   return aliased;
 }
 
+function getConfiguredTwiccProjectId(
+  projectId: unknown,
+  projectPluginConfig: BoatyardProjectPluginConfig = {}
+): string {
+  const pluginConfig = projectPluginConfig[String(projectId || "")]?.["boatyard.twicc"];
+  return getTwiccProjectIdFromUrl(isRecord(pluginConfig) ? pluginConfig.twiccProjectUrl : "");
+}
+
+function findBoatyardProjectForTwiccProject(
+  twiccProjectId: string,
+  twiccProjects: TwiccProject[],
+  boatyardProjects: BoatyardProject[],
+  projectPluginConfig: BoatyardProjectPluginConfig
+): BoatyardProject | null {
+  const configuredMatch = boatyardProjects.find((project) => (
+    project.id && getConfiguredTwiccProjectId(project.id, projectPluginConfig) === twiccProjectId
+  ));
+  if (configuredMatch) {
+    return configuredMatch;
+  }
+
+  const exactPathMatch = boatyardProjects.find((project) => {
+    const match = findTwiccProjectMatchForPath(twiccProjects, project.sourcePath);
+    return match?.matchType === "exact" && match.project?.id === twiccProjectId;
+  });
+  if (exactPathMatch) {
+    return exactPathMatch;
+  }
+
+  return boatyardProjects.find((project) => (
+    findTwiccProjectForPath(twiccProjects, project.sourcePath)?.id === twiccProjectId
+  )) || null;
+}
+
+function findBoatyardProjectForTwiccProjectOrParent(
+  twiccProjectId: string,
+  twiccProjects: TwiccProject[],
+  boatyardProjects: BoatyardProject[],
+  projectPluginConfig: BoatyardProjectPluginConfig
+): BoatyardProject | null {
+  const directProject = findBoatyardProjectForTwiccProject(
+    twiccProjectId,
+    twiccProjects,
+    boatyardProjects,
+    projectPluginConfig
+  );
+  if (directProject) {
+    return directProject;
+  }
+
+  const twiccProject = twiccProjects.find((project) => project.id === twiccProjectId);
+  return twiccProject?.worktree_of
+    ? findBoatyardProjectForTwiccProject(
+      twiccProject.worktree_of,
+      twiccProjects,
+      boatyardProjects,
+      projectPluginConfig
+    )
+    : null;
+}
+
+function resolveTwiccSessionNavigationTarget(
+  session: unknown,
+  twiccProjects: unknown,
+  boatyardProjects: unknown,
+  projectPluginConfig: BoatyardProjectPluginConfig = {},
+  baseUrl: unknown = DEFAULT_TWICC_BASE_URL,
+  sourceTwiccProjectId: unknown = ""
+): TwiccSessionNavigationTarget | null {
+  const source = isRecord(session) ? session : {};
+  const sessionId = normalizeText(source.session_id || source.id);
+  const twiccProjectId = normalizeText(source.project_id);
+  if (!sessionId || !twiccProjectId) {
+    return null;
+  }
+
+  const twiccProjectList = Array.isArray(twiccProjects) ? twiccProjects.filter(isTwiccProject) : [];
+  const boatyardProjectList = Array.isArray(boatyardProjects)
+    ? boatyardProjects.filter((project): project is BoatyardProject => isRecord(project))
+    : [];
+  const boatyardProject = findBoatyardProjectForTwiccProjectOrParent(
+    twiccProjectId,
+    twiccProjectList,
+    boatyardProjectList,
+    projectPluginConfig
+  );
+  const normalizedSourceTwiccProjectId = normalizeText(sourceTwiccProjectId);
+  const sourceBoatyardProject = normalizedSourceTwiccProjectId
+    ? findBoatyardProjectForTwiccProjectOrParent(
+      normalizedSourceTwiccProjectId,
+      twiccProjectList,
+      boatyardProjectList,
+      projectPluginConfig
+    )
+    : null;
+  const url = buildTwiccSessionUrl(twiccProjectId, sessionId, normalizeBaseUrl(baseUrl));
+  if (!boatyardProject?.id || !url) {
+    return null;
+  }
+
+  return {
+    boatyardProjectId: boatyardProject.id,
+    sessionId,
+    ...(sourceBoatyardProject?.id ? { sourceBoatyardProjectId: sourceBoatyardProject.id } : {}),
+    twiccProjectId,
+    url
+  };
+}
+
 async function loadTwiccProjectProcessStatuses(options: TwiccCommandOptions): Promise<TwiccProjectProcessStatuses> {
   return getTwiccProjectProcessStatuses(await loadTwiccProcesses(options));
 }
@@ -1270,6 +1468,7 @@ export {
   archiveTwiccSession,
   archiveTwiccSessionFromRpc,
   buildTwiccProjectUrl,
+  buildTwiccSessionUrl,
   createTwiccSession,
   createTwiccSessionFromRpc,
   createTwiccProjectCache,
@@ -1286,10 +1485,13 @@ export {
   loadTwiccProjectsFromRpc,
   loadTwiccProjects,
   loadGitSessionCreationOptions,
+  loadTwiccSessionFromRpc,
+  loadTwiccSession,
   loadTwiccSessionFlow,
   loadTwiccSessionsFromRpc,
   loadTwiccSessions,
   reorderTwiccSessionFlow,
+  resolveTwiccSessionNavigationTarget,
   updateTwiccSessionFlowLaneFromRpc,
   updateTwiccSessionFlowLane,
   updateTwiccSessionFlowPositionFromRpc,

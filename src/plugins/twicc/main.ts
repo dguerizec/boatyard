@@ -12,23 +12,32 @@ const {
   inspectTwiccProject,
   inspectTwiccProjectFromProjects,
   loadGitSessionCreationOptions,
+  loadTwiccSession,
   loadTwiccSessionFlow,
   loadTwiccProcesses,
   getTwiccProjectProcessStatuses,
   reorderTwiccSessionFlow,
+  resolveTwiccSessionNavigationTarget,
   updateTwiccSessionTitle,
   updateTwiccSessionFlowLane
 } = require("./service");
 
 type BoatyardProject = { id: string; sourcePath?: string };
 type TwiccState = {
-  pluginConfig?: { global?: Record<string, Record<string, unknown> | undefined> };
+  pluginConfig?: {
+    global?: Record<string, Record<string, unknown> | undefined>;
+    projects?: Record<string, Record<string, Record<string, unknown> | undefined> | undefined>;
+  };
   projects?: BoatyardProject[];
 };
 type GlobalConfigPayload = { globalConfig?: Record<string, unknown> };
 type SourcePathPayload = { name?: unknown; sourcePath?: unknown };
 type SessionFlowPayload = GlobalConfigPayload & { project?: unknown };
 type SessionFlowSessionPayload = GlobalConfigPayload & { sessionId?: unknown };
+type SessionNavigationTargetPayload = GlobalConfigPayload & {
+  sessionId?: unknown;
+  sourceTwiccProjectId?: unknown;
+};
 type SessionTitlePayload = SessionFlowSessionPayload & { title?: unknown };
 type SessionFlowLanePayload = GlobalConfigPayload & { lane?: unknown; sessionId?: unknown };
 type SessionFlowOrderPayload = GlobalConfigPayload & { lane?: unknown; sessionIds?: unknown };
@@ -52,6 +61,8 @@ type TwiccPluginContext = {
 
 function activate(ctx: TwiccPluginContext) {
   const projectCache = createTwiccProjectCache();
+  let latestProcesses: Array<Record<string, unknown>> = [];
+  let latestTwiccProjects: Array<Record<string, unknown>> = [];
 
   ctx.resources.registerProvider(TWICC_RESOURCE_PROVIDER_ID, () => collectTwiccResourceProvider({
     execFileAsync: ctx.execFileAsync,
@@ -78,10 +89,58 @@ function activate(ctx: TwiccPluginContext) {
       options,
       { projectIds: Object.keys(statuses) }
     );
+    latestProcesses = processes;
+    latestTwiccProjects = twiccProjects;
     return aliasTwiccProjectProcessStatuses(
       statuses,
       twiccProjects,
       ctx.getState()?.projects || []
+    );
+  });
+
+  ctx.actions.handle<SessionNavigationTargetPayload>("resolveSessionNavigationTarget", async ({ sessionId, sourceTwiccProjectId, globalConfig } = {}) => {
+    const normalizedSessionId = String(sessionId || "").trim();
+    const normalizedSourceTwiccProjectId = String(sourceTwiccProjectId || "").trim();
+    if (!normalizedSessionId) {
+      return null;
+    }
+
+    const state = ctx.getState() || {};
+    const projectPluginConfig = state.pluginConfig?.projects || {};
+    const cachedProcess = latestProcesses.find((process) => (
+      String(process.session_id || "").trim() === normalizedSessionId
+    ));
+    if (cachedProcess) {
+      return resolveTwiccSessionNavigationTarget(
+        cachedProcess,
+        latestTwiccProjects,
+        state.projects || [],
+        projectPluginConfig,
+        globalConfig?.twiccBaseUrl,
+        normalizedSourceTwiccProjectId
+      );
+    }
+
+    const options = {
+      execFileAsync: ctx.execFileAsync,
+      globalConfig
+    };
+    const session = await loadTwiccSession(normalizedSessionId, options);
+    if (!session) {
+      return null;
+    }
+    const twiccProjectId = String(session.project_id || "").trim();
+    const twiccProjects = await projectCache.get(options, {
+      projectIds: [...new Set([twiccProjectId, normalizedSourceTwiccProjectId].filter(Boolean))]
+    });
+    latestTwiccProjects = twiccProjects;
+    return resolveTwiccSessionNavigationTarget(
+      session,
+      twiccProjects,
+      state.projects || [],
+      projectPluginConfig,
+      globalConfig?.twiccBaseUrl,
+      normalizedSourceTwiccProjectId
     );
   });
 

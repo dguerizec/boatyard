@@ -292,7 +292,8 @@ webAppRuntime = createRendererWebAppRuntime({
   isGlobalWorkspace,
   paneLayoutState,
   persistPaneLayout,
-  renderWorkspacePaneArea
+  renderWorkspacePaneArea,
+  selectProject
 });
 
 function getProjectWebApps(project: RendererProject, paneId?: string) {
@@ -526,8 +527,23 @@ function openProjectWebApp(projectId: string | undefined, webAppId: string, url 
   return webAppRuntime.openProjectWebApp(projectId, webAppId, url);
 }
 
+function openProjectWebAppInPage(projectId: string | undefined, webAppId: string, url = "") {
+  return webAppRuntime.openProjectWebAppInPage(projectId, webAppId, url);
+}
+
+function activateProjectWebApp(
+  projectId: string | undefined,
+  webAppId: string,
+  url = "",
+  options: { restoreSourceWebAppUrl?: string; sourceWebAppKey?: string } = {}
+) {
+  return webAppRuntime.activateProjectWebApp(projectId, webAppId, url, options);
+}
+
 boatyardWindow.BoatyardPaneNavigation = Object.freeze({
-  openProjectWebApp
+  activateProjectWebApp,
+  openProjectWebApp,
+  openProjectWebAppInPage
 });
 
 const paneLayoutView = createPaneLayoutView({
@@ -1327,6 +1343,7 @@ registerRendererEventBindings({
     slug: "global"
   } as RendererProject),
   getCurrentView: () => navigationController.getCurrentView(),
+  getProjectIdForWebAppKey: (key) => webAppRuntime.getProjectIdForWebAppKey(key),
   handleTerminalData: (payload) => terminalSurfaces.handleTerminalData(payload),
   handleTerminalExit: (payload) => terminalSurfaces.handleTerminalExit(payload),
   loadState,
@@ -1351,7 +1368,7 @@ registerRendererEventBindings({
     webAppRuntime.setCurrentWebAppFavicons(key, favicons, url);
   },
   setCurrentWebAppUrl: (key, url) => {
-    webAppRuntime.setCurrentWebAppUrl(key, url);
+    return webAppRuntime.setCurrentWebAppUrl(key, url);
   },
   syncWebAppAutofillButton,
   windowObject: window,

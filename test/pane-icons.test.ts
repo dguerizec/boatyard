@@ -375,6 +375,152 @@ test("opening an already selected webapp preserves the other pane surfaces", asy
     ), true);
     assert.equal(renderCount, 0);
     assert.equal(navigations.length, 1);
+
+    assert.equal(runtime.openProjectWebAppInPage(
+      project.id,
+      "url:app",
+      "https://app.example.test/session/soft"
+    ), true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(navigations.slice(1), [
+      [
+        "pane-1:url:app",
+        "soft-open",
+        "https://app.example.test/session/soft"
+      ],
+      [
+        "pane-1:url:app",
+        "open",
+        "https://app.example.test/session/soft"
+      ]
+    ]);
+  } finally {
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+  }
+});
+
+test("activating a project webapp selects its project before opening the target URL", () => {
+  const sourceProject = { id: "source-project", sourcePath: "/workspace/source" };
+  const targetProject = { id: "target-project", sourcePath: "/workspace/target" };
+  const unrelatedProject = { id: "unrelated-project", sourcePath: "/workspace/unrelated" };
+  const sourcePane = { type: "pane", id: "source-pane", selectedWebAppId: "twicc-plugin" };
+  const targetPane = { type: "pane", id: "target-pane", selectedWebAppId: "manual" };
+  const unrelatedPane = { type: "pane", id: "unrelated-pane", selectedWebAppId: "manual" };
+  const layouts = new Map([
+    [sourceProject.id, sourcePane],
+    [targetProject.id, targetPane],
+    [unrelatedProject.id, unrelatedPane]
+  ]);
+  const navigations: unknown[][] = [];
+  const steps: string[] = [];
+  let currentProject = sourceProject;
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+    callback(0);
+    return 1;
+  }) as typeof requestAnimationFrame;
+
+  try {
+    const runtime = createRendererWebAppRuntime({
+      boatyard: {
+        navigateWebApp: async (...args: unknown[]) => {
+          steps.push("navigate");
+          navigations.push(args);
+        }
+      } as never,
+      findFirstPaneNode: (layout: unknown) => layout,
+      findPaneNode: (layout: unknown) => layout,
+      findPaneNodeBySelectedWebApp: (layout: { selectedWebAppId?: string }, webAppId: string) => (
+        layout.selectedWebAppId === webAppId ? layout : null
+      ),
+      getCurrentProject: () => currentProject,
+      getCurrentView: () => "project",
+      getGlobalPluginConfig: () => ({}),
+      getGlobalWorkspace: () => sourceProject,
+      getPaneLayout: (project: { id: string }) => layouts.get(project.id),
+      getPluginPaneDefinitions: (filter: { kind?: string }) => filter.kind === "wcv" ? [{
+        id: "boatyard.twicc.pane",
+        key: "twicc-plugin",
+        kind: "wcv",
+        pluginId: "boatyard.twicc",
+        resolveUrl: ({ project }: { project?: { id?: string } }) => (
+          project?.id === sourceProject.id
+            ? "http://localhost:3500/project/source"
+            : "http://localhost:3500/project/target"
+        ),
+        scope: "project",
+        title: "Twicc",
+        webAppId: "twicc-plugin"
+      }] : [],
+      getProjectPluginConfig: () => ({}),
+      getProjectWidgetPanes: () => [],
+      getProjects: () => [sourceProject, targetProject, unrelatedProject],
+      getSettings: () => ({}),
+      isGlobalWorkspace: () => false,
+      paneLayoutState: {
+        setSelectedWebAppForPane: () => undefined,
+        setSelectedWebAppForProject: () => undefined
+      },
+      persistPaneLayout: () => undefined,
+      renderWorkspacePaneArea: () => {
+        steps.push("render");
+      },
+      selectProject: (projectId: string) => {
+        steps.push("select");
+        currentProject = projectId === targetProject.id ? targetProject : sourceProject;
+      }
+    });
+    const targetUrl = "http://localhost:3500/project/target/session/session-1";
+    const sourceSessionUrl = "http://localhost:3500/project/source/session/source-session";
+    assert.equal(runtime.getProjectIdForWebAppKey("source-pane:twicc-plugin"), sourceProject.id);
+    assert.equal(runtime.getProjectIdForWebAppKey("missing-pane:twicc-plugin"), "");
+    assert.equal(runtime.setCurrentWebAppUrl("source-pane:twicc-plugin", sourceSessionUrl), "");
+    assert.equal(runtime.setCurrentWebAppUrl("source-pane:twicc-plugin", targetUrl), sourceSessionUrl);
+    currentProject = unrelatedProject;
+
+    assert.equal(runtime.activateProjectWebApp(
+      targetProject.id,
+      "twicc-plugin",
+      targetUrl,
+      {
+        restoreSourceWebAppUrl: sourceSessionUrl,
+        sourceWebAppKey: "source-pane:twicc-plugin"
+      }
+    ), true);
+    assert.deepEqual(steps, ["navigate", "select", "render", "navigate"]);
+    assert.deepEqual(navigations, [
+      [
+        "source-pane:twicc-plugin",
+        "home",
+        sourceSessionUrl
+      ],
+      [
+        "target-pane:twicc-plugin",
+        "open",
+        targetUrl
+      ]
+    ]);
+    assert.equal(targetPane.selectedWebAppId, "twicc-plugin");
+    const sourceTwiccWebApp = runtime.getProjectWebApps(sourceProject, "source-pane")
+      .find((webApp: { id?: string }) => webApp.id === "twicc-plugin");
+    assert.ok(sourceTwiccWebApp);
+    assert.equal(
+      runtime.getCurrentWebAppUrl(sourceTwiccWebApp),
+      sourceSessionUrl
+    );
+
+    assert.equal(runtime.activateProjectWebApp(
+      targetProject.id,
+      "twicc-plugin",
+      targetUrl,
+      {
+        restoreSourceWebAppUrl: sourceSessionUrl,
+        sourceWebAppKey: "source-pane:twicc-plugin"
+      }
+    ), true);
+    assert.deepEqual(steps, ["navigate", "select", "render", "navigate"]);
+    assert.equal(runtime.activateProjectWebApp("missing-project", "twicc-plugin", targetUrl), false);
+    assert.deepEqual(steps, ["navigate", "select", "render", "navigate"]);
   } finally {
     globalThis.requestAnimationFrame = originalRequestAnimationFrame;
   }

@@ -441,6 +441,35 @@ export class WorkspaceWindowRuntime {
     if (!webApp || webApp.webContents.isDestroyed()) {
       return false;
     }
+    if (action === "soft-open") {
+      let currentUrl: URL;
+      let targetUrl: URL;
+      try {
+        currentUrl = new URL(webApp.webContents.getURL());
+        targetUrl = new URL(url);
+      } catch {
+        return false;
+      }
+      if (
+        !["http:", "https:"].includes(targetUrl.protocol)
+        || currentUrl.origin !== targetUrl.origin
+      ) {
+        return false;
+      }
+      try {
+        return await webApp.webContents.executeJavaScript(`(() => {
+          const targetUrl = ${JSON.stringify(targetUrl.toString())};
+          if (window.location.href === targetUrl) {
+            return true;
+          }
+          window.history.pushState(window.history.state, "", targetUrl);
+          window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+          return true;
+        })()`) === true;
+      } catch {
+        return false;
+      }
+    }
 
     if (action === "open" || action === "home") {
       return this.loadWebAppUrl(webApp, url);

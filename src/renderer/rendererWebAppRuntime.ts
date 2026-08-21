@@ -37,6 +37,12 @@ type RendererWebAppRuntimeOptions = {
   };
   persistPaneLayout: (project: RendererProject) => void;
   renderWorkspacePaneArea: (project: RendererProject) => void;
+  selectProject?: (projectId: string) => void;
+};
+
+type ActivateProjectWebAppOptions = {
+  restoreSourceWebAppUrl?: string;
+  sourceWebAppKey?: string;
 };
 
 type WebAppBridgeActionName =
@@ -81,7 +87,8 @@ export function createRendererWebAppRuntime({
   isGlobalWorkspace,
   paneLayoutState,
   persistPaneLayout,
-  renderWorkspacePaneArea
+  renderWorkspacePaneArea,
+  selectProject
 }: RendererWebAppRuntimeOptions) {
   const currentWebAppUrlsByKey = new Map<string, string>();
   const liveWebAppUrlKeys = new Set<string>();
@@ -181,23 +188,56 @@ export function createRendererWebAppRuntime({
     return null;
   }
 
-  function openProjectWebApp(projectId: string | undefined, webAppId: string, url = "") {
+  function resolveProjectWebApp(projectId: string | undefined, webAppId: string) {
     const project = getProjects().find((candidate) => candidate.id === projectId);
     if (!project) {
-      return false;
+      return null;
     }
 
     const layout = getPaneLayout(project);
     const selectedPaneNode = findPaneNodeBySelectedWebApp(layout, webAppId);
     const paneNode = selectedPaneNode || findFirstPaneNode(layout);
     if (!paneNode) {
-      return false;
+      return null;
     }
 
     const webApp = projectWebApps.getProjectWebApps(project, paneNode.id || "").find((candidate) => candidate.id === webAppId);
     if (!webApp) {
-      return false;
+      return null;
     }
+    return { paneNode, project, selectedPaneNode, webApp };
+  }
+
+  function resolveProjectWebAppByKey(webAppKey: string) {
+    function findInLayout(project: RendererProject, node: RendererPaneLayoutNode): {
+      paneNode: RendererPaneNode;
+      project: RendererProject;
+      webApp: WebAppDefinition;
+    } | null {
+      if (node.type === "split") {
+        return findInLayout(project, node.first) || findInLayout(project, node.second);
+      }
+
+      const webApp = projectWebApps.getProjectWebApps(project, node.id || "")
+        .find((candidate) => candidate.key === webAppKey);
+      return webApp ? { paneNode: node, project, webApp } : null;
+    }
+
+    for (const project of getProjects()) {
+      const target = findInLayout(project, getPaneLayout(project));
+      if (target) {
+        return target;
+      }
+    }
+    return null;
+  }
+
+  function openResolvedProjectWebApp(
+    target: NonNullable<ReturnType<typeof resolveProjectWebApp>>,
+    url = "",
+    navigationAction = "open"
+  ) {
+    const { paneNode, project, selectedPaneNode, webApp } = target;
     const shouldNavigate = Boolean(url && getCurrentWebAppUrl(webApp) !== url);
 
     paneLayoutState.setSelectedWebAppForPane(paneNode.id || "", webApp.id);
@@ -216,15 +256,87 @@ export function createRendererWebAppRuntime({
 
     if (shouldNavigate) {
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => invokeWebApp("navigateWebApp", webApp.key, "open", url));
+        requestAnimationFrame(() => {
+          void invokeWebApp("navigateWebApp", webApp.key, navigationAction, url).then((navigated) => {
+            if (navigationAction === "soft-open" && navigated !== true) {
+              return invokeWebApp("navigateWebApp", webApp.key, "open", url);
+            }
+            return navigated;
+          });
+        });
       });
     }
 
     return true;
   }
 
+  function openProjectWebApp(projectId: string | undefined, webAppId: string, url = "") {
+    const target = resolveProjectWebApp(projectId, webAppId);
+    return target ? openResolvedProjectWebApp(target, url) : false;
+  }
+
+  function openProjectWebAppInPage(projectId: string | undefined, webAppId: string, url = "") {
+    const target = resolveProjectWebApp(projectId, webAppId);
+    return target ? openResolvedProjectWebApp(target, url, "soft-open") : false;
+  }
+
+  function restoreSourceProjectWebAppUrl(
+    targetProjectId: string | undefined,
+    webAppId: string,
+    sourceWebAppKey = "",
+    sourceWebAppUrl = ""
+  ) {
+    const currentProject = getCurrentView() === "project" ? getCurrentProject() : null;
+    const sourceTarget = sourceWebAppKey
+      ? resolveProjectWebAppByKey(sourceWebAppKey)
+      : resolveProjectWebApp(currentProject?.id, webAppId);
+    const sourceUrl = String(sourceWebAppUrl || sourceTarget?.webApp.url || "").trim();
+    const sourceKey = String(sourceTarget?.webApp.key || "").trim();
+    if (
+      !sourceTarget
+      || sourceTarget.project.id === targetProjectId
+      || !sourceUrl
+      || !sourceKey
+      || getCurrentWebAppUrl(sourceTarget.webApp) === sourceUrl
+    ) {
+      return;
+    }
+
+    currentWebAppUrlsByKey.set(sourceKey, sourceUrl);
+    liveWebAppUrlKeys.add(sourceKey);
+    persistPaneLayout(sourceTarget.project);
+    void invokeWebApp("navigateWebApp", sourceKey, "home", sourceUrl);
+  }
+
+  function activateProjectWebApp(
+    projectId: string | undefined,
+    webAppId: string,
+    url = "",
+    options: ActivateProjectWebAppOptions = {}
+  ) {
+    const target = resolveProjectWebApp(projectId, webAppId);
+    if (!target || typeof selectProject !== "function") {
+      return false;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(options, "restoreSourceWebAppUrl")) {
+      restoreSourceProjectWebAppUrl(
+        target.project.id,
+        webAppId,
+        options.sourceWebAppKey,
+        options.restoreSourceWebAppUrl
+      );
+    }
+    if (getCurrentView() !== "project" || getCurrentProject()?.id !== target.project.id) {
+      selectProject(String(target.project.id || ""));
+    }
+    return openResolvedProjectWebApp(target, url);
+  }
+
   return Object.freeze({
+    activateProjectWebApp,
     getCurrentWebAppUrl,
+    getProjectIdForWebAppKey: (key: string) => String(resolveProjectWebAppByKey(key)?.project.id || ""),
     getProjectWebApps: projectWebApps.getProjectWebApps,
     getWebAppFavicon,
     getVisibleWebAppProject,
@@ -236,6 +348,7 @@ export function createRendererWebAppRuntime({
       webAppAutofillEnabledByKey.set(key, enabled);
     },
     openProjectWebApp,
+    openProjectWebAppInPage,
     setCurrentWebAppFavicons: (key: string, favicons: unknown, url = "") => {
       const faviconUrl = (Array.isArray(favicons) ? favicons : [])
         .map((candidate) => getSafePaneIconUrl(candidate))
@@ -259,11 +372,12 @@ export function createRendererWebAppRuntime({
       if (currentFavicon && haveSamePaneOrigin(currentFavicon.pageUrl || previousUrl, url)) {
         currentFavicon.pageUrl = url;
         updatePaneFaviconElements(key, currentFavicon.iconUrl, url);
-        return;
+        return previousUrl;
       }
 
       currentWebAppFaviconsByKey.delete(key);
       updatePaneFaviconElements(key, getPaneFaviconUrl(url), url);
+      return previousUrl;
     },
     syncWebAppAutofillButton,
     toggleWebAppAutofill

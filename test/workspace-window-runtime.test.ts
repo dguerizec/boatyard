@@ -8,6 +8,7 @@ class MockWebContents extends EventEmitter {
   private static nextId = 1;
   readonly id = MockWebContents.nextId++;
   readonly loadedUrls: string[] = [];
+  readonly executedScripts: string[] = [];
   backCount = 0;
   closeCount = 0;
   forwardCount = 0;
@@ -47,6 +48,11 @@ class MockWebContents extends EventEmitter {
     this.url = url;
     this.loadedUrls.push(url);
     return Promise.resolve();
+  }
+
+  executeJavaScript(script: string) {
+    this.executedScripts.push(script);
+    return Promise.resolve(true);
   }
 
   markDestroyedSilently() {
@@ -170,6 +176,29 @@ test("workspace runtime navigates through Electron navigation history", async ()
   assert.equal(await runtime.navigateWebApp("project:twicc", "forward", ""), true);
   assert.equal(webContents.backCount, 1);
   assert.equal(webContents.forwardCount, 1);
+});
+
+test("workspace runtime can soft-navigate a same-origin webapp without reloading it", async () => {
+  const { runtime, views } = createRuntime();
+
+  showWebApp(runtime);
+  const webContents = views[0].contents;
+  assert.equal(await runtime.navigateWebApp(
+    "project:twicc",
+    "soft-open",
+    "https://twicc.example.test/project/example/session/session-1"
+  ), true);
+  assert.deepEqual(webContents.loadedUrls, ["https://twicc.example.test/project"]);
+  assert.equal(webContents.executedScripts.length, 1);
+  assert.match(webContents.executedScripts[0], /history\.pushState/);
+  assert.match(webContents.executedScripts[0], /PopStateEvent/);
+
+  assert.equal(await runtime.navigateWebApp(
+    "project:twicc",
+    "soft-open",
+    "https://other.example.test/project/example/session/session-1"
+  ), false);
+  assert.equal(webContents.executedScripts.length, 1);
 });
 
 test("workspace runtime preserves live navigation when a fixed webapp is resynchronized", async () => {

@@ -295,7 +295,14 @@ type BoatyardRendererGlobals = {
     show(dialog: HTMLDialogElement, options?: UnknownRecord): Promise<boolean>;
   };
   BoatyardPaneNavigation?: {
+    activateProjectWebApp(
+      projectId: string | undefined,
+      webAppId: string,
+      url: string,
+      options?: { restoreSourceWebAppUrl?: string; sourceWebAppKey?: string }
+    ): boolean;
     openProjectWebApp(projectId: string | undefined, webAppId: string, url: string): boolean;
+    openProjectWebAppInPage(projectId: string | undefined, webAppId: string, url: string): boolean;
   };
   BoatyardPluginRegistry: PluginRegistryApi;
   BoatyardPluginSettingsFields: PluginSettingsFieldsApi;

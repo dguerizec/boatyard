@@ -184,6 +184,21 @@
     url?: string;
   };
 
+  type TwiccSessionNavigationTarget = {
+    boatyardProjectId: string;
+    sessionId: string;
+    sourceBoatyardProjectId: string;
+    twiccProjectId: string;
+    url: string;
+  };
+
+  type SuppressedSessionNavigation = {
+    expiresAt: number;
+    restoreSessionId: string;
+    restoreUrl: string;
+    routedSessionId: string;
+  };
+
   type TwiccUsageProvider = {
     extra_usage_is_enabled?: boolean;
     extra_usage_remaining_credits?: number;
@@ -271,6 +286,7 @@
   const TWICC_SESSION_FLOW_REFRESH_MS = 15000;
   const TWICC_SESSION_FLOW_OPTIMISTIC_TTL_MS = 60000;
   const TWICC_SESSION_FLOW_SINGLE_CLICK_DELAY_MS = 300;
+  const TWICC_SESSION_NAVIGATION_SUPPRESSION_MS = 5000;
   const WEBAPP_URL_CHANGED_EVENT = "boatyard:webapp-url-changed";
   const TWICC_SESSION_FLOW_ORIENTATION_EVENT = "boatyard:twicc-session-flow-orientation";
   const TWICC_SESSION_FLOW_ORIENTATION_STORAGE_PREFIX = "boatyard:twicc-session-flow-orientation:";
@@ -322,6 +338,9 @@
   const retainedSessionUnreadSignatures = new Map<string, string>();
   const sessionCreationDraftCache = new Map<string, TwiccCachedSessionCreationDraft>();
   let projectStatusRefreshTimer: number | null = null;
+  let sessionNavigationRequestId = 0;
+  let sessionNavigationUrlChangedHandler: ((event: Event) => void) | null = null;
+  const suppressedSessionNavigationByKey = new Map<string, SuppressedSessionNavigation>();
   let latestGlobalConfig: TwiccConfig = {};
 
   if (!registry) {
@@ -479,6 +498,116 @@
     } catch {
       return "";
     }
+  }
+
+  function normalizeSessionNavigationTarget(value: unknown): TwiccSessionNavigationTarget | null {
+    const source = isRecord(value) ? value : {};
+    const target = {
+      boatyardProjectId: String(source.boatyardProjectId || "").trim(),
+      sessionId: String(source.sessionId || "").trim(),
+      sourceBoatyardProjectId: String(source.sourceBoatyardProjectId || "").trim(),
+      twiccProjectId: String(source.twiccProjectId || "").trim(),
+      url: String(source.url || "").trim()
+    };
+    return target.boatyardProjectId && target.sessionId && target.url ? target : null;
+  }
+
+  function normalizeSessionNavigationUrl(value: unknown): string {
+    try {
+      return new URL(String(value || ""), DEFAULT_TWICC_URL).toString();
+    } catch {
+      return String(value || "").trim();
+    }
+  }
+
+  async function routeTwiccSessionNavigation(event: Event): Promise<void> {
+    const detail = (event as CustomEvent<{
+      key?: unknown;
+      previousUrl?: unknown;
+      sourceProjectId?: unknown;
+      url?: unknown;
+    }>).detail || {};
+    const key = String(detail.key || "");
+    const sourceProjectId = String(detail.sourceProjectId || "").trim();
+    const previousUrl = String(detail.previousUrl || "").trim();
+    const sessionId = getSessionIdFromUrl(detail.url);
+    if (
+      (key !== "twicc-plugin" && !key.endsWith(":twicc-plugin"))
+      || !sessionId
+      || typeof globalScope.BoatyardPaneNavigation?.activateProjectWebApp !== "function"
+    ) {
+      return;
+    }
+    const requestId = ++sessionNavigationRequestId;
+    let suppressedNavigation = suppressedSessionNavigationByKey.get(key);
+    if (suppressedNavigation && suppressedNavigation.expiresAt <= Date.now()) {
+      suppressedSessionNavigationByKey.delete(key);
+      suppressedNavigation = undefined;
+    }
+    if (suppressedNavigation) {
+      if (
+        (suppressedNavigation.restoreUrl
+          && suppressedNavigation.restoreUrl === normalizeSessionNavigationUrl(detail.url))
+        || (suppressedNavigation.restoreSessionId
+          && suppressedNavigation.restoreSessionId === sessionId)
+      ) {
+        return;
+      }
+      if (suppressedNavigation.routedSessionId === sessionId) {
+        return;
+      }
+      suppressedSessionNavigationByKey.delete(key);
+    }
+    try {
+      const target = normalizeSessionNavigationTarget(await invokePlugin("resolveSessionNavigationTarget", {
+        globalConfig: latestGlobalConfig,
+        sessionId,
+        sourceTwiccProjectId: getProjectIdFromUrl(previousUrl)
+      }));
+      if (!target || requestId !== sessionNavigationRequestId || target.sessionId !== sessionId) {
+        return;
+      }
+      const resolvedSourceProjectId = target.sourceBoatyardProjectId || sourceProjectId;
+      if (resolvedSourceProjectId && target.boatyardProjectId === resolvedSourceProjectId) {
+        return;
+      }
+      suppressedSessionNavigationByKey.set(key, {
+        expiresAt: Date.now() + TWICC_SESSION_NAVIGATION_SUPPRESSION_MS,
+        restoreSessionId: getSessionIdFromUrl(previousUrl),
+        restoreUrl: normalizeSessionNavigationUrl(previousUrl),
+        routedSessionId: sessionId
+      });
+      const activated = globalScope.BoatyardPaneNavigation.activateProjectWebApp(
+        target.boatyardProjectId,
+        "twicc-plugin",
+        target.url,
+        { restoreSourceWebAppUrl: previousUrl, sourceWebAppKey: key }
+      );
+      if (!activated) {
+        suppressedSessionNavigationByKey.delete(key);
+      }
+    } catch (error) {
+      console.error("Could not route Twicc session navigation:", error);
+    }
+  }
+
+  function startSessionNavigationRouting(): void {
+    if (sessionNavigationUrlChangedHandler || typeof globalScope.addEventListener !== "function") {
+      return;
+    }
+    sessionNavigationUrlChangedHandler = (event) => {
+      void routeTwiccSessionNavigation(event);
+    };
+    globalScope.addEventListener(WEBAPP_URL_CHANGED_EVENT, sessionNavigationUrlChangedHandler);
+  }
+
+  function stopSessionNavigationRouting(): void {
+    sessionNavigationRequestId += 1;
+    suppressedSessionNavigationByKey.clear();
+    if (sessionNavigationUrlChangedHandler) {
+      globalScope.removeEventListener?.(WEBAPP_URL_CHANGED_EVENT, sessionNavigationUrlChangedHandler);
+    }
+    sessionNavigationUrlChangedHandler = null;
   }
 
   function getProjectIdFromUrl(url: unknown) {
@@ -1998,30 +2127,34 @@
       widget.dataset.orientation = orientation;
     };
 
-    function openSession(sessionId: string): void {
-      if (sessionId === activeSessionId) {
-        return;
-      }
-      const url = getSessionUrl(sessionId);
-      if (!url) {
-        return;
-      }
-      if (typeof props.openProjectWebApp === "function") {
+    function openSessionUrl(url: string): void {
+      if (typeof globalScope.BoatyardPaneNavigation?.openProjectWebAppInPage === "function") {
+        globalScope.BoatyardPaneNavigation.openProjectWebAppInPage(
+          String(project.id || ""),
+          "twicc-plugin",
+          url
+        );
+      } else if (typeof props.openProjectWebApp === "function") {
         props.openProjectWebApp("twicc-plugin", url);
       } else {
         globalScope.boatyard?.openExternal?.(url);
       }
     }
 
-    function openCreatedSession(created: TwiccCreatedSession): void {
-      const url = getCreatedSessionUrl(created);
-      if (!url) {
+    function openSession(sessionId: string): void {
+      if (sessionId === activeSessionId) {
         return;
       }
-      if (typeof props.openProjectWebApp === "function") {
-        props.openProjectWebApp("twicc-plugin", url);
-      } else {
-        globalScope.boatyard?.openExternal?.(url);
+      const url = getSessionUrl(sessionId);
+      if (url) {
+        openSessionUrl(url);
+      }
+    }
+
+    function openCreatedSession(created: TwiccCreatedSession): void {
+      const url = getCreatedSessionUrl(created);
+      if (url) {
+        openSessionUrl(url);
       }
     }
 
@@ -3740,6 +3873,7 @@
         ctx.events.on("boatyard.projectForm.sourcePathInspected", (event: unknown) => {
           syncProjectUrlField(event as TwiccSourcePathInspectedEvent);
         });
+        startSessionNavigationRouting();
         startProjectStatusRefresh();
 
         ctx.status.set({
@@ -3919,6 +4053,7 @@
         registerSessionFlowWidget(ctx);
       },
       deactivate() {
+        stopSessionNavigationRouting();
         stopProjectStatusRefresh();
       }
     }

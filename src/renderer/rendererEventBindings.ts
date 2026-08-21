@@ -15,6 +15,7 @@ type RendererEventBindingsOptions = {
   globalSettingsButton: HTMLElement;
   getCurrentProject: () => RendererProject;
   getCurrentView: () => string;
+  getProjectIdForWebAppKey: (key: string) => string;
   handleTerminalData: (payload: { terminalId: unknown; data: unknown }) => void;
   handleTerminalExit: (payload: { terminalId: unknown; projectId: unknown; windowId: unknown }) => void;
   loadState: () => Promise<void>;
@@ -32,7 +33,7 @@ type RendererEventBindingsOptions = {
   selectGlobal: () => void;
   selectGlobalSettings: () => void;
   setCurrentWebAppFavicons: (key: string, favicons: unknown, url?: string) => unknown;
-  setCurrentWebAppUrl: (key: string, url: string) => void;
+  setCurrentWebAppUrl: (key: string, url: string) => string;
   syncWebAppAutofillButton: (button: HTMLButtonElement, enabled: boolean) => void;
   windowObject: Window;
   workspace: HTMLElement;
@@ -47,6 +48,7 @@ export function registerRendererEventBindings({
   globalSettingsButton,
   getCurrentProject,
   getCurrentView,
+  getProjectIdForWebAppKey,
   handleTerminalData,
   handleTerminalExit,
   loadState,
@@ -74,10 +76,11 @@ export function registerRendererEventBindings({
       return;
     }
 
-    setCurrentWebAppUrl(key, url);
+    const sourceProjectId = getProjectIdForWebAppKey(key);
+    const previousUrl = setCurrentWebAppUrl(key, url);
     persistVisibleWebAppPaneLayout(key, url);
     windowObject.dispatchEvent(new CustomEvent(WEBAPP_URL_CHANGED_EVENT, {
-      detail: { key, url }
+      detail: { key, previousUrl, sourceProjectId, url }
     }));
     for (const input of document.querySelectorAll<HTMLInputElement>(".webapp-url")) {
       if (input.dataset.webappKey === key && input !== document.activeElement) {

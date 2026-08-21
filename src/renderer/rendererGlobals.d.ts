@@ -173,7 +173,14 @@ type BoatyardPluginRendererGlobal = Window & {
     show?: (dialog: HTMLDialogElement, options?: Record<string, unknown>) => Promise<boolean>;
   };
   BoatyardPaneNavigation?: {
+    activateProjectWebApp?: (
+      projectId: string | undefined,
+      webAppId: string,
+      url: string,
+      options?: { restoreSourceWebAppUrl?: string; sourceWebAppKey?: string }
+    ) => boolean;
     openProjectWebApp?: (projectId: string | undefined, webAppId: string, url: string) => void;
+    openProjectWebAppInPage?: (projectId: string | undefined, webAppId: string, url: string) => boolean;
   };
   BoatyardPluginRegistry?: PluginRegistryApi;
   boatyard?: BoatyardPluginRendererBridge;
