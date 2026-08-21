@@ -9,8 +9,15 @@ const path = require("node:path");
 
 const DEFAULT_TWICC_BASE_URL = "http://localhost:3500";
 const TWICC_SESSION_FLOW_ANNOTATION = "sessionFlowLane";
+const TWICC_SESSION_FLOW_ORIGIN_ANNOTATION = "sessionFlowOrigin";
 const TWICC_SESSION_FLOW_ORDER_ANNOTATION = "sessionFlowOrder";
+const TWICC_SESSION_FLOW_TWICC_ORIGIN = "twicc";
 const TWICC_PROJECT_CACHE_TTL_MS = 600000;
+const TWICC_SESSION_FLOW_LANE_RANKS: Record<TwiccSessionFlowLane, number> = {
+  in_progress: 0,
+  backlog: 1,
+  testing: 2
+};
 
 type TwiccProject = {
   directory?: string;
@@ -46,6 +53,8 @@ type TwiccSession = {
   pinned?: unknown;
   project_id?: string;
   provider?: string;
+  spawned_by?: string;
+  stale?: unknown;
   title?: string;
   total_cost?: number;
   user_message_count?: number;
@@ -65,6 +74,16 @@ type TwiccSessionFlowItem = {
   title: string;
   totalCost: number;
   userMessageCount: number;
+};
+type TwiccOrderedSessionFlowItem = TwiccSessionFlowItem & {
+  activityTime: number;
+  creationTime: number;
+  isDirectTwiccSession: boolean;
+  spawnedBy: string;
+};
+type TwiccSessionFlowInitialization = {
+  lane: TwiccSessionFlowLane;
+  sessionId: string;
 };
 
 type TwiccNormalizedProcessState = "input" | "working" | "done";
@@ -132,6 +151,10 @@ type TwiccCreatedSession = {
   status: string;
   title: string;
 };
+
+const pendingSessionFlowInitializations = new Map<string, Promise<void>>();
+const initializedSessionFlowLanes = new Map<string, TwiccSessionFlowLane>();
+let sessionFlowManualMutationVersion = 0;
 type GitSessionCreationOptions = {
   branches: Array<{ checkedOut: boolean; name: string }>;
   defaultWorktreeBase: string;
@@ -540,25 +563,27 @@ function asSessionFlowLane(value: unknown): TwiccSessionFlowLane | "" {
     : "";
 }
 
-function getAnnotatedSessionFlowLane(session: TwiccSession): TwiccSessionFlowLane | "" {
+function getSessionFlowAnnotation(session: TwiccSession, key: string): unknown {
   const annotations = isRecord(session.annotations) ? session.annotations : {};
   const boatyard = isRecord(annotations.boatyard) ? annotations.boatyard : {};
-  return asSessionFlowLane(
-    boatyard[TWICC_SESSION_FLOW_ANNOTATION]
-      ?? annotations[`boatyard.${TWICC_SESSION_FLOW_ANNOTATION}`]
-  );
+  return boatyard[key] ?? annotations[`boatyard.${key}`];
+}
+
+function getAnnotatedSessionFlowLane(session: TwiccSession): TwiccSessionFlowLane | "" {
+  return asSessionFlowLane(getSessionFlowAnnotation(session, TWICC_SESSION_FLOW_ANNOTATION));
 }
 
 function getAnnotatedSessionFlowOrder(session: TwiccSession): number | null {
-  const annotations = isRecord(session.annotations) ? session.annotations : {};
-  const boatyard = isRecord(annotations.boatyard) ? annotations.boatyard : {};
-  const value = boatyard[TWICC_SESSION_FLOW_ORDER_ANNOTATION]
-    ?? annotations[`boatyard.${TWICC_SESSION_FLOW_ORDER_ANNOTATION}`];
+  const value = getSessionFlowAnnotation(session, TWICC_SESSION_FLOW_ORDER_ANNOTATION);
   if (value === null || value === undefined || value === "") {
     return null;
   }
   const order = Number(value);
   return Number.isInteger(order) && order >= 0 ? order : null;
+}
+
+function getAnnotatedSessionFlowOrigin(session: TwiccSession): string {
+  return String(getSessionFlowAnnotation(session, TWICC_SESSION_FLOW_ORIGIN_ANNOTATION) || "").trim();
 }
 
 function getSessionActivityTime(session: TwiccSession): number {
@@ -572,6 +597,96 @@ function getSessionActivityTime(session: TwiccSession): number {
   return timestamps.length ? Math.max(...timestamps) : 0;
 }
 
+function getSessionCreationTime(session: TwiccSession): number {
+  const creationTime = Date.parse(String(session.created_at || ""));
+  return Number.isFinite(creationTime) ? creationTime : 0;
+}
+
+function getSessionPlacementRank(item: TwiccOrderedSessionFlowItem): number {
+  if (Number.isInteger(item.order)) {
+    return 1;
+  }
+  // Boatyard-created sessions enter at the top. Direct TwiCC sessions retain
+  // their bottom placement after their initially inferred lane is persisted.
+  return item.isDirectTwiccSession ? 2 : 0;
+}
+
+function compareSessionFlowItems(
+  left: TwiccOrderedSessionFlowItem,
+  right: TwiccOrderedSessionFlowItem
+): number {
+  const laneDifference = TWICC_SESSION_FLOW_LANE_RANKS[left.lane]
+    - TWICC_SESSION_FLOW_LANE_RANKS[right.lane];
+  if (laneDifference) {
+    return laneDifference;
+  }
+
+  const leftPlacement = getSessionPlacementRank(left);
+  const rightPlacement = getSessionPlacementRank(right);
+  if (leftPlacement !== rightPlacement) {
+    return leftPlacement - rightPlacement;
+  }
+  if (leftPlacement === 1) {
+    return Number(left.order) - Number(right.order) || left.id.localeCompare(right.id);
+  }
+  if (leftPlacement === 0) {
+    return right.creationTime - left.creationTime || right.id.localeCompare(left.id);
+  }
+  return left.creationTime - right.creationTime || left.id.localeCompare(right.id);
+}
+
+function placeSpawnedSessionsAfterParents(
+  items: TwiccOrderedSessionFlowItem[]
+): TwiccOrderedSessionFlowItem[] {
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  const childrenByParentId = new Map<string, TwiccOrderedSessionFlowItem[]>();
+  const automaticallyPlacedIds = new Set<string>();
+
+  for (const item of items) {
+    if (!item.spawnedBy || Number.isInteger(item.order)) {
+      continue;
+    }
+    const parent = itemById.get(item.spawnedBy);
+    if (!parent || parent.id === item.id || parent.lane !== item.lane) {
+      continue;
+    }
+    const children = childrenByParentId.get(parent.id) || [];
+    children.push(item);
+    childrenByParentId.set(parent.id, children);
+    automaticallyPlacedIds.add(item.id);
+  }
+
+  for (const children of childrenByParentId.values()) {
+    children.sort((left, right) => (
+      right.creationTime - left.creationTime || right.id.localeCompare(left.id)
+    ));
+  }
+
+  const placedItems: TwiccOrderedSessionFlowItem[] = [];
+  const placedIds = new Set<string>();
+  function appendItemAndChildren(item: TwiccOrderedSessionFlowItem): void {
+    if (placedIds.has(item.id)) {
+      return;
+    }
+    placedIds.add(item.id);
+    placedItems.push(item);
+    for (const child of childrenByParentId.get(item.id) || []) {
+      appendItemAndChildren(child);
+    }
+  }
+
+  for (const item of items) {
+    if (!automaticallyPlacedIds.has(item.id)) {
+      appendItemAndChildren(item);
+    }
+  }
+  // A malformed cycle must not hide sessions from the board.
+  for (const item of items) {
+    appendItemAndChildren(item);
+  }
+  return placedItems;
+}
+
 function hasOpenSessionRun(session: TwiccSession): boolean {
   const startedAt = Date.parse(String(session.last_started_at || ""));
   const stoppedAt = Date.parse(String(session.last_stopped_at || ""));
@@ -581,7 +696,8 @@ function hasOpenSessionRun(session: TwiccSession): boolean {
 
 function getTwiccSessionFlow(
   sessions: unknown,
-  processes: unknown
+  processes: unknown,
+  initializedLanes: ReadonlyMap<string, TwiccSessionFlowLane> = new Map()
 ): TwiccSessionFlowItem[] {
   const processBySessionId = new Map(
     (Array.isArray(processes) ? processes : [])
@@ -591,7 +707,7 @@ function getTwiccSessionFlow(
   );
   const activeStates = new Set(["assistant_turn", "awaiting_user_input", "starting"]);
 
-  return (Array.isArray(sessions) ? sessions : [])
+  const orderedSessions = (Array.isArray(sessions) ? sessions : [])
     .filter(isTwiccSession)
     .filter((session) => session.archived !== true)
     .map((session) => {
@@ -599,8 +715,10 @@ function getTwiccSessionFlow(
       const process = processBySessionId.get(sessionId);
       const processState = String(process?.state || "").trim();
       const annotatedLane = getAnnotatedSessionFlowLane(session);
+      const annotatedOrigin = getAnnotatedSessionFlowOrigin(session);
       const activityTime = getSessionActivityTime(session);
       const lane = annotatedLane
+        || initializedLanes.get(sessionId)
         || (activeStates.has(processState) || hasOpenSessionRun(session)
           ? "in_progress"
           : session.pinned
@@ -620,22 +738,151 @@ function getTwiccSessionFlow(
         title: String(session.title || "Untitled session").trim() || "Untitled session",
         totalCost: Number(session.total_cost) || 0,
         userMessageCount: Number(session.user_message_count) || 0,
-        activityTime
+        activityTime,
+        creationTime: getSessionCreationTime(session),
+        isDirectTwiccSession: !annotatedLane || annotatedOrigin === TWICC_SESSION_FLOW_TWICC_ORIGIN,
+        spawnedBy: String(session.spawned_by || "").trim()
       };
     })
-    .sort((left, right) => right.activityTime - left.activityTime)
-    .map(({ activityTime: _activityTime, ...session }) => session);
+    .sort(compareSessionFlowItems);
+
+  return placeSpawnedSessionsAfterParents(orderedSessions)
+    .map(({
+      activityTime: _activityTime,
+      creationTime: _creationTime,
+      isDirectTwiccSession: _isDirectTwiccSession,
+      spawnedBy: _spawnedBy,
+      ...session
+    }) => session);
+}
+
+function getSessionFlowInitializationOperations(lane: TwiccSessionFlowLane): string[] {
+  return [
+    `set:boatyard.${TWICC_SESSION_FLOW_ANNOTATION}=${lane}`,
+    `set:boatyard.${TWICC_SESSION_FLOW_ORIGIN_ANNOTATION}=${TWICC_SESSION_FLOW_TWICC_ORIGIN}`
+  ];
+}
+
+function requireSuccessfulSessionFlowInitializationBatch(value: unknown): void {
+  const result = isRecord(value) ? value : {};
+  const summary = isRecord(result.summary) ? result.summary : {};
+  if (summary.all_succeeded !== true) {
+    throw new Error("TwiCC did not initialize every Session Flow lane.");
+  }
+}
+
+async function initializeTwiccSessionFlowBatchFromRpc(
+  sessionIds: string[],
+  lane: TwiccSessionFlowLane,
+  options: TwiccCommandOptions = {}
+): Promise<void> {
+  const result = await rpcCommand("update-sessions/annotations", {
+    session_ids: sessionIds,
+    op: getSessionFlowInitializationOperations(lane)
+  }, options);
+  requireSuccessfulSessionFlowInitializationBatch(result);
+}
+
+async function initializeTwiccSessionFlowBatch(
+  sessionIds: string[],
+  lane: TwiccSessionFlowLane,
+  { execFileAsync, ...options }: TwiccCommandOptions = {}
+): Promise<void> {
+  if (shouldUseRpc(options)) {
+    try {
+      await initializeTwiccSessionFlowBatchFromRpc(sessionIds, lane, options);
+      return;
+    } catch {
+      // The writes are idempotent, so a local batch fallback is safe.
+    }
+  }
+  if (typeof execFileAsync !== "function") {
+    throw new Error("TwiCC command runner is required to initialize Session Flow lanes.");
+  }
+
+  const operations = getSessionFlowInitializationOperations(lane);
+  const { stdout } = await execFileAsync("twicc", [
+    "update-sessions",
+    "annotations",
+    ...sessionIds,
+    ...operations.flatMap((operation) => ["--op", operation])
+  ], {
+    timeout: 30000,
+    windowsHide: true
+  });
+  requireSuccessfulSessionFlowInitializationBatch(JSON.parse(String(stdout || "null")));
+}
+
+async function ensureTwiccSessionFlowInitializations(
+  initializations: TwiccSessionFlowInitialization[],
+  options: TwiccCommandOptions = {}
+): Promise<void> {
+  const pending = new Set<Promise<void>>();
+  const fresh = initializations.filter(({ sessionId }) => (
+    !initializedSessionFlowLanes.has(sessionId) && !pendingSessionFlowInitializations.has(sessionId)
+  ));
+  const byLane = new Map<TwiccSessionFlowLane, string[]>();
+  for (const { lane, sessionId } of fresh) {
+    byLane.set(lane, [...(byLane.get(lane) || []), sessionId]);
+  }
+  for (const [lane, sessionIds] of byLane) {
+    sessionIds.forEach((sessionId) => initializedSessionFlowLanes.set(sessionId, lane));
+    const initialization = initializeTwiccSessionFlowBatch(sessionIds, lane, options)
+      .catch((error) => {
+        sessionIds.forEach((sessionId) => {
+          if (initializedSessionFlowLanes.get(sessionId) === lane) {
+            initializedSessionFlowLanes.delete(sessionId);
+          }
+        });
+        throw error;
+      })
+      .finally(() => {
+        sessionIds.forEach((sessionId) => pendingSessionFlowInitializations.delete(sessionId));
+      });
+    sessionIds.forEach((sessionId) => pendingSessionFlowInitializations.set(sessionId, initialization));
+    pending.add(initialization);
+  }
+  for (const { sessionId } of initializations) {
+    const initialization = pendingSessionFlowInitializations.get(sessionId);
+    if (initialization) {
+      pending.add(initialization);
+    }
+  }
+  await Promise.all(pending);
+}
+
+async function waitForTwiccSessionFlowInitialization(sessionId: string): Promise<void> {
+  await pendingSessionFlowInitializations.get(sessionId)?.catch(() => undefined);
 }
 
 async function loadTwiccSessionFlow(
   project: unknown,
   options: TwiccCommandOptions = {}
 ): Promise<TwiccSessionFlowItem[]> {
+  const mutationVersion = sessionFlowManualMutationVersion;
   const [sessions, processes] = await Promise.all([
     loadTwiccSessions(project, options),
     loadTwiccProcesses(options)
   ]);
-  return getTwiccSessionFlow(sessions, processes);
+  const sessionFlow = getTwiccSessionFlow(sessions, processes, initializedSessionFlowLanes);
+  if (mutationVersion === sessionFlowManualMutationVersion) {
+    const laneBySessionId = new Map(sessionFlow.map((session) => [session.id, session.lane]));
+    const initializations = sessions
+      .filter((session) => (
+        session.archived !== true
+        && session.stale !== true
+        && !getAnnotatedSessionFlowLane(session)
+      ))
+      .map((session) => ({
+        lane: laneBySessionId.get(String(session.id || "").trim()),
+        sessionId: String(session.id || "").trim()
+      }))
+      .filter((initialization): initialization is TwiccSessionFlowInitialization => (
+        Boolean(initialization.sessionId && initialization.lane)
+      ));
+    await ensureTwiccSessionFlowInitializations(initializations, options);
+  }
+  return getTwiccSessionFlow(sessions, processes, initializedSessionFlowLanes);
 }
 
 async function updateTwiccSessionTitleFromRpc(
@@ -715,9 +962,14 @@ async function updateTwiccSessionFlowLane(
     throw new Error(`Invalid TwiCC session flow lane: ${String(lane || "")}`);
   }
 
+  sessionFlowManualMutationVersion += 1;
+  await waitForTwiccSessionFlowInitialization(normalizedSessionId);
+
   if (shouldUseRpc(options)) {
     try {
-      return await updateTwiccSessionFlowLaneFromRpc(normalizedSessionId, normalizedLane, options);
+      const result = await updateTwiccSessionFlowLaneFromRpc(normalizedSessionId, normalizedLane, options);
+      initializedSessionFlowLanes.set(normalizedSessionId, normalizedLane);
+      return result;
     } catch {
       // The annotation write is idempotent, so a local fallback is safe.
     }
@@ -736,6 +988,7 @@ async function updateTwiccSessionFlowLane(
     timeout: 30000,
     windowsHide: true
   });
+  initializedSessionFlowLanes.set(normalizedSessionId, normalizedLane);
   return JSON.parse(String(stdout || "null"));
 }
 
@@ -779,14 +1032,19 @@ async function updateTwiccSessionFlowPosition(
     throw new Error(`Invalid TwiCC session flow order: ${String(order ?? "")}`);
   }
 
+  sessionFlowManualMutationVersion += 1;
+  await waitForTwiccSessionFlowInitialization(normalizedSessionId);
+
   if (shouldUseRpc(options)) {
     try {
-      return await updateTwiccSessionFlowPositionFromRpc(
+      const result = await updateTwiccSessionFlowPositionFromRpc(
         normalizedSessionId,
         normalizedLane,
         normalizedOrder,
         options
       );
+      initializedSessionFlowLanes.set(normalizedSessionId, normalizedLane);
+      return result;
     } catch {
       // The annotation writes are idempotent, so a local fallback is safe.
     }
@@ -806,6 +1064,7 @@ async function updateTwiccSessionFlowPosition(
     timeout: 30000,
     windowsHide: true
   });
+  initializedSessionFlowLanes.set(normalizedSessionId, normalizedLane);
   return JSON.parse(String(stdout || "null"));
 }
 

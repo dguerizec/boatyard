@@ -1912,7 +1912,6 @@
     let sessions: TwiccSessionFlowItem[] = [];
     const pendingCreatedSessions = new Map<string, { createdAt: number; item: TwiccSessionFlowItem }>();
     let draggedSessionId = "";
-    let draggedSessionPointerOffsetY = 0;
     let draggedSessionGhostHeight = 0;
     let sessionInsertionTarget: TwiccSessionFlowInsertionTarget | null = null;
     let sessionInsertionPlaceholder: HTMLElement | null = null;
@@ -1959,7 +1958,6 @@
 
     function resetDragState(): void {
       draggedSessionId = "";
-      draggedSessionPointerOffsetY = 0;
       draggedSessionGhostHeight = 0;
       clearSessionInsertionPlaceholder();
       delete widget.dataset.dragging;
@@ -1968,10 +1966,9 @@
       widget.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
     }
 
-    function beginDrag(sessionId: string, card: HTMLElement, event: DragEvent): void {
+    function beginDrag(sessionId: string, card: HTMLElement): void {
       const rect = card.getBoundingClientRect();
       draggedSessionId = sessionId;
-      draggedSessionPointerOffsetY = event.clientY - rect.top;
       draggedSessionGhostHeight = rect.height;
       widget.dataset.dragging = "true";
       archiveDropzone.hidden = false;
@@ -2022,19 +2019,10 @@
     }
 
     function getOrderedLaneSessions(lane: TwiccSessionFlowLane): TwiccSessionFlowItem[] {
+      // The service supplies the stable creator/user order. Optimistic moves
+      // update the sessions array in that same order until the next refresh.
       return sessions
-        .filter((session) => session.lane === lane)
-        .sort((left, right) => {
-          const leftHasOrder = Number.isInteger(left.order);
-          const rightHasOrder = Number.isInteger(right.order);
-          if (leftHasOrder && rightHasOrder) {
-            return Number(left.order) - Number(right.order);
-          }
-          if (leftHasOrder !== rightHasOrder) {
-            return leftHasOrder ? 1 : -1;
-          }
-          return 0;
-        });
+        .filter((session) => session.lane === lane);
     }
 
     function getSessionInsertionTarget(
@@ -2042,8 +2030,14 @@
       clientY: number,
       lane: TwiccSessionFlowLane
     ): TwiccSessionFlowInsertionTarget {
+      // Measure the undistorted list. The full-height placeholder otherwise
+      // pushes the next card away from the pointer and makes its midpoint
+      // increasingly difficult to cross while reordering.
+      if (sessionInsertionPlaceholder?.parentElement === list) {
+        sessionInsertionPlaceholder.remove();
+      }
       const cards = [...list.querySelectorAll<HTMLElement>(".twicc-session-flow-card")]
-        .filter((card) => card !== sessionInsertionPlaceholder && card.dataset.sessionId !== draggedSessionId);
+        .filter((card) => card.dataset.sessionId !== draggedSessionId);
       for (const card of cards) {
         const rect = card.getBoundingClientRect();
         if (clientY < rect.top + (rect.height / 2)) {
@@ -2059,13 +2053,6 @@
         beforeSessionId: null,
         lane
       };
-    }
-
-    function getSessionDragReferenceY(event: DragEvent): number {
-      if (!draggedSessionGhostHeight) {
-        return event.clientY;
-      }
-      return event.clientY - draggedSessionPointerOffsetY + (draggedSessionGhostHeight / 2);
     }
 
     function dropSessionAtInsertion(event: DragEvent, lane: TwiccSessionFlowLane): void {
@@ -2109,7 +2096,7 @@
       event: DragEvent,
       lane: TwiccSessionFlowLane
     ): void {
-      sessionInsertionTarget = getSessionInsertionTarget(list, getSessionDragReferenceY(event), lane);
+      sessionInsertionTarget = getSessionInsertionTarget(list, event.clientY, lane);
       const placeholder = ensureSessionInsertionPlaceholder();
       placeholder.style.height = `${Math.max(0, Math.round(draggedSessionGhostHeight))}px`;
       widget.querySelectorAll<HTMLElement>(".twicc-session-flow-empty[hidden]")
@@ -3337,7 +3324,7 @@
         event.stopPropagation();
         cancelPendingOpen();
         dragStarted = true;
-        beginDrag(session.id, card, event);
+        beginDrag(session.id, card);
         card.classList.add("dragging");
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = "move";
