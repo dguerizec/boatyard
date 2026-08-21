@@ -1476,7 +1476,7 @@ test("loadTwiccProjects can feed source path URL detection", async () => {
   );
 });
 
-test("createTwiccProject names and trusts the project through the CLI", async () => {
+test("createTwiccProject names and propagates trust through the CLI", async () => {
   const calls: ExecCall[] = [];
   const result = await createTwiccProject({
     name: "Example app",
@@ -1504,7 +1504,7 @@ test("createTwiccProject names and trusts the project through the CLI", async ()
     },
     {
       command: "twicc",
-      args: ["update-project", "/workspace/projects/app", "--trust"]
+      args: ["update-project", "/workspace/projects/app", "--trust", "--propagate"]
     },
     {
       command: "twicc",
@@ -1515,7 +1515,7 @@ test("createTwiccProject names and trusts the project through the CLI", async ()
   assert.equal(result.url, "http://localhost:3500/project/-workspace-projects-app");
 });
 
-test("createTwiccProject names and trusts the project through Twicc RPC", async () => {
+test("createTwiccProject names and propagates trust through Twicc RPC", async () => {
   const calls: Array<{ body: Record<string, unknown>; url: string }> = [];
   const result = await createTwiccProject({
     name: "Example app",
@@ -1559,6 +1559,7 @@ test("createTwiccProject names and trusts the project through Twicc RPC", async 
       url: "https://twicc.example/root/rpc/update-project",
       body: {
         project_id: "/workspace/projects/app",
+        propagate: true,
         trust: true
       }
     },

@@ -1690,6 +1690,7 @@ async function createTwiccProject(
       createdViaRpc = true;
       await rpcCommand("update-project", {
         project_id: normalizedSourcePath,
+        propagate: true,
         trust: true
       }, options);
       const projects = await loadTwiccProjectsFromRpc(options);
@@ -1714,7 +1715,7 @@ async function createTwiccProject(
     timeout: 30000,
     windowsHide: true
   });
-  await execFileAsync("twicc", ["update-project", normalizedSourcePath, "--trust"], {
+  await execFileAsync("twicc", ["update-project", normalizedSourcePath, "--trust", "--propagate"], {
     timeout: 30000,
     windowsHide: true
   });
