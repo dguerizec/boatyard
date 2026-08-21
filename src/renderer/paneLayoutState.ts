@@ -159,12 +159,13 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
      */
     function getSelectedWebApp(project: PaneLayoutProject, paneId: string, webApps: PaneLayoutWebApp[]) {
       const paneNode = findPaneNode(getProjectPaneLayout(project), paneId);
+      const fallbackWebApp = webApps.find((webApp) => webApp.id === "empty") || webApps[0];
       const selectedId =
         selectedWebAppByPane.get(paneId) ||
         paneNode?.selectedWebAppId ||
         selectedWebAppByProject.get(getProjectPaneLayoutKey(project)) ||
-        webApps[0].id;
-      return webApps.find((webApp) => webApp.id === selectedId) || webApps[0];
+        fallbackWebApp.id;
+      return webApps.find((webApp) => webApp.id === selectedId) || fallbackWebApp;
     }
 
     /**
