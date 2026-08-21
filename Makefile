@@ -53,7 +53,8 @@ release:
 	node build-scripts/scripts/update-changelog.js --release --version "$$version"; \
 	npm version "$$version" --no-git-tag-version; \
 	git add package.json package-lock.json CHANGELOG.md src/shared/changelog.json; \
-	git commit -m "Release v$$version"; \
+	git commit -m "chore(release): release v$$version" \
+		-m "Promote the reviewed changelog and synchronize package metadata for v$$version."; \
 	git push origin "$$branch"
 
 tag:

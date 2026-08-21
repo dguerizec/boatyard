@@ -114,6 +114,10 @@ test("the Make release recipe fails fast and runs preflight before release mutat
   assert.ok(preflightIndex < releaseRecipe.indexOf("npm version"));
   assert.ok(preflightIndex < releaseRecipe.indexOf("git commit"));
   assert.ok(preflightIndex < releaseRecipe.indexOf("git push"));
+  assert.match(
+    releaseRecipe,
+    /git commit -m "chore\(release\): release v\$\$version"\s*\\\s*-m "Promote the reviewed changelog and synchronize package metadata for v\$\$version\."/
+  );
 });
 
 export {};
