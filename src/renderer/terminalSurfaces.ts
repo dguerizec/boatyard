@@ -1,4 +1,8 @@
-import { createTerminalTabDom, TERMINAL_TAB_RENAME_TOOLTIP } from "./terminalTabDom.js";
+import {
+  createTerminalTabDom,
+  getTerminalTabEditName,
+  TERMINAL_TAB_RENAME_TOOLTIP
+} from "./terminalTabDom.js";
 import { createTerminalTabMenuController } from "./terminalTabMenu.js";
 import { createTerminalSelectionBridge } from "./terminalSelectionBridge.js";
 import { createTerminalAttachmentCoordinator } from "./terminalAttachmentCoordinator.js";
@@ -422,8 +426,12 @@ export function createTerminalSurfaces({
       }
     }
 
-    async function renameTerminalTab(project: RendererProject, tab: TerminalTab, nextName: unknown) {
-      const currentName = tab.name || `shell ${tab.index}`;
+    async function renameTerminalTab(
+      project: RendererProject,
+      tab: TerminalTab,
+      currentName: string,
+      nextName: unknown
+    ) {
       const normalizedName = String(nextName || "").trim();
       if (!normalizedName || normalizedName === currentName) {
         return;
@@ -439,7 +447,7 @@ export function createTerminalSurfaces({
       tab: TerminalTab,
       tabButton: HTMLButtonElement
     ) {
-      const currentName = tab.name || `shell ${tab.index}`;
+      const currentName = getTerminalTabEditName(tab, tabButton.dataset.terminalTabName);
       const editor = document.createElement("input");
       editor.className = "terminal-tab terminal-tab-editor";
       editor.type = "text";
@@ -461,7 +469,7 @@ export function createTerminalSurfaces({
         }
 
         try {
-          await renameTerminalTab(project, tab, nextName);
+          await renameTerminalTab(project, tab, currentName, nextName);
         } catch (error) {
           setTerminalStatus(card, `Could not rename shell: ${asErrorMessage(error)}`);
         }

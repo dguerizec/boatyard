@@ -1,4 +1,4 @@
-import type { TerminalCard } from "./terminalTypes.js";
+import type { TerminalCard, TerminalTab } from "./terminalTypes.js";
 
 type TerminalTabDomOptions = {
   createToolIcon: (name: string) => HTMLElement;
@@ -13,6 +13,10 @@ export const TERMINAL_TAB_RENAME_TOOLTIP = "Double-click to rename shell";
 
 export function getTerminalTabTitle(name: string, scrollWidth: number, clientWidth: number) {
   return scrollWidth > clientWidth ? name : TERMINAL_TAB_RENAME_TOOLTIP;
+}
+
+export function getTerminalTabEditName(tab: TerminalTab, renderedName?: string) {
+  return renderedName || tab.name || `shell ${tab.index}`;
 }
 
 export function createTerminalTabDom({ createToolIcon }: TerminalTabDomOptions) {
