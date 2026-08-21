@@ -1,6 +1,47 @@
 {
-  "generatedForVersion": "0.12.0",
+  "generatedForVersion": "0.13.0",
   "releases": [
+    {
+      "version": "0.13.0",
+      "date": "2026-08-21",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Git worktree status view",
+          "body": "Git worktree panes and widgets now share a richer status surface with per-worktree state and branch conflict inspection."
+        },
+        {
+          "category": "Added",
+          "title": "Cross-project TwiCC navigation",
+          "body": "TwiCC session links can open the owning Boatyard project or worktree and soft-navigate same-project views without a full reload."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pier workload health",
+          "body": "Pier workload status now reflects container health, runtime state, and exit codes so failed workloads stay visible and actionable."
+        },
+        {
+          "category": "Fixed",
+          "title": "Session Flow ordering",
+          "body": "Session Flow keeps creators, users, direct sessions, and children in more predictable positions."
+        },
+        {
+          "category": "Fixed",
+          "title": "Session Flow dragging",
+          "body": "Drag insertion now follows the pointer position more reliably."
+        },
+        {
+          "category": "Fixed",
+          "title": "Trusted TwiCC projects",
+          "body": "Projects created through TwiCC now consistently inherit the expected Boatyard trust policy."
+        },
+        {
+          "category": "Fixed",
+          "title": "Missing pane assignments",
+          "body": "Empty panes are selected when a saved web app assignment is unavailable, while valid pane selections are preserved."
+        }
+      ]
+    },
     {
       "version": "0.12.0",
       "date": "2026-08-17",

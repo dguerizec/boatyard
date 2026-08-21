@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.13.0] - 2026-08-21
+
+### Summary
+
+- **v0.13.0: Workspace Status Polish** — Improves Git worktree visibility, TwiCC navigation, Session Flow stability, and Pier workload status after updating.
+
+### Added
+
+- **Git worktree status view** — Git worktree panes and widgets now share a richer status surface with per-worktree state and branch conflict inspection.
+- **Cross-project TwiCC navigation** — TwiCC session links can open the owning Boatyard project or worktree and soft-navigate same-project views without a full reload.
+
+### Fixed
+
+- **Pier workload health** — Pier workload status now reflects container health, runtime state, and exit codes so failed workloads stay visible and actionable.
+- **Session Flow ordering** — Session Flow keeps creators, users, direct sessions, and children in more predictable positions.
+- **Session Flow dragging** — Drag insertion now follows the pointer position more reliably.
+- **Trusted TwiCC projects** — Projects created through TwiCC now consistently inherit the expected Boatyard trust policy.
+- **Missing pane assignments** — Empty panes are selected when a saved web app assignment is unavailable, while valid pane selections are preserved.
+
+### Internal
+
+- **Release commit policy** — Generated release commits now use a conventional subject and explanatory body for compatibility with the repository commit policy.
+
 ## [0.12.0] - 2026-08-17
 
 ### Summary
