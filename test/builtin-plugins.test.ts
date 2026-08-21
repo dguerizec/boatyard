@@ -2043,6 +2043,7 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
 
   assert.deepEqual(plain(workloads), [
     {
+      hasWorkload: true,
       project: "sshadow",
       primary: true,
       slug: "v1",
@@ -2050,6 +2051,7 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
       worktreePath,
       status: "running",
       running: true,
+      indicatorStatus: "running",
       urls: [
         {
           default: true,
@@ -2064,13 +2066,15 @@ test("Pier service matches worktree projects inside the Boatyard source path", a
       ]
     },
     {
+      hasWorkload: false,
       project: "sshadow",
       primary: false,
       slug: "stopped",
       url: "",
       worktreePath: `${sourcePath}/worktrees/stopped`,
       status: "stopped",
-      running: false
+      running: false,
+      indicatorStatus: "stopped"
     }
   ]);
 

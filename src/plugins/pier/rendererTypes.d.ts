@@ -26,6 +26,8 @@ type PierOptions = {
 };
 
 type PierWorkload = {
+  hasWorkload?: boolean;
+  indicatorStatus?: "error" | "pending" | "running" | "stopped";
   project?: string;
   primary?: boolean;
   running?: boolean;
@@ -77,6 +79,7 @@ type PierUrlRow = HTMLDivElement & {
   pierProject: PierProject;
   pierRemoveButton: HTMLButtonElement;
   pierStatusDot: HTMLSpanElement;
+  pierStopButton: HTMLButtonElement;
 };
 
 type PierService = {

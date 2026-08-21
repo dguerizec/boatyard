@@ -348,6 +348,7 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
     sourcePath: "/workspace/pickatube"
   };
   const persistedPatches: Array<Record<string, unknown>> = [];
+  const downCalls: string[] = [];
   const openUrlCalls: Array<{ options?: { sourceElement?: FakeElement }; url: string }> = [];
   const overlayCalls: Array<{ action: string; element?: FakeElement; margin?: number }> = [];
   let externalOpenCount = 0;
@@ -374,7 +375,18 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
     workload: {
       project: "pickatube",
       slug,
-      status: slug === "playlist" ? "stopped" : "running",
+      status: slug === "playlist" ? "missing" : "running",
+      containers: slug === "playlist"
+        ? [
+            { name: "playlist-api", status: "created" },
+            { name: "playlist-migrate", status: "exited", exit_code: 1 }
+          ]
+        : slug === "analytics"
+          ? [
+              { name: "analytics-api", status: "running", health: "healthy" },
+              { name: "analytics-worker", status: "created" }
+            ]
+          : [{ name: "develop-api", status: "running", health: "healthy" }],
       urls: [
         {
           url: `http://${slug}.pickatube.test`,
@@ -399,7 +411,7 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
       body,
       createElement: () => new FakeElement()
     },
-    fetch: async (url: unknown) => {
+    fetch: async (url: unknown, init: RequestInit = {}) => {
       if (String(url).endsWith("/api/v1/projects")) {
         return {
           ok: true,
@@ -408,6 +420,17 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
       }
       if (String(url).endsWith("/api/v1/projects/pickatube/worktrees")) {
         return { ok: true, json: async () => worktrees };
+      }
+      if (
+        String(url).endsWith("/api/v1/workloads/pickatube/playlist/down") &&
+        init.method === "POST"
+      ) {
+        downCalls.push(String(url));
+        const playlist = worktrees.find((worktree) => worktree.slug === "playlist");
+        if (playlist) {
+          playlist.has_workload = false;
+        }
+        return { ok: true, json: async () => ({ project: "pickatube", slug: "playlist", status: "down" }) };
       }
       throw new Error(`Unexpected URL ${url}`);
     },
@@ -495,15 +518,26 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
   assert.equal(rows[0].dataset.key, "pickatube\u0000develop");
   assert.equal(rows[1].dataset.key, "pickatube\u0000analytics");
   assert.equal(rows[2].dataset.key, "pickatube\u0000playlist");
-  assert.equal(findAllByClass(card, "pier-status-dot").length, 3);
+  const statusDots = findAllByClass(card, "pier-status-dot");
+  assert.equal(statusDots.length, 3);
+  assert.deepEqual(rows.map((row) => row.classList.contains("running")), [true, false, false]);
+  assert.deepEqual(rows.map((row) => row.classList.contains("pending")), [false, true, false]);
+  assert.deepEqual(rows.map((row) => row.classList.contains("failed")), [false, false, true]);
+  assert.deepEqual(statusDots.map((dot) => dot.title), ["Running", "Containers pending", "Error"]);
+  const pierStyles = fs.readFileSync(`${process.cwd()}/src/plugins/pier/style.css`, "utf8");
+  assert.match(pierStyles, /\.pier-url-row\.pending \.pier-status-dot\s*\{[^}]*background: #f59e0b/s);
+  assert.match(pierStyles, /\.pier-url-row\.failed \.pier-status-dot\s*\{[^}]*background: var\(--danger\)/s);
   assert.equal(findAllByClass(card, "pier-row-menu").length, 3);
-  assert.equal(findAllByClass(card, "pier-row-menu-item").length, 12);
+  assert.equal(findAllByClass(card, "pier-row-menu-item").length, 15);
   const menuButtons = findAllByClass(card, "pier-menu-button");
   const menus = findAllByClass(card, "pier-row-menu");
   const openUrlButtons = findAllByClass(card, "pier-row-menu-item")
     .filter((button) => button.textContent === "Open URL");
+  const stopButtons = findAllByClass(card, "pier-row-menu-item")
+    .filter((button) => button.textContent === "Stop workload");
   assert.deepEqual(links.map((link) => link.disabled), [false, false, true]);
   assert.deepEqual(openUrlButtons.map((button) => button.disabled), [false, false, true]);
+  assert.deepEqual(stopButtons.map((button) => button.hidden), [true, true, false]);
   await menuButtons[0].trigger("click");
   await flush();
   assert.equal(menus[0].popoverOpen, true);
@@ -527,7 +561,8 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
     { action: "freeze", element: menus[0], margin: 8 },
     { action: "restore" }
   ]);
-  const removeButtons = findAllByClass(card, "danger");
+  const removeButtons = findAllByClass(card, "danger")
+    .filter((button) => button.textContent === "Remove worktree…");
   assert.deepEqual(removeButtons.map((button) => button.hidden), [true, false, false]);
   assert.ok(!getTextContent(card).includes("/workspace/pickatube"));
 
@@ -542,6 +577,12 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
   await links[2].trigger("click");
   await openUrlButtons[2].trigger("click");
   assert.equal(openUrlCalls.length, 2);
+  await menuButtons[2].trigger("click");
+  await stopButtons[2].trigger("click");
+  assert.deepEqual(downCalls, ["http://pier.test/api/v1/workloads/pickatube/playlist/down"]);
+  assert.equal(stopButtons[2].hidden, true);
+  assert.equal(rows[2].classList.contains("failed"), false);
+  assert.equal(rows[2].classList.contains("stopped"), true);
   const buttons = findAllByClass(card, "pier-entry-point-button");
   assert.deepEqual(buttons.map((button) => button.textContent), ["Default", "Admin"]);
   assert.deepEqual(buttons.map((button) => button.getAttribute("aria-pressed")), ["true", "false"]);

@@ -201,6 +201,49 @@
     return ["running", "started"].includes(String(workload.status || "").toLowerCase());
   }
 
+  function getContainerRuntimeState(value: unknown) {
+    const source = isRecord(value) ? value : {};
+    return {
+      exitCode: typeof source.exit_code === "number" ? source.exit_code : undefined,
+      health: String(source.health || "").trim().toLowerCase(),
+      status: String(source.status || "").trim().toLowerCase()
+    };
+  }
+
+  function getWorkloadIndicatorStatus(
+    hasWorkload: boolean,
+    workload: PierWorkload,
+    source: Record<string, unknown>
+  ): NonNullable<PierWorkload["indicatorStatus"]> {
+    if (!hasWorkload) {
+      return "stopped";
+    }
+
+    const containers = Array.isArray(source.containers)
+      ? source.containers.map(getContainerRuntimeState)
+      : [];
+    const hasError = Boolean(String(source.error || "").trim()) ||
+      source.worktree_missing === true ||
+      containers.some((container) =>
+        container.health === "unhealthy" ||
+        container.status === "dead" ||
+        (container.status === "exited" && container.exitCode !== 0)
+      );
+    if (hasError) {
+      return "error";
+    }
+
+    const hasPendingContainer = containers.some((container) =>
+      container.health === "starting" ||
+      Boolean(container.status && !["running", "exited"].includes(container.status))
+    );
+    if (hasPendingContainer) {
+      return "pending";
+    }
+
+    return isWorkloadRunning(workload) ? "running" : "stopped";
+  }
+
   function normalizeHostnameLabel(value: unknown) {
     return String(value || "")
       .trim()
@@ -311,13 +354,16 @@
     worktree: unknown
   ): PierWorkload {
     const source = isRecord(worktree) ? worktree : {};
-    const workload = normalizePierWorkload(source.workload);
+    const workloadSource = isRecord(source.workload) ? source.workload : {};
+    const workload = normalizePierWorkload(workloadSource);
+    const hasWorkload = source.has_workload === true;
     const defaultUrl = getDefaultWorkloadUrl(workload);
     const worktreePath = String(source.path || workload.worktreePath || "");
     const urls = workload.urls?.length
       ? workload.urls
       : defaultUrl ? [{ default: true, url: defaultUrl }] : undefined;
     return {
+      hasWorkload,
       project: workload.project || pierProjectName,
       primary: Boolean(
         normalizePath(pierProjectPath) &&
@@ -327,7 +373,8 @@
       url: defaultUrl,
       worktreePath,
       status: workload.status || (source.has_workload ? "" : "stopped"),
-      running: source.has_workload === true && isWorkloadRunning(workload),
+      running: hasWorkload && isWorkloadRunning(workload),
+      indicatorStatus: getWorkloadIndicatorStatus(hasWorkload, workload, workloadSource),
       urls
     };
   }
@@ -523,8 +570,17 @@
   function updatePierUrlRow(row: PierUrlRow, entry: PierWorkload) {
     row.pierEntry = entry;
     const canOpenUrl = Boolean(entry.running && entry.url);
-    row.classList.toggle("stopped", !entry.running);
-    row.pierStatusDot.title = entry.running ? "Running" : "Stopped";
+    const indicatorStatus = entry.indicatorStatus || (entry.running ? "running" : "stopped");
+    row.classList.toggle("stopped", indicatorStatus === "stopped");
+    row.classList.toggle("running", indicatorStatus === "running");
+    row.classList.toggle("pending", indicatorStatus === "pending");
+    row.classList.toggle("failed", indicatorStatus === "error");
+    row.pierStatusDot.title = {
+      error: "Error",
+      pending: "Containers pending",
+      running: "Running",
+      stopped: "Stopped"
+    }[indicatorStatus];
     row.pierStatusDot.setAttribute("aria-label", row.pierStatusDot.title);
     row.pierLink.textContent = entry.slug || entry.url || "";
     row.pierLink.title = canOpenUrl ? `Open ${entry.url}` : entry.slug || "";
@@ -535,15 +591,20 @@
     row.pierMenuButton.title = `Actions for ${entry.slug || "worktree"}`;
     row.pierMenuButton.setAttribute("aria-label", row.pierMenuButton.title);
     const busy = row.dataset.busy === "true";
+    const busyAction = row.dataset.busyAction;
     row.pierActionButton.textContent = busy
-      ? entry.running ? "Stopping" : "Starting"
+      ? busyAction === "down" ? "Stopping" : "Starting"
       : entry.running ? "Stop" : "Start";
     row.pierActionButton.classList.toggle("stop", entry.running);
     row.pierActionButton.classList.toggle("start", !entry.running);
     row.pierActionButton.disabled = busy;
+    const canStopTrackedWorkload = entry.hasWorkload === true && !entry.running;
+    row.pierStopButton.hidden = !canStopTrackedWorkload;
+    row.pierStopButton.disabled = busy;
+    row.pierStopButton.textContent = busy && busyAction === "down" ? "Stopping…" : "Stop workload";
     const protectedWorktree = isProtectedProjectWorktree(row.pierProject, entry);
     row.pierRemoveButton.hidden = protectedWorktree;
-    row.pierMenuSeparator.hidden = protectedWorktree;
+    row.pierMenuSeparator.hidden = protectedWorktree && !canStopTrackedWorkload;
     row.pierRemoveButton.title = protectedWorktree ? "" : `Remove ${entry.slug}`;
   }
 
@@ -554,6 +615,38 @@
   function closePierRowMenu(menu: HTMLDivElement) {
     if (menu.matches(":popover-open")) {
       menu.hidePopover();
+    }
+  }
+
+  async function runPierLifecycleAction(
+    row: PierUrlRow,
+    action: "down" | "up",
+    props: PierOptions,
+    service: PierService,
+    onRefresh: () => Promise<unknown>,
+    onError: (error: Error) => void
+  ) {
+    if (row.dataset.busy === "true") {
+      return;
+    }
+
+    row.dataset.busy = "true";
+    row.dataset.busyAction = action;
+    updatePierUrlRow(row, row.pierEntry);
+    try {
+      if (action === "down") {
+        await service.down(row.pierEntry, props);
+      } else {
+        await service.up(row.pierEntry, props);
+      }
+      delete row.dataset.busy;
+      delete row.dataset.busyAction;
+      await onRefresh();
+    } catch (error) {
+      delete row.dataset.busy;
+      delete row.dataset.busyAction;
+      updatePierUrlRow(row, row.pierEntry);
+      onError(asError(error));
     }
   }
 
@@ -580,28 +673,18 @@
     actionButton.className = "pier-action-button";
     actionButton.type = "button";
     actionButton.addEventListener("click", async () => {
-      const entry = getClosestPierUrlRow(actionButton)?.pierEntry || {};
       const row = getClosestPierUrlRow(actionButton);
       if (!row) {
         return;
       }
-      row.dataset.busy = "true";
-      actionButton.disabled = true;
-      actionButton.textContent = entry.running ? "Stopping" : "Starting";
-      try {
-        if (entry.running) {
-          await service.down(entry, props);
-        } else {
-          await service.up(entry, props);
-        }
-        delete row.dataset.busy;
-        await onRefresh();
-      } catch (error) {
-        delete row.dataset.busy;
-        actionButton.disabled = false;
-        actionButton.textContent = entry.running ? "Stop" : "Start";
-        onError(asError(error));
-      }
+      await runPierLifecycleAction(
+        row,
+        row.pierEntry.running ? "down" : "up",
+        props,
+        service,
+        onRefresh,
+        onError
+      );
     });
 
     const menu = document.createElement("div");
@@ -654,6 +737,20 @@
     menuSeparator.className = "pier-row-menu-separator";
     menuSeparator.setAttribute("role", "separator");
 
+    const stopButton = document.createElement("button");
+    stopButton.className = "pier-row-menu-item danger";
+    stopButton.type = "button";
+    stopButton.setAttribute("role", "menuitem");
+    stopButton.textContent = "Stop workload";
+    stopButton.addEventListener("click", async () => {
+      const row = getClosestPierUrlRow(stopButton);
+      closePierRowMenu(menu);
+      if (!row || row.pierEntry.hasWorkload !== true || row.pierEntry.running) {
+        return;
+      }
+      await runPierLifecycleAction(row, "down", props, service, onRefresh, onError);
+    });
+
     const removeButton = document.createElement("button");
     removeButton.className = "pier-row-menu-item danger";
     removeButton.type = "button";
@@ -670,7 +767,7 @@
       openPierRemoveWorktreeDialog(row.pierProject, entry, service, onRefresh, onError);
     });
 
-    menu.append(openUrlButton, copyUrlButton, copyPathButton, menuSeparator, removeButton);
+    menu.append(openUrlButton, copyUrlButton, copyPathButton, menuSeparator, stopButton, removeButton);
 
     const menuButton = document.createElement("button");
     menuButton.className = "pier-menu-button";
@@ -734,7 +831,8 @@
       pierOpenUrlButton: openUrlButton,
       pierProject: {},
       pierRemoveButton: removeButton,
-      pierStatusDot: statusDot
+      pierStatusDot: statusDot,
+      pierStopButton: stopButton
     });
     row.className = "pier-url-row";
     row.append(identity, actionButton, menuButton, menu);
