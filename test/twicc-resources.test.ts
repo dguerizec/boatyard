@@ -91,6 +91,7 @@ test("TwiCC resources attribute each process to the nearest active session", asy
   const snapshot = await collectTwiccResourceSnapshot(options);
 
   assert.equal(snapshot.available, true);
+  assert.equal(snapshot.serviceControlAvailable, true);
   assert.equal(snapshot.processCount, 7);
   assert.equal(snapshot.sessionCount, 3);
   assert.equal(snapshot.pssBytes, 215);
@@ -144,8 +145,22 @@ test("TwiCC resources explain why remote process memory is unavailable", async (
 
   assert.equal(commandCalled, false);
   assert.equal(snapshot.available, false);
+  assert.equal(snapshot.serviceControlAvailable, false);
   assert.match(snapshot.error, /remote TwiCC instance/);
   assert.equal(snapshot.pssBytes, 0);
+});
+
+test("TwiCC resources keep local service controls available while the backend is stopped", async () => {
+  const snapshot = await collectTwiccResourceSnapshot({
+    execFileAsync: async () => ({
+      stdout: JSON.stringify({ status: "stopped", pid: 0, port: 3500 })
+    }),
+    platform: "linux"
+  });
+
+  assert.equal(snapshot.available, false);
+  assert.equal(snapshot.serviceControlAvailable, true);
+  assert.match(snapshot.error, /not running/);
 });
 
 test("TwiCC resources reject a different local backend", async () => {
@@ -164,6 +179,7 @@ test("TwiCC resources reject a different local backend", async () => {
   });
 
   assert.equal(snapshot.available, false);
+  assert.equal(snapshot.serviceControlAvailable, true);
   assert.match(snapshot.error, /does not match/);
 });
 

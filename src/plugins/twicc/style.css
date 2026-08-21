@@ -1,3 +1,121 @@
+.twicc-resource-service-controls {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(var(--panel-rgb), 0.78);
+}
+
+.twicc-resource-service-controls.is-compact {
+  margin: 0 12px 12px;
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.twicc-resource-service-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.twicc-resource-service-copy strong {
+  font-size: 12px;
+}
+
+.twicc-resource-service-copy small,
+.twicc-resource-service-status {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.twicc-resource-service-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.twicc-resource-service-action {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.twicc-resource-service-action.is-primary {
+  border-color: rgba(var(--accent-rgb), 0.68);
+  background: rgba(var(--accent-rgb), 0.16);
+}
+
+.twicc-resource-service-action:hover:not(:disabled),
+.twicc-resource-service-action:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.9);
+  outline: none;
+}
+
+.twicc-resource-service-action:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.twicc-resource-service-status {
+  grid-column: 1 / -1;
+}
+
+.twicc-resource-service-status:empty {
+  display: none;
+}
+
+.twicc-resource-service-status.is-success {
+  color: #6fcf9f;
+}
+
+.twicc-resource-service-status.is-error {
+  color: #f85149;
+}
+
+.twicc-resource-service-status.is-warning {
+  color: var(--warning-text);
+}
+
+.twicc-service-restart-dialog {
+  width: min(480px, calc(100vw - 32px));
+}
+
+.twicc-service-restart-confirmation {
+  padding: 2px 0;
+}
+
+.twicc-service-restart-confirmation p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+@media (max-width: 760px) {
+  .twicc-resource-service-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .twicc-resource-service-status {
+    grid-column: 1;
+  }
+}
+
 .project-twicc-status {
   order: 1;
   align-self: center;

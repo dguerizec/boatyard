@@ -21,6 +21,92 @@ test("TwiCC main plugin registers its system resource provider", () => {
   assert.deepEqual(resourceProviders, ["boatyard.twicc.systemResources"]);
 });
 
+test("TwiCC service upgrade and restart actions execute separate commands", async () => {
+  const handlers = new Map<string, () => Promise<unknown>>();
+  const commands: Array<{ args: string[]; command: string; options: Record<string, unknown> }> = [];
+  activate({
+    actions: {
+      handle(name: string, handler: () => Promise<unknown>) {
+        handlers.set(name, handler);
+      }
+    },
+    execFileAsync: async (command: string, args: string[], options: Record<string, unknown>) => {
+      commands.push({ args, command, options });
+      return { stdout: "" };
+    },
+    getState: () => ({}),
+    projectInspectors: { register() {} },
+    resources: { registerProvider() {} }
+  });
+
+  await handlers.get("upgradeService")?.();
+  assert.deepEqual(commands, [{
+    args: ["tool", "upgrade", "twicc"],
+    command: "uv",
+    options: { timeout: 300000, windowsHide: true }
+  }]);
+
+  await handlers.get("restartService")?.();
+  assert.deepEqual(commands[1], {
+    args: ["--user", "restart", "twicc"],
+    command: "systemctl",
+    options: { timeout: 30000, windowsHide: true }
+  });
+});
+
+test("TwiCC restart readiness blocks non-idle sessions and includes hidden processes", async () => {
+  const handlers = new Map<string, () => Promise<unknown>>();
+  const commands: string[][] = [];
+  let processes = [
+    { state: "user_turn" },
+    { state: "assistant_turn" },
+    { state: "awaiting_user_input" },
+    { state: "starting" }
+  ];
+  activate({
+    actions: {
+      handle(name: string, handler: () => Promise<unknown>) {
+        handlers.set(name, handler);
+      }
+    },
+    execFileAsync: async (_command: string, args: string[]) => {
+      commands.push(args);
+      return { stdout: JSON.stringify(processes) };
+    },
+    getState: () => ({}),
+    projectInspectors: { register() {} },
+    resources: { registerProvider() {} }
+  });
+
+  assert.deepEqual(await handlers.get("serviceRestartReadiness")?.(), {
+    blockingCount: 3,
+    processCount: 4,
+    ready: false,
+    states: {
+      assistant_turn: 1,
+      awaiting_user_input: 1,
+      starting: 1,
+      user_turn: 1
+    }
+  });
+  assert.deepEqual(commands[0], [
+    "processes",
+    "--limit",
+    "1000",
+    "--offset",
+    "0",
+    "--include-hidden"
+  ]);
+
+  processes = [{ state: "user_turn" }, { state: "user_turn" }];
+  assert.deepEqual(await handlers.get("serviceRestartReadiness")?.(), {
+    blockingCount: 0,
+    processCount: 2,
+    ready: true,
+    states: { user_turn: 2 }
+  });
+});
+
 test("TwiCC main resolves session navigation from the cached process snapshot", async () => {
   const handlers = new Map<string, (payload?: Record<string, unknown>) => Promise<unknown>>();
   const commands: string[][] = [];

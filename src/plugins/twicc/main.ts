@@ -59,15 +59,100 @@ type TwiccPluginContext = {
   resources: Pick<PluginResources, "registerProvider">;
 };
 
+const TWICC_RESTART_OPTIONS = Object.freeze({ timeout: 30_000, windowsHide: true });
+const TWICC_UPGRADE_OPTIONS = Object.freeze({ timeout: 300_000, windowsHide: true });
+const TWICC_PROCESS_LIST_OPTIONS = Object.freeze({ timeout: 5_000, windowsHide: true });
+const TWICC_PROCESS_PAGE_SIZE = 1000;
+
+type TwiccServiceProcess = { state?: unknown };
+type TwiccServiceRestartReadiness = {
+  blockingCount: number;
+  processCount: number;
+  ready: boolean;
+  states: Record<string, number>;
+};
+
+async function restartTwiccService(execFileAsync: ExecFileAsync) {
+  await execFileAsync("systemctl", ["--user", "restart", "twicc"], TWICC_RESTART_OPTIONS);
+  return { restarted: true };
+}
+
+async function upgradeTwiccService(execFileAsync: ExecFileAsync) {
+  await execFileAsync("uv", ["tool", "upgrade", "twicc"], TWICC_UPGRADE_OPTIONS);
+  return { upgraded: true };
+}
+
+async function getTwiccServiceRestartReadiness(
+  execFileAsync: ExecFileAsync
+): Promise<TwiccServiceRestartReadiness> {
+  const processes: TwiccServiceProcess[] = [];
+  for (let offset = 0; ; offset += TWICC_PROCESS_PAGE_SIZE) {
+    const result = await execFileAsync("twicc", [
+      "processes",
+      "--limit",
+      String(TWICC_PROCESS_PAGE_SIZE),
+      "--offset",
+      String(offset),
+      "--include-hidden"
+    ], TWICC_PROCESS_LIST_OPTIONS);
+    const page = JSON.parse(String(result.stdout || "[]"));
+    if (!Array.isArray(page)) {
+      throw new Error("TwiCC returned an invalid process list.");
+    }
+    processes.push(...page);
+    if (page.length < TWICC_PROCESS_PAGE_SIZE) {
+      break;
+    }
+  }
+
+  const states = processes.reduce<Record<string, number>>((counts, process) => {
+    const state = String(process?.state || "unknown").trim() || "unknown";
+    counts[state] = (counts[state] || 0) + 1;
+    return counts;
+  }, {});
+  const blockingCount = processes.reduce((count, process) => (
+    String(process?.state || "").trim() === "user_turn" ? count : count + 1
+  ), 0);
+  return {
+    blockingCount,
+    processCount: processes.length,
+    ready: blockingCount === 0,
+    states
+  };
+}
+
 function activate(ctx: TwiccPluginContext) {
   const projectCache = createTwiccProjectCache();
   let latestProcesses: Array<Record<string, unknown>> = [];
   let latestTwiccProjects: Array<Record<string, unknown>> = [];
+  let serviceOperationActive = false;
+
+  async function runServiceOperation<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+    if (serviceOperationActive) {
+      throw new Error("Another TwiCC service operation is already running.");
+    }
+    serviceOperationActive = true;
+    try {
+      return await operation();
+    } finally {
+      serviceOperationActive = false;
+    }
+  }
 
   ctx.resources.registerProvider(TWICC_RESOURCE_PROVIDER_ID, () => collectTwiccResourceProvider({
     execFileAsync: ctx.execFileAsync,
     state: ctx.getState()
   }));
+
+  ctx.actions.handle("restartService", () => runServiceOperation(
+    () => restartTwiccService(ctx.execFileAsync)
+  ));
+  ctx.actions.handle("upgradeService", () => runServiceOperation(
+    () => upgradeTwiccService(ctx.execFileAsync)
+  ));
+  ctx.actions.handle("serviceRestartReadiness", () => (
+    getTwiccServiceRestartReadiness(ctx.execFileAsync)
+  ));
 
   ctx.actions.handle<SourcePathPayload & GlobalConfigPayload>("createProject", async ({ name, sourcePath, globalConfig } = {}) => {
     const project = await createTwiccProject({ name, sourcePath }, {

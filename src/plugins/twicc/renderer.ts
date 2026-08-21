@@ -177,7 +177,28 @@
     projects?: TwiccResourceProject[];
     pssBytes?: number;
     rssBytes?: number;
+    serviceControlAvailable?: boolean;
     sessionCount?: number;
+  };
+  type TwiccServiceRestartReadiness = {
+    blockingCount: number;
+    processCount: number;
+    ready: boolean;
+  };
+  type TwiccServiceWorkflowPhase =
+    | "idle"
+    | "upgrading"
+    | "waiting"
+    | "confirming"
+    | "restarting"
+    | "success"
+    | "cancelled"
+    | "error";
+  type TwiccServiceControlView = {
+    controls: HTMLElement;
+    restartButton: HTMLButtonElement;
+    status: HTMLElement;
+    upgradeButton: HTMLButtonElement;
   };
 
   type TwiccCreatedProject = {
@@ -330,6 +351,7 @@
     { value: "open", label: "Open" },
     { value: "closed", label: "Closed" }
   ];
+  const TWICC_SERVICE_IDLE_POLL_MS = 2000;
   let projectProcessStatuses: Record<string, TwiccProjectStatus> = {};
   let nextSessionFlowSurfaceId = 0;
   const retainedDoneProjectStatuses = new Map<string, TwiccProjectStatus>();
@@ -342,6 +364,10 @@
   let sessionNavigationUrlChangedHandler: ((event: Event) => void) | null = null;
   const suppressedSessionNavigationByKey = new Map<string, SuppressedSessionNavigation>();
   let latestGlobalConfig: TwiccConfig = {};
+  let twiccServiceWorkflow: Promise<void> | null = null;
+  let twiccServiceWorkflowMessage = "";
+  let twiccServiceWorkflowPhase: TwiccServiceWorkflowPhase = "idle";
+  const twiccServiceControlViews = new Set<TwiccServiceControlView>();
 
   if (!registry) {
     throw new Error("Plugin registry is unavailable.");
@@ -3651,6 +3677,269 @@
     return isRecord(providerSnapshot?.data) ? providerSnapshot.data as TwiccResourceSnapshot : {};
   }
 
+  function isTwiccServiceWorkflowBusy(): boolean {
+    return ["upgrading", "waiting", "confirming", "restarting"].includes(twiccServiceWorkflowPhase);
+  }
+
+  function syncTwiccServiceControlView(view: TwiccServiceControlView): void {
+    const busy = isTwiccServiceWorkflowBusy();
+    view.upgradeButton.disabled = busy;
+    view.restartButton.disabled = busy;
+    view.status.textContent = twiccServiceWorkflowMessage;
+    view.status.className = `twicc-resource-service-status${
+      twiccServiceWorkflowPhase === "success"
+        ? " is-success"
+        : twiccServiceWorkflowPhase === "error"
+          ? " is-error"
+          : twiccServiceWorkflowPhase === "cancelled"
+            ? " is-warning"
+            : busy
+              ? " is-running"
+              : ""
+    }`;
+  }
+
+  function updateTwiccServiceWorkflow(
+    phase: TwiccServiceWorkflowPhase,
+    message: string
+  ): void {
+    twiccServiceWorkflowPhase = phase;
+    twiccServiceWorkflowMessage = message;
+    for (const view of twiccServiceControlViews) {
+      if (!view.controls.isConnected && !document.body.contains(view.controls)) {
+        twiccServiceControlViews.delete(view);
+        continue;
+      }
+      syncTwiccServiceControlView(view);
+    }
+  }
+
+  function getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  async function invokeTwiccServiceAction(actionName: string): Promise<unknown> {
+    const result = await invokePlugin(actionName);
+    if (!result) {
+      throw new Error("The TwiCC service action is unavailable.");
+    }
+    return result;
+  }
+
+  function normalizeTwiccServiceRestartReadiness(value: unknown): TwiccServiceRestartReadiness {
+    if (!isRecord(value) || typeof value.ready !== "boolean") {
+      throw new Error("TwiCC restart readiness is unavailable.");
+    }
+    return {
+      blockingCount: Math.max(0, Number(value.blockingCount) || 0),
+      processCount: Math.max(0, Number(value.processCount) || 0),
+      ready: value.ready
+    };
+  }
+
+  async function loadTwiccServiceRestartReadiness(): Promise<TwiccServiceRestartReadiness> {
+    return normalizeTwiccServiceRestartReadiness(
+      await invokeTwiccServiceAction("serviceRestartReadiness")
+    );
+  }
+
+  function waitForTwiccServicePoll(): Promise<void> {
+    return new Promise((resolve) => globalScope.setTimeout(resolve, TWICC_SERVICE_IDLE_POLL_MS));
+  }
+
+  async function waitForTwiccServiceRestartReadiness(): Promise<TwiccServiceRestartReadiness> {
+    while (true) {
+      try {
+        const readiness = await loadTwiccServiceRestartReadiness();
+        if (readiness.ready) {
+          return readiness;
+        }
+        updateTwiccServiceWorkflow(
+          "waiting",
+          `Upgrade complete. Waiting for ${readiness.blockingCount} ${readiness.blockingCount === 1 ? "session" : "sessions"} still running or waiting for input…`
+        );
+      } catch (error) {
+        updateTwiccServiceWorkflow(
+          "waiting",
+          `Upgrade complete. Could not check TwiCC sessions (${getErrorMessage(error)}). Retrying…`
+        );
+      }
+      await waitForTwiccServicePoll();
+    }
+  }
+
+  function confirmTwiccServiceRestart(processCount: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const dialog = document.createElement("dialog");
+      dialog.className = "plugin-settings-dialog twicc-service-restart-dialog";
+      const form = document.createElement("form");
+      form.className = "plugin-settings-dialog-panel";
+      const header = document.createElement("header");
+      header.className = "plugin-settings-dialog-header";
+      const title = document.createElement("h3");
+      title.textContent = "Restart TwiCC?";
+      header.append(title);
+      const confirmation = document.createElement("div");
+      confirmation.className = "twicc-service-restart-confirmation";
+      const copy = document.createElement("p");
+      copy.textContent = processCount
+        ? `The upgrade is installed and all ${processCount} TwiCC ${processCount === 1 ? "session is" : "sessions are"} idle. Restart the service now to activate it?`
+        : "The upgrade is installed and no TwiCC session is running. Restart the service now to activate it?";
+      confirmation.append(copy);
+      const actions = document.createElement("div");
+      actions.className = "form-actions";
+      const cancelButton = document.createElement("button");
+      cancelButton.className = "secondary-button";
+      cancelButton.type = "button";
+      cancelButton.textContent = "Not now";
+      const submitButton = document.createElement("button");
+      submitButton.className = "primary-button";
+      submitButton.type = "submit";
+      submitButton.textContent = "Restart";
+      actions.append(cancelButton, submitButton);
+      form.append(header, confirmation, actions);
+      dialog.append(form);
+
+      let settled = false;
+      function settle(confirmed: boolean): void {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        dialog.remove();
+        resolve(confirmed);
+      }
+
+      cancelButton.addEventListener("click", () => dialog.close("cancel"));
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        dialog.close("restart");
+      });
+      dialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        dialog.close("cancel");
+      });
+      dialog.addEventListener("close", () => settle(dialog.returnValue === "restart"), { once: true });
+
+      if (typeof globalScope.BoatyardOverlayDialog?.show === "function") {
+        void globalScope.BoatyardOverlayDialog.show(dialog, {
+          freeze: "overlap",
+          freezeMargin: 16
+        }).then((shown) => {
+          if (shown) {
+            submitButton.focus();
+          } else {
+            settle(false);
+          }
+        }, () => settle(false));
+      } else {
+        document.body.append(dialog);
+        dialog.showModal();
+        globalScope.requestAnimationFrame?.(() => submitButton.focus());
+      }
+    });
+  }
+
+  async function runTwiccServiceUpgradeWorkflow(): Promise<void> {
+    let upgraded = false;
+    try {
+      updateTwiccServiceWorkflow("upgrading", "Upgrading TwiCC in the background…");
+      await invokeTwiccServiceAction("upgradeService");
+      upgraded = true;
+
+      while (true) {
+        const readiness = await waitForTwiccServiceRestartReadiness();
+        updateTwiccServiceWorkflow("confirming", "Upgrade complete. Waiting for restart confirmation…");
+        const confirmed = await confirmTwiccServiceRestart(readiness.processCount);
+        if (!confirmed) {
+          updateTwiccServiceWorkflow("cancelled", "Upgrade complete. Restart postponed.");
+          return;
+        }
+
+        const finalReadiness = await loadTwiccServiceRestartReadiness();
+        if (!finalReadiness.ready) {
+          updateTwiccServiceWorkflow(
+            "waiting",
+            "A TwiCC session became active while the restart was awaiting confirmation. Waiting again…"
+          );
+          await waitForTwiccServicePoll();
+          continue;
+        }
+
+        updateTwiccServiceWorkflow("restarting", "Restarting TwiCC…");
+        await invokeTwiccServiceAction("restartService");
+        updateTwiccServiceWorkflow("success", "Upgraded and restarted.");
+        return;
+      }
+    } catch (error) {
+      updateTwiccServiceWorkflow(
+        "error",
+        upgraded
+          ? `Upgrade complete, but TwiCC was not restarted: ${getErrorMessage(error)}`
+          : `Upgrade failed: ${getErrorMessage(error)}`
+      );
+    }
+  }
+
+  async function runTwiccServiceRestartWorkflow(): Promise<void> {
+    try {
+      updateTwiccServiceWorkflow("restarting", "Restarting TwiCC…");
+      await invokeTwiccServiceAction("restartService");
+      updateTwiccServiceWorkflow("success", "Restarted.");
+    } catch (error) {
+      updateTwiccServiceWorkflow("error", `Restart failed: ${getErrorMessage(error)}`);
+    }
+  }
+
+  function startTwiccServiceWorkflow(workflow: () => Promise<void>): void {
+    if (twiccServiceWorkflow) {
+      return;
+    }
+    twiccServiceWorkflow = workflow().finally(() => {
+      twiccServiceWorkflow = null;
+    });
+  }
+
+  function startTwiccServiceUpgradeWorkflow(): void {
+    startTwiccServiceWorkflow(runTwiccServiceUpgradeWorkflow);
+  }
+
+  function startTwiccServiceRestartWorkflow(): void {
+    startTwiccServiceWorkflow(runTwiccServiceRestartWorkflow);
+  }
+
+  function createTwiccServiceControls(
+    ui: PluginResourceRendererUi,
+    compact = false
+  ) {
+    const controls = ui.element(
+      "section",
+      `twicc-resource-service-controls${compact ? " is-compact" : ""}`
+    );
+    const copy = ui.element("div", "twicc-resource-service-copy");
+    copy.append(
+      ui.element("strong", "", "TwiCC service"),
+      ui.element("small", "", "Manage the local systemd user service")
+    );
+    const actions = ui.element("div", "twicc-resource-service-actions");
+    const upgradeButton = ui.element("button", "twicc-resource-service-action is-primary", "Upgrade");
+    const restartButton = ui.element("button", "twicc-resource-service-action", "Restart");
+    const status = ui.element("span", "twicc-resource-service-status");
+    upgradeButton.type = "button";
+    restartButton.type = "button";
+    status.setAttribute("aria-live", "polite");
+    status.setAttribute("role", "status");
+    const view = { controls, restartButton, status, upgradeButton };
+    twiccServiceControlViews.add(view);
+    syncTwiccServiceControlView(view);
+
+    upgradeButton.addEventListener("click", startTwiccServiceUpgradeWorkflow);
+    restartButton.addEventListener("click", startTwiccServiceRestartWorkflow);
+    actions.append(upgradeButton, restartButton);
+    controls.append(copy, actions, status);
+    return controls;
+  }
+
   function renderTwiccResourceOverview(
     providerSnapshot: PluginManagedResourceSnapshot | undefined,
     ui: PluginResourceRendererUi
@@ -3669,6 +3958,9 @@
         "system-resources-note",
         "Shared local service, excluded from estimated managed memory."
       ));
+    }
+    if (snapshot.serviceControlAvailable !== false) {
+      card.card.append(createTwiccServiceControls(ui, true));
     }
     ui.addError(card.card, providerSnapshot?.error || snapshot.error);
     return card.card;
@@ -3717,6 +4009,9 @@
       ui.createStat("Backend overhead", ui.formatMemory(snapshot.backend?.pssBytes), "PSS")
     );
     content.append(summary);
+    if (snapshot.serviceControlAvailable !== false) {
+      content.append(createTwiccServiceControls(ui));
+    }
 
     const list = ui.createResourceList();
     const backendPssBytes = Number(snapshot.backend?.pssBytes) || 0;

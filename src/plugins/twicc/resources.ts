@@ -70,6 +70,7 @@ type TwiccResourceSnapshot = {
   projects: TwiccResourceProject[];
   pssBytes: number;
   rssBytes: number;
+  serviceControlAvailable: boolean;
   sessionCount: number;
   swapPssBytes: number;
 };
@@ -147,13 +148,14 @@ function getConfiguredTwiccPort(value: unknown): number {
   }
 }
 
-function emptySnapshot(error: string): TwiccResourceSnapshot {
+function emptySnapshot(error: string, serviceControlAvailable = false): TwiccResourceSnapshot {
   return {
     available: false,
     backend: { pid: 0, processCount: 0, ...EMPTY_PROCESS_MEMORY },
     error,
     processCount: 0,
     projects: [],
+    serviceControlAvailable,
     sessionCount: 0,
     ...EMPTY_PROCESS_MEMORY
   };
@@ -208,11 +210,11 @@ async function collectTwiccResourceSnapshot({
 
   const status = await loadLocalTwiccStatus(execFileAsync);
   if (status.status !== "running" || !status.pid) {
-    return emptySnapshot("The local TwiCC backend is not running.");
+    return emptySnapshot("The local TwiCC backend is not running.", true);
   }
   const configuredPort = getConfiguredTwiccPort(globalConfig.twiccBaseUrl);
   if (configuredPort && status.port && configuredPort !== status.port) {
-    return emptySnapshot("The configured TwiCC URL does not match the local backend reported by TwiCC.");
+    return emptySnapshot("The configured TwiCC URL does not match the local backend reported by TwiCC.", true);
   }
 
   const identities = await processSource.list();
@@ -294,6 +296,7 @@ async function collectTwiccResourceSnapshot({
     error: "",
     processCount: backendProcessIds.size,
     projects,
+    serviceControlAvailable: true,
     sessionCount: sessions.length,
     ...totalMemory
   };

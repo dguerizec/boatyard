@@ -299,17 +299,45 @@ function fieldMap(fields: unknown): Record<string, LooseVmValue> {
 }
 
 type TestResourceElement = {
+  className: string;
   children: TestResourceElement[];
+  disabled: boolean;
+  isConnected: boolean;
   textContent: string;
+  type: string;
+  addEventListener(type: string, listener: (event: { preventDefault(): void }) => void): void;
   append(...children: TestResourceElement[]): void;
+  click(): void;
+  setAttribute(name: string, value: string): void;
 };
 
 function createTestResourceElement(textContent = ""): TestResourceElement {
+  const listeners = new Map<string, Array<(event: { preventDefault(): void }) => void>>();
   return {
+    className: "",
     children: [],
+    disabled: false,
+    isConnected: true,
     textContent,
+    type: "",
+    addEventListener(type, listener) {
+      const entries = listeners.get(type) || [];
+      entries.push(listener);
+      listeners.set(type, entries);
+    },
     append(...children) {
       this.children.push(...children);
+    },
+    click() {
+      if (this.disabled) {
+        return;
+      }
+      for (const listener of listeners.get("click") || []) {
+        listener({ preventDefault() {} });
+      }
+    },
+    setAttribute() {
+      // Attribute values are not relevant to this lightweight renderer tree.
     }
   };
 }
@@ -344,7 +372,11 @@ function createTestResourceUi() {
     createStat: (label: string, value: string, detail = "") => (
       createTestResourceElement(`${label} ${value} ${detail}`)
     ),
-    element: (_tagName: string, _className = "", text = "") => createTestResourceElement(text),
+    element: (_tagName: string, className = "", text = "") => {
+      const element = createTestResourceElement(text);
+      element.className = className;
+      return element;
+    },
     formatCount: (value: unknown) => String(Number(value) || 0),
     formatMemory: (value: unknown) => `${Number(value) || 0} B`
   };
@@ -989,8 +1021,111 @@ test("TwiCC resources render overview and project session details", () => {
   assert.ok(overviewText.includes("Shared local service, excluded from estimated managed memory."));
   const detailsText = getTestResourceText(details);
   assert.ok(detailsText.some((text) => text.includes("TwiCC service")));
+  assert.ok(detailsText.includes("Upgrade"));
+  assert.ok(detailsText.includes("Restart"));
   assert.ok(detailsText.some((text) => text.includes("Boatyard")));
   assert.ok(detailsText.some((text) => text.includes("Memory accounting codex assistant turn PID 3062747")));
+});
+
+test("TwiCC resource upgrade confirms, rechecks idle sessions, and restarts", async () => {
+  const { context, registry } = loadRendererPluginContext();
+  registry.applyEnabledState({});
+  const provider = registry.getService("boatyard.twicc.systemResources");
+  const details = createTestResourceElement();
+  const invocations: string[] = [];
+  const readiness = [
+    { blockingCount: 0, processCount: 2, ready: true },
+    { blockingCount: 0, processCount: 2, ready: true }
+  ];
+
+  context.window.boatyard.invokePlugin = async (pluginId, actionName) => {
+    assert.equal(pluginId, "boatyard.twicc");
+    invocations.push(actionName);
+    if (actionName === "serviceRestartReadiness") {
+      return readiness.shift() || { blockingCount: 0, processCount: 2, ready: true };
+    }
+    return { ok: true };
+  };
+  type FakeDialogElement = {
+    append(...children: FakeDialogElement[]): void;
+    addEventListener(type: string, listener: (event: { preventDefault(): void }) => void): void;
+    className: string;
+    close(value?: string): void;
+    focus(): void;
+    remove(): void;
+    returnValue: string;
+    setAttribute(name: string, value: string): void;
+    showModal(): void;
+    textContent: string;
+    type: string;
+  };
+  function createFakeDialogElement(): FakeDialogElement {
+    const listeners = new Map<string, Array<(event: { preventDefault(): void }) => void>>();
+    return {
+      append() {},
+      addEventListener(type, listener) {
+        const entries = listeners.get(type) || [];
+        entries.push(listener);
+        listeners.set(type, entries);
+      },
+      className: "",
+      close(value = "") {
+        this.returnValue = value;
+        for (const listener of listeners.get("close") || []) {
+          listener({ preventDefault() {} });
+        }
+      },
+      focus() {},
+      remove() {},
+      returnValue: "",
+      setAttribute() {},
+      showModal() {},
+      textContent: "",
+      type: ""
+    };
+  }
+  context.document.createElement = (() => createFakeDialogElement()) as unknown as BuiltinRendererContext["document"]["createElement"];
+  context.window.BoatyardOverlayDialog = {
+    async show(dialog: FakeDialogElement) {
+      queueMicrotask(() => dialog.close("restart"));
+      return true;
+    }
+  };
+
+  provider.renderDetails(details, {
+    data: {
+      available: true,
+      backend: { processCount: 1, pssBytes: 100, rssBytes: 120 },
+      processCount: 1,
+      projects: [],
+      pssBytes: 100,
+      rssBytes: 120,
+      serviceControlAvailable: true,
+      sessionCount: 0
+    }
+  }, createTestResourceUi());
+
+  const nodes = (function flatten(element: TestResourceElement): TestResourceElement[] {
+    return [element, ...element.children.flatMap(flatten)];
+  })(details);
+  const upgradeButton = nodes.find((element) => element.textContent === "Upgrade");
+  const status = nodes.find((element) => element.className === "twicc-resource-service-status");
+  if (!upgradeButton || !status) {
+    throw new Error("TwiCC service controls were not rendered.");
+  }
+  upgradeButton.click();
+
+  for (let attempt = 0; attempt < 20 && invocations.at(-1) !== "restartService"; attempt += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  assert.deepEqual(invocations, [
+    "upgradeService",
+    "serviceRestartReadiness",
+    "serviceRestartReadiness",
+    "restartService"
+  ]);
+  assert.equal(status.textContent, "Upgraded and restarted.");
 });
 
 test("Telegram plugin defaults project topic titles to the project slug", () => {
