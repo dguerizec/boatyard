@@ -349,7 +349,12 @@ test("Built-in plugins register project integrations and widgets", () => {
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "project", kind: "dom" }).map((pane: PluginPane) => pane.id).sort()),
-    ["boatyard.github.overview", "boatyard.telegram.pane", "boatyard.twicc.sessionFlowPane"]
+    [
+      "boatyard.gitWorktrees.changes",
+      "boatyard.github.overview",
+      "boatyard.telegram.pane",
+      "boatyard.twicc.sessionFlowPane"
+    ]
   );
   assert.deepEqual(
     plain(registry.listPanes({ scope: "global", kind: "dom" }).map((pane: PluginPane) => pane.id).sort()),
@@ -574,6 +579,10 @@ test("Built-in plugins register project integrations and widgets", () => {
   );
   const gitWorktreesPlugin = registry.list().find((plugin: PluginSummary) => plugin.id === "boatyard.gitWorktrees");
   assert.deepEqual(
+    plain(gitWorktreesPlugin.contributes.panes),
+    ["boatyard.gitWorktrees.changes"]
+  );
+  assert.deepEqual(
     plain(gitWorktreesPlugin.contributes.widgets),
     ["boatyard.gitWorktrees.list"]
   );
@@ -581,7 +590,7 @@ test("Built-in plugins register project integrations and widgets", () => {
   if (!gitWorktreesWidget) {
     throw new Error("Git worktrees widget was not registered.");
   }
-  assert.equal(gitWorktreesWidget.name, "Git worktrees");
+  assert.equal(gitWorktreesWidget.name, "Git");
   assert.equal(gitWorktreesWidget.status, "stable");
   assert.equal(gitWorktreesWidget.defaultVisible, false);
   assert.equal(

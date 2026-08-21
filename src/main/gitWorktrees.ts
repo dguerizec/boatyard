@@ -5,15 +5,20 @@ export type GitWorktreeEntry = {
   usable: boolean;
 };
 
-export function parseGitWorktrees(output: unknown): GitWorktreeEntry[] {
-  const entries: GitWorktreeEntry[] = [];
-  let current: Partial<GitWorktreeEntry> | null = null;
+export type GitWorktreeHeadEntry = GitWorktreeEntry & {
+  head: string;
+};
+
+export function parseGitWorktreesWithHead(output: unknown): GitWorktreeHeadEntry[] {
+  const entries: GitWorktreeHeadEntry[] = [];
+  let current: Partial<GitWorktreeHeadEntry> | null = null;
 
   function flush(): void {
     if (current?.path) {
       entries.push({
         branch: current.branch || "",
         detached: current.detached === true,
+        head: current.head || "",
         path: current.path,
         usable: current.usable !== false
       });
@@ -32,6 +37,8 @@ export function parseGitWorktrees(output: unknown): GitWorktreeEntry[] {
     if (key === "worktree") {
       flush();
       current = { path: value, usable: true };
+    } else if (current && key === "HEAD") {
+      current.head = value;
     } else if (current && key === "branch") {
       current.branch = value.replace(/^refs\/heads\//, "");
     } else if (current && key === "detached") {
@@ -42,4 +49,8 @@ export function parseGitWorktrees(output: unknown): GitWorktreeEntry[] {
   }
   flush();
   return entries;
+}
+
+export function parseGitWorktrees(output: unknown): GitWorktreeEntry[] {
+  return parseGitWorktreesWithHead(output).map(({ head: _head, ...worktree }) => worktree);
 }
