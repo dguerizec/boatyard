@@ -30,6 +30,14 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
   };
   const service = new McpServerService({
     api: {
+      capturePane: async () => ({
+        data: Buffer.from("png").toString("base64"),
+        metadata: {
+          paneId: "pane-1",
+          rect: { x: 12, y: 18, width: 320, height: 240 }
+        },
+        mimeType: "image/png"
+      }),
       listWindows: () => ({ windows: [] }),
       requestPane: async () => ({})
     },
@@ -85,8 +93,47 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
       "list_windows",
       "get_pane_layout",
       "list_pane_types",
+      "capture_pane",
       "update_pane",
       "navigate_pane"
+    ]);
+
+    const captureResponse = await fetch(status.endpoint, {
+      method: "POST",
+      headers: {
+        Accept: "application/json, text/event-stream",
+        Authorization: `Bearer ${settings.token}`,
+        "Content-Type": "application/json",
+        "MCP-Protocol-Version": "2025-06-18"
+      },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: {
+          name: "capture_pane",
+          arguments: {
+            contextId: "context-1",
+            windowId: "window-1",
+            projectId: "project-1",
+            paneId: "pane-1",
+            rect: { x: 12, y: 18, width: 320, height: 240 }
+          }
+        }
+      })
+    });
+    assert.equal(captureResponse.status, 200);
+    const capturePayload = parseMcpResponse(await captureResponse.text());
+    const captureResult = capturePayload.result as Record<string, unknown>;
+    assert.deepEqual(captureResult.content, [
+      {
+        type: "text",
+        text: JSON.stringify({
+          paneId: "pane-1",
+          rect: { x: 12, y: 18, width: 320, height: 240 }
+        }, null, 2)
+      },
+      { type: "image", data: Buffer.from("png").toString("base64"), mimeType: "image/png" }
     ]);
 
     const managedClientResponse = await fetch(status.endpoint, {
@@ -98,7 +145,7 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
       },
       body: JSON.stringify({
         jsonrpc: "2.0",
-        id: 3,
+        id: 4,
         method: "initialize",
         params: {
           protocolVersion: "2025-06-18",
@@ -117,7 +164,7 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
         Authorization: "Bearer codex-managed-token-with-sufficient-entropy",
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 4, method: "tools/list", params: {} })
+      body: JSON.stringify({ jsonrpc: "2.0", id: 5, method: "tools/list", params: {} })
     });
     assert.equal(revokedClientResponse.status, 401);
   } finally {

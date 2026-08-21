@@ -35,6 +35,11 @@ import { McpAgentConnectionInstaller } from "./mcpAgentConnectionInstaller.js";
 import { McpSkillInstaller } from "./mcpSkillInstaller.js";
 import { McpSettingsStore } from "./mcpSettingsStore.js";
 import {
+  parsePaneCaptureTarget,
+  resolvePaneRelativeCaptureRectangle,
+  type PaneCaptureRectangle
+} from "./paneCapture.js";
+import {
   DEFAULT_PROFILE_NAME,
   PROFILES_DIRECTORY_NAME,
   canonicalizeDirectory,
@@ -172,9 +177,22 @@ async function captureWorkspaceDisplay(): Promise<NativeImage> {
     throw new Error("Screen capture requires an active workspace window.");
   }
 
+  return captureWorkspaceWindowDisplay(workspaceWindow);
+}
+
+async function prepareWorkspaceWindowCapture(workspaceWindow: ElectronBrowserWindow): Promise<void> {
   workspaceWindow.moveTop();
   workspaceWindow.focus();
   await new Promise((resolve) => setTimeout(resolve, 250));
+}
+
+async function captureWorkspaceWindowDisplay(
+  workspaceWindow: ElectronBrowserWindow,
+  options: { prepare?: boolean } = {}
+): Promise<NativeImage> {
+  if (options.prepare !== false) {
+    await prepareWorkspaceWindowCapture(workspaceWindow);
+  }
 
   const contentBounds = workspaceWindow.getContentBounds();
   const display = screen.getDisplayMatching(contentBounds);
@@ -280,12 +298,7 @@ function listMcpWindows() {
   };
 }
 
-function requestMcpPane(
-  contextId: string,
-  windowId: string,
-  operation: string,
-  input: Record<string, unknown>
-) {
+function getMcpWorkspaceWindow(contextId: string, windowId: string): WorkspaceWindowRecord {
   const workspaceWindow = [...workspaceWindows.values()].find((candidate) => (
     getMcpContextId(candidate.configuration) === contextId && candidate.id === windowId
   ));
@@ -295,7 +308,53 @@ function requestMcpPane(
       `Boatyard window ${windowId} is not open in context ${contextId}.`
     );
   }
+  return workspaceWindow;
+}
+
+function requestMcpPane(
+  contextId: string,
+  windowId: string,
+  operation: string,
+  input: Record<string, unknown>
+) {
+  const workspaceWindow = getMcpWorkspaceWindow(contextId, windowId);
   return mcpRendererBroker.request(workspaceWindow.window.webContents, operation, input);
+}
+
+async function captureMcpPane(
+  contextId: string,
+  windowId: string,
+  input: Record<string, unknown>
+) {
+  const workspaceWindow = getMcpWorkspaceWindow(contextId, windowId);
+  await prepareWorkspaceWindowCapture(workspaceWindow.window);
+  const target = parsePaneCaptureTarget(await mcpRendererBroker.request(
+    workspaceWindow.window.webContents,
+    "get_pane_capture_bounds",
+    input
+  ));
+  const requestedRectangle = input.rect && typeof input.rect === "object" && !Array.isArray(input.rect)
+    ? input.rect as PaneCaptureRectangle
+    : undefined;
+  const rectangle = resolvePaneRelativeCaptureRectangle(target.bounds, requestedRectangle);
+  const workspaceImage = await captureWorkspaceWindowDisplay(workspaceWindow.window, { prepare: false });
+  const image = workspaceImage.crop(rectangle.absolute);
+  if (image.isEmpty()) {
+    throw new McpRendererError("PANE_CAPTURE_FAILED", "Electron could not capture the requested pane pixels.");
+  }
+  const size = image.getSize();
+  return {
+    data: image.toPNG().toString("base64"),
+    mimeType: "image/png" as const,
+    metadata: {
+      projectId: target.projectId,
+      paneId: target.paneId,
+      revision: target.revision,
+      paneSize: { width: target.bounds.width, height: target.bounds.height },
+      rect: rectangle.relative,
+      image: { mimeType: "image/png", width: size.width, height: size.height }
+    }
+  };
 }
 
 function getConfigurationForWebContents(webContents: ElectronWebContents) {
@@ -1813,6 +1872,7 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   });
   mcpServerService = new McpServerService({
     api: {
+      capturePane: captureMcpPane,
       listWindows: listMcpWindows,
       requestPane: requestMcpPane
     },

@@ -7,6 +7,7 @@ export type PaneMcpErrorCode =
   | "LAYOUT_CHANGED"
   | "PANE_NAVIGATION_NOT_AVAILABLE"
   | "PANE_NOT_FOUND"
+  | "PANE_NOT_VISIBLE"
   | "PANE_TYPE_NOT_AVAILABLE"
   | "PANE_VIEWPORT_NOT_AVAILABLE"
   | "PROJECT_NOT_FOUND";
@@ -32,6 +33,7 @@ type PaneMcpControllerOptions = {
   getCurrentWebAppUrl: (webApp: WebAppDefinition) => string | undefined;
   getGlobalWorkspace: () => RendererProject;
   getMobileDevViewport: (webApp: WebAppDefinition) => PaneMobileViewport | null;
+  getPaneCaptureBounds?: (project: RendererProject, paneId: string) => PaneCaptureBounds | null;
   getProjectById: (projectId: string) => RendererProject | null | undefined;
   getProjectPaneLayout: (project: RendererProject) => PaneLayoutNode;
   getProjectWebApps: (project: RendererProject, paneId: string) => WebAppDefinition[];
@@ -63,6 +65,13 @@ type PaneMobileViewportUpdate = {
   enabled?: boolean;
   height?: number;
   width?: number;
+};
+
+type PaneCaptureBounds = {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
 };
 
 const NAVIGATION_ACTIONS = {
@@ -143,6 +152,7 @@ export function createPaneMcpController({
   getCurrentWebAppUrl,
   getGlobalWorkspace,
   getMobileDevViewport,
+  getPaneCaptureBounds,
   getProjectById,
   getProjectPaneLayout,
   getProjectWebApps,
@@ -274,6 +284,24 @@ export function createPaneMcpController({
     };
   }
 
+  function getPaneCaptureTarget(input: PaneMcpInput) {
+    const { layoutDescription, paneId, project } = getPaneContext(input);
+    assertExpectedRevision(input, layoutDescription.revision);
+    const bounds = getPaneCaptureBounds?.(project, paneId) || null;
+    if (!bounds) {
+      throw new PaneMcpError(
+        "PANE_NOT_VISIBLE",
+        `Pane ${paneId} is not currently visible in the selected Boatyard window.`
+      );
+    }
+    return {
+      projectId: layoutDescription.projectId,
+      paneId,
+      revision: layoutDescription.revision,
+      bounds
+    };
+  }
+
   function assertExpectedRevision(input: PaneMcpInput, currentRevision: string) {
     const expectedRevision = getExpectedRevision(input);
     if (expectedRevision && expectedRevision !== currentRevision) {
@@ -391,6 +419,9 @@ export function createPaneMcpController({
     if (operation === "list_pane_types") {
       return listPaneTypes(input);
     }
+    if (operation === "get_pane_capture_bounds") {
+      return getPaneCaptureTarget(input);
+    }
     if (operation === "update_pane") {
       return updatePane(input);
     }
@@ -402,6 +433,7 @@ export function createPaneMcpController({
 
   return Object.freeze({
     getPaneLayout,
+    getPaneCaptureTarget,
     handle,
     listPaneTypes,
     navigatePane,

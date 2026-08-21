@@ -10,6 +10,15 @@ import { z } from "zod";
 import type { McpSettings } from "./mcpSettingsStore.js";
 
 type McpPaneApi = {
+  capturePane(
+    contextId: string,
+    windowId: string,
+    input: Record<string, unknown>
+  ): Promise<{
+    data: string;
+    metadata: Record<string, unknown>;
+    mimeType: "image/png";
+  }>;
   listWindows(): unknown;
   requestPane(
     contextId: string,
@@ -172,6 +181,40 @@ export class McpServerService {
       inputSchema: z.object({ ...targetSchema, paneId: z.string().min(1) }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
     }, async (input) => this.invokePane("list_pane_types", input));
+    const captureRectangleSchema = z.object({
+      x: z.number().int().min(0).describe("Horizontal offset from the pane's left edge in CSS pixels"),
+      y: z.number().int().min(0).describe("Vertical offset from the pane's top edge in CSS pixels"),
+      width: z.number().int().positive().max(8192).describe("Requested width in CSS pixels"),
+      height: z.number().int().positive().max(8192).describe("Requested height in CSS pixels")
+    });
+    protocolServer.registerTool("capture_pane", {
+      title: "Capture pane",
+      description: "Capture the visible composed pixels of one pane as PNG, including native web content. An optional rectangle is relative to the pane and clipped to its bounds.",
+      inputSchema: z.object({
+        ...targetSchema,
+        paneId: z.string().min(1),
+        rect: captureRectangleSchema.optional(),
+        expectedRevision: z.string().min(1).optional()
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    }, async (input) => {
+      try {
+        const capture = await this.api.capturePane(
+          String(input.contextId),
+          String(input.windowId),
+          input
+        );
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(capture.metadata, null, 2) },
+            { type: "image" as const, data: capture.data, mimeType: capture.mimeType }
+          ],
+          structuredContent: capture.metadata
+        };
+      } catch (error) {
+        return errorResult(error);
+      }
+    });
     const viewportSchema = z.object({
       enabled: z.boolean().optional().describe("Whether the mobile viewport is enabled"),
       height: z.number().int().min(160).max(8192).optional().describe("Viewport height in CSS pixels"),

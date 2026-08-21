@@ -1,11 +1,11 @@
 ---
 name: boatyard-mcp
-description: Inspect Boatyard windows and pane layouts, enumerate every pane dropdown entry including dynamic subtypes, update pane content and mobile viewport settings, and navigate web panes through the authenticated local Boatyard MCP server. Use when a user asks to inspect, explain, or change panes in a running Boatyard instance. Do not use for splitting, closing, or capturing panes because those operations are not exposed yet.
+description: Inspect Boatyard windows and pane layouts, enumerate every pane dropdown entry including dynamic subtypes, update pane content and mobile viewport settings, navigate web panes, and capture visible pane screenshots through the authenticated local Boatyard MCP server. Use when a user asks to inspect, explain, change, or visually inspect panes in a running Boatyard instance. Do not use for splitting or closing panes because those operations are not exposed yet.
 ---
 
 # Boatyard MCP
 
-Use the local Boatyard MCP server to inspect the active UI layout, update exact pane entries and mobile viewports, and navigate web panes. Treat the MCP results as the source of truth; pane IDs, window IDs, available entries, capabilities, and layout revisions are runtime values.
+Use the local Boatyard MCP server to inspect the active UI layout, update exact pane entries and mobile viewports, navigate web panes, and capture their visible pixels. Treat the MCP results as the source of truth; pane IDs, window IDs, available entries, capabilities, and layout revisions are runtime values.
 
 ## Connect the client
 
@@ -92,6 +92,14 @@ The selected pane's `navigation.available` field and each choice's `capabilities
 
 Pass the same context, window, project, and pane IDs plus the latest layout `revision` as `expectedRevision` so the action cannot target content that was replaced after inspection. If the server reports `PANE_NAVIGATION_NOT_AVAILABLE`, refresh the layout before deciding whether the selected entry changed or the requested history action is unavailable. Do not navigate merely to test a URL or infer page content from a successful navigation.
 
+## Capture a pane
+
+Call `capture_pane` with the selected context, window, project, and pane IDs plus the latest layout `revision` as `expectedRevision`. The result contains PNG image content and metadata describing the captured pane size and rectangle. The image is a composed capture, so native web content such as Pier and URL previews is included.
+
+Omit `rect` to capture the full visible pane. To capture a detail, pass `rect` as `{ x, y, width, height }` in integer CSS pixels. Its origin is the pane's top-left corner, not the window or screen. Boatyard clips the rectangle to the pane and returns the applied rectangle in the result metadata; it rejects a rectangle that does not intersect the pane. Use a full-pane capture first when exact detail coordinates are unknown.
+
+Only the pane displayed in the selected window can be captured. If Boatyard reports `PANE_NOT_VISIBLE`, refresh `list_windows` and `get_pane_layout`; target the active project or ask the user to expose the pane rather than capturing a different one. If it reports `LAYOUT_CHANGED`, refresh the layout before retrying. Do not claim to have seen content unless image content was actually returned.
+
 ## Respect the current boundary
 
-The current MCP can list windows, inspect layouts, enumerate choices, update an existing pane's entry and mobile viewport, and navigate its web content. It cannot create a split, close a pane, start a process, inspect rendered page content, or capture a screenshot. State that limitation when one of those operations is required; do not simulate success through unrelated UI or filesystem actions.
+The current MCP can list windows, inspect layouts, enumerate choices, update an existing pane's entry and mobile viewport, navigate its web content, and capture a visible pane. It cannot create a split, close a pane, start a process, or inspect the rendered page as structured DOM/content. State that limitation when one of those operations is required; do not simulate success through unrelated UI or filesystem actions.

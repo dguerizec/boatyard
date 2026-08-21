@@ -789,6 +789,26 @@ const paneMcpController = createPaneMcpController({
   getCurrentWebAppUrl: (webApp) => getCurrentWebAppUrl(webApp),
   getGlobalWorkspace,
   getMobileDevViewport: (webApp) => paneLayoutView.describeMobileDevViewport(webApp),
+  getPaneCaptureBounds: (project, paneId) => {
+    const visibleProject = webAppRuntime.getVisibleWebAppProject();
+    if (visibleProject?.id !== project.id) {
+      return null;
+    }
+    const pane = document.querySelector<HTMLElement>(`.webapp-pane[data-pane-id="${CSS.escape(paneId)}"]`);
+    const expandedPane = document.querySelector<HTMLElement>(".webapp-pane.pane-expanded");
+    if (!pane || (expandedPane && expandedPane !== pane)) {
+      return null;
+    }
+    const rect = pane.getBoundingClientRect();
+    const left = Math.ceil(Math.max(0, rect.left));
+    const top = Math.ceil(Math.max(0, rect.top));
+    const right = Math.floor(Math.min(window.innerWidth, rect.right));
+    const bottom = Math.floor(Math.min(window.innerHeight, rect.bottom));
+    if (right <= left || bottom <= top) {
+      return null;
+    }
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  },
   getProjectById,
   getProjectPaneLayout,
   getProjectWebApps,

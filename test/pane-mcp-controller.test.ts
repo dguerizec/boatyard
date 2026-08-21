@@ -199,3 +199,45 @@ test("pane MCP controller navigates the selected web pane through the shared run
   assert.equal(result.revision, before.revision);
   assert.equal((result.layout.navigation as Record<string, unknown>).currentUrl, "https://next.example.test/path");
 });
+
+test("pane MCP controller exposes capture bounds only for a visible current pane", () => {
+  const project: RendererProject = { id: "project-1" };
+  const layout: PaneLayoutNode = { type: "pane", id: "pane-1", selectedWebAppId: "preview" };
+  const choices: WebAppDefinition[] = [{ id: "preview", label: "Preview" }];
+  let visible = true;
+  const controller = createPaneMcpController({
+    assignWebAppToPane: () => undefined,
+    findPaneNode: findPane,
+    getCurrentWebAppUrl: () => undefined,
+    getGlobalWorkspace: () => ({ id: "__global__" }),
+    getMobileDevViewport: () => null,
+    getPaneCaptureBounds: () => visible ? { x: 24, y: 72, width: 480, height: 640 } : null,
+    getProjectById: () => project,
+    getProjectPaneLayout: () => layout,
+    getProjectWebApps: () => choices,
+    getSelectedWebApp: () => choices[0],
+    navigateWebApp: async () => false,
+    normalizeAddressInput: (url) => url,
+    setCurrentWebAppUrl: () => undefined,
+    updateMobileDevViewport: () => null
+  });
+  const before = controller.getPaneLayout({ projectId: "project-1" });
+
+  assert.deepEqual(controller.getPaneCaptureTarget({
+    projectId: "project-1",
+    paneId: "pane-1",
+    expectedRevision: before.revision
+  }), {
+    projectId: "project-1",
+    paneId: "pane-1",
+    revision: before.revision,
+    bounds: { x: 24, y: 72, width: 480, height: 640 }
+  });
+
+  visible = false;
+  assert.throws(() => controller.getPaneCaptureTarget({
+    projectId: "project-1",
+    paneId: "pane-1",
+    expectedRevision: before.revision
+  }), (error) => error instanceof PaneMcpError && error.code === "PANE_NOT_VISIBLE");
+});
