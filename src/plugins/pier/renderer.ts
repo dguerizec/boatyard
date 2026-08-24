@@ -567,6 +567,14 @@
     return isPierUrlRow(row) ? row : null;
   }
 
+  function createPierActionIcon(props: PierOptions, name: string) {
+    const icon = props.createIcon?.(name);
+    if (!icon) {
+      throw new Error("Widget icon factory is unavailable.");
+    }
+    return icon;
+  }
+
   function updatePierUrlRow(row: PierUrlRow, entry: PierWorkload) {
     row.pierEntry = entry;
     const canOpenUrl = Boolean(entry.running && entry.url);
@@ -592,16 +600,23 @@
     row.pierMenuButton.setAttribute("aria-label", row.pierMenuButton.title);
     const busy = row.dataset.busy === "true";
     const busyAction = row.dataset.busyAction;
-    row.pierActionButton.textContent = busy
-      ? busyAction === "down" ? "Stopping" : "Starting"
-      : entry.running ? "Stop" : "Start";
-    row.pierActionButton.classList.toggle("stop", entry.running);
-    row.pierActionButton.classList.toggle("start", !entry.running);
-    row.pierActionButton.disabled = busy;
+    const workloadLabel = entry.slug || "workload";
+    row.pierUpButton.title = busyAction === "up"
+      ? `Running pier up for ${workloadLabel}`
+      : `Run pier up for ${workloadLabel}`;
+    row.pierUpButton.setAttribute("aria-label", row.pierUpButton.title);
+    row.pierUpButton.disabled = busy;
+    row.pierUpButton.classList.toggle("busy", busy && busyAction === "up");
+    row.pierDownButton.title = busyAction === "down"
+      ? `Stopping ${workloadLabel}`
+      : `Stop ${workloadLabel}`;
+    row.pierDownButton.setAttribute("aria-label", row.pierDownButton.title);
+    row.pierDownButton.disabled = busy || !entry.running;
+    row.pierDownButton.classList.toggle("busy", busy && busyAction === "down");
     const canStopTrackedWorkload = entry.hasWorkload === true && !entry.running;
-    row.pierStopButton.hidden = !canStopTrackedWorkload;
-    row.pierStopButton.disabled = busy;
-    row.pierStopButton.textContent = busy && busyAction === "down" ? "Stopping…" : "Stop workload";
+    row.pierTrackedWorkloadStopButton.hidden = !canStopTrackedWorkload;
+    row.pierTrackedWorkloadStopButton.disabled = busy;
+    row.pierTrackedWorkloadStopButton.textContent = busy && busyAction === "down" ? "Stopping…" : "Stop workload";
     const protectedWorktree = isProtectedProjectWorktree(row.pierProject, entry);
     row.pierRemoveButton.hidden = protectedWorktree;
     row.pierMenuSeparator.hidden = protectedWorktree && !canStopTrackedWorkload;
@@ -669,23 +684,33 @@
     identity.className = "pier-worktree-identity";
     identity.append(statusDot, link);
 
-    const actionButton = document.createElement("button");
-    actionButton.className = "pier-action-button";
-    actionButton.type = "button";
-    actionButton.addEventListener("click", async () => {
-      const row = getClosestPierUrlRow(actionButton);
+    const upButton = document.createElement("button");
+    upButton.className = "pier-action-button pier-up-button";
+    upButton.type = "button";
+    upButton.append(createPierActionIcon(props, "refresh"));
+    upButton.addEventListener("click", async () => {
+      const row = getClosestPierUrlRow(upButton);
       if (!row) {
         return;
       }
-      await runPierLifecycleAction(
-        row,
-        row.pierEntry.running ? "down" : "up",
-        props,
-        service,
-        onRefresh,
-        onError
-      );
+      await runPierLifecycleAction(row, "up", props, service, onRefresh, onError);
     });
+
+    const downButton = document.createElement("button");
+    downButton.className = "pier-action-button pier-down-button";
+    downButton.type = "button";
+    downButton.append(createPierActionIcon(props, "square"));
+    downButton.addEventListener("click", async () => {
+      const row = getClosestPierUrlRow(downButton);
+      if (!row || !row.pierEntry.running) {
+        return;
+      }
+      await runPierLifecycleAction(row, "down", props, service, onRefresh, onError);
+    });
+
+    const lifecycleActions = document.createElement("div");
+    lifecycleActions.className = "pier-lifecycle-actions";
+    lifecycleActions.append(upButton, downButton);
 
     const menu = document.createElement("div");
     menu.className = "pier-row-menu";
@@ -820,9 +845,9 @@
     });
 
     const row = Object.assign(document.createElement("div"), {
-      pierActionButton: actionButton,
       pierCopyPathButton: copyPathButton,
       pierCopyUrlButton: copyUrlButton,
+      pierDownButton: downButton,
       pierEntry: {},
       pierLink: link,
       pierMenu: menu,
@@ -832,10 +857,11 @@
       pierProject: {},
       pierRemoveButton: removeButton,
       pierStatusDot: statusDot,
-      pierStopButton: stopButton
+      pierTrackedWorkloadStopButton: stopButton,
+      pierUpButton: upButton
     });
     row.className = "pier-url-row";
-    row.append(identity, actionButton, menuButton, menu);
+    row.append(identity, lifecycleActions, menuButton, menu);
     return row;
   }
 
@@ -1244,14 +1270,14 @@
     const refreshButton = document.createElement("button");
     refreshButton.className = "pier-icon-button pier-refresh-button";
     refreshButton.type = "button";
-    refreshButton.textContent = "↻";
+    refreshButton.append(createPierActionIcon(props, "refresh"));
     refreshButton.title = "Refresh now";
     refreshButton.setAttribute("aria-label", "Refresh now");
 
     const newButton = document.createElement("button");
     newButton.className = "pier-icon-button";
     newButton.type = "button";
-    newButton.textContent = "+";
+    newButton.append(createPierActionIcon(props, "plus"));
     newButton.title = "Create a worktree";
     newButton.setAttribute("aria-label", "Create a worktree");
 

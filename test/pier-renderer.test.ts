@@ -349,6 +349,7 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
   };
   const persistedPatches: Array<Record<string, unknown>> = [];
   const downCalls: string[] = [];
+  const upCalls: string[] = [];
   const openUrlCalls: Array<{ options?: { sourceElement?: FakeElement }; url: string }> = [];
   const overlayCalls: Array<{ action: string; element?: FakeElement; margin?: number }> = [];
   let externalOpenCount = 0;
@@ -432,6 +433,10 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
         }
         return { ok: true, json: async () => ({ project: "pickatube", slug: "playlist", status: "down" }) };
       }
+      if (String(url).includes("/api/v1/workloads/pickatube/") && String(url).endsWith("/up") && init.method === "POST") {
+        upCalls.push(String(url));
+        return { ok: true, json: async () => ({ status: "running" }) };
+      }
       throw new Error(`Unexpected URL ${url}`);
     },
     setInterval: captureRefresh,
@@ -488,6 +493,12 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
     min: { columns: 3, rows: 3 }
   });
   const card = widget.createElement(project, {
+    createIcon: (name: string) => {
+      const icon = new FakeElement();
+      icon.className = "webapp-tool-icon";
+      icon.dataset.icon = name;
+      return icon;
+    },
     globalPluginConfig: {},
     openUrl: (url: string, options?: { sourceElement?: FakeElement }) => {
       openUrlCalls.push({ options, url });
@@ -519,7 +530,25 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
   assert.equal(rows[1].dataset.key, "pickatube\u0000analytics");
   assert.equal(rows[2].dataset.key, "pickatube\u0000playlist");
   const statusDots = findAllByClass(card, "pier-status-dot");
+  const upButtons = findAllByClass(card, "pier-up-button");
+  const downButtons = findAllByClass(card, "pier-down-button");
   assert.equal(statusDots.length, 3);
+  assert.equal(upButtons.length, 3);
+  assert.equal(downButtons.length, 3);
+  assert.deepEqual(upButtons.map((button) => button.disabled), [false, false, false]);
+  assert.deepEqual(downButtons.map((button) => button.disabled), [false, false, true]);
+  assert.deepEqual(upButtons.map((button) => button.children[0]?.dataset.icon), ["refresh", "refresh", "refresh"]);
+  assert.deepEqual(downButtons.map((button) => button.children[0]?.dataset.icon), ["square", "square", "square"]);
+  assert.deepEqual(upButtons.map((button) => button.getAttribute("aria-label")), [
+    "Run pier up for develop",
+    "Run pier up for analytics",
+    "Run pier up for playlist"
+  ]);
+  assert.deepEqual(downButtons.map((button) => button.getAttribute("aria-label")), [
+    "Stop develop",
+    "Stop analytics",
+    "Stop playlist"
+  ]);
   assert.deepEqual(rows.map((row) => row.classList.contains("running")), [true, false, false]);
   assert.deepEqual(rows.map((row) => row.classList.contains("pending")), [false, true, false]);
   assert.deepEqual(rows.map((row) => row.classList.contains("failed")), [false, false, true]);
@@ -577,6 +606,14 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
   await links[2].trigger("click");
   await openUrlButtons[2].trigger("click");
   assert.equal(openUrlCalls.length, 2);
+  await upButtons[0].trigger("click");
+  await upButtons[2].trigger("click");
+  assert.deepEqual(upCalls, [
+    "http://pier.test/api/v1/workloads/pickatube/develop/up",
+    "http://pier.test/api/v1/workloads/pickatube/playlist/up"
+  ]);
+  await downButtons[2].trigger("click");
+  assert.deepEqual(downCalls, []);
   await menuButtons[2].trigger("click");
   await stopButtons[2].trigger("click");
   assert.deepEqual(downCalls, ["http://pier.test/api/v1/workloads/pickatube/playlist/down"]);

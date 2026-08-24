@@ -578,6 +578,7 @@ export function createWidgetSurfaces({
         projectId: project.id,
         project,
         widgetPaneId,
+        createIcon: createToolIcon,
         pluginConfig: definition.pluginId && !globalScope ? getProjectPluginConfig(project.id, definition.pluginId) : {},
         globalPluginConfig: definition.pluginId ? getGlobalPluginConfig(definition.pluginId) : {},
         allProjectPluginConfig: globalScope || !project.id ? {} : getState().pluginConfig?.projects?.[project.id] || {},

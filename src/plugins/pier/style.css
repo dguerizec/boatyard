@@ -100,6 +100,10 @@
   cursor: wait;
 }
 
+.pier-refresh-button:disabled .webapp-tool-icon {
+  animation: pier-action-spin 0.9s linear infinite;
+}
+
 .pier-widget-status {
   margin: 0;
   overflow: hidden;
@@ -247,12 +251,14 @@
 }
 
 .pier-action-button {
-  min-width: 54px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
   min-height: 28px;
   border-radius: 6px;
-  padding: 0 9px;
-  font-size: 10px;
-  font-weight: 800;
+  padding: 0;
 }
 
 .pier-menu-button {
@@ -260,13 +266,19 @@
   letter-spacing: 1px;
 }
 
-.pier-action-button.stop {
+.pier-lifecycle-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pier-down-button {
   border: 1px solid rgba(248, 113, 113, 0.45);
   background: rgba(248, 113, 113, 0.08);
   color: #ff6b6b;
 }
 
-.pier-action-button.start {
+.pier-up-button {
   border: 1px solid rgba(var(--accent-rgb), 0.45);
   background: rgba(var(--accent-rgb), 0.1);
   color: var(--success-text);
@@ -278,15 +290,15 @@
   outline: none;
 }
 
-.pier-action-button.stop:hover,
-.pier-action-button.stop:focus-visible {
+.pier-down-button:not(:disabled):hover,
+.pier-down-button:not(:disabled):focus-visible {
   border-color: rgba(248, 113, 113, 0.8);
   background: rgba(248, 113, 113, 0.14);
   outline: none;
 }
 
-.pier-action-button.start:hover,
-.pier-action-button.start:focus-visible {
+.pier-up-button:not(:disabled):hover,
+.pier-up-button:not(:disabled):focus-visible {
   border-color: rgba(var(--accent-rgb), 0.75);
   background: rgba(var(--accent-rgb), 0.16);
   outline: none;
@@ -294,6 +306,16 @@
 
 .pier-action-button:disabled {
   opacity: 0.55;
+}
+
+.pier-up-button.busy .webapp-tool-icon {
+  animation: pier-action-spin 0.9s linear infinite;
+}
+
+@keyframes pier-action-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .pier-row-menu {

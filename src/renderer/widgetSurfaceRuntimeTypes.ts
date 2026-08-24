@@ -48,6 +48,7 @@ export type WidgetSurfacesOptions = {
 
 export type WidgetPluginProps = UnknownRecord & {
   allProjectPluginConfig: UnknownRecord;
+  createIcon(name: string): Node;
   globalPluginConfig: UnknownRecord;
   openUrl(url: string, options?: { sourceElement?: Element }): unknown;
   openProjectWebApp(webAppId: string, url?: string): unknown;

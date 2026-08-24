@@ -16,6 +16,7 @@ type PierConfig = {
 };
 
 type PierOptions = {
+  createIcon?: (name: string) => Node;
   globalPluginConfig?: PierConfig;
   openUrl?: (url: string, options?: { sourceElement?: Element }) => unknown;
   overlay?: {
@@ -67,9 +68,9 @@ type PierWorktreePayload = {
 };
 
 type PierUrlRow = HTMLDivElement & {
-  pierActionButton: HTMLButtonElement;
   pierCopyPathButton: HTMLButtonElement;
   pierCopyUrlButton: HTMLButtonElement;
+  pierDownButton: HTMLButtonElement;
   pierEntry: PierWorkload;
   pierLink: HTMLButtonElement;
   pierMenu: HTMLDivElement;
@@ -79,7 +80,8 @@ type PierUrlRow = HTMLDivElement & {
   pierProject: PierProject;
   pierRemoveButton: HTMLButtonElement;
   pierStatusDot: HTMLSpanElement;
-  pierStopButton: HTMLButtonElement;
+  pierTrackedWorkloadStopButton: HTMLButtonElement;
+  pierUpButton: HTMLButtonElement;
 };
 
 type PierService = {
