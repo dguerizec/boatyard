@@ -45,4 +45,63 @@ test("PasswordManager saves a confirmed credential through the secrets store", a
   });
 });
 
+test("PasswordManager coalesces concurrent saves for the same origin", async () => {
+  const saved = new Map<string, { encryptedPassword: string; username: string }>();
+  let confirmationCount = 0;
+  let storeUpdateCount = 0;
+  let resolveConfirmation!: (confirmed: boolean) => void;
+  const confirmation = new Promise<boolean>((resolve) => {
+    resolveConfirmation = resolve;
+  });
+  const manager = new PasswordManager({
+    store: {
+      getState: () => ({
+        settings: {
+          passwordManagerEnabled: true,
+          passwordManagerDisclaimerAccepted: true
+        }
+      })
+    },
+    secrets: {
+      getPasswordCredential: (origin: string) => saved.get(origin) || null,
+      updatePasswordCredential: (origin: string, credential: { encryptedPassword: string; username: string }) => {
+        storeUpdateCount += 1;
+        saved.set(origin, credential);
+      }
+    },
+    confirmSave: () => {
+      confirmationCount += 1;
+      return confirmation;
+    },
+    safeStorage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (value: string) => Buffer.from(`encrypted:${value}`),
+      decryptString: (value: Buffer) => value.toString().replace(/^encrypted:/, "")
+    }
+  });
+  const credential = {
+    url: "https://example.test/sign-in",
+    username: "alice",
+    password: "correct horse battery staple"
+  };
+
+  const firstSave = manager.saveCredential(credential);
+  const duplicateSave = manager.saveCredential(credential);
+
+  assert.equal(confirmationCount, 1);
+  resolveConfirmation(true);
+  assert.deepEqual(await Promise.all([firstSave, duplicateSave]), [
+    { saved: true },
+    { saved: true }
+  ]);
+  assert.equal(storeUpdateCount, 1);
+
+  assert.deepEqual(await manager.saveCredential({
+    ...credential,
+    password: "updated horse battery staple"
+  }), { saved: true });
+  assert.equal(confirmationCount, 2);
+  assert.equal(storeUpdateCount, 2);
+});
+
 export {};

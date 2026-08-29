@@ -68,6 +68,7 @@ class PasswordManager {
   private secrets: PasswordSecrets;
   private confirmSave: ConfirmSaveCallback;
   private safeStorage: SafeStorage;
+  private pendingSaves = new Map<string, Promise<SaveCredentialResult>>();
 
   constructor({
     store,
@@ -144,19 +145,42 @@ class PasswordManager {
       return { saved: false, reason: "unchanged" };
     }
 
-    const confirmed = await this.confirmSave({
+    const pendingSave = this.pendingSaves.get(origin);
+    if (pendingSave) {
+      return pendingSave;
+    }
+
+    const save = this.confirmAndStoreCredential({
       origin,
       username: normalizedUsername,
+      password: normalizedPassword,
       isUpdate: Boolean(existing)
     });
+    this.pendingSaves.set(origin, save);
 
+    try {
+      return await save;
+    } finally {
+      if (this.pendingSaves.get(origin) === save) {
+        this.pendingSaves.delete(origin);
+      }
+    }
+  }
+
+  private async confirmAndStoreCredential({
+    origin,
+    username,
+    password,
+    isUpdate
+  }: PasswordCredential & { isUpdate: boolean }): Promise<SaveCredentialResult> {
+    const confirmed = await this.confirmSave({ origin, username, isUpdate });
     if (!confirmed) {
       return { saved: false, reason: "cancelled" };
     }
 
-    const encryptedPassword = this.safeStorage.encryptString(normalizedPassword).toString("base64");
+    const encryptedPassword = this.safeStorage.encryptString(password).toString("base64");
     this.secrets.updatePasswordCredential(origin, {
-      username: normalizedUsername,
+      username,
       encryptedPassword
     });
     return { saved: true };
