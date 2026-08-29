@@ -68,6 +68,7 @@ type PierWorktreePayload = {
 };
 
 type PierUrlRow = HTMLDivElement & {
+  pierCreateIcon: (name: string) => Node;
   pierCopyPathButton: HTMLButtonElement;
   pierCopyUrlButton: HTMLButtonElement;
   pierDownButton: HTMLButtonElement;

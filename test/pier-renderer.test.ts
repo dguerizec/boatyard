@@ -537,12 +537,12 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
   assert.equal(downButtons.length, 3);
   assert.deepEqual(upButtons.map((button) => button.disabled), [false, false, false]);
   assert.deepEqual(downButtons.map((button) => button.disabled), [false, false, true]);
-  assert.deepEqual(upButtons.map((button) => button.children[0]?.dataset.icon), ["refresh", "refresh", "refresh"]);
+  assert.deepEqual(upButtons.map((button) => button.children[0]?.dataset.icon), ["refresh", "refresh", "play"]);
   assert.deepEqual(downButtons.map((button) => button.children[0]?.dataset.icon), ["square", "square", "square"]);
   assert.deepEqual(upButtons.map((button) => button.getAttribute("aria-label")), [
     "Run pier up for develop",
     "Run pier up for analytics",
-    "Run pier up for playlist"
+    "Start playlist"
   ]);
   assert.deepEqual(downButtons.map((button) => button.getAttribute("aria-label")), [
     "Stop develop",

@@ -601,9 +601,20 @@
     const busy = row.dataset.busy === "true";
     const busyAction = row.dataset.busyAction;
     const workloadLabel = entry.slug || "workload";
-    row.pierUpButton.title = busyAction === "up"
+    const upIconName = entry.running ? "refresh" : "play";
+    if (row.pierUpButton.dataset.icon !== upIconName) {
+      row.pierUpButton.replaceChildren(row.pierCreateIcon(upIconName));
+      row.pierUpButton.dataset.icon = upIconName;
+    }
+    const upIdleTitle = entry.running
+      ? `Run pier up for ${workloadLabel}`
+      : `Start ${workloadLabel}`;
+    const upBusyTitle = entry.running
       ? `Running pier up for ${workloadLabel}`
-      : `Run pier up for ${workloadLabel}`;
+      : `Starting ${workloadLabel}`;
+    row.pierUpButton.title = busyAction === "up"
+      ? upBusyTitle
+      : upIdleTitle;
     row.pierUpButton.setAttribute("aria-label", row.pierUpButton.title);
     row.pierUpButton.disabled = busy;
     row.pierUpButton.classList.toggle("busy", busy && busyAction === "up");
@@ -687,7 +698,6 @@
     const upButton = document.createElement("button");
     upButton.className = "pier-action-button pier-up-button";
     upButton.type = "button";
-    upButton.append(createPierActionIcon(props, "refresh"));
     upButton.addEventListener("click", async () => {
       const row = getClosestPierUrlRow(upButton);
       if (!row) {
@@ -845,6 +855,7 @@
     });
 
     const row = Object.assign(document.createElement("div"), {
+      pierCreateIcon: (name: string) => createPierActionIcon(props, name),
       pierCopyPathButton: copyPathButton,
       pierCopyUrlButton: copyUrlButton,
       pierDownButton: downButton,
