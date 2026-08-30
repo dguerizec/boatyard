@@ -37,6 +37,8 @@ const WEBAPP_POPUP_RESERVATION_TIMEOUT_MS = 100;
 type WebAppFreeze = { all: boolean; keys: Set<string>; rect: Rectangle | null };
 
 type WorkspaceWebAppItem = WebAppItem & {
+  attached: boolean;
+  detachedForBackgroundLoad: boolean;
   webContents: ElectronWebContents;
 };
 
@@ -175,6 +177,62 @@ export class WorkspaceWindowRuntime {
     });
   }
 
+  // Chromium focuses an attached WebContentsView during reload even when another
+  // view owns keyboard focus. Hiding the view is not enough to prevent it.
+  private detachWebAppForBackgroundLoad(key: string, view: ElectronWebContentsView, webContents: ElectronWebContents) {
+    const item = this.webAppViews.get(key);
+    if (
+      !item ||
+      item.view !== view ||
+      item.webContents !== webContents ||
+      !item.attached ||
+      item.detachedForBackgroundLoad ||
+      !this.window.isFocused() ||
+      webContents.isFocused()
+    ) {
+      return;
+    }
+
+    try {
+      this.window.contentView.removeChildView(view);
+      item.attached = false;
+      item.detachedForBackgroundLoad = true;
+    } catch (error) {
+      console.warn(`Could not detach background-loading webapp ${key}: ${(error as Error).message}`);
+    }
+  }
+
+  private restoreWebAppAfterBackgroundLoad(key: string, view: ElectronWebContentsView, webContents: ElectronWebContents) {
+    const item = this.webAppViews.get(key);
+    if (!item?.detachedForBackgroundLoad || item.view !== view || item.webContents !== webContents) {
+      return;
+    }
+
+    // Let Chromium's load-event focus sequence finish before reattaching the view.
+    setImmediate(() => {
+      const currentItem = this.webAppViews.get(key);
+      if (
+        !currentItem ||
+        currentItem.view !== view ||
+        currentItem.webContents !== webContents ||
+        !currentItem.detachedForBackgroundLoad ||
+        webContents.isDestroyed() ||
+        webContents.isLoadingMainFrame()
+      ) {
+        return;
+      }
+
+      try {
+        view.setVisible(this.visibleWebAppKeys.has(key) && !this.isWebAppKeyFrozen(key));
+        this.window.contentView.addChildView(view);
+        currentItem.attached = true;
+        currentItem.detachedForBackgroundLoad = false;
+      } catch (error) {
+        console.warn(`Could not restore background-loaded webapp ${key}: ${(error as Error).message}`);
+      }
+    });
+  }
+
   private handleWebAppWindowOpen(key: string, details: HandlerDetails) {
     const url = details?.url || "";
 
@@ -230,10 +288,12 @@ export class WorkspaceWindowRuntime {
     }
     if (existing) {
       this.webAppViews.delete(key);
-      try {
-        this.window.contentView.removeChildView(existing.view);
-      } catch (error) {
-        console.warn(`Could not detach stale webapp view: ${(error as Error).message}`);
+      if (existing.attached) {
+        try {
+          this.window.contentView.removeChildView(existing.view);
+        } catch (error) {
+          console.warn(`Could not detach stale webapp view: ${(error as Error).message}`);
+        }
       }
     }
 
@@ -263,6 +323,12 @@ export class WorkspaceWindowRuntime {
     webContents.on("did-finish-load", () => {
       this.sendWebAppLoaded(key, webContents.getURL());
     });
+    webContents.on("did-start-loading", () => {
+      this.detachWebAppForBackgroundLoad(key, view, webContents);
+    });
+    webContents.on("did-stop-loading", () => {
+      this.restoreWebAppAfterBackgroundLoad(key, view, webContents);
+    });
     webContents.on("page-favicon-updated", (_event: ElectronEvent, favicons: string[]) => {
       const url = webContents.getURL();
       this.store.updateWorkspaceWebAppState(this.id, key, {
@@ -287,12 +353,15 @@ export class WorkspaceWindowRuntime {
       webContents.send("webapp:autofill-enabled", item?.autofillEnabled === true);
     });
     webContents.once("destroyed", () => {
-      if (this.webAppViews.get(key)?.webContents === webContents) {
+      const item = this.webAppViews.get(key);
+      if (item?.webContents === webContents) {
         this.webAppViews.delete(key);
-        try {
-          this.window.contentView.removeChildView(view);
-        } catch (error) {
-          console.warn(`Could not detach destroyed webapp view: ${(error as Error).message}`);
+        if (item.attached) {
+          try {
+            this.window.contentView.removeChildView(view);
+          } catch (error) {
+            console.warn(`Could not detach destroyed webapp view: ${(error as Error).message}`);
+          }
         }
       }
     });
@@ -301,6 +370,8 @@ export class WorkspaceWindowRuntime {
     const item: WorkspaceWebAppItem = {
       view,
       webContents,
+      attached: true,
+      detachedForBackgroundLoad: false,
       url: null,
       configuredUrl: null,
       backgroundColor: null,
@@ -618,10 +689,12 @@ export class WorkspaceWindowRuntime {
     this.webAppFreezes.clear();
 
     for (const item of items) {
-      try {
-        this.window.contentView.removeChildView(item.view);
-      } catch (error) {
-        console.warn(`Could not detach webapp view: ${(error as Error).message}`);
+      if (item.attached) {
+        try {
+          this.window.contentView.removeChildView(item.view);
+        } catch (error) {
+          console.warn(`Could not detach webapp view: ${(error as Error).message}`);
+        }
       }
       try {
         if (!item.webContents.isDestroyed()) {

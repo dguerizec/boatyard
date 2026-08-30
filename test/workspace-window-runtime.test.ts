@@ -12,6 +12,8 @@ class MockWebContents extends EventEmitter {
   backCount = 0;
   closeCount = 0;
   forwardCount = 0;
+  focused = false;
+  loadingMainFrame = false;
   readonly navigationHistory = {
     canGoBack: () => true,
     canGoForward: () => true,
@@ -40,8 +42,12 @@ class MockWebContents extends EventEmitter {
     return this.destroyed;
   }
 
+  isFocused() {
+    return this.focused;
+  }
+
   isLoadingMainFrame() {
-    return false;
+    return this.loadingMainFrame;
   }
 
   loadURL(url: string) {
@@ -69,6 +75,7 @@ class MockWebContents extends EventEmitter {
 class MockWebContentsView {
   readonly contents = new MockWebContents();
   private attached = true;
+  visible = true;
 
   get webContents() {
     return this.attached ? this.contents : undefined;
@@ -78,25 +85,43 @@ class MockWebContentsView {
     this.attached = false;
   }
 
+  attach() {
+    this.attached = true;
+  }
+
+  isAttached() {
+    return this.attached;
+  }
+
   setBackgroundColor() {}
 
   setBounds() {}
 
-  setVisible() {}
+  setVisible(value: boolean) {
+    this.visible = value;
+  }
 }
 
 function createRuntime() {
   const views: MockWebContentsView[] = [];
+  const addedViews: MockWebContentsView[] = [];
+  const removedViews: MockWebContentsView[] = [];
   const rendererMessages: Array<{ channel: string; payload: unknown }> = [];
   const externalUrls: unknown[] = [];
+  let windowFocused = true;
   const window = {
     contentView: {
-      addChildView() {},
+      addChildView(view: MockWebContentsView) {
+        view.attach();
+        addedViews.push(view);
+      },
       removeChildView(view: MockWebContentsView) {
         view.detach();
+        removedViews.push(view);
       }
     },
     isDestroyed: () => false,
+    isFocused: () => windowFocused,
     setBackgroundColor() {},
     webContents: {
       isDestroyed: () => false,
@@ -122,7 +147,21 @@ function createRuntime() {
     window
   });
 
-  return { externalUrls, rendererMessages, runtime, views };
+  return {
+    addedViews,
+    externalUrls,
+    removedViews,
+    rendererMessages,
+    runtime,
+    setWindowFocused(value: boolean) {
+      windowFocused = value;
+    },
+    views
+  };
+}
+
+function waitForImmediate() {
+  return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 function showWebApp(runtime: typeof WorkspaceWindowRuntime) {
@@ -164,6 +203,95 @@ test("workspace runtime teardown closes detached contents once and is idempotent
   assert.equal(webContents.closeCount, 1);
   assert.doesNotThrow(() => runtime.destroy());
   assert.equal(webContents.closeCount, 1);
+});
+
+test("workspace runtime detaches a background web view while it reloads", async () => {
+  const { addedViews, removedViews, runtime, views } = createRuntime();
+  showWebApp(runtime);
+  runtime.showWebApp({
+    bounds: { height: 600, width: 800, x: 800, y: 0 },
+    key: "project:pier:main",
+    url: "https://pier.example.test/"
+  });
+  const twicc = views[0].contents;
+  const pierView = views[1];
+  twicc.focused = true;
+  runtime.setVisibleWebApps(["project:twicc", "project:pier:main"]);
+
+  pierView.contents.emit("did-start-loading");
+
+  assert.equal(pierView.isAttached(), false);
+  assert.deepEqual(removedViews, [pierView]);
+  assert.equal(runtime.getWebAppForWebContents(pierView.contents)?.key, "project:pier:main");
+  runtime.setVisibleWebApps(["project:twicc"]);
+
+  pierView.contents.emit("did-stop-loading");
+  await waitForImmediate();
+
+  assert.equal(pierView.isAttached(), true);
+  assert.deepEqual(addedViews, [views[0], pierView, pierView]);
+  assert.equal(twicc.focused, true);
+  assert.equal(pierView.visible, false);
+});
+
+test("workspace runtime leaves a focused reloading web view attached", () => {
+  const { removedViews, runtime, views } = createRuntime();
+  showWebApp(runtime);
+  const view = views[0];
+  view.contents.focused = true;
+
+  view.contents.emit("did-start-loading");
+
+  assert.equal(view.isAttached(), true);
+  assert.deepEqual(removedViews, []);
+});
+
+test("workspace runtime leaves web views attached while their window is unfocused", () => {
+  const { removedViews, runtime, setWindowFocused, views } = createRuntime();
+  showWebApp(runtime);
+  const view = views[0];
+  setWindowFocused(false);
+
+  view.contents.emit("did-start-loading");
+
+  assert.equal(view.isAttached(), true);
+  assert.deepEqual(removedViews, []);
+});
+
+test("workspace runtime keeps a background web view detached across overlapping loads", async () => {
+  const { addedViews, runtime, views } = createRuntime();
+  showWebApp(runtime);
+  const view = views[0];
+
+  view.contents.emit("did-start-loading");
+  view.contents.loadingMainFrame = true;
+  view.contents.emit("did-stop-loading");
+  await waitForImmediate();
+
+  assert.equal(view.isAttached(), false);
+  assert.deepEqual(addedViews, [view]);
+
+  view.contents.loadingMainFrame = false;
+  view.contents.emit("did-stop-loading");
+  await waitForImmediate();
+
+  assert.equal(view.isAttached(), true);
+  assert.deepEqual(addedViews, [view, view]);
+});
+
+test("workspace runtime does not reattach a background web view after teardown", async () => {
+  const { addedViews, runtime, views } = createRuntime();
+  showWebApp(runtime);
+  const view = views[0];
+  view.contents.emit("did-start-loading");
+  view.contents.emit("did-stop-loading");
+
+  runtime.destroy();
+  await waitForImmediate();
+
+  assert.equal(view.isAttached(), false);
+  assert.deepEqual(addedViews, [view]);
+  assert.equal(view.contents.closeCount, 1);
 });
 
 test("workspace runtime navigates through Electron navigation history", async () => {
