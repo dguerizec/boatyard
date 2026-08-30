@@ -662,14 +662,19 @@ export function createWebAppMenus({
       const sourceEntry = getSourceEntryForOpenPayload(payload);
       const sourceLabel = getSourceLabelForOpenPayload(payload, sourceEntry);
       const sourceBounds = normalizePayloadBounds(payload.sourceBounds) || getWebAppHostBounds(sourceEntry?.host) || null;
+      const sourceCenter = sourceBounds
+        ? {
+            x: sourceBounds.x + (sourceBounds.width / 2),
+            y: sourceBounds.y + (sourceBounds.height / 2),
+            margin: 16
+          }
+        : null;
 
       const dialog = document.createElement("dialog");
       dialog.className = "plugin-settings-dialog webapp-open-dialog";
       dialog.style.visibility = "hidden";
-      if (sourceBounds) {
+      if (sourceCenter) {
         dialog.classList.add("anchored");
-        dialog.style.left = `${Math.round(sourceBounds.x + (sourceBounds.width / 2))}px`;
-        dialog.style.top = `${Math.round(sourceBounds.y + (sourceBounds.height / 2))}px`;
       }
 
       const panel = document.createElement("form");
@@ -963,6 +968,7 @@ export function createWebAppMenus({
       dialog.addEventListener("close", clearPaneTargetHighlight, { once: true });
       dialog.append(panel);
       await showOverlayDialog(dialog, {
+        anchor: sourceCenter,
         freeze: "overlap",
         removeOnClose: true,
         freezeMargin: 16

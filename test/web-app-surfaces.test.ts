@@ -4,7 +4,40 @@ export {};
 
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createWebAppSurfaces } = require(`${process.cwd()}/build/renderer/webAppSurfaces`);
+const {
+  constrainCenterToViewport,
+  createWebAppSurfaces
+} = require(`${process.cwd()}/build/renderer/webAppSurfaces`);
+
+test("dialog centers stay anchored while fitting inside the viewport", () => {
+  const dialogSize = { width: 620, height: 500 };
+  const viewportSize = { width: 1_200, height: 800 };
+
+  assert.deepEqual(
+    constrainCenterToViewport({ x: 600, y: 400 }, dialogSize, viewportSize, 16),
+    { x: 600, y: 400 }
+  );
+  assert.deepEqual(
+    constrainCenterToViewport({ x: 1_050, y: 700 }, dialogSize, viewportSize, 16),
+    { x: 874, y: 534 }
+  );
+  assert.deepEqual(
+    constrainCenterToViewport({ x: 100, y: 100 }, dialogSize, viewportSize, 16),
+    { x: 326, y: 266 }
+  );
+});
+
+test("oversized dialogs fall back to the viewport center", () => {
+  assert.deepEqual(
+    constrainCenterToViewport(
+      { x: 700, y: 500 },
+      { width: 900, height: 700 },
+      { width: 800, height: 600 },
+      16
+    ),
+    { x: 400, y: 300 }
+  );
+});
 
 test("web app surfaces pass project ownership to the main process", async () => {
   const calls: Array<{ action: string; payload?: unknown }> = [];

@@ -47,11 +47,49 @@ type WebAppBounds = {
   };
 
   type OverlayDialogOptions = {
+    anchor?: {
+      x: number;
+      y: number;
+      margin?: number;
+    } | null;
     freeze?: "all" | "overlap" | "none";
     freezeMargin?: number;
     onClose?: (() => void) | null;
     removeOnClose?: boolean;
   };
+
+  type Point = {
+    x: number;
+    y: number;
+  };
+
+  type Size = {
+    width: number;
+    height: number;
+  };
+
+export function constrainCenterToViewport(
+  center: Point,
+  contentSize: Size,
+  viewportSize: Size,
+  margin = 0
+): Point {
+  const safeMargin = Math.max(0, margin);
+
+  function constrainAxis(value: number, contentLength: number, viewportLength: number) {
+    const minimum = safeMargin + (contentLength / 2);
+    const maximum = viewportLength - safeMargin - (contentLength / 2);
+    if (minimum > maximum) {
+      return viewportLength / 2;
+    }
+    return Math.min(maximum, Math.max(minimum, value));
+  }
+
+  return {
+    x: constrainAxis(center.x, contentSize.width, viewportSize.width),
+    y: constrainAxis(center.y, contentSize.height, viewportSize.height)
+  };
+}
 
 export function createWebAppSurfaces({
     boatyard,
@@ -319,6 +357,7 @@ export function createWebAppSurfaces({
     }
 
     async function showOverlayDialog(dialog: HTMLDialogElement, {
+      anchor = null,
       freeze = "overlap",
       freezeMargin = 16,
       onClose = null,
@@ -345,6 +384,18 @@ export function createWebAppSurfaces({
       }, { once: true });
 
       dialog.showModal();
+
+      if (anchor) {
+        const dialogRect = dialog.getBoundingClientRect();
+        const constrainedCenter = constrainCenterToViewport(
+          anchor,
+          dialogRect,
+          { width: window.innerWidth, height: window.innerHeight },
+          anchor.margin
+        );
+        dialog.style.left = `${Math.round(constrainedCenter.x)}px`;
+        dialog.style.top = `${Math.round(constrainedCenter.y)}px`;
+      }
 
       if (freeze === "all" || freeze === "overlap") {
         await flushWebAppSync();
