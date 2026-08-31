@@ -98,6 +98,11 @@ type TelegramLoginState = {
 
 type TelegramEventHandler = (message: unknown) => void;
 
+type TelegramMessageEmitter = {
+  add(handler: TelegramEventHandler): void;
+  remove(handler: TelegramEventHandler): void;
+};
+
 type TelegramRuntimeClient = {
   connect(): Promise<void>;
   createForumTopic(params: UnknownRecord): Promise<UnknownRecord>;
@@ -117,10 +122,8 @@ type TelegramRuntimeClient = {
   importSession(session: string | MtcuteSessionData, force?: boolean): Promise<void>;
   isConnected: boolean;
   notifyLoggedIn(user: unknown): Promise<unknown>;
-  onNewMessage: {
-    add(handler: TelegramEventHandler): void;
-    remove(handler: TelegramEventHandler): void;
-  };
+  onEditMessage: TelegramMessageEmitter;
+  onNewMessage: TelegramMessageEmitter;
   prepare(): Promise<void>;
   sendMedia(peer: unknown, media: UnknownRecord, options: UnknownRecord): Promise<UnknownRecord>;
   sendText(peer: unknown, text: string, options: UnknownRecord): Promise<UnknownRecord>;
@@ -1114,6 +1117,7 @@ class TelegramService extends EventEmitter {
     }
 
     this.messageEventClient.onNewMessage.remove(this.messageEventHandler);
+    this.messageEventClient.onEditMessage.remove(this.messageEventHandler);
     this.messageEventClient = null;
     this.messageEventHandler = null;
   }
@@ -1137,12 +1141,22 @@ class TelegramService extends EventEmitter {
     };
 
     client.onNewMessage.add(handler);
+    client.onEditMessage.add(handler);
     this.messageEventClient = client;
     this.messageEventHandler = handler;
   }
 
   getClientKey(credentials: TelegramCredentials): string {
     return `${credentials.apiId}:${credentials.apiHash}`;
+  }
+
+  async createClient(credentials: TelegramCredentials): Promise<TelegramRuntimeClient> {
+    const mtcute = await loadMtcute();
+    return new mtcute.TelegramClient({
+      apiId: credentials.apiId,
+      apiHash: credentials.apiHash,
+      storage: new mtcute.MemoryStorage()
+    }) as unknown as TelegramRuntimeClient;
   }
 
   async getClient(credentials: TelegramCredentials): Promise<TelegramRuntimeClient> {
@@ -1161,12 +1175,7 @@ class TelegramService extends EventEmitter {
       this.clientKey = "";
     }
 
-    const mtcute = await loadMtcute();
-    const client = new mtcute.TelegramClient({
-      apiId: credentials.apiId,
-      apiHash: credentials.apiHash,
-      storage: new mtcute.MemoryStorage()
-    }) as unknown as TelegramRuntimeClient;
+    const client = await this.createClient(credentials);
     const storedSession = this.getStoredSession();
     const migrateGramJsSession = isGramJsSession(storedSession);
 
@@ -1178,19 +1187,24 @@ class TelegramService extends EventEmitter {
         );
       }
       await client.connect();
-      if (migrateGramJsSession) {
+      this.attachMessageEventHandler(client);
+      if (storedSession) {
         const me = await client.getMe();
         await client.notifyLoggedIn(me.raw);
-        this.saveSession(await client.exportSession());
+        if (migrateGramJsSession) {
+          this.saveSession(await client.exportSession());
+        }
       }
     } catch (error) {
+      if (this.messageEventClient === client) {
+        this.detachMessageEventHandler();
+      }
       await client.destroy().catch(() => {});
       throw error;
     }
 
     this.client = client;
     this.clientKey = key;
-    this.attachMessageEventHandler(client);
     return client;
   }
 

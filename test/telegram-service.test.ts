@@ -397,29 +397,41 @@ test("TelegramService rejects a missing callback position", async () => {
   );
 });
 
-test("TelegramService emits mapped new messages through the mtcute callback", () => {
-  let callbackAttached = false;
+test("TelegramService emits mapped new and edited messages through the mtcute callbacks", () => {
+  const attachedHandlers: Record<string, (message: unknown) => void> = {};
+  const removedHandlers: Record<string, (message: unknown) => void> = {};
   let newMessageHandler: (message: unknown) => void = (_message: unknown) => {
     throw new Error("The mtcute new-message callback was not attached.");
+  };
+  let editMessageHandler: (message: unknown) => void = (_message: unknown) => {
+    throw new Error("The mtcute edit-message callback was not attached.");
   };
   const service = new TelegramService({ sessionFilePath: "/tmp/telegram-session.json" });
   service.attachMessageEventHandler({
     onNewMessage: {
       add(handler: (message: unknown) => void) {
-        callbackAttached = true;
+        attachedHandlers.newMessage = handler;
         newMessageHandler = handler;
       },
-      remove() {}
+      remove(handler: (message: unknown) => void) {
+        removedHandlers.newMessage = handler;
+      }
+    },
+    onEditMessage: {
+      add(handler: (message: unknown) => void) {
+        attachedHandlers.editMessage = handler;
+        editMessageHandler = handler;
+      },
+      remove(handler: (message: unknown) => void) {
+        removedHandlers.editMessage = handler;
+      }
     }
   });
 
-  let payload: unknown;
-  service.once("message", (value: unknown) => {
-    payload = value;
+  const payloads: unknown[] = [];
+  service.on("message", (value: unknown) => {
+    payloads.push(value);
   });
-  if (!callbackAttached) {
-    throw new Error("Expected the mtcute new-message callback to be attached.");
-  }
   newMessageHandler({
     id: 1021,
     chat: { id: -1004341559831 },
@@ -437,8 +449,18 @@ test("TelegramService emits mapped new messages through the mtcute callback", ()
       }
     ]
   });
+  editMessageHandler({
+    id: 1021,
+    chat: { id: -1004341559831 },
+    replyToMessage: { id: 1020, threadId: 54 },
+    text: "Updated PickaTube"
+  });
 
-  assert.deepEqual(payload, {
+  assert.deepEqual(attachedHandlers, {
+    newMessage: newMessageHandler,
+    editMessage: editMessageHandler
+  });
+  assert.deepEqual(payloads[0], {
     chatId: "-1004341559831",
     topicIds: ["1021", "54", "1020"],
     message: {
@@ -462,6 +484,81 @@ test("TelegramService emits mapped new messages through the mtcute callback", ()
       ]
     }
   });
+  assert.deepEqual(payloads[1], {
+    chatId: "-1004341559831",
+    topicIds: ["1021", "54", "1020"],
+    message: {
+      id: 1021,
+      text: "Updated PickaTube",
+      outgoing: false,
+      senderName: "",
+      sentAt: "",
+      hasMedia: false,
+      isImage: false
+    }
+  });
+
+  service.detachMessageEventHandler();
+  assert.deepEqual(removedHandlers, attachedHandlers);
+});
+
+test("TelegramService activates restored sessions before waiting for updates", async () => {
+  const calls: unknown[] = [];
+  const restoredUser = { raw: { id: 2048 } };
+  const client = {
+    isConnected: false,
+    async prepare() {
+      calls.push("prepare");
+    },
+    async importSession(session: string) {
+      calls.push(["importSession", session]);
+    },
+    async connect() {
+      calls.push("connect");
+      this.isConnected = true;
+    },
+    async getMe() {
+      calls.push("getMe");
+      return restoredUser;
+    },
+    async notifyLoggedIn(user: unknown) {
+      calls.push(["notifyLoggedIn", user]);
+    },
+    async destroy() {
+      calls.push("destroy");
+    },
+    onNewMessage: {
+      add() {
+        calls.push("onNewMessage.add");
+      },
+      remove() {}
+    },
+    onEditMessage: {
+      add() {
+        calls.push("onEditMessage.add");
+      },
+      remove() {}
+    }
+  };
+  const service = new TelegramService({ sessionFilePath: "/tmp/telegram-session.json" });
+  service.getStoredSession = () => "restored-mtcute-session";
+  service.createClient = async () => client;
+  service.saveSession = () => {
+    throw new Error("A native mtcute session should not be migrated.");
+  };
+
+  const result = await service.getClient({ apiId: 123, apiHash: "hash" });
+
+  assert.equal(result, client);
+  assert.deepEqual(calls, [
+    "prepare",
+    ["importSession", "restored-mtcute-session"],
+    "connect",
+    "onNewMessage.add",
+    "onEditMessage.add",
+    "getMe",
+    ["notifyLoggedIn", restoredUser.raw]
+  ]);
 });
 
 test("parseGramJsSession converts an existing StringSession without exposing it", () => {
