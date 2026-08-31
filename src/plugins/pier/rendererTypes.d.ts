@@ -61,7 +61,8 @@ type PierWorktreePayload = {
   branchName?: string;
   force?: boolean;
   fromRef?: string;
-  purge?: boolean;
+  keepImages?: boolean;
+  keepVolumes?: boolean;
   skipDown?: boolean;
   startAfterCreate?: boolean;
   worktreePath?: string;

@@ -522,7 +522,8 @@
           cwd: project?.sourcePath || "",
           worktreePath: payload.worktreePath,
           force: payload.force,
-          purge: payload.purge,
+          keepImages: payload.keepImages,
+          keepVolumes: payload.keepVolumes,
           skipDown: payload.skipDown
         });
       },
@@ -1195,14 +1196,18 @@
     const confirmation = document.createElement("div");
     confirmation.className = "danger-confirmation";
     const copy = document.createElement("p");
-    copy.textContent = `This stops the workload and removes the "${entry.slug}" worktree directory. The Boatyard project entry is not removed.`;
+    copy.textContent = `This stops the workload and removes the "${entry.slug}" worktree directory. Pier also removes materialized snapshots, non-external Compose volumes, and locally built images by default. External volumes and the Boatyard project entry are not removed.`;
     const pathCopy = document.createElement("code");
     pathCopy.textContent = entry.worktreePath || "";
     confirmation.append(copy, pathCopy);
 
-    const purgeInput = document.createElement("input");
-    purgeInput.name = "purge";
-    purgeInput.type = "checkbox";
+    const keepVolumesInput = document.createElement("input");
+    keepVolumesInput.name = "keepVolumes";
+    keepVolumesInput.type = "checkbox";
+
+    const keepImagesInput = document.createElement("input");
+    keepImagesInput.name = "keepImages";
+    keepImagesInput.type = "checkbox";
 
     const forceInput = document.createElement("input");
     forceInput.name = "force";
@@ -1227,7 +1232,8 @@
     actions.append(cancelButton, submitButton);
     form.append(
       confirmation,
-      createCheckbox("Purge snapshots", purgeInput),
+      createCheckbox("Keep non-external Compose volumes", keepVolumesInput),
+      createCheckbox("Keep locally built images", keepImagesInput),
       createCheckbox("Force removal", forceInput),
       error,
       actions
@@ -1240,7 +1246,8 @@
       try {
         await service.removeWorktree(project, {
           worktreePath: entry.worktreePath,
-          purge: purgeInput.checked,
+          keepVolumes: keepVolumesInput.checked,
+          keepImages: keepImagesInput.checked,
           force: forceInput.checked
         });
         dialog.close();

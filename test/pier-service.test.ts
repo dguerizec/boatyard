@@ -89,4 +89,62 @@ test("Pier availability action includes the configured worktree pattern", async 
   assert.deepEqual(resourceProviders, ["boatyard.pier.systemResources"]);
 });
 
+test("Pier worktree removal preserves volumes and images only when requested", async () => {
+  const actions = new Map<string, (payload?: Record<string, unknown>) => Promise<unknown>>();
+  const commands: Array<{ args: string[]; command: string; cwd?: string }> = [];
+  activate({
+    actions: {
+      handle(name: string, handler: (payload?: Record<string, unknown>) => Promise<unknown>) {
+        actions.set(name, handler);
+      }
+    },
+    execFileAsync: async (command: string, args: string[], options: { cwd?: string } = {}) => {
+      commands.push({ args, command, cwd: options.cwd });
+      return { stdout: "" };
+    },
+    getState: () => ({}),
+    plugin: { id: "boatyard.pier" },
+    resources: { registerProvider() {} },
+    stateMigrations: { register() {} }
+  });
+
+  const removeWorktree = actions.get("removeWorktree");
+  if (!removeWorktree) {
+    throw new Error("Pier removeWorktree action was not registered.");
+  }
+  await removeWorktree({
+    cwd: "/workspace/project",
+    worktreePath: "/workspace/project/worktrees/feature"
+  });
+  await removeWorktree({
+    cwd: "/workspace/project",
+    force: true,
+    keepImages: true,
+    keepVolumes: true,
+    skipDown: true,
+    worktreePath: "/workspace/project/worktrees/feature"
+  });
+
+  assert.deepEqual(commands, [
+    {
+      args: ["worktree", "rm", "/workspace/project/worktrees/feature"],
+      command: "pier",
+      cwd: "/workspace/project"
+    },
+    {
+      args: [
+        "worktree",
+        "rm",
+        "/workspace/project/worktrees/feature",
+        "--force",
+        "--skip-down",
+        "--keep-volumes",
+        "--keep-images"
+      ],
+      command: "pier",
+      cwd: "/workspace/project"
+    }
+  ]);
+});
+
 export {};

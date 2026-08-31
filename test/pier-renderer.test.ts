@@ -13,6 +13,7 @@ type EventHandler = (...args: unknown[]) => unknown;
 
 class FakeElement {
   attributes = new Map<string, string>();
+  checked = false;
   children: FakeElement[] = [];
   className = "";
   dataset: Record<string, string> = {};
@@ -21,6 +22,7 @@ class FakeElement {
   hidden = false;
   href = "";
   isConnected = false;
+  name = "";
   open = false;
   parentElement: FakeElement | null = null;
   popover = "";
@@ -115,9 +117,18 @@ class FakeElement {
     void this.trigger("toggle", {});
   }
 
+  close() {
+    this.open = false;
+    void this.trigger("close", {});
+  }
+
   showPopover() {
     this.popoverOpen = true;
     void this.trigger("toggle", {});
+  }
+
+  showModal() {
+    this.open = true;
   }
 
   remove() {
@@ -159,6 +170,13 @@ function findAllByClass(root: FakeElement, className: string): FakeElement[] {
   return [
     ...(root.classList.contains(className) ? [root] : []),
     ...root.children.flatMap((child) => findAllByClass(child, className))
+  ];
+}
+
+function findAllByName(root: FakeElement, name: string): FakeElement[] {
+  return [
+    ...(root.name === name ? [root] : []),
+    ...root.children.flatMap((child) => findAllByName(child, name))
   ];
 }
 
@@ -352,6 +370,7 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
   const upCalls: string[] = [];
   const openUrlCalls: Array<{ options?: { sourceElement?: FakeElement }; url: string }> = [];
   const overlayCalls: Array<{ action: string; element?: FakeElement; margin?: number }> = [];
+  const pluginCalls: Array<{ action: string; payload: Record<string, unknown> }> = [];
   let externalOpenCount = 0;
   const refreshCallbacks: Array<() => unknown> = [];
   const captureRefresh = (callback: () => unknown) => {
@@ -439,11 +458,18 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
       }
       throw new Error(`Unexpected URL ${url}`);
     },
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    },
     setInterval: captureRefresh,
     window: {
       CustomEvent,
       boatyard: {
-        invokePlugin: async () => null,
+        invokePlugin: async (_pluginId: string, action: string, payload: Record<string, unknown>) => {
+          pluginCalls.push({ action, payload });
+          return null;
+        },
         openExternal: () => { externalOpenCount += 1; },
         updateProjectPluginConfig: async (projectId: string, pluginId: string, patch: Record<string, unknown>) => {
           assert.equal(projectId, project.id);
@@ -457,6 +483,10 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
       dispatchEvent: () => true,
       innerHeight: 800,
       innerWidth: 1200,
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0);
+        return 1;
+      },
       setInterval: captureRefresh
     } as Record<string, unknown>
   };
@@ -594,6 +624,35 @@ test("Pier widget uses one entry-point selector for every worktree and persists 
     .filter((button) => button.textContent === "Remove worktree…");
   assert.deepEqual(removeButtons.map((button) => button.hidden), [true, false, false]);
   assert.ok(!getTextContent(card).includes("/workspace/pickatube"));
+
+  await removeButtons[1].trigger("click");
+  const removeDialogs = findAllByClass(body, "pier-worktree-dialog");
+  assert.equal(removeDialogs.length, 1);
+  assert.ok(getTextContent(removeDialogs[0]).includes("removes materialized snapshots, non-external Compose volumes, and locally built images by default"));
+  assert.ok(getTextContent(removeDialogs[0]).includes("External volumes"));
+  const keepVolumesInputs = findAllByName(removeDialogs[0], "keepVolumes");
+  const keepImagesInputs = findAllByName(removeDialogs[0], "keepImages");
+  assert.equal(keepVolumesInputs.length, 1);
+  assert.equal(keepImagesInputs.length, 1);
+  assert.equal(findAllByName(removeDialogs[0], "purge").length, 0);
+  assert.equal(keepVolumesInputs[0].checked, false);
+  assert.equal(keepImagesInputs[0].checked, false);
+  keepVolumesInputs[0].checked = true;
+  keepImagesInputs[0].checked = true;
+  const removeForms = findAllByClass(removeDialogs[0], "plugin-settings-dialog-panel");
+  assert.equal(removeForms.length, 1);
+  await removeForms[0].trigger("submit");
+  await flush();
+  assert.deepEqual(plain(pluginCalls), [{
+    action: "removeWorktree",
+    payload: {
+      cwd: "/workspace/pickatube",
+      force: false,
+      keepImages: true,
+      keepVolumes: true,
+      worktreePath: "/workspace/pickatube/worktrees/analytics"
+    }
+  }]);
 
   await links[0].trigger("click");
   await openUrlButtons[0].trigger("click");

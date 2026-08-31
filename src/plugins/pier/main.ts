@@ -8,7 +8,13 @@ const path = require("node:path");
 
 type WorktreeCommandOptions = { cwd?: unknown; execFileAsync: ExecFileAsync };
 type WorktreeAddInput = { worktreePath?: unknown; branchName?: unknown; fromRef?: unknown; startAfterCreate?: unknown };
-type WorktreeRemoveInput = { worktreePath?: unknown; force?: unknown; purge?: unknown; skipDown?: unknown };
+type WorktreeRemoveInput = {
+  worktreePath?: unknown;
+  force?: unknown;
+  keepImages?: unknown;
+  keepVolumes?: unknown;
+  skipDown?: unknown;
+};
 type PierAvailabilityOptions = {
   execFileAsync: ExecFileAsync;
   existsSync?: (path: string) => boolean;
@@ -90,7 +96,13 @@ function buildWorktreeAddArgs({ worktreePath, branchName, fromRef, startAfterCre
   return args;
 }
 
-function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }: WorktreeRemoveInput = {}) {
+function buildWorktreeRemoveArgs({
+  worktreePath,
+  force,
+  keepImages,
+  keepVolumes,
+  skipDown
+}: WorktreeRemoveInput = {}) {
   const targetPath = normalizeText(worktreePath);
   if (!targetPath) {
     throw new Error("Worktree path is required.");
@@ -100,11 +112,14 @@ function buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }: Workt
   if (force) {
     args.push("--force");
   }
-  if (purge) {
-    args.push("--purge");
-  }
   if (skipDown) {
     args.push("--skip-down");
+  }
+  if (keepVolumes) {
+    args.push("--keep-volumes");
+  }
+  if (keepImages) {
+    args.push("--keep-images");
   }
   return args;
 }
@@ -153,9 +168,16 @@ function activate(ctx: PierPluginContext) {
     );
   });
 
-  ctx.actions.handle<WorktreeRemoveInput & { cwd?: unknown }>("removeWorktree", ({ cwd, worktreePath, force, purge, skipDown } = {}) => {
+  ctx.actions.handle<WorktreeRemoveInput & { cwd?: unknown }>("removeWorktree", ({
+    cwd,
+    worktreePath,
+    force,
+    keepImages,
+    keepVolumes,
+    skipDown
+  } = {}) => {
     return runPierWorktreeCommand(
-      buildWorktreeRemoveArgs({ worktreePath, force, purge, skipDown }),
+      buildWorktreeRemoveArgs({ worktreePath, force, keepImages, keepVolumes, skipDown }),
       { cwd, execFileAsync: ctx.execFileAsync }
     );
   });
