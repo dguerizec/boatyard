@@ -308,6 +308,44 @@
   overflow-wrap: anywhere;
 }
 
+.telegram-message-keyboard {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.telegram-message-keyboard-row {
+  display: flex;
+  gap: 6px;
+}
+
+.telegram-message-choice {
+  min-width: 0;
+  min-height: 34px;
+  flex: 1 1 0;
+  border: 1px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.12);
+  padding: 6px 10px;
+  color: var(--success-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.telegram-message-choice:hover:not(:disabled),
+.telegram-message-choice:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.85);
+  background: rgba(var(--accent-rgb), 0.2);
+  outline: none;
+}
+
+.telegram-message-choice:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .telegram-message-content {
   min-width: 0;
   margin-top: 6px;

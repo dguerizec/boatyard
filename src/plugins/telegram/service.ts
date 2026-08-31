@@ -69,7 +69,16 @@ type TelegramRichBlock = {
   type: "blockquote" | "details" | "divider" | "heading" | "list" | "paragraph" | "preformatted" | "table";
 };
 
+type TelegramMessageButton = {
+  column: number;
+  row: number;
+  text: string;
+  type: "callback" | "url";
+  url?: string;
+};
+
 type TelegramMappedMessage = {
+  buttons?: TelegramMessageButton[][];
   hasMedia: boolean;
   id: unknown;
   imagePreviewDataUrl?: string;
@@ -100,6 +109,11 @@ type TelegramRuntimeClient = {
   getHistory(peer: unknown, options: UnknownRecord): Promise<UnknownRecord[]>;
   getMe(): Promise<UnknownRecord>;
   getMessages(peer: unknown, ids: number[]): Promise<(UnknownRecord | null)[]>;
+  getCallbackAnswer(params: {
+    chatId: unknown;
+    data: Uint8Array;
+    message: number;
+  }): Promise<unknown>;
   importSession(session: string | MtcuteSessionData, force?: boolean): Promise<void>;
   isConnected: boolean;
   notifyLoggedIn(user: unknown): Promise<unknown>;
@@ -170,6 +184,15 @@ function getErrorCode(error: unknown): string {
 
 function normalizeText(value: unknown): string {
   return String(value || "").trim();
+}
+
+function parseNonNegativeInteger(value: unknown): number | null {
+  const normalized = String(value ?? "").trim();
+  if (!/^\d+$/.test(normalized)) {
+    return null;
+  }
+  const parsed = Number(normalized);
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 function getImageExtension(mimeType: string): string {
@@ -850,6 +873,38 @@ function getMessageText(message: unknown = {}): string {
   return normalizeText(source.text) || renderRichMessageText(source);
 }
 
+function normalizeMessageButtons(message: unknown = {}): TelegramMessageButton[][] {
+  const markup = getRecord(getRecord(message).markup);
+  if (markup.type !== "inline" || !Array.isArray(markup.buttons)) {
+    return [];
+  }
+
+  return markup.buttons.flatMap((row, rowIndex): TelegramMessageButton[][] => {
+    if (!Array.isArray(row)) {
+      return [];
+    }
+
+    const buttons = row.flatMap((button, columnIndex): TelegramMessageButton[] => {
+      const source = getRecord(button);
+      const text = normalizeText(source.text);
+      if (!text) {
+        return [];
+      }
+
+      if (source._ === "keyboardButtonCallback") {
+        return [{ column: columnIndex, row: rowIndex, text, type: "callback" }];
+      }
+      if (source._ === "keyboardButtonUrl") {
+        const url = normalizeText(source.url);
+        return url ? [{ column: columnIndex, row: rowIndex, text, type: "url", url }] : [];
+      }
+      return [];
+    });
+
+    return buttons.length ? [buttons] : [];
+  });
+}
+
 function mapMessage(message: unknown = {}): TelegramMappedMessage {
   const source = getRecord(message);
   const isImage = Boolean(getTelegramImageMimeType(source));
@@ -857,6 +912,7 @@ function mapMessage(message: unknown = {}): TelegramMappedMessage {
   const richContent = richMessageContent.length
     ? richMessageContent
     : normalizeMessageEntityContent(source);
+  const buttons = normalizeMessageButtons(source);
   return {
     id: source.id,
     text: getMessageText(source),
@@ -865,6 +921,7 @@ function mapMessage(message: unknown = {}): TelegramMappedMessage {
     sentAt: formatMessageDate(source.date),
     hasMedia: Boolean(source.media),
     isImage,
+    ...(buttons.length ? { buttons } : {}),
     ...(richContent.length ? { richContent } : {})
   };
 }
@@ -1574,6 +1631,56 @@ class TelegramService extends EventEmitter {
     };
   }
 
+  async activateMessageButton(
+    target: unknown = {},
+    messageId: unknown,
+    row: unknown,
+    column: unknown,
+    globalConfig: unknown = {}
+  ) {
+    const id = Number(normalizeText(messageId));
+    const rowIndex = parseNonNegativeInteger(row);
+    const columnIndex = parseNonNegativeInteger(column);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new Error("Telegram message id is invalid.");
+    }
+    if (rowIndex === null || columnIndex === null) {
+      throw new Error("Telegram button position is invalid.");
+    }
+
+    const normalizedTarget = normalizeTarget(target);
+    const client = await this.getAuthorizedClient(globalConfig);
+    const resolvedTarget = await this.resolveProjectTopic(client, normalizedTarget);
+    const peer = this.getPeerValue(resolvedTarget);
+    const [message] = await client.getMessages(peer, [id]);
+    if (!message) {
+      throw new Error("Telegram message is unavailable.");
+    }
+
+    const topicIds = new Set([
+      normalizeThreadId(resolvedTarget.threadId),
+      normalizeThreadId(resolvedTarget.topicTopMessageId)
+    ].filter((value): value is number => value !== null));
+    if (topicIds.size && !getMessageTopicIds(message).some((topicId) => topicIds.has(topicId))) {
+      throw new Error("Telegram message does not belong to this project topic.");
+    }
+
+    const markup = getRecord(getRecord(message).markup);
+    const buttonRows = Array.isArray(markup.buttons) ? markup.buttons : [];
+    const buttonRow = Array.isArray(buttonRows[rowIndex]) ? buttonRows[rowIndex] : [];
+    const button = getRecord(buttonRow[columnIndex]);
+    if (button._ !== "keyboardButtonCallback" || !(button.data instanceof Uint8Array)) {
+      throw new Error("Telegram button is no longer available.");
+    }
+
+    await client.getCallbackAnswer({
+      chatId: peer,
+      message: id,
+      data: button.data
+    });
+    return { activated: true };
+  }
+
   async getMessageImage(target: unknown = {}, messageId: unknown, globalConfig: unknown = {}) {
     const id = Number(normalizeText(messageId));
     if (!Number.isInteger(id) || id <= 0) {
@@ -1613,6 +1720,7 @@ export {
   getTelegramImageMimeType,
   mapMessage,
   normalizeMessageEntityContent,
+  normalizeMessageButtons,
   normalizeTarget,
   normalizeRichMessageContent,
   parseGramJsSession,

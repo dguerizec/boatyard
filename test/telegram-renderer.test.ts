@@ -13,6 +13,7 @@ class FakeElement {
   attributes = new Map<string, string>();
   children: FakeElement[] = [];
   className = "";
+  disabled = false;
   href = "";
   tagName: string;
   textContent = "";
@@ -41,6 +42,10 @@ class FakeElement {
     this.attributes.set(name, String(value));
   }
 
+  removeAttribute(name: string) {
+    this.attributes.delete(name);
+  }
+
   trigger(name: string) {
     for (const handler of this.listeners.get(name) || []) {
       handler({ preventDefault() {} });
@@ -50,6 +55,7 @@ class FakeElement {
 
 type TelegramRendererService = {
   mergeMessages(messages: unknown[], message: unknown): unknown[];
+  renderMessageButtons(message: unknown, activate?: (button: unknown) => unknown): FakeElement | null;
   renderMessageContent(message: unknown): FakeElement | null;
 };
 
@@ -129,6 +135,13 @@ function findByClass(root: FakeElement, className: string): FakeElement | null {
     }
   }
   return null;
+}
+
+function findAllByClass(root: FakeElement, className: string): FakeElement[] {
+  return [
+    ...(root.className.split(/\s+/).includes(className) ? [root] : []),
+    ...root.children.flatMap((child) => findAllByClass(child, className))
+  ];
 }
 
 function getText(root: FakeElement): string {
@@ -249,6 +262,38 @@ test("Telegram renderer does not create links for unsafe protocols", () => {
   assert.equal(getText(content), "Unsafe link");
 });
 
+test("Telegram renderer displays inline choices as actionable button rows", () => {
+  const openedUrls: string[] = [];
+  const activated: unknown[] = [];
+  const service = loadTelegramRendererService(openedUrls);
+  const keyboard = service.renderMessageButtons({
+    buttons: [
+      [
+        { column: 0, row: 0, text: "Single choice", type: "callback" },
+        { column: 1, row: 0, text: "Multiple choice", type: "callback" }
+      ],
+      [
+        { column: 0, row: 1, text: "Help", type: "url", url: "https://example.com/help" }
+      ]
+    ]
+  }, (button) => {
+    activated.push(button);
+  });
+
+  if (!keyboard) {
+    throw new Error("Expected Telegram choice buttons.");
+  }
+  assert.equal(keyboard.className, "telegram-message-keyboard");
+  assert.equal(findAllByClass(keyboard, "telegram-message-keyboard-row").length, 2);
+  const choices = findAllByClass(keyboard, "telegram-message-choice");
+  assert.deepEqual(choices.map((button) => button.textContent), ["Single choice", "Multiple choice", "Help"]);
+
+  choices[0].trigger("click");
+  assert.deepEqual(activated, [{ column: 0, row: 0, text: "Single choice", type: "callback" }]);
+  choices[2].trigger("click");
+  assert.deepEqual(openedUrls, ["https://example.com/help"]);
+});
+
 test("Telegram renderer merges live callback messages without waiting for history", () => {
   const service = loadTelegramRendererService();
   const initial = [
@@ -282,6 +327,7 @@ test("Telegram rich message styles include responsive tables and semantic blocks
   assert.match(styles, /\.telegram-rich-blockquote\s*\{[\s\S]*border-left:/);
   assert.match(styles, /\.telegram-rich-list\s*\{/);
   assert.match(styles, /\.telegram-rich-link\s*\{[\s\S]*text-decoration: underline;/);
+  assert.match(styles, /\.telegram-message-choice\s*\{[\s\S]*flex: 1 1 0;/);
   assert.doesNotMatch(styles, /\.telegram-message-media\s*\{/);
   assert.doesNotMatch(renderer, /textContent = "Attachment"/);
 });

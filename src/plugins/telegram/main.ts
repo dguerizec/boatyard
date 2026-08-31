@@ -11,6 +11,13 @@ type TelegramStatusPayload = { globalConfig?: Record<string, unknown> };
 type TelegramMessagesPayload = { target?: Record<string, unknown>; globalConfig?: Record<string, unknown> };
 type TelegramSendMessagePayload = { target?: Record<string, unknown>; text?: unknown; image?: unknown; globalConfig?: Record<string, unknown> };
 type TelegramMessageImagePayload = { target?: Record<string, unknown>; messageId?: unknown; globalConfig?: Record<string, unknown> };
+type TelegramMessageButtonPayload = {
+  target?: Record<string, unknown>;
+  messageId?: unknown;
+  row?: unknown;
+  column?: unknown;
+  globalConfig?: Record<string, unknown>;
+};
 type TelegramStartLoginPayload = { globalConfig?: Record<string, unknown>; phoneNumber?: unknown };
 type TelegramCodePayload = { code?: unknown };
 type TelegramPasswordPayload = { password?: unknown };
@@ -104,6 +111,16 @@ function activate(ctx: TelegramPluginContext) {
 
   ctx.actions.handle<TelegramMessageImagePayload>("messageImage", ({ target = {}, messageId, globalConfig = {} } = {}) => {
     return requireService(globalConfig).getMessageImage(target, messageId, globalConfig);
+  });
+
+  ctx.actions.handle<TelegramMessageButtonPayload>("activateMessageButton", ({
+    target = {},
+    messageId,
+    row,
+    column,
+    globalConfig = {}
+  } = {}) => {
+    return requireService(globalConfig).activateMessageButton(target, messageId, row, column, globalConfig);
   });
 
   ctx.actions.handle<TelegramStartLoginPayload>("startLogin", ({ globalConfig = {}, phoneNumber = "" } = {}) => {

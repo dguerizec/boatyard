@@ -69,6 +69,7 @@
   };
 
   type TelegramMessage = {
+    buttons?: TelegramMessageButton[][];
     hasMedia?: boolean;
     id?: string | number;
     imagePreviewDataUrl?: string;
@@ -78,6 +79,14 @@
     senderName?: string;
     sentAt?: string;
     text?: string;
+  };
+
+  type TelegramMessageButton = {
+    column?: number;
+    row?: number;
+    text?: string;
+    type?: "callback" | "url";
+    url?: string;
   };
 
   type TelegramImageAttachment = {
@@ -111,6 +120,13 @@
   type TelegramRendererService = PluginRegistryRecord & {
     completeLoginCode(code: unknown): Promise<TelegramStatus>;
     completeLoginPassword(password: unknown): Promise<TelegramStatus>;
+    activateMessageButton(
+      project: TelegramProject,
+      messageId: string | number,
+      row: number,
+      column: number,
+      options?: TelegramConversationProps
+    ): Promise<unknown>;
     getMessages(project: TelegramProject, options?: TelegramConversationProps): Promise<{
       messages?: TelegramMessage[];
       status?: TelegramStatus;
@@ -123,6 +139,10 @@
     mergeMessages(messages: TelegramMessage[], message: TelegramMessage): TelegramMessage[];
     onMessage(callback: (update: TelegramUpdate) => void): () => void;
     renderMessageContent(message: TelegramMessage): HTMLElement | null;
+    renderMessageButtons(
+      message: TelegramMessage,
+      activate?: (button: TelegramMessageButton) => Promise<unknown> | unknown
+    ): HTMLElement | null;
     sendMessage(project: TelegramProject, text: string, image: TelegramImageAttachment | null, options?: TelegramConversationProps): Promise<unknown>;
     startLogin(globalConfig: TelegramConfig | undefined, phoneNumber: string): Promise<TelegramStatus>;
   };
@@ -390,6 +410,63 @@
     return paragraph;
   }
 
+  function renderMessageButtons(
+    message: TelegramMessage,
+    activate?: (button: TelegramMessageButton) => Promise<unknown> | unknown
+  ): HTMLElement | null {
+    if (!Array.isArray(message.buttons) || !message.buttons.length) {
+      return null;
+    }
+
+    const keyboard = document.createElement("div");
+    keyboard.className = "telegram-message-keyboard";
+    keyboard.setAttribute("role", "group");
+    keyboard.setAttribute("aria-label", "Telegram choices");
+    for (const buttonRow of message.buttons) {
+      if (!Array.isArray(buttonRow) || !buttonRow.length) {
+        continue;
+      }
+      const row = document.createElement("div");
+      row.className = "telegram-message-keyboard-row";
+      for (const choice of buttonRow) {
+        const text = normalizeText(choice.text);
+        if (!text || !["callback", "url"].includes(String(choice.type))) {
+          continue;
+        }
+        const url = choice.type === "url" ? getSafeRichLink(choice.url) : "";
+        if (choice.type === "url" && !url) {
+          continue;
+        }
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "telegram-message-choice";
+        button.textContent = text;
+        button.addEventListener("click", () => {
+          if (choice.type === "url") {
+            globalScope.boatyard?.openExternal?.(url);
+            return;
+          }
+          if (!activate) {
+            return;
+          }
+          button.disabled = true;
+          button.setAttribute("aria-busy", "true");
+          Promise.resolve(activate(choice))
+            .finally(() => {
+              button.disabled = false;
+              button.removeAttribute("aria-busy");
+            })
+            .catch(() => {});
+        });
+        row.append(button);
+      }
+      if (row.childElementCount) {
+        keyboard.append(row);
+      }
+    }
+    return keyboard.childElementCount ? keyboard : null;
+  }
+
   function getProjectTopicTitle(project: TelegramProject = {}, config: TelegramConfig = {}) {
     return normalizeText(config.telegramTopicTitle || project.slug || project.name);
   }
@@ -476,6 +553,7 @@
       getWebLink: getTelegramWebLink,
       mergeMessages: mergeTelegramMessages,
       renderMessageContent,
+      renderMessageButtons,
       async getStatus(options: TelegramConversationProps = {}) {
         if (!globalScope.boatyard?.invokePlugin) {
           return {
@@ -506,6 +584,22 @@
           messageId,
           globalConfig: options.globalPluginConfig || {}
         }) as { dataUrl?: string };
+      },
+      async activateMessageButton(
+        project: TelegramProject,
+        messageId: string | number,
+        row: number,
+        column: number,
+        options: TelegramConversationProps = {}
+      ) {
+        const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
+        return await invokePlugin("activateMessageButton", {
+          target,
+          messageId,
+          row,
+          column,
+          globalConfig: options.globalPluginConfig || {}
+        });
       },
       async sendMessage(project: TelegramProject, text: string, image: TelegramImageAttachment | null, options: TelegramConversationProps = {}) {
         const target = getTarget(project, options.pluginConfig, options.globalPluginConfig);
@@ -542,7 +636,12 @@
     element.setAttribute("aria-label", summary);
   }
 
-  function renderMessages(list: HTMLElement, messages: TelegramMessage[] = [], openImage?: (message: TelegramMessage) => void) {
+  function renderMessages(
+    list: HTMLElement,
+    messages: TelegramMessage[] = [],
+    openImage?: (message: TelegramMessage) => void,
+    activateButton?: (message: TelegramMessage, button: TelegramMessageButton) => Promise<unknown> | unknown
+  ) {
     list.replaceChildren();
     if (!messages.length) {
       const empty = document.createElement("p");
@@ -582,6 +681,10 @@
       const body = renderMessageContent(message);
       if (body) {
         row.append(body);
+      }
+      const keyboard = renderMessageButtons(message, (button) => activateButton?.(message, button));
+      if (keyboard) {
+        row.append(keyboard);
       }
       list.append(row);
     }
@@ -911,7 +1014,7 @@
         for (const message of liveMessages.values()) {
           currentMessages = service.mergeMessages(currentMessages, message);
         }
-        renderMessages(list, currentMessages, showImagePreview);
+        renderMessages(list, currentMessages, showImagePreview, activateChoice);
         list.scrollTop = shouldScrollToBottom ? list.scrollHeight : previousScrollTop;
       } catch (error) {
         setStatusText(status, {
@@ -920,6 +1023,26 @@
         });
       } finally {
         refreshButton.disabled = false;
+      }
+    }
+
+    async function activateChoice(message: TelegramMessage, choice: TelegramMessageButton) {
+      if (message.id === undefined || !Number.isInteger(choice.row) || !Number.isInteger(choice.column)) {
+        throw new Error("Telegram button is invalid.");
+      }
+      const messageId = normalizeText(message.id);
+      if (messageId) {
+        liveMessages.delete(messageId);
+      }
+      try {
+        await service.activateMessageButton(project, message.id, Number(choice.row), Number(choice.column), props);
+        await load({ scrollToBottom: true });
+      } catch (error) {
+        setStatusText(status, {
+          state: "error",
+          summary: (error as Error).message
+        });
+        throw error;
       }
     }
 
@@ -1058,7 +1181,7 @@
             }
           }
           currentMessages = service.mergeMessages(currentMessages, update.message);
-          renderMessages(list, currentMessages, showImagePreview);
+          renderMessages(list, currentMessages, showImagePreview, activateChoice);
           if (shouldScrollToBottom) {
             list.scrollTop = list.scrollHeight;
           }

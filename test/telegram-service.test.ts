@@ -6,6 +6,7 @@ const {
   addTopicMetadataPrefix,
   getTopicMetadataPrefix,
   mapMessage,
+  normalizeMessageButtons,
   parseGramJsSession,
   parsePastedImage,
   renderRichMessageText,
@@ -318,6 +319,82 @@ test("mapMessage preserves links and formatting from standard Telegram entities"
       ]
     }
   ]);
+});
+
+test("mapMessage preserves inline Telegram choices without exposing callback data", () => {
+  const message = {
+    id: 42,
+    text: "Choose a mode",
+    markup: {
+      type: "inline",
+      buttons: [
+        [
+          { _: "keyboardButtonCallback", text: "Single choice", data: Buffer.from("single") },
+          { _: "keyboardButtonCallback", text: "Multiple choice", data: Buffer.from("multiple") }
+        ],
+        [
+          { _: "keyboardButtonUrl", text: "Help", url: "https://example.com/help" }
+        ]
+      ]
+    }
+  };
+
+  assert.deepEqual(normalizeMessageButtons(message), [
+    [
+      { column: 0, row: 0, text: "Single choice", type: "callback" },
+      { column: 1, row: 0, text: "Multiple choice", type: "callback" }
+    ],
+    [
+      { column: 0, row: 1, text: "Help", type: "url", url: "https://example.com/help" }
+    ]
+  ]);
+  const mapped = mapMessage(message);
+  assert.deepEqual(mapped.buttons, normalizeMessageButtons(message));
+  assert.equal("data" in mapped.buttons[0][0], false);
+  assert.equal(JSON.stringify(mapped).includes("single"), false);
+});
+
+test("TelegramService activates the callback stored on the authoritative message", async () => {
+  const callbackData = Buffer.from("choice:single");
+  const callbackCalls: unknown[] = [];
+  const client = {
+    getMessages: async () => [{
+      id: 42,
+      markup: {
+        type: "inline",
+        buttons: [[
+          { _: "keyboardButtonCallback", text: "Single choice", data: callbackData }
+        ]]
+      }
+    }],
+    getCallbackAnswer: async (params: unknown) => {
+      callbackCalls.push(params);
+      return { _: "messages.botCallbackAnswer", cacheTime: 0 };
+    }
+  };
+  const service = new TelegramService({ sessionFilePath: "/tmp/telegram-session.json" });
+  service.getAuthorizedClient = async () => client;
+  service.resolveProjectTopic = async (_client: unknown, target: unknown) => target;
+  service.getPeerValue = () => "chat";
+
+  const result = await service.activateMessageButton({ chatId: "chat" }, 42, 0, 0, {});
+
+  assert.deepEqual(callbackCalls, [{
+    chatId: "chat",
+    message: 42,
+    data: callbackData
+  }]);
+  assert.deepEqual(result, {
+    activated: true
+  });
+});
+
+test("TelegramService rejects a missing callback position", async () => {
+  const service = new TelegramService({ sessionFilePath: "/tmp/telegram-session.json" });
+  await assert.rejects(
+    service.activateMessageButton({ chatId: "chat" }, 42, undefined, 0, {}),
+    /Telegram button position is invalid\./
+  );
 });
 
 test("TelegramService emits mapped new messages through the mtcute callback", () => {
