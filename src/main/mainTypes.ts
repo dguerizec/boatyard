@@ -140,6 +140,14 @@ export type ShowWebAppPayload = {
   url?: string;
 };
 
+export type OpenWebAppModalPayload = {
+  eventDetail?: unknown;
+  eventName?: unknown;
+  readySelector?: unknown;
+  title?: unknown;
+  url?: unknown;
+};
+
 export type WebAppOpenOptions = UnknownRecord & {
   sourceBounds?: unknown;
   sourceUrl?: unknown;

@@ -79,6 +79,10 @@ const TOOL_ICONS: Record<string, string[]> = {
     "M6.5 10V7.5a5.5 5.5 0 0 1 11 0V10",
     "M5.5 10h13a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 18.5 20h-13A1.5 1.5 0 0 1 4 18.5v-7A1.5 1.5 0 0 1 5.5 10z"
   ],
+  mail: [
+    "M4 6h16v12H4z",
+    "M4 7l8 6 8-6"
+  ],
   navigationControls: [
     "M9 7l-5 5 5 5",
     "M15 7l5 5-5 5"

@@ -24,10 +24,14 @@
 
   type TwiccPluginOptions = {
     closeContextMenu?: () => void;
+    createToolIcon?: (name: string) => SVGElement;
+    dispatchWebAppEvent?: (eventName: string, detail?: Record<string, unknown> | null) => Promise<unknown>;
+    getWebAppTextContent?: (selector: string) => Promise<unknown>;
     globalPluginConfig?: TwiccConfig;
     getProjectWebAppState?: (webAppId: string) => { key?: string; url?: string } | null;
     isActiveProject?: boolean;
     openContextMenu?: (menu: HTMLElement, event: MouseEvent) => void;
+    openWebAppModal?: (options: Record<string, unknown>) => Promise<unknown>;
     openProjectWebApp?: (webAppId: string, url?: string) => unknown;
     pluginConfig?: TwiccConfig;
     projectConfig?: TwiccConfig;
@@ -328,6 +332,7 @@
     { value: "icon", label: "Colored icon" }
   ];
   const TWICC_USAGE_REFRESH_MS = 60000;
+  const TWICC_PEER_INBOX_REFRESH_MS = 5000;
   const TWICC_TOPBAR_USAGE_DISPLAY_DEFAULT = "chartsWithValues";
   const TWICC_TOPBAR_USAGE_DISPLAY_OPTIONS = [
     { value: "numbers", label: "Numeric values" },
@@ -3596,6 +3601,87 @@
     };
   }
 
+  function renderTwiccPaneHeaderActions(
+    container: HTMLElement,
+    props: TwiccPluginOptions = {}
+  ): () => void {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "webapp-tool-button twicc-peer-inbox-button";
+    const projectUrl = String(props.projectConfig?.twiccProjectUrl || "").trim();
+    button.disabled = typeof props.openWebAppModal !== "function" || !projectUrl;
+
+    const fallbackIcon = document.createElement("span");
+    fallbackIcon.className = "twicc-peer-inbox-icon";
+    fallbackIcon.setAttribute("aria-hidden", "true");
+    const icon = props.createToolIcon?.("mail") || fallbackIcon;
+
+    const badge = document.createElement("span");
+    badge.className = "twicc-peer-inbox-badge";
+    badge.hidden = true;
+    badge.setAttribute("aria-hidden", "true");
+    button.append(icon, badge);
+
+    let disposed = false;
+    let inboxCount: number | null = null;
+
+    function syncButton(): void {
+      const count = inboxCount || 0;
+      badge.hidden = count < 1;
+      badge.textContent = count > 99 ? "99+" : String(count);
+      button.classList.toggle("has-attention", count > 0);
+      const label = count > 0
+        ? `Peer inbox (${count} ${count === 1 ? "item needs" : "items need"} attention)`
+        : "Peer inbox";
+      button.title = button.disabled ? "Peer inbox is unavailable" : label;
+      button.setAttribute("aria-label", button.title);
+    }
+
+    async function refreshInboxCount(): Promise<void> {
+      try {
+        const nativeBadgeText = await props.getWebAppTextContent?.(
+          ".peer-inbox-button .peer-inbox-badge"
+        );
+        const parsedCount = Number.parseInt(String(nativeBadgeText || ""), 10);
+        const nextCount = Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : 0;
+        if (!disposed) {
+          inboxCount = nextCount;
+          syncButton();
+        }
+      } catch {
+        if (!disposed && inboxCount === null) {
+          syncButton();
+        }
+      }
+    }
+
+    const handleClick = () => {
+      void props.openWebAppModal?.({
+        eventName: "twicc:open-peer-inbox",
+        readySelector: "wa-dialog[label=\"Peer inbox\"]",
+        title: "TwiCC Peer inbox",
+        url: projectUrl
+      });
+    };
+
+    syncButton();
+    button.addEventListener("click", handleClick);
+    container.append(button);
+    void refreshInboxCount();
+    const refreshInterval = globalScope.setInterval?.(
+      refreshInboxCount,
+      TWICC_PEER_INBOX_REFRESH_MS
+    );
+
+    return () => {
+      disposed = true;
+      button.removeEventListener("click", handleClick);
+      if (refreshInterval !== undefined) {
+        globalScope.clearInterval?.(refreshInterval);
+      }
+    };
+  }
+
   function renderSessionFlowHeaderActions(
     container: HTMLElement,
     props: TwiccSessionFlowPaneOptions = {}
@@ -4293,6 +4379,7 @@
           iconUrl: twiccIconUrl,
           kind: "wcv",
           scope: "project",
+          renderHeaderActions: renderTwiccPaneHeaderActions,
           renderSidePanel: renderSessionFlowSidePanel,
           resolveNavigation: resolveTwiccPaneNavigation,
           resolveSidePanel: resolveTwiccPaneSidePanel,

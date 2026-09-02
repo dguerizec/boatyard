@@ -1,5 +1,6 @@
 import type {
   ContextMenuParams,
+  BrowserWindowConstructorOptions,
   Event as ElectronEvent,
   HandlerDetails,
   Rectangle,
@@ -9,6 +10,7 @@ import type {
 } from "electron";
 import type {
   ProjectStoreInstance,
+  OpenWebAppModalPayload,
   ShowWebAppPayload,
   UnknownRecord,
   WebAppCapture,
@@ -27,7 +29,7 @@ import {
   type AppTheme
 } from "./appTheme.js";
 
-const { WebContentsView } = require("electron");
+const { BrowserWindow, WebContentsView } = require("electron");
 const path = require("node:path");
 
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
@@ -43,6 +45,7 @@ type WorkspaceWebAppItem = WebAppItem & {
 };
 
 type WorkspaceWindowRuntimeOptions = {
+  createModalWindow?(options: BrowserWindowConstructorOptions): ElectronBrowserWindow;
   createWebContentsView?(): ElectronWebContentsView;
   id: string;
   openExternalUrl(url: unknown): unknown;
@@ -91,6 +94,7 @@ export class WorkspaceWindowRuntime {
   readonly window: ElectronBrowserWindow;
   private readonly openExternalUrl: WorkspaceWindowRuntimeOptions["openExternalUrl"];
   private readonly store: ProjectStoreInstance;
+  private readonly createModalWindow: (options: BrowserWindowConstructorOptions) => ElectronBrowserWindow;
   private readonly createWebContentsView: () => ElectronWebContentsView;
   private theme: AppTheme;
   private readonly webAppViews = new Map<string, WorkspaceWebAppItem>();
@@ -98,14 +102,16 @@ export class WorkspaceWindowRuntime {
   private activeWebAppKey: string | null = null;
   private visibleWebAppKeys = new Set<string>();
   private readonly webAppFreezes = new Map<number, WebAppFreeze>();
+  private webAppModalWindow: ElectronBrowserWindow | null = null;
   private nextWebAppFreezeToken = 1;
 
-  constructor({ createWebContentsView, id, openExternalUrl, store, theme, window }: WorkspaceWindowRuntimeOptions) {
+  constructor({ createModalWindow, createWebContentsView, id, openExternalUrl, store, theme, window }: WorkspaceWindowRuntimeOptions) {
     this.id = id;
     this.openExternalUrl = openExternalUrl;
     this.store = store;
     this.theme = normalizeAppTheme(theme);
     this.window = window;
+    this.createModalWindow = createModalWindow || ((options) => new BrowserWindow(options));
     this.createWebContentsView = createWebContentsView || (() => new WebContentsView({
       webPreferences: {
         contextIsolation: true,
@@ -115,6 +121,168 @@ export class WorkspaceWindowRuntime {
         sandbox: true
       }
     }));
+  }
+
+  private dispatchWebAppModalEvent(
+    modalWindow: ElectronBrowserWindow,
+    eventName: string,
+    serializedDetail: string,
+    readySelector: string
+  ) {
+    if (modalWindow.isDestroyed() || modalWindow.webContents.isDestroyed()) {
+      return;
+    }
+
+    modalWindow.webContents.executeJavaScript(`(() => {
+      const readySelector = ${JSON.stringify(readySelector)};
+      const dispatch = () => {
+        window.dispatchEvent(new CustomEvent(${JSON.stringify(eventName)}, {
+          detail: ${serializedDetail}
+        }));
+        return true;
+      };
+      if (!readySelector) {
+        return dispatch();
+      }
+
+      return new Promise((resolve) => {
+        const deadline = Date.now() + 10000;
+        const waitUntilReady = () => {
+          let ready = false;
+          try {
+            ready = document.querySelector(readySelector) !== null;
+          } catch {
+            resolve(false);
+            return;
+          }
+          if (ready) {
+            // Let the framework finish the mount cycle that inserted the marker.
+            setTimeout(() => resolve(dispatch()), 0);
+            return;
+          }
+          if (Date.now() >= deadline) {
+            resolve(false);
+            return;
+          }
+          setTimeout(waitUntilReady, 50);
+        };
+        waitUntilReady();
+      });
+    })()`).catch((error: Error) => {
+      console.warn(`Could not initialize webapp modal: ${error.message}`);
+    });
+  }
+
+  openWebAppModal({ eventDetail = null, eventName, readySelector, title, url }: OpenWebAppModalPayload = {}) {
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(String(url || ""));
+    } catch {
+      return false;
+    }
+
+    const normalizedEventName = String(eventName || "").trim();
+    const normalizedReadySelector = String(readySelector || "").trim();
+    if (
+      !["http:", "https:"].includes(parsedUrl.protocol)
+      || !/^[A-Za-z][A-Za-z0-9:._-]{0,127}$/.test(normalizedEventName)
+      || normalizedReadySelector.length > 512
+    ) {
+      return false;
+    }
+
+    let serializedDetail: string;
+    try {
+      serializedDetail = JSON.stringify(eventDetail ?? null);
+    } catch {
+      return false;
+    }
+
+    const existingModal = this.webAppModalWindow;
+    if (existingModal && !existingModal.isDestroyed()) {
+      existingModal.show();
+      existingModal.focus();
+      this.dispatchWebAppModalEvent(
+        existingModal,
+        normalizedEventName,
+        serializedDetail,
+        normalizedReadySelector
+      );
+      return true;
+    }
+
+    const modalWindow = this.createModalWindow({
+      parent: this.window,
+      modal: false,
+      show: false,
+      width: 1100,
+      height: 800,
+      minWidth: 720,
+      minHeight: 560,
+      title: String(title || "Web app").trim().slice(0, 160) || "Web app",
+      autoHideMenuBar: true,
+      backgroundColor: getAppBackgroundColor(this.theme),
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        partition: WEBAPP_SESSION_PARTITION,
+        sandbox: true
+      }
+    });
+    this.webAppModalWindow = modalWindow;
+    modalWindow.webContents.setWindowOpenHandler(({ url }) => {
+      try {
+        const popupUrl = new URL(url);
+        if (["http:", "https:"].includes(popupUrl.protocol)) {
+          this.openExternalUrl(popupUrl.toString());
+        }
+      } catch {
+        // Ignore malformed popup requests from embedded pages.
+      }
+      return { action: "deny" };
+    });
+    modalWindow.webContents.on("will-navigate", (details) => {
+      try {
+        const navigationUrl = new URL(details.url);
+        if (navigationUrl.origin !== parsedUrl.origin) {
+          details.preventDefault();
+          if (["http:", "https:"].includes(navigationUrl.protocol)) {
+            this.openExternalUrl(navigationUrl.toString());
+          }
+        }
+      } catch {
+        details.preventDefault();
+      }
+    });
+    modalWindow.webContents.once("did-finish-load", () => {
+      this.dispatchWebAppModalEvent(
+        modalWindow,
+        normalizedEventName,
+        serializedDetail,
+        normalizedReadySelector
+      );
+    });
+    modalWindow.once("ready-to-show", () => {
+      if (!modalWindow.isDestroyed()) {
+        modalWindow.show();
+      }
+    });
+    modalWindow.once("closed", () => {
+      const wasActiveModal = this.webAppModalWindow === modalWindow;
+      if (wasActiveModal) {
+        this.webAppModalWindow = null;
+      }
+      if (wasActiveModal && !this.window.isDestroyed()) {
+        this.window.focus();
+      }
+    });
+    modalWindow.loadURL(parsedUrl.toString()).catch((error: Error) => {
+      console.warn(`Could not load webapp modal ${parsedUrl.toString()}: ${error.message}`);
+      if (!modalWindow.isDestroyed()) {
+        modalWindow.close();
+      }
+    });
+    return true;
   }
 
   private sendToRenderer(channel: string, payload: unknown) {
@@ -475,6 +643,9 @@ export class WorkspaceWindowRuntime {
   setTheme(theme: unknown) {
     this.theme = normalizeAppTheme(theme);
     this.window.setBackgroundColor(getAppBackgroundColor(this.theme));
+    if (this.webAppModalWindow && !this.webAppModalWindow.isDestroyed()) {
+      this.webAppModalWindow.setBackgroundColor(getAppBackgroundColor(this.theme));
+    }
     for (const item of this.webAppViews.values()) {
       item.view.setBackgroundColor(getWebAppBackgroundColor(item.backgroundColor, this.theme));
     }
@@ -573,6 +744,58 @@ export class WorkspaceWindowRuntime {
       return true;
     }
     return false;
+  }
+
+  async dispatchWebAppEvent(key: unknown, eventName: unknown, detail: unknown = null) {
+    const webApp = this.webAppViews.get(String(key || ""));
+    if (!webApp || webApp.webContents.isDestroyed()) {
+      return false;
+    }
+
+    const normalizedEventName = String(eventName || "").trim();
+    if (!/^[A-Za-z][A-Za-z0-9:._-]{0,127}$/.test(normalizedEventName)) {
+      return false;
+    }
+
+    let serializedDetail: string;
+    try {
+      serializedDetail = JSON.stringify(detail ?? null);
+    } catch {
+      return false;
+    }
+
+    try {
+      return await webApp.webContents.executeJavaScript(`(() => {
+        window.dispatchEvent(new CustomEvent(${JSON.stringify(normalizedEventName)}, {
+          detail: ${serializedDetail}
+        }));
+        return true;
+      })()`) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  async getWebAppTextContent(key: unknown, selector: unknown) {
+    const webApp = this.webAppViews.get(String(key || ""));
+    if (!webApp || webApp.webContents.isDestroyed()) {
+      return null;
+    }
+
+    const normalizedSelector = String(selector || "").trim();
+    if (!normalizedSelector || normalizedSelector.length > 512) {
+      return null;
+    }
+
+    try {
+      const result = await webApp.webContents.executeJavaScript(`(() => {
+        const element = document.querySelector(${JSON.stringify(normalizedSelector)});
+        return element?.textContent?.trim() || "";
+      })()`);
+      return typeof result === "string" ? result : "";
+    } catch {
+      return null;
+    }
   }
 
   updateWebAppAutofill(key: unknown, enabled: unknown) {
@@ -687,6 +910,11 @@ export class WorkspaceWindowRuntime {
     this.activeWebAppKey = null;
     this.visibleWebAppKeys = new Set();
     this.webAppFreezes.clear();
+    const modalWindow = this.webAppModalWindow;
+    this.webAppModalWindow = null;
+    if (modalWindow && !modalWindow.isDestroyed()) {
+      modalWindow.close();
+    }
 
     for (const item of items) {
       if (item.attached) {

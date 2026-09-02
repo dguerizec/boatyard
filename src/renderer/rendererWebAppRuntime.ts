@@ -46,8 +46,11 @@ type ActivateProjectWebAppOptions = {
 };
 
 type WebAppBridgeActionName =
+  | "dispatchWebAppEvent"
+  | "getWebAppTextContent"
   | "hideWebApp"
   | "navigateWebApp"
+  | "openWebAppModal"
   | "setVisibleWebApps"
   | "showWebApp"
   | "updateWebAppAutofill";
@@ -58,8 +61,11 @@ type CurrentWebAppFavicon = {
 };
 
 const WEB_APP_BRIDGE_ACTIONS: readonly WebAppBridgeActionName[] = [
+  "dispatchWebAppEvent",
+  "getWebAppTextContent",
   "hideWebApp",
   "navigateWebApp",
+  "openWebAppModal",
   "setVisibleWebApps",
   "showWebApp",
   "updateWebAppAutofill"

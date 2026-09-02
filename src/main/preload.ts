@@ -114,7 +114,14 @@ contextBridge.exposeInMainWorld("boatyard", {
     return () => ipcRenderer.removeListener("terminal:exit", listener);
   },
   showWebApp: (webApp: unknown) => ipcRenderer.invoke("webapp:show", webApp),
+  openWebAppModal: (options: unknown) => ipcRenderer.invoke("webapp:open-modal", options),
   setWebAppBounds: (bounds: unknown) => ipcRenderer.invoke("webapp:set-bounds", bounds),
+  dispatchWebAppEvent: (key: unknown, eventName: unknown, detail: unknown) => (
+    ipcRenderer.invoke("webapp:dispatch-event", key, eventName, detail)
+  ),
+  getWebAppTextContent: (key: unknown, selector: unknown) => (
+    ipcRenderer.invoke("webapp:text-content", key, selector)
+  ),
   navigateWebApp: (key: unknown, action: string, url: string) => ipcRenderer.invoke("webapp:navigate", key, action, url),
   getWebAppNavigationHistory: (key: unknown) => ipcRenderer.invoke("webapp:navigation-history", key),
   updateWebAppAutofill: (key: unknown, enabled: unknown) => ipcRenderer.invoke("webapp:autofill:update", key, enabled),

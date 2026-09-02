@@ -299,26 +299,39 @@ function fieldMap(fields: unknown): Record<string, LooseVmValue> {
 }
 
 type TestResourceElement = {
+  attributes: Record<string, string>;
   className: string;
   children: TestResourceElement[];
   disabled: boolean;
+  hidden: boolean;
   isConnected: boolean;
   textContent: string;
+  title: string;
   type: string;
   addEventListener(type: string, listener: (event: { preventDefault(): void }) => void): void;
   append(...children: TestResourceElement[]): void;
+  classList: {
+    add(...names: string[]): void;
+    remove(...names: string[]): void;
+    toggle(name: string, force?: boolean): void;
+  };
   click(): void;
+  removeEventListener(type: string, listener: (event: { preventDefault(): void }) => void): void;
   setAttribute(name: string, value: string): void;
 };
 
 function createTestResourceElement(textContent = ""): TestResourceElement {
   const listeners = new Map<string, Array<(event: { preventDefault(): void }) => void>>();
-  return {
+  const classes = new Set<string>();
+  const element: TestResourceElement = {
+    attributes: {},
     className: "",
     children: [],
     disabled: false,
+    hidden: false,
     isConnected: true,
     textContent,
+    title: "",
     type: "",
     addEventListener(type, listener) {
       const entries = listeners.get(type) || [];
@@ -328,6 +341,22 @@ function createTestResourceElement(textContent = ""): TestResourceElement {
     append(...children) {
       this.children.push(...children);
     },
+    classList: {
+      add(...names) {
+        names.forEach((name) => classes.add(name));
+      },
+      remove(...names) {
+        names.forEach((name) => classes.delete(name));
+      },
+      toggle(name, force) {
+        const enabled = force === undefined ? !classes.has(name) : force;
+        if (enabled) {
+          classes.add(name);
+        } else {
+          classes.delete(name);
+        }
+      }
+    },
     click() {
       if (this.disabled) {
         return;
@@ -336,10 +365,14 @@ function createTestResourceElement(textContent = ""): TestResourceElement {
         listener({ preventDefault() {} });
       }
     },
-    setAttribute() {
-      // Attribute values are not relevant to this lightweight renderer tree.
+    removeEventListener(type, listener) {
+      listeners.set(type, (listeners.get(type) || []).filter((candidate) => candidate !== listener));
+    },
+    setAttribute(name, value) {
+      this.attributes[name] = value;
     }
   };
+  return element;
 }
 
 function getTestResourceText(element: TestResourceElement): string[] {
@@ -529,6 +562,7 @@ test("Built-in plugins register project integrations and widgets", () => {
     .listPanes({ scope: "project", kind: "wcv" })
     .find((pane: PluginPane) => pane.id === "boatyard.twicc.pane");
   assert.match(twiccPane.iconUrl || "", /\/plugins\/twicc\/twicc-icon\.svg$/);
+  assert.equal(typeof twiccPane.renderHeaderActions, "function");
   assert.equal(typeof twiccPane.renderSidePanel, "function");
   assert.deepEqual(plain(twiccPane.resolveNavigation?.({ globalPluginConfig: {} })), {
     browserControls: "compact",
@@ -976,6 +1010,60 @@ test("Twicc plugin leaves same-project session navigation to the existing pane",
     sourceTwiccProjectId: "twicc-parent"
   }]);
   assert.deepEqual(activations, []);
+});
+
+test("TwiCC pane toolbar opens the peer inbox and mirrors its attention count", async () => {
+  const { context, registry } = loadRendererPluginContext();
+  registry.applyEnabledState({});
+
+  context.document.createElement = (() => createTestResourceElement()) as unknown as (
+    typeof context.document.createElement
+  );
+  const pane = registry
+    .listPanes({ scope: "project", kind: "wcv" })
+    .find((candidate: PluginPane) => candidate.id === "boatyard.twicc.pane");
+  if (!pane?.renderHeaderActions) {
+    throw new Error("TwiCC pane toolbar actions were not registered.");
+  }
+
+  const openedModals: unknown[] = [];
+  const queriedSelectors: string[] = [];
+  const container = createTestResourceElement();
+  const cleanup = pane.renderHeaderActions(container, {
+    createToolIcon: () => createTestResourceElement(),
+    openWebAppModal: async (options: unknown) => {
+      openedModals.push(options);
+      return true;
+    },
+    getWebAppTextContent: async (selector: string) => {
+      queriedSelectors.push(selector);
+      return "2";
+    },
+    projectConfig: {
+      twiccProjectUrl: "http://localhost:3500/project/current"
+    }
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(container.children.length, 1);
+  const button = container.children[0];
+  const badge = button.children[1];
+  assert.equal(button.className, "webapp-tool-button twicc-peer-inbox-button");
+  assert.equal(button.disabled, false);
+  assert.equal(button.title, "Peer inbox (2 items need attention)");
+  assert.equal(badge.hidden, false);
+  assert.equal(badge.textContent, "2");
+  assert.deepEqual(queriedSelectors, [".peer-inbox-button .peer-inbox-badge"]);
+
+  button.click();
+  assert.deepEqual(plain(openedModals), [{
+    eventName: "twicc:open-peer-inbox",
+    readySelector: "wa-dialog[label=\"Peer inbox\"]",
+    title: "TwiCC Peer inbox",
+    url: "http://localhost:3500/project/current"
+  }]);
+  assert.equal(typeof cleanup, "function");
+  cleanup?.();
 });
 
 test("TwiCC resources render overview and project session details", () => {
@@ -1502,6 +1590,23 @@ test("Twicc working and input icons use distinct status animations", () => {
   assert.match(
     styles,
     /\.project-twicc-status\.done\.needs-attention,\s*\.twicc-session-flow-status\.unread\s*\{\s*animation: twicc-status-done-pulse 1\.4s ease-in-out infinite/
+  );
+});
+
+test("Twicc peer inbox flashes a full-width toolbar alert without changing geometry", () => {
+  const styles = fs.readFileSync(`${process.cwd()}/src/plugins/twicc/style.css`, "utf8");
+
+  assert.match(
+    styles,
+    /\.webapp-pane-header:has\(\.twicc-peer-inbox-button\.has-attention\)::after\s*\{[\s\S]*?right: 0;[\s\S]*?bottom: 0;[\s\S]*?left: 0;[\s\S]*?height: 5px;/
+  );
+  assert.match(
+    styles,
+    /\.webapp-pane-header:has\(\.twicc-peer-inbox-button\.has-attention\)::after\s*\{[\s\S]*?animation: twicc-peer-inbox-toolbar-alert 1\.2s steps\(1, end\) infinite/
+  );
+  assert.match(
+    styles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.webapp-pane-header:has\(\.twicc-peer-inbox-button\.has-attention\)::after[\s\S]*?animation: none/
   );
 });
 

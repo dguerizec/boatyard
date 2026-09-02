@@ -14,6 +14,7 @@ import type {
   PluginHostInstance,
   ProjectStoreInstance,
   ShowWebAppPayload,
+  OpenWebAppModalPayload,
   TerminalServiceInstance,
   UnknownRecord,
   UpdateManagerInstance,
@@ -1768,12 +1769,40 @@ function registerIpcHandlers() {
     workspaceWindow.runtime.showWebApp(webApp);
   });
 
+  ipcMain.handle("webapp:open-modal", (event: IpcMainInvokeEvent, options: OpenWebAppModalPayload) => {
+    return getWorkspaceWindowForWebContents(event.sender)?.runtime.openWebAppModal(options) || false;
+  });
+
   ipcMain.handle("webapp:set-bounds", (event: IpcMainInvokeEvent, bounds: unknown) => {
     getWorkspaceWindowForWebContents(event.sender)?.runtime.setWebAppBounds(bounds);
   });
 
   ipcMain.handle("webapp:navigate", (event: IpcMainInvokeEvent, key: unknown, action: string, url: string) => {
     return getWorkspaceWindowForWebContents(event.sender)?.runtime.navigateWebApp(key, action, url) || false;
+  });
+
+  ipcMain.handle("webapp:dispatch-event", (
+    event: IpcMainInvokeEvent,
+    key: unknown,
+    eventName: unknown,
+    detail: unknown
+  ) => {
+    return getWorkspaceWindowForWebContents(event.sender)?.runtime.dispatchWebAppEvent(
+      key,
+      eventName,
+      detail
+    ) || false;
+  });
+
+  ipcMain.handle("webapp:text-content", (
+    event: IpcMainInvokeEvent,
+    key: unknown,
+    selector: unknown
+  ) => {
+    return getWorkspaceWindowForWebContents(event.sender)?.runtime.getWebAppTextContent(
+      key,
+      selector
+    ) ?? null;
   });
 
   ipcMain.handle("webapp:navigation-history", (event: IpcMainInvokeEvent, key: unknown) => {

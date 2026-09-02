@@ -1636,6 +1636,16 @@ export function createPaneLayoutView({
         projectConfig: isGlobalWorkspace(project) ? {} : getProjectPluginConfig(project.id, pluginPane.pluginId),
         globalPluginConfig: getGlobalPluginConfig(pluginPane.pluginId),
         allProjectPluginConfig: getAllProjectPluginConfig(project),
+        createToolIcon,
+        dispatchWebAppEvent(eventName: string, detail: UnknownRecord | null = null) {
+          return invokeWebApp("dispatchWebAppEvent", selectedWebApp.key, eventName, detail);
+        },
+        getWebAppTextContent(selector: string) {
+          return invokeWebApp("getWebAppTextContent", selectedWebApp.key, selector);
+        },
+        openWebAppModal(options: UnknownRecord) {
+          return invokeWebApp("openWebAppModal", options);
+        },
         getProjectWebAppState(webAppId: string) {
           return getProjectWebAppState(project, webAppId);
         },

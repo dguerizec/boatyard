@@ -226,11 +226,13 @@ export type BoatyardBridge = {
   addProject(values: UnknownRecord): Promise<RendererState>;
   applyLayout(payload: UnknownRecord): Promise<{ state: RendererState; undoToken: string }>;
   createWorkspaceWindow?: () => Promise<boolean>;
+  dispatchWebAppEvent(...payload: unknown[]): Promise<unknown>;
   dismissChangelog?: () => Promise<unknown>;
   freezeWebApps(options?: unknown): Promise<unknown>;
   getChangelogHistory?: () => Promise<unknown>;
   getPendingChangelog?: () => Promise<unknown>;
   getLayoutPreviewMetrics(): Promise<WorkspaceLayoutPreviewMetrics>;
+  getWebAppTextContent(...payload: unknown[]): Promise<unknown>;
   listLayouts(projectId?: string | null): Promise<WorkspaceLayout[]>;
   getWebAppNavigationHistory?: (key: unknown) => Promise<unknown>;
   getState(): Promise<RendererState>;
@@ -242,6 +244,7 @@ export type BoatyardBridge = {
   getUpdateInfo?: () => Promise<unknown>;
   hideWebApp(): Promise<unknown>;
   navigateWebApp(...payload: unknown[]): Promise<unknown>;
+  openWebAppModal(options: UnknownRecord): Promise<unknown>;
   onTerminalData(callback: (payload: { terminalId: unknown; data: unknown }) => void): void;
   onTerminalExit(callback: (payload: { terminalId: unknown; projectId: unknown; windowId: unknown }) => void): void;
   onMcpRequest?: (callback: (payload: unknown) => void) => void;
