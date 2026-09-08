@@ -520,60 +520,77 @@ ctx.services.onUnavailable("boatyard.twicc.api", () => {});
 
 ## Tools
 
-Tools are callable operations intended for agents, automation, MCP, REST, or
-direct Boatyard calls. Tools are not the same as services. Services are plugin
-APIs; tools are externalizable capabilities with schemas.
+The main-process plugin context implements `ctx.tools.register`. Boatyard
+publishes these tools through its authenticated MCP server. Domain behavior
+belongs to the plugin; the server handles transport and configuration routing.
 
-```js
+```ts
+import { z } from "zod";
+
 ctx.tools.register({
-  id: "twicc.createSession",
-  title: "Create Twicc Session",
-  description: "Create a Twicc session for a Boatyard project.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      projectId: { type: "string" },
-      prompt: { type: "string" },
-      provider: { type: "string" }
-    },
-    required: ["projectId", "prompt"]
-  },
-  outputSchema: {
-    type: "object",
-    properties: {
-      sessionId: { type: "string" },
-      url: { type: "string" }
-    },
-    required: ["sessionId"]
-  },
-  async invoke(input, callCtx) {
-    return createTwiccSession(input, callCtx);
+  id: "vendor.example.listItems",
+  title: "List items",
+  description: "Read items for a project.",
+  inputSchema: z.object({ projectId: z.string().min(1) }).strict(),
+  readOnly: true,
+  async invoke(input) {
+    return listItems(input.projectId);
   }
 });
 ```
 
-Boatyard owns publication of registered tools. The same tool registry MAY be
-exposed through:
+- Tool IDs must start with the owning plugin ID followed by `.` and be unique.
+- Input schemas are Zod objects. Both MCP and direct host invocation validate
+  inputs before calling the handler. Use strict schemas to reject extra fields.
+- `contextId` is reserved: MCP adds this required argument, using the context
+  returned by `list_windows`, and routes to that configuration's plugin host.
+  The plugin receives its own input fields only, without `contextId`.
+- Disabled plugins are excluded from tool discovery and rejected on invocation.
+  Discovery reflects the current registered tools on each MCP request.
+- Plugin configuration and credentials should be read from `ctx.getState()` at
+  invocation time, never supplied by the MCP caller or included in the result.
+- Handlers return JSON-compatible values. Exceptions become MCP tool errors.
+  `readOnly` describes actual behavior, including indirect writes. Mutating tools
+  default to a destructive hint; set `destructive: false` for non-destructive
+  operations such as moving a Kanban card.
+- Registration is reset when the host rediscovers plugins. This initial API does
+  not expose REST publication, output schemas or a general call context.
 
-- an MCP server,
-- a REST API,
-- direct in-process calls,
-- an integrated agent plugin.
+### TwiCC Kanban tools
 
-Tool calls SHOULD receive a call context:
+The `boatyard.twicc` plugin registers:
 
-```ts
-interface ToolCallContext {
-  caller: "user" | "agent" | "plugin" | "rest" | "mcp";
-  callerId?: string;
-  projectId?: string;
-  permissions: string[];
-  signal?: AbortSignal;
-}
-```
+| Tool ID | Inputs besides `contextId` | Behavior |
+| --- | --- | --- |
+| `boatyard.twicc.list_sessions` | `projectId`, optional `lane` | Read visible, unarchived sessions in board order, including independent `lane` and `processState` fields. |
+| `boatyard.twicc.move_sessions` | `projectId`, `sessionIds`, `lane` | Move explicit sessions; return each update's result. |
+| `boatyard.twicc.reorder_sessions` | `projectId`, `sessionIds`, `lane`, `position`, optional `anchorSessionId` | Set visual priority within a lane. |
 
-Tools MUST validate input through their schema. Boatyard MAY require additional
-confirmation before invoking sensitive tools.
+Project IDs are Boatyard IDs returned by `list_windows`; the plugin resolves the
+same TwiCC project reference used by the UI. Lanes are `in_progress`, `backlog`
+and `done`. Mutation selections must be unique and contain 1–100 session IDs
+from that project's visible, unarchived board. `position` is `first`, `last`,
+`before` or `after`; an anchor is required only for `before`/`after` and must be
+another session in the same lane. Selected sessions retain input order.
+
+Reads paginate through TwiCC and never write annotations. Sessions without an
+explicit lane use the shared board rules: active/open run → In progress,
+otherwise pinned → Backlog, otherwise Done. Such inferred lanes can change
+until explicitly assigned. Existing explicit assignments remain authoritative.
+
+Startup separately converts legacy `testing` annotations to `done`, including
+hidden and archived sessions, through TwiCC's public annotation commands. Other
+metadata and session activity are preserved. Failed conversions are reported
+and retried at the next startup; legacy values still display as Done meanwhile.
+The legacy literal dotted annotation key, if present, is superseded by the
+canonical nested value without replacing the session's annotation object.
+
+Moves and reordering do not stop agents or archive sessions. Done remains
+separate from TwiCC's archive flag. Reordering assigns consecutive order values
+to the destination lane. Writes are sequential, not transactional; MCP mutations
+are serialized per configuration, but another client or the UI can still edit
+annotations concurrently. Partial results identify completed and failed writes;
+re-list before retrying or resolving concurrent edits.
 
 ## Events
 
@@ -741,5 +758,3 @@ so for the pane contribution.
   forbidden for third-party plugins?
 - What is the first supported distribution format: Git repository, local path,
   npm package, or Boatyard-specific archive?
-- Should Boatyard expose the tool registry through MCP itself, or should an
-  agent plugin own MCP publication?

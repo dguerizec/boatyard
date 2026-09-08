@@ -38,7 +38,7 @@
   };
 
   type TwiccSessionFlowOrientation = "horizontal" | "vertical";
-  type TwiccSessionFlowLane = "backlog" | "in_progress" | "testing";
+  type TwiccSessionFlowLane = "backlog" | "in_progress" | "done";
   type TwiccSessionFlowIndicatorState = "" | "input" | "unread" | "working";
   type TwiccSessionFlowItem = {
     branch?: string;
@@ -319,7 +319,7 @@
   const TWICC_SESSION_FLOW_LANES: Array<{ id: TwiccSessionFlowLane; label: string }> = [
     { id: "in_progress", label: "In progress" },
     { id: "backlog", label: "Backlog" },
-    { id: "testing", label: "Done" }
+    { id: "done", label: "Done" }
   ];
   const TWICC_PROJECT_STATUS_LABELS = {
     working: "Working",
@@ -2510,7 +2510,7 @@
       actions.append(cancelButton, submitButton);
 
       function updateConfirmation(): string[] {
-        const doneSessionIds = getOrderedLaneSessions("testing").map((session) => session.id);
+        const doneSessionIds = getOrderedLaneSessions("done").map((session) => session.id);
         const count = doneSessionIds.length;
         copy.textContent = count
           ? `Archive all ${count} ${count === 1 ? "session" : "sessions"} in Done? This stops any running agents and removes ${count === 1 ? "it" : "them"} from this board.`
@@ -3400,7 +3400,7 @@
       if (lane.id === "in_progress") {
         laneHeader.append(createCreationActions());
       }
-      if (lane.id === "testing") {
+      if (lane.id === "done") {
         const archiveAllButton = document.createElement("button");
         archiveAllButton.type = "button";
         archiveAllButton.className = "twicc-session-flow-archive-all";

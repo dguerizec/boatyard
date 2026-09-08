@@ -378,7 +378,7 @@
   --twicc-session-flow-color: #a78bfa;
 }
 
-.twicc-session-flow-lane.testing {
+.twicc-session-flow-lane.done {
   --twicc-session-flow-color: #35d59a;
 }
 
@@ -495,7 +495,7 @@
   box-shadow: 0 0 8px rgba(167, 139, 250, 0.4);
 }
 
-.twicc-session-flow-lane-dot.testing {
+.twicc-session-flow-lane-dot.done {
   background: #35d59a;
   box-shadow: 0 0 8px rgba(53, 213, 154, 0.4);
 }
@@ -1493,7 +1493,7 @@
   --twicc-session-flow-color: #6c47ad;
 }
 
-:root[data-theme="light"] .twicc-session-flow-lane.testing {
+:root[data-theme="light"] .twicc-session-flow-lane.done {
   --twicc-session-flow-color: var(--accent);
 }
 

@@ -1903,6 +1903,17 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
     api: {
       capturePane: captureMcpPane,
       listWindows: listMcpWindows,
+      listPluginTools: () => [...new Map([...configurationContexts.values()]
+        .flatMap((context) => context.pluginHost.listTools())
+        .map((tool) => [tool.id, tool])).values()],
+      invokePluginTool: async (contextId, id, input) => {
+        const context = [...configurationContexts.values()]
+          .find((candidate) => getMcpContextId(candidate) === contextId);
+        if (!context) {
+          throw new Error(`Boatyard configuration context is unavailable: ${contextId}`);
+        }
+        return context.pluginHost.invokeTool(id, input);
+      },
       requestPane: requestMcpPane
     },
     getSettings: () => mcpSettingsStore.get(),

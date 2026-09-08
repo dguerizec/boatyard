@@ -1656,7 +1656,7 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
     min: { columns: 2, rows: 4 }
   });
   assert.match(styles, /\.twicc-session-flow-lane\.backlog/);
-  assert.match(styles, /\.twicc-session-flow-lane\.testing/);
+  assert.match(styles, /\.twicc-session-flow-lane\.done/);
   assert.match(styles, /\.twicc-session-flow-lane\.drop-target/);
   assert.match(styles, /\.twicc-session-flow-widget\.twicc-session-flow-pane/);
   assert.match(styles, /data-orientation="horizontal"/);
@@ -1738,8 +1738,8 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.doesNotMatch(styles, /\.twicc-session-flow-title:hover/);
   assert.match(styles, /\.twicc-session-flow-title-input/);
   assert.match(renderer, /archiveAllButton\.textContent = "Archive all"/);
-  assert.doesNotMatch(renderer, /lane\.id === "testing" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
-  assert.match(renderer, /\{ id: "testing", label: "Done" \}/);
+  assert.doesNotMatch(renderer, /lane\.id === "done" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
+  assert.match(renderer, /\{ id: "done", label: "Done" \}/);
   assert.match(renderer, /title\.textContent = "Archive all done sessions"/);
   assert.match(renderer, /in-progress, backlog, and done lanes/);
   assert.doesNotMatch(renderer, /Testing & observing/);

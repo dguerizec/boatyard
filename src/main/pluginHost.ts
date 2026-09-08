@@ -4,6 +4,7 @@ import type {
   ExecFileAsync,
   PluginActionHandler,
   PluginContext,
+  PluginToolDefinition,
   PluginProjectInspectors,
   PluginResourceProviderCollector,
   PluginResourceProviderSnapshot,
@@ -231,6 +232,7 @@ class PluginHost {
   userDataPath: string;
   sendToRenderer: (channel: string, payload?: unknown) => unknown;
   actions: Map<string, PluginActionHandler>;
+  tools = new Map<string, { pluginId: string; definition: PluginToolDefinition }>();
   inspectors: PluginInspectorRegistration[];
   resourceProviders: PluginResourceProviderRegistration[];
   stateMigrations: PluginStateMigrationRegistration[];
@@ -252,6 +254,7 @@ class PluginHost {
 
   discover(): RuntimePlugin[] {
     this.actions.clear();
+    this.tools.clear();
     this.inspectors = [];
     this.resourceProviders = [];
     this.stateMigrations = [];
@@ -307,6 +310,7 @@ class PluginHost {
       },
       execFileAsync: this.execFileAsync,
       getState: () => this.store?.getState(),
+      tools: { register: (definition) => this.registerTool(pluginId, definition) },
       actions: {
         handle: (actionName, handler) => this.registerAction(pluginId, actionName, handler)
       },
@@ -329,6 +333,34 @@ class PluginHost {
 
   isPluginEnabled(pluginId: string): boolean {
     return this.store?.getState?.()?.plugins?.enabled?.[pluginId] !== false;
+  }
+
+  registerTool(pluginId: string, definition: PluginToolDefinition): void {
+    if (!definition.id.startsWith(`${pluginId}.`) || !/^[a-zA-Z0-9_.-]+$/.test(definition.id)) {
+      throw new Error(`Tool ${definition.id} must be prefixed with plugin id ${pluginId}.`);
+    }
+    if (this.tools.has(definition.id)) {
+      throw new Error(`Tool already registered: ${definition.id}`);
+    }
+    if ("contextId" in definition.inputSchema.shape) {
+      throw new Error("Plugin tool schemas must not declare the reserved contextId field.");
+    }
+    requireFunction(definition.invoke, `Tool ${definition.id} must have an invoke function.`);
+    this.tools.set(definition.id, { pluginId, definition });
+  }
+
+  listTools(): PluginToolDefinition[] {
+    return [...this.tools.values()]
+      .filter(({ pluginId }) => this.isPluginEnabled(pluginId))
+      .map(({ definition }) => definition);
+  }
+
+  async invokeTool(id: string, input: Record<string, unknown>): Promise<unknown> {
+    const tool = this.tools.get(id);
+    if (!tool || !this.isPluginEnabled(tool.pluginId)) {
+      throw new Error(`Plugin tool is unavailable: ${id}`);
+    }
+    return tool.definition.invoke(tool.definition.inputSchema.parse(input));
   }
 
   registerAction(pluginId: string, actionName: unknown, handler: unknown): void {

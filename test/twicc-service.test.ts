@@ -646,7 +646,7 @@ test("getTwiccSessionFlow classifies every visible unarchived project session", 
       title: "Observed task",
       annotations: {
         boatyard: {
-          sessionFlowLane: "testing"
+          sessionFlowLane: "done"
         }
       },
       last_new_content_at: "2026-07-01T12:00:00Z"
@@ -675,16 +675,16 @@ test("getTwiccSessionFlow classifies every visible unarchived project session", 
     [
       ["active", "in_progress"],
       ["pinned", "backlog"],
-      ["annotated", "testing"],
-      ["old", "testing"],
-      ["recent", "testing"]
+      ["annotated", "done"],
+      ["old", "done"],
+      ["recent", "done"]
     ]
   );
   assert.deepEqual(sessions.find((session: { id: string }) => session.id === "recent"), {
     branch: "feature/session-flow",
     contextUsage: 42000,
     id: "recent",
-    lane: "testing",
+    lane: "done",
     lastActivityAt: "2026-08-01T11:00:00.000Z",
     order: null,
     processState: "",
@@ -705,19 +705,19 @@ test("getTwiccSessionFlow keeps stable creator and user ordering in Done", () =>
     return getTwiccSessionFlow([
       {
         id: "boatyard-older",
-        annotations: { boatyard: { sessionFlowLane: "testing" } },
+        annotations: { boatyard: { sessionFlowLane: "done" } },
         created_at: "2026-08-17T10:00:00Z",
         last_new_content_at: activityOverrides["boatyard-older"] || "2026-08-17T10:30:00Z"
       },
       {
         id: "direct-newer",
-        annotations: { boatyard: { sessionFlowLane: "testing", sessionFlowOrigin: "twicc" } },
+        annotations: { boatyard: { sessionFlowLane: "done", sessionFlowOrigin: "twicc" } },
         created_at: "2026-08-17T14:00:00Z",
         last_new_content_at: activityOverrides["direct-newer"] || "2026-08-17T14:30:00Z"
       },
       {
         id: "user-second",
-        annotations: { boatyard: { sessionFlowLane: "testing", sessionFlowOrder: 1 } },
+        annotations: { boatyard: { sessionFlowLane: "done", sessionFlowOrder: 1 } },
         created_at: "2026-08-17T09:00:00Z",
         last_new_content_at: activityOverrides["user-second"] || "2026-08-17T15:00:00Z"
       },
@@ -728,13 +728,13 @@ test("getTwiccSessionFlow keeps stable creator and user ordering in Done", () =>
       },
       {
         id: "boatyard-newer",
-        annotations: { boatyard: { sessionFlowLane: "testing" } },
+        annotations: { boatyard: { sessionFlowLane: "done" } },
         created_at: "2026-08-17T12:00:00Z",
         last_new_content_at: activityOverrides["boatyard-newer"] || "2026-08-17T12:30:00Z"
       },
       {
         id: "user-first",
-        annotations: { boatyard: { sessionFlowLane: "testing", sessionFlowOrder: 0 } },
+        annotations: { boatyard: { sessionFlowLane: "done", sessionFlowOrder: 0 } },
         created_at: "2026-08-17T11:00:00Z",
         last_new_content_at: activityOverrides["user-first"] || "2026-08-17T11:30:00Z"
       }
@@ -764,17 +764,17 @@ test("getTwiccSessionFlow places new child sessions directly below their visible
   const sessions = getTwiccSessionFlow([
     {
       id: "boatyard-top",
-      annotations: { boatyard: { sessionFlowLane: "testing" } },
+      annotations: { boatyard: { sessionFlowLane: "done" } },
       created_at: "2026-08-18T08:00:00Z"
     },
     {
       id: "parent",
-      annotations: { boatyard: { sessionFlowLane: "testing", sessionFlowOrder: 0 } },
+      annotations: { boatyard: { sessionFlowLane: "done", sessionFlowOrder: 0 } },
       created_at: "2026-08-18T09:00:00Z"
     },
     {
       id: "next-positioned",
-      annotations: { boatyard: { sessionFlowLane: "testing", sessionFlowOrder: 1 } },
+      annotations: { boatyard: { sessionFlowLane: "done", sessionFlowOrder: 1 } },
       created_at: "2026-08-18T10:00:00Z"
     },
     {
@@ -794,7 +794,7 @@ test("getTwiccSessionFlow places new child sessions directly below their visible
     },
     {
       id: "positioned-child",
-      annotations: { boatyard: { sessionFlowLane: "testing", sessionFlowOrder: 2 } },
+      annotations: { boatyard: { sessionFlowLane: "done", sessionFlowOrder: 2 } },
       spawned_by: "parent",
       created_at: "2026-08-18T14:00:00Z"
     },
@@ -861,7 +861,7 @@ test("getTwiccSessionFlow keeps externally started sessions in progress before p
       id: "explicitly-done-session",
       annotations: {
         boatyard: {
-          sessionFlowLane: "testing"
+          sessionFlowLane: "done"
         }
       },
       last_started_at: "2026-08-15T12:00:00Z"
@@ -876,13 +876,13 @@ test("getTwiccSessionFlow keeps externally started sessions in progress before p
     {
       "new-external-session": "in_progress",
       "restarted-external-session": "in_progress",
-      "stopped-external-session": "testing",
-      "explicitly-done-session": "testing"
+      "stopped-external-session": "done",
+      "explicitly-done-session": "done"
     }
   );
 });
 
-test("loadTwiccSessionFlow freezes initially inferred lanes and direct-session placement", async () => {
+test("loadTwiccSessionFlow computes inferred lanes without writing annotations", async () => {
   const calls: Array<{ body: Record<string, unknown>; url: string }> = [];
   let processRequestCount = 0;
   const sessions = [
@@ -926,22 +926,6 @@ test("loadTwiccSessionFlow freezes initially inferred lanes and direct-session p
           error: null
         };
       }
-      if (url.endsWith("/rpc/update-sessions/annotations")) {
-        const sessionIds = body.session_ids as string[];
-        return {
-          exit_code: 0,
-          result: {
-            summary: {
-              total: sessionIds.length,
-              succeeded: sessionIds.length,
-              failed: 0,
-              all_succeeded: true
-            },
-            results: Object.fromEntries(sessionIds.map((sessionId) => [sessionId, { status: "updated" }]))
-          },
-          error: null
-        };
-      }
       throw new Error(`Unexpected RPC: ${url}`);
     })
   };
@@ -952,44 +936,20 @@ test("loadTwiccSessionFlow freezes initially inferred lanes and direct-session p
     session.lane
   ])), {
     "active-direct": "in_progress",
-    "done-direct": "testing",
-    "stale-direct": "testing"
+    "done-direct": "done",
+    "stale-direct": "done"
   });
-  assert.deepEqual(calls.filter((call) => call.url.endsWith("/rpc/update-sessions/annotations")), [
-    {
-      url: "https://twicc.example/rpc/update-sessions/annotations",
-      body: {
-        session_ids: ["active-direct"],
-        op: [
-          "set:boatyard.sessionFlowLane=in_progress",
-          "set:boatyard.sessionFlowOrigin=twicc"
-        ]
-      }
-    },
-    {
-      url: "https://twicc.example/rpc/update-sessions/annotations",
-      body: {
-        session_ids: ["done-direct"],
-        op: [
-          "set:boatyard.sessionFlowLane=testing",
-          "set:boatyard.sessionFlowOrigin=twicc"
-        ]
-      }
-    }
-  ]);
-
-  const staleRefresh = await loadTwiccSessionFlow("/workspace/project", options);
-  assert.equal(
-    staleRefresh.find((session: { id: string }) => session.id === "active-direct")?.lane,
-    "in_progress"
-  );
-  assert.equal(calls.filter((call) => call.url.endsWith("/rpc/update-sessions/annotations")).length, 2);
+  assert.equal(calls.some((call) => call.url.includes("update-")), false);
+  sessions[0].last_stopped_at = "2026-08-18T11:00:00Z";
+  const refreshed = await loadTwiccSessionFlow("/workspace/project", options);
+  assert.equal(refreshed.find((session: { id: string }) => session.id === "active-direct")?.lane, "done");
+  assert.equal(calls.some((call) => call.url.includes("update-")), false);
 
   const frozen = getTwiccSessionFlow(sessions.map((session) => ({
     ...session,
     annotations: {
       boatyard: {
-        sessionFlowLane: session.id === "active-direct" ? "in_progress" : "testing",
+        sessionFlowLane: session.id === "active-direct" ? "in_progress" : "done",
         sessionFlowOrigin: "twicc"
       }
     }
@@ -1064,7 +1024,7 @@ test("updateTwiccSessionFlowLane persists the lane through the CLI", async () =>
 });
 
 test("updateTwiccSessionFlowLaneFromRpc persists the lane through Twicc RPC", async () => {
-  const result = await updateTwiccSessionFlowLaneFromRpc("session-1", "testing", {
+  const result = await updateTwiccSessionFlowLaneFromRpc("session-1", "done", {
     globalConfig: {
       twiccBaseUrl: "https://twicc.example",
       twiccApiToken: "secret-token"
@@ -1073,7 +1033,7 @@ test("updateTwiccSessionFlowLaneFromRpc persists the lane through Twicc RPC", as
       assert.equal(url, "https://twicc.example/rpc/update-session/annotations");
       assert.deepEqual(JSON.parse(String(init.body)), {
         session_id: "session-1",
-        operations: ["set:boatyard.sessionFlowLane=testing"]
+        operations: ["set:boatyard.sessionFlowLane=done"]
       });
       return {
         exit_code: 0,
@@ -1088,7 +1048,7 @@ test("updateTwiccSessionFlowLaneFromRpc persists the lane through Twicc RPC", as
 
 test("updateTwiccSessionFlowLane rejects unknown lanes", async () => {
   await assert.rejects(
-    updateTwiccSessionFlowLane("session-1", "done", {}),
+    updateTwiccSessionFlowLane("session-1", "testing", {}),
     /Invalid TwiCC session flow lane/
   );
 });
@@ -1147,7 +1107,7 @@ test("reorderTwiccSessionFlow persists every ordered lane position", async () =>
 });
 
 test("updateTwiccSessionFlowPositionFromRpc persists one atomic lane position", async () => {
-  const result = await updateTwiccSessionFlowPositionFromRpc("session-2", "testing", 512, {
+  const result = await updateTwiccSessionFlowPositionFromRpc("session-2", "done", 512, {
     globalConfig: {
       twiccBaseUrl: "https://twicc.example",
       twiccApiToken: "secret-token"
@@ -1157,7 +1117,7 @@ test("updateTwiccSessionFlowPositionFromRpc persists one atomic lane position", 
       assert.deepEqual(JSON.parse(String(init.body)), {
         session_id: "session-2",
         operations: [
-          "set:boatyard.sessionFlowLane=testing",
+          "set:boatyard.sessionFlowLane=done",
           "set:boatyard.sessionFlowOrder=512"
         ]
       });
@@ -1174,7 +1134,7 @@ test("updateTwiccSessionFlowPositionFromRpc persists one atomic lane position", 
 
 test("updateTwiccSessionFlowPosition rejects invalid positions", async () => {
   await assert.rejects(
-    updateTwiccSessionFlowPosition("session-1", "testing", Number.NaN, {}),
+    updateTwiccSessionFlowPosition("session-1", "done", Number.NaN, {}),
     /Invalid TwiCC session flow order/
   );
 });

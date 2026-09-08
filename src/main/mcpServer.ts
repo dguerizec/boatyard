@@ -7,9 +7,12 @@ import {
   toNodeHandler
 } from "@modelcontextprotocol/node";
 import { z } from "zod";
+import type { PluginToolDefinition } from "../shared/pluginTypes.js";
 import type { McpSettings } from "./mcpSettingsStore.js";
 
 type McpPaneApi = {
+  listPluginTools?(): PluginToolDefinition[];
+  invokePluginTool?(contextId: string, id: string, input: Record<string, unknown>): Promise<unknown>;
   capturePane(
     contextId: string,
     windowId: string,
@@ -251,6 +254,26 @@ export class McpServerService {
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
     }, async (input) => this.invokePane("navigate_pane", input));
+    for (const tool of this.api.listPluginTools?.() || []) {
+      protocolServer.registerTool(tool.id, {
+        title: tool.title,
+        description: tool.description,
+        inputSchema: tool.inputSchema.safeExtend({
+          contextId: z.string().min(1).describe("Configuration context ID returned by list_windows")
+        }),
+        annotations: { readOnlyHint: tool.readOnly, destructiveHint: tool.destructive ?? !tool.readOnly, openWorldHint: true }
+      }, async (input) => {
+        try {
+          const { contextId, ...payload } = input;
+          if (!this.api.invokePluginTool) {
+            throw new Error("Plugin tools are unavailable.");
+          }
+          return jsonResult(await this.api.invokePluginTool(String(contextId), tool.id, payload));
+        } catch (error) {
+          return errorResult(error);
+        }
+      });
+    }
     return protocolServer;
   }
 

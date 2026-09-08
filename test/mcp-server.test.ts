@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
+import { z } from "zod";
+import { PluginHost } from "../src/main/pluginHost.js";
 import { McpServerService } from "../src/main/mcpServer.js";
 import type { McpSettings } from "../src/main/mcpSettingsStore.js";
 
@@ -170,4 +172,78 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
   } finally {
     await service.stop();
   }
+});
+
+
+test("MCP publishes plugin tools, validates schemas and routes to the selected configuration", async () => {
+  let enabled = true;
+  const host = new PluginHost({ store: { getState: () => ({ plugins: { enabled: { "example.plugin": enabled } } }) } });
+  let invocations = 0;
+  const definition = {
+    id: "example.plugin.echo",
+    title: "Echo",
+    description: "Test scoped plugin tool",
+    inputSchema: z.object({ value: z.number().int() }).strict().refine((input) => input.value > 0),
+    readOnly: true,
+    invoke: (input: Record<string, unknown>) => { invocations += 1; return { value: input.value }; }
+  };
+  host.registerTool("example.plugin", definition);
+  assert.throws(() => host.registerTool("other.plugin", definition), /prefixed/);
+  assert.throws(() => host.registerTool("example.plugin", definition), /already registered/);
+  assert.throws(() => host.registerTool("example.plugin", {
+    ...definition, id: "example.plugin.reserved", inputSchema: z.object({ contextId: z.string() })
+  }), /reserved/);
+  const settings: McpSettings = {
+    enabled: true, managedClientTokens: {}, port: await reservePort(), token: "test-plugin-tools-token"
+  };
+  const service = new McpServerService({
+    getSettings: () => settings,
+    version: "test",
+    api: {
+      capturePane: async () => ({ data: "", metadata: {}, mimeType: "image/png" }),
+      listWindows: () => ({ windows: [] }),
+      requestPane: async () => ({}),
+      listPluginTools: () => host.listTools(),
+      invokePluginTool: async (contextId, id, input) => {
+        if (contextId !== "selected-context") { throw new Error("Unknown configuration context"); }
+        return host.invokeTool(id, input);
+      }
+    }
+  });
+  try {
+    const status = await service.configure();
+    let id = 0;
+    async function request(method: string, params: Record<string, unknown>) {
+      const response = await fetch(status.endpoint, {
+        method: "POST",
+        headers: {
+          Accept: "application/json, text/event-stream", Authorization: `Bearer ${settings.token}`,
+          "Content-Type": "application/json", "MCP-Protocol-Version": "2025-06-18"
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params })
+      });
+      return parseMcpResponse(await response.text()) as {
+        result?: { tools?: Array<{ name: string; annotations?: { readOnlyHint: boolean } }>; isError?: boolean; structuredContent?: unknown };
+        error?: unknown;
+      };
+    }
+    const listed = await request("tools/list", {});
+    const tool = listed.result?.tools?.find((entry) => entry.name === definition.id);
+    assert.equal(tool?.annotations?.readOnlyHint, true);
+    const call = (args: Record<string, unknown>) => request("tools/call", { name: definition.id, arguments: args });
+    const valid = await call({ contextId: "selected-context", value: 42 });
+    assert.deepEqual(valid.result?.structuredContent, { value: 42 });
+    const invalid = await call({ contextId: "selected-context", value: "bad" });
+    assert.ok(invalid.error || invalid.result?.isError);
+    const refined = await call({ contextId: "selected-context", value: -1 });
+    assert.ok(refined.error || refined.result?.isError);
+    const wrongContext = await call({ contextId: "other-context", value: 1 });
+    assert.equal(wrongContext.result?.isError, true);
+    assert.equal(invocations, 1);
+    enabled = false;
+    assert.equal(host.listTools().length, 0);
+    await assert.rejects(host.invokeTool(definition.id, { value: 2 }), /unavailable/);
+    const refreshed = await request("tools/list", {});
+    assert.equal(refreshed.result?.tools?.some((entry) => entry.name === definition.id), false);
+  } finally { await service.stop(); }
 });

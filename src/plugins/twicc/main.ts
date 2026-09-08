@@ -1,6 +1,8 @@
 "use strict";
 
-import type { ExecFileAsync, PluginActions, PluginProjectInspectors, PluginResources } from "../../shared/pluginTypes";
+import type { ExecFileAsync, PluginActions, PluginProjectInspectors, PluginResources, PluginTools, PluginStateMigrations } from "../../shared/pluginTypes";
+import { registerTwiccTools } from "./tools.js";
+import { migrateTwiccSessionFlowLanes, getTwiccProjectIdFromUrl } from "./service.js";
 import { TWICC_RESOURCE_PROVIDER_ID, collectTwiccResourceProvider } from "./resources.js";
 
 const {
@@ -53,6 +55,8 @@ type SessionCreationPayload = GlobalConfigPayload & {
 };
 type TwiccPluginContext = {
   actions: PluginActions;
+  tools: PluginTools;
+  stateMigrations: PluginStateMigrations<TwiccState>;
   execFileAsync: ExecFileAsync;
   getState(): TwiccState;
   projectInspectors: PluginProjectInspectors;
@@ -138,6 +142,35 @@ function activate(ctx: TwiccPluginContext) {
       serviceOperationActive = false;
     }
   }
+
+  const getOptions = () => ({
+    execFileAsync: ctx.execFileAsync,
+    globalConfig: ctx.getState()?.pluginConfig?.global?.["boatyard.twicc"] || {}
+  });
+  registerTwiccTools({
+    tools: ctx.tools,
+    getOptions,
+    resolveProject: (projectId) => {
+      const state = ctx.getState();
+      const project = state.projects?.find((candidate) => candidate.id === projectId);
+      if (!project) { throw new Error(`Unknown Boatyard project: ${projectId}`); }
+      const config = state.pluginConfig?.projects?.[projectId]?.["boatyard.twicc"];
+      const reference = String(project.sourcePath || "").trim()
+        || getTwiccProjectIdFromUrl(config?.twiccProjectUrl);
+      if (!reference) { throw new Error("Configure this project's TwiCC URL to load sessions."); }
+      return reference;
+    }
+  });
+  ctx.stateMigrations.register(async () => {
+    try {
+      const result = await migrateTwiccSessionFlowLanes(getOptions());
+      if (!result.allSucceeded) {
+        console.warn("TwiCC Done lane migration is incomplete; failed sessions will be retried on next startup.");
+      }
+    } catch {
+      console.warn("TwiCC Done lane migration could not run; it will be retried on next startup.");
+    }
+  });
 
   ctx.resources.registerProvider(TWICC_RESOURCE_PROVIDER_ID, () => collectTwiccResourceProvider({
     execFileAsync: ctx.execFileAsync,

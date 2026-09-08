@@ -1,6 +1,6 @@
 ---
 name: boatyard-mcp
-description: Inspect Boatyard windows and pane layouts, enumerate every pane dropdown entry including dynamic subtypes, update pane content and mobile viewport settings, navigate web panes, and capture visible pane screenshots through the authenticated local Boatyard MCP server. Use when a user asks to inspect, explain, change, or visually inspect panes in a running Boatyard instance. Do not use for splitting or closing panes because those operations are not exposed yet.
+description: List, move and prioritize TwiCC Kanban sessions; inspect Boatyard windows and pane layouts, enumerate every pane dropdown entry including dynamic subtypes, update pane content and mobile viewport settings, navigate web panes, and capture visible pane screenshots through the authenticated local Boatyard MCP server. Use when a user asks to manage TwiCC Kanban sessions or inspect, explain, change, or visually inspect panes in a running Boatyard instance. Do not use for splitting or closing panes because those operations are not exposed yet.
 ---
 
 # Boatyard MCP
@@ -103,3 +103,31 @@ Only the pane displayed in the selected window can be captured. If Boatyard repo
 ## Respect the current boundary
 
 The current MCP can list windows, inspect layouts, enumerate choices, update an existing pane's entry and mobile viewport, navigate its web content, and capture a visible pane. It cannot create a split, close a pane, start a process, or inspect the rendered page as structured DOM/content. State that limitation when one of those operations is required; do not simulate success through unrelated UI or filesystem actions.
+
+
+## Manage TwiCC Kanban sessions
+
+The enabled TwiCC plugin contributes these tools to the **Boatyard** MCP server:
+
+- `boatyard.twicc.list_sessions`: `contextId`, `projectId`, optional `lane`.
+- `boatyard.twicc.move_sessions`: `contextId`, `projectId`, `sessionIds`, `lane`.
+- `boatyard.twicc.reorder_sessions`: the same arguments plus `position` and,
+  for `before`/`after`, `anchorSessionId`.
+
+Use `list_windows` to discover the configuration and Boatyard project IDs. These
+operations work without opening a Kanban pane. Tool names may be normalized by
+the MCP client; discover them from the server rather than guessing a prefix.
+Lanes are `in_progress`, `backlog` and `done`. `processState` describes agent
+activity independently of the lane. Listing includes visible, unarchived sessions
+in the same order as the Kanban and never writes annotations.
+
+List before choosing session IDs. Move only the sessions requested by the user.
+For visual priority, use `position: "first"` or `"last"`, or `"before"`/`"after"`
+with another session in the same lane as the anchor. Selected sessions must
+already be in that lane; move them first if needed. The input order of multiple
+selected sessions is preserved. Do not invent IDs or numeric order values.
+
+A move to Done does not archive or stop an agent. Mutation results can be partial:
+check `allSucceeded` and individual `results`; report failures and refresh the
+list before retrying. Reordering writes the lane's order sequentially, so do not
+claim atomicity or overwrite newer user choices with a blind retry.

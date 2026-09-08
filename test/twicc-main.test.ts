@@ -11,6 +11,8 @@ test("TwiCC main plugin registers its system resource provider", () => {
     execFileAsync: async () => ({ stdout: "[]" }),
     getState: () => ({}),
     projectInspectors: { register() {} },
+    tools: { register() {} },
+    stateMigrations: { register() {} },
     resources: {
       registerProvider(id: string) {
         resourceProviders.push(id);
@@ -36,6 +38,8 @@ test("TwiCC service upgrade and restart actions execute separate commands", asyn
     },
     getState: () => ({}),
     projectInspectors: { register() {} },
+    tools: { register() {} },
+    stateMigrations: { register() {} },
     resources: { registerProvider() {} }
   });
 
@@ -75,6 +79,8 @@ test("TwiCC restart readiness blocks non-idle sessions and includes hidden proce
     },
     getState: () => ({}),
     projectInspectors: { register() {} },
+    tools: { register() {} },
+    stateMigrations: { register() {} },
     resources: { registerProvider() {} }
   });
 
@@ -152,6 +158,8 @@ test("TwiCC main resolves session navigation from the cached process snapshot", 
       projects: [{ id: "boatyard-project", sourcePath: "/workspace/example" }]
     }),
     projectInspectors: { register() {} },
+    tools: { register() {} },
+    stateMigrations: { register() {} },
     resources: { registerProvider() {} }
   });
 
@@ -205,6 +213,8 @@ test("TwiCC main resolves session navigation through the session fallback on a c
       projects: [{ id: "boatyard-project", sourcePath: "/workspace/example" }]
     }),
     projectInspectors: { register() {} },
+    tools: { register() {} },
+    stateMigrations: { register() {} },
     resources: { registerProvider() {} }
   });
 

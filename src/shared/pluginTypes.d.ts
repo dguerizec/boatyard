@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import type { ChildProcess } from "node:child_process";
 
 export type PluginActionHandler<TPayload = unknown, TResult = unknown> = (
@@ -9,6 +10,20 @@ export interface PluginActions {
     name: string,
     handler: PluginActionHandler<TPayload, TResult>
   ): void;
+}
+
+export type PluginToolDefinition = {
+  id: string;
+  title: string;
+  description: string;
+  inputSchema: z.ZodObject;
+  readOnly: boolean;
+  destructive?: boolean;
+  invoke(input: Record<string, unknown>): unknown | Promise<unknown>;
+};
+
+export interface PluginTools {
+  register(definition: PluginToolDefinition): void;
 }
 
 export interface PluginEvents {
@@ -81,6 +96,7 @@ export interface PluginResources {
 
 export interface PluginContext<TState = unknown> {
   actions: PluginActions;
+  tools: PluginTools;
   events: PluginEvents;
   execFileAsync: ExecFileAsync;
   getState(): TState;

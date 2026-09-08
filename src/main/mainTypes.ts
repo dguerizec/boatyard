@@ -95,6 +95,8 @@ export type PasswordManagerInstance = {
 };
 
 export type PluginHostInstance = {
+  listTools(): import("../shared/pluginTypes.js").PluginToolDefinition[];
+  invokeTool(id: string, input: Record<string, unknown>): Promise<unknown>;
   applyStateMigrations(): Promise<unknown>;
   discover(): unknown;
   inspectSourcePath(values: UnknownRecord): Promise<unknown>;
