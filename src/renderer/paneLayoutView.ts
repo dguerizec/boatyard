@@ -320,6 +320,7 @@ export function createPaneLayoutView({
     const mobileDevRulerHeight = 24;
     const mobileDevHostPadding = 20;
     let activeExpansionsCleanup: (() => void) | null = null;
+    let syncActivePaneExpansionBounds: (() => void) | null = null;
     let closeOpenPaneBrowserControls: (() => void) | null = null;
     let isPaintingPaneExpansion = false;
     let suppressExpansionClickUntil = 0;
@@ -703,7 +704,9 @@ export function createPaneLayoutView({
       window.addEventListener("scroll", updateExpandedPaneBounds, true);
       updateExpandedPaneBounds();
 
+      syncActivePaneExpansionBounds = updateExpandedPaneBounds;
       activeExpansionsCleanup = () => {
+        syncActivePaneExpansionBounds = null;
         resizeObserver?.disconnect();
         window.removeEventListener("resize", updateExpandedPaneBounds);
         window.removeEventListener("scroll", updateExpandedPaneBounds, true);
@@ -1596,12 +1599,15 @@ export function createPaneLayoutView({
       function prepare(event: PointerEvent) {
         if (!(event.target instanceof Element) || event.target.closest(
           "button, input, select, textarea, a, [role='button'], [role='tab'], [role='combobox'], [role='slider'], [tabindex], [contenteditable], [draggable='true']"
-        ) || dashboardGrid.querySelector(".pane-expanded")) return false;
+        )) return false;
         const root = getProjectPaneLayout(project) as PaneLayoutNode;
         const rect = dashboardGrid.lastElementChild?.getBoundingClientRect();
         if (!rect) return false;
-        horizontal = createPaneTranslation(root, paneId, "width", rect.width, webAppSplitResizerSize, getPaneMinimumSize);
-        vertical = createPaneTranslation(root, paneId, "height", rect.height, webAppSplitResizerSize, getPaneMinimumSize);
+        const expansion = paneLayoutState.findActivePaneExpansions(project)
+          .find(({ pane }) => pane.id === paneId);
+        const translatedPaneIds = expansion?.paneIds || [paneId];
+        horizontal = createPaneTranslation(root, translatedPaneIds, "width", rect.width, webAppSplitResizerSize, getPaneMinimumSize);
+        vertical = createPaneTranslation(root, translatedPaneIds, "height", rect.height, webAppSplitResizerSize, getPaneMinimumSize);
         return Boolean(horizontal || vertical);
       }
       const onPointerOver = (event: PointerEvent) => {
@@ -1625,6 +1631,9 @@ export function createPaneLayoutView({
             const element = dashboardGrid.querySelector<HTMLElement>(`.webapp-split[data-split-id="${CSS.escape(split.id)}"]`);
             if (element) applySplitRatio(element, split as SplitNode);
           }
+          // Translation changes positions without resizing the covered panes,
+          // so ResizeObserver alone cannot keep the expanded surface in sync.
+          syncActivePaneExpansionBounds?.();
           queueWebAppSync();
         },
         onCommit() {

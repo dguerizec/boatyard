@@ -82,3 +82,48 @@ test("a pane with no available neighbor space cannot start a drag", () => {
   assert.equal(createPaneTranslation(root, "b", "width", 600, 6, () => 400), null);
   assert.equal(createPaneTranslation(pane("only"), "only", "width", 600, 6, () => 100), null);
 });
+
+for (const direction of ["vertical", "horizontal"]) {
+  const axis = direction === "vertical" ? "width" : "height";
+  test(`expanded group translates every internal pane without resizing (${direction})`, () => {
+    // The group crosses subtrees, rather than being a single split child.
+    const root = split("root", split("left", pane("a"), pane("b"), direction),
+      split("right", pane("c"), pane("d"), direction), direction);
+    const before = bounds(root, direction);
+    const drag = createPaneTranslation(root, ["b", "c"], axis, 1600, 6, () => 200);
+    assert.ok(drag);
+    drag.apply(70);
+    const after = bounds(root, direction);
+    for (const id of ["b", "c"]) {
+      close(after[id][0], before[id][0] + 70);
+      close(after[id][1], before[id][1] + 70);
+    }
+    close(after.a[0], before.a[0]);
+    close(after.d[1], before.d[1]);
+    drag.apply(10000);
+    const capped = bounds(root, direction);
+    close(capped.d[1] - capped.d[0], 200);
+    for (const id of ["b", "c"]) close(capped[id][1] - capped[id][0], before[id][1] - before[id][0]);
+    drag.apply(-10000);
+    close(bounds(root, direction).a[1] - bounds(root, direction).a[0], 200);
+    drag.apply(0);
+    for (const id of ["a", "b", "c", "d"]) {
+      bounds(root, direction)[id].forEach((value, index) => close(value, before[id][index]));
+    }
+    assert.equal(createPaneTranslation(root, ["a", "b"], axis, 1600, 6, () => 200), null);
+    assert.equal(createPaneTranslation(root, ["c", "d"], axis, 1600, 6, () => 200), null);
+  });
+}
+
+test("stacked expansion preserves both panes and remains blocked on its outer axis", () => {
+  const root = split("outer", pane("a"), split("inner", split("stack", pane("b"), pane("c"), "horizontal"), pane("d")));
+  const before = bounds(root, "vertical");
+  const drag = createPaneTranslation(root, ["b", "c"], "width", 1600, 6, () => 200);
+  drag.apply(50);
+  const after = bounds(root, "vertical");
+  for (const id of ["b", "c"]) {
+    close(after[id][0], before[id][0] + 50);
+    close(after[id][1], before[id][1] + 50);
+  }
+  assert.equal(createPaneTranslation(root, ["b", "c"], "height", 900, 6, () => 100), null);
+});

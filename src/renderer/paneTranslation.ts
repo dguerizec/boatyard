@@ -12,17 +12,23 @@ type Edge = { position: number; velocity: number };
 // and every move is calculated from the original pointer position.
 export function createPaneTranslation(
   root: PaneLayoutGeometryNode,
-  paneId: string,
+  paneIds: string | readonly string[],
   axis: PaneMinimumAxis,
   containerSize: number,
   resizerSize: number,
   getMinimumSize: PaneMinimumSizeResolver
 ) {
   const direction = axis === "width" ? "vertical" : "horizontal";
-  let boundaries: [string, string] | null = null;
+  const selected = new Set(typeof paneIds === "string" ? [paneIds] : paneIds);
+  const moving = new Set<string>();
+  let boundedPanes = 0;
   function find(node: PaneLayoutGeometryNode, before: string | null, after: string | null) {
     if (node.type === "pane") {
-      if (node.id === paneId && before && after) boundaries = [before, after];
+      if (selected.has(node.id) && before && after) {
+        moving.add(before);
+        moving.add(after);
+        boundedPanes += 1;
+      }
       return;
     }
     if (node.expandedChild) return;
@@ -31,9 +37,9 @@ export function createPaneTranslation(
     find(node.second, aligned ? node.id : before, after);
   }
   find(root, null, null);
-  if (!boundaries || containerSize <= 0) return null;
-
-  const moving = new Set<string>(boundaries);
+  // Every selected pane contributes both edges, including internal dividers.
+  // Moving them together preserves each pane, not just the group's total size.
+  if (!selected.size || boundedPanes !== selected.size || containerSize <= 0) return null;
   const splits: Array<{ node: PaneSplitGeometryNode; start: Edge; end: Edge; center: Edge }> = [];
   let minimum = -Infinity;
   let maximum = Infinity;
