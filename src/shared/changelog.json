@@ -1,6 +1,17 @@
 {
-  "generatedForVersion": "0.14.0",
+  "generatedForVersion": "0.14.1",
   "releases": [
+    {
+      "version": "0.14.1",
+      "date": "2026-09-09",
+      "features": [
+        {
+          "category": "Fixed",
+          "title": "Mobile viewport sizing",
+          "body": "Resizing a pane no longer changes the embedded page’s mobile layout. Your selected dimensions persist across navigation and reloads, and content stays clipped to the pane."
+        }
+      ]
+    },
     {
       "version": "0.14.0",
       "date": "2026-09-09",
