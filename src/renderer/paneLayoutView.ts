@@ -33,6 +33,7 @@ import {
   getPaneSidePanelStorageKey,
   resizePaneSidePanelWidth
 } from "./paneSidePanel.js";
+import { createPaneTranslation } from "./paneTranslation.js";
 import { attachPanePointerResize } from "./panePointerResize.js";
 
 type PaneLayoutHost = HTMLDivElement & {
@@ -1587,6 +1588,58 @@ export function createPaneLayoutView({
       }
     }
 
+    function attachPaneToolbarDrag(project: RendererProject, paneId: string, header: HTMLElement) {
+      let horizontal: ReturnType<typeof createPaneTranslation> = null;
+      let vertical: ReturnType<typeof createPaneTranslation> = null;
+      let moved = false;
+      let active = false;
+      function prepare(event: PointerEvent) {
+        if (!(event.target instanceof Element) || event.target.closest(
+          "button, input, select, textarea, a, [role='button'], [role='tab'], [role='combobox'], [role='slider'], [tabindex], [contenteditable], [draggable='true']"
+        ) || dashboardGrid.querySelector(".pane-expanded")) return false;
+        const root = getProjectPaneLayout(project) as PaneLayoutNode;
+        const rect = dashboardGrid.lastElementChild?.getBoundingClientRect();
+        if (!rect) return false;
+        horizontal = createPaneTranslation(root, paneId, "width", rect.width, webAppSplitResizerSize, getPaneMinimumSize);
+        vertical = createPaneTranslation(root, paneId, "height", rect.height, webAppSplitResizerSize, getPaneMinimumSize);
+        return Boolean(horizontal || vertical);
+      }
+      const onPointerOver = (event: PointerEvent) => {
+        if (!active) header.style.cursor = prepare(event) ? "grab" : "";
+      };
+      header.addEventListener("pointerover", onPointerOver);
+      const cleanupResize = attachPanePointerResize(header, {
+        canStart(event) {
+          active = prepare(event);
+          moved = false;
+          return active;
+        },
+        onMove(event, origin) {
+          const dx = event.clientX - origin.clientX;
+          const dy = event.clientY - origin.clientY;
+          if (!moved && Math.max(horizontal ? Math.abs(dx) : 0, vertical ? Math.abs(dy) : 0) < 2) return;
+          moved = true;
+          header.style.cursor = "grabbing";
+          const splits = [...(horizontal?.apply(dx) || []), ...(vertical?.apply(dy) || [])];
+          for (const split of splits) {
+            const element = dashboardGrid.querySelector<HTMLElement>(`.webapp-split[data-split-id="${CSS.escape(split.id)}"]`);
+            if (element) applySplitRatio(element, split as SplitNode);
+          }
+          queueWebAppSync();
+        },
+        onCommit() {
+          active = false;
+          header.style.cursor = "";
+          if (moved) persistPaneLayout(project);
+        }
+      });
+      return () => {
+        cleanupResize();
+        header.removeEventListener("pointerover", onPointerOver);
+        header.style.cursor = "";
+      };
+    }
+
     function createWebAppPane(project: RendererProject, paneNode: PaneNode) {
       const webApps = getProjectWebApps(project, paneNode.id).map((webApp) => webApp as PaneWebApp);
       const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps) as PaneWebApp;
@@ -1658,6 +1711,7 @@ export function createPaneLayoutView({
 
       const header = document.createElement("div");
       header.className = "webapp-pane-header";
+      pluginPaneCleanupCallbacks.push(attachPaneToolbarDrag(project, paneNode.id, header));
 
       const tabs = document.createElement("div");
       tabs.className = "webapp-tabs";
