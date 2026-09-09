@@ -32,6 +32,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Electron downloads its binary lazily; finish installation before parallel tests.
+      - name: Install Electron binary
+        run: npm exec --no -- install-electron
+
       - name: Lint
         run: npm run lint
 
