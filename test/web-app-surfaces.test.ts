@@ -43,6 +43,8 @@ test("web app surfaces pass project ownership to the main process", async () => 
   const calls: Array<{ action: string; payload?: unknown }> = [];
   const loadedKeys: string[] = [];
   const host = {
+    closest() { return null; },
+    matches() { return false; },
     getBoundingClientRect() {
       return {
         bottom: 240,
@@ -55,7 +57,7 @@ test("web app surfaces pass project ownership to the main process", async () => 
         y: 40
       };
     }
-  } as Element;
+  } as unknown as Element;
   const surfaces = createWebAppSurfaces({
     boatyard: {
       async freezeWebApps() {},
@@ -98,4 +100,67 @@ test("web app surfaces pass project ownership to the main process", async () => 
     { action: "setVisibleWebApps", payload: ["project-alpha:dashboard"] }
   ]);
   assert.deepEqual(loadedKeys, ["project-alpha:dashboard"]);
+});
+
+test("native mobile surfaces stay inside their pane after shrinking or scrolling", () => {
+  let pane = { x: 16, y: 68, right: 882, bottom: 470 };
+  const host = {
+    closest: () => ({ getBoundingClientRect: () => pane }),
+    getBoundingClientRect: () => ({
+      x: 60, y: 140, right: 450, bottom: 695, width: 390, height: 555
+    })
+  } as unknown as Element;
+  const surfaces = createWebAppSurfaces({
+    boatyard: { async freezeWebApps() {}, async restoreWebApps() {} },
+    getFreezeLayerHost: () => ({}) as HTMLElement,
+    getSettings: () => ({}),
+    getVisibleWebAppEntries: () => [],
+    async invokeWebApp() {},
+    isWebAppAutofillEnabled: () => false,
+    markWebAppLoaded() {}
+  });
+
+  assert.deepEqual(surfaces.getWebAppHostBounds(host), {
+    x: 62, y: 142, width: 386, height: 326
+  });
+  pane = { x: 100, y: 160, right: 300, bottom: 400 };
+  assert.deepEqual(surfaces.getWebAppHostBounds(host), {
+    x: 102, y: 162, width: 196, height: 236
+  });
+  pane = { x: 16, y: 68, right: 882, bottom: 130 };
+  assert.equal(surfaces.getWebAppHostBounds(host), null);
+  // Enlarging the pane restores the requested dimensions without resetting them.
+  pane = { x: 16, y: 68, right: 882, bottom: 900 };
+  assert.deepEqual(surfaces.getWebAppHostBounds(host), {
+    x: 62, y: 142, width: 386, height: 551
+  });
+});
+
+
+test("mobile surfaces send requested dimensions separately from visible bounds", async () => {
+  const calls: Array<{ action: string; payload?: unknown }> = [];
+  const host = {
+    matches: () => true,
+    closest: () => ({
+      getBoundingClientRect: () => ({ x: 0, y: 0, right: 300, bottom: 400 })
+    }),
+    getBoundingClientRect: () => ({
+      x: 0, y: 0, right: 390, bottom: 718, width: 390, height: 718
+    })
+  } as unknown as Element;
+  const surfaces = createWebAppSurfaces({
+    boatyard: { async freezeWebApps() {}, async restoreWebApps() {} },
+    getFreezeLayerHost: () => ({}) as HTMLElement,
+    getSettings: () => ({}),
+    getVisibleWebAppEntries: () => [{
+      host, webApp: { key: "mobile", url: "https://mobile.example.test" }
+    }],
+    async invokeWebApp(action: string, payload?: unknown) { calls.push({ action, payload }); },
+    isWebAppAutofillEnabled: () => false,
+    markWebAppLoaded() {}
+  });
+  await surfaces.syncWebAppView();
+  const payload = calls[0].payload as { bounds: unknown; viewportSize: unknown };
+  assert.deepEqual(payload.bounds, { x: 2, y: 2, width: 296, height: 396 });
+  assert.deepEqual(payload.viewportSize, { width: 390, height: 718 });
 });

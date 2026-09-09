@@ -1,3 +1,4 @@
+import { applyWebAppViewport } from "./webAppViewport.js";
 import type {
   BrowserWindow as ElectronBrowserWindow,
   ContextMenuParams,
@@ -964,7 +965,7 @@ function normalizeWebAppBackgroundColor(backgroundColor: unknown) {
   return backgroundColor === "#ffffff" ? "#ffffff" : DEFAULT_WEBAPP_BACKGROUND_COLOR;
 }
 
-function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, label, projectId, restoreUrl = true }: ShowWebAppPayload) {
+function showWebApp({ key, url, bounds, viewportSize, autofillEnabled, backgroundColor, label, projectId, restoreUrl = true }: ShowWebAppPayload) {
   if (!key) {
     throw new Error("Webapp key is required.");
   }
@@ -1005,6 +1006,7 @@ function showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, label,
   webApp.view.setBackgroundColor(normalizeWebAppBackgroundColor(backgroundColor));
   webApp.bounds = normalizeWebAppBounds(bounds);
   webApp.view.setBounds(webApp.bounds);
+  applyWebAppViewport(webApp.view.webContents, viewportSize);
   webApp.view.setVisible(
     visibleWebAppKeys.has(String(key)) &&
     !isWebAppKeyFrozen(String(key))

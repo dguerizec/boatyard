@@ -316,19 +316,12 @@ export function createPaneLayoutView({
     const mobileDevStoragePrefix = "boatyard.mobile-dev-viewport:";
     const paneSidePanelStates = new Map<string, PaneSidePanelState>();
     const paneSidePanelStoragePrefix = "boatyard.pane-side-panel:";
-    const mobileDevRulerWidth = 32;
-    const mobileDevRulerHeight = 24;
-    const mobileDevHostPadding = 20;
     let activeExpansionsCleanup: (() => void) | null = null;
     let syncActivePaneExpansionBounds: (() => void) | null = null;
     let closeOpenPaneBrowserControls: (() => void) | null = null;
     let isPaintingPaneExpansion = false;
     let suppressExpansionClickUntil = 0;
     const normalizedDefaultPaneMinSize = DEFAULT_PANE_MIN_SIZE;
-
-    function clamp(value: number, min: number, max: number) {
-      return Math.min(max, Math.max(min, value));
-    }
 
     function getPaneMinimumSize(paneNode: { id: string }, axis: PaneMinimumAxis) {
       const pane = dashboardGrid.querySelector<HTMLElement>(
@@ -479,15 +472,6 @@ export function createPaneLayoutView({
         state.height = Math.max(160, Math.round(update.height));
       }
 
-      if (options.render !== false) {
-        const pane = dashboardGrid.querySelector<HTMLElement>(
-          `.webapp-pane[data-pane-id="${CSS.escape(paneId)}"]`
-        );
-        const host = pane ? getDirectPaneHost(pane) : null;
-        if (host) {
-          fitMobileDevViewportToHost(host, state);
-        }
-      }
       persistMobileDevViewportState(getMobileDevViewportKey(webApp), state);
       if (options.render !== false) {
         renderPaneLayoutPreservingPanes(project, { forcePaneIds: [paneId] });
@@ -1273,17 +1257,6 @@ export function createPaneLayoutView({
       return resizer;
     }
 
-    function fitMobileDevViewportToHost(host: HTMLElement, state: MobileDevViewportState) {
-      const rect = host.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) {
-        return;
-      }
-      const maxWidth = Math.max(160, Math.floor(rect.width - mobileDevHostPadding - mobileDevRulerWidth - 2));
-      const maxHeight = Math.max(160, Math.floor(rect.height - mobileDevHostPadding - mobileDevRulerHeight - 2));
-      state.width = clamp(state.width, 160, maxWidth);
-      state.height = clamp(state.height, 160, maxHeight);
-    }
-
     function updateMobileDevViewportSize(
       state: MobileDevViewportState,
       viewport: HTMLElement,
@@ -1357,7 +1330,6 @@ export function createPaneLayoutView({
       handle: HTMLElement,
       key: string,
       axis: "x" | "y",
-      host: HTMLElement,
       state: MobileDevViewportState,
       viewport: HTMLElement,
       widthLabel: HTMLElement,
@@ -1375,13 +1347,10 @@ export function createPaneLayoutView({
           return true;
         },
         onMove(moveEvent, origin) {
-          const rect = host.getBoundingClientRect();
-          const maxWidth = Math.max(160, Math.floor(rect.width - mobileDevHostPadding - mobileDevRulerWidth - 2));
-          const maxHeight = Math.max(160, Math.floor(rect.height - mobileDevHostPadding - mobileDevRulerHeight - 2));
           if (axis === "x") {
-            state.width = clamp(Math.round(startWidth + moveEvent.clientX - origin.clientX), 160, maxWidth);
+            state.width = Math.max(160, Math.round(startWidth + moveEvent.clientX - origin.clientX));
           } else {
-            state.height = clamp(Math.round(startHeight + moveEvent.clientY - origin.clientY), 160, maxHeight);
+            state.height = Math.max(160, Math.round(startHeight + moveEvent.clientY - origin.clientY));
           }
           updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
           queueWebAppSync();
@@ -1396,7 +1365,6 @@ export function createPaneLayoutView({
     function createMobileDevViewport(host: HTMLElement, selectedWebApp: PaneWebApp) {
       const key = getMobileDevViewportKey(selectedWebApp);
       const state = getMobileDevViewportState(selectedWebApp);
-      fitMobileDevViewportToHost(host, state);
 
       host.classList.add("mobile-dev-host");
       const bookmarkList = document.createElement("div");
@@ -1434,21 +1402,22 @@ export function createPaneLayoutView({
       updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
       renderMobileDevBookmarks(key, state, bookmarkList, viewport, widthLabel, heightLabel);
       const resizeCleanups = [
-        attachMobileDevResizeHandle(topRuler, key, "x", host, state, viewport, widthLabel, heightLabel),
-        attachMobileDevResizeHandle(leftRuler, key, "y", host, state, viewport, widthLabel, heightLabel),
-        attachMobileDevResizeHandle(rightHandle, key, "x", host, state, viewport, widthLabel, heightLabel),
-        attachMobileDevResizeHandle(bottomHandle, key, "y", host, state, viewport, widthLabel, heightLabel)
+        attachMobileDevResizeHandle(topRuler, key, "x", state, viewport, widthLabel, heightLabel),
+        attachMobileDevResizeHandle(leftRuler, key, "y", state, viewport, widthLabel, heightLabel),
+        attachMobileDevResizeHandle(rightHandle, key, "x", state, viewport, widthLabel, heightLabel),
+        attachMobileDevResizeHandle(bottomHandle, key, "y", state, viewport, widthLabel, heightLabel)
       ];
-      window.requestAnimationFrame(() => {
-        fitMobileDevViewportToHost(host, state);
-        updateMobileDevViewportSize(state, viewport, widthLabel, heightLabel);
-        persistMobileDevViewportState(key, state);
-        renderMobileDevBookmarks(key, state, bookmarkList, viewport, widthLabel, heightLabel);
-        queueWebAppSync();
-      });
+      // Host changes only affect native bounds, never the user's saved dimensions.
+      const resizeObserver = new ResizeObserver(queueWebAppSync);
+      resizeObserver.observe(host);
+      const syncFrame = window.requestAnimationFrame(queueWebAppSync);
+      host.addEventListener("scroll", queueWebAppSync);
 
       return {
         cleanup() {
+          window.cancelAnimationFrame(syncFrame);
+          resizeObserver.disconnect();
+          host.removeEventListener("scroll", queueWebAppSync);
           resizeCleanups.forEach((cleanup) => cleanup());
         },
         viewport

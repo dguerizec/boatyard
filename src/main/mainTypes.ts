@@ -132,6 +132,7 @@ export type WebAppLookup = {
 };
 
 export type ShowWebAppPayload = {
+  viewportSize?: unknown;
   autofillEnabled?: unknown;
   backgroundColor?: unknown;
   bounds?: unknown;

@@ -9,6 +9,14 @@ class MockWebContents extends EventEmitter {
   readonly id = MockWebContents.nextId++;
   readonly loadedUrls: string[] = [];
   readonly executedScripts: string[] = [];
+  readonly emulations: unknown[] = [];
+  disableEmulationCount = 0;
+  enableDeviceEmulation(parameters: unknown) {
+    this.emulations.push(parameters);
+  }
+  disableDeviceEmulation() {
+    this.disableEmulationCount += 1;
+  }
   backCount = 0;
   closeCount = 0;
   forwardCount = 0;
@@ -710,4 +718,48 @@ test("workspace runtime denies blank popup requests that are not the deferred us
     frameName: "",
     url: "about:blank"
   }), { action: "deny" });
+});
+
+
+test("mobile virtual dimensions survive pane resizing and reset when mobile mode ends", () => {
+  const { runtime, views } = createRuntime();
+  const payload = {
+    key: "project:mobile",
+    url: "https://mobile.example.test",
+    viewportSize: { width: 390, height: 718 }
+  };
+  runtime.showWebApp({ ...payload, bounds: { x: 0, y: 0, width: 390, height: 718 } });
+  assert.equal(views[0].contents.emulations.length, 0);
+  views[0].contents.emit("dom-ready");
+  runtime.showWebApp({ ...payload, bounds: { x: 0, y: 0, width: 300, height: 400 } });
+  assert.deepEqual(views[0].contents.emulations, [{
+    screenPosition: "desktop",
+    screenSize: { width: 390, height: 718 },
+    viewPosition: { x: 0, y: 0 },
+    deviceScaleFactor: 0,
+    viewSize: { width: 390, height: 718 },
+    scale: 1
+  }]);
+  runtime.showWebApp({ ...payload, viewportSize: { width: 768, height: 1024 } });
+  assert.equal(views[0].contents.emulations.length, 2);
+  views[0].contents.emit("dom-ready");
+  assert.equal(views[0].contents.emulations.length, 3);
+  runtime.showWebApp({ ...payload, viewportSize: undefined });
+  runtime.showWebApp({ ...payload, viewportSize: undefined });
+  assert.equal(views[0].contents.disableEmulationCount, 1);
+  views[0].contents.emit("dom-ready");
+  assert.equal(views[0].contents.emulations.length, 3);
+});
+
+
+test("mobile viewport requests can be cancelled before the first document is ready", () => {
+  const { runtime, views } = createRuntime();
+  const payload = { key: "mobile-startup", url: "https://mobile.example.test" };
+  runtime.showWebApp({ ...payload, viewportSize: { width: 390, height: 718 } });
+  assert.equal(views[0].contents.emulations.length, 0);
+  views[0].contents.loadingMainFrame = true;
+  runtime.showWebApp(payload);
+  views[0].contents.emit("dom-ready");
+  assert.equal(views[0].contents.emulations.length, 0);
+  assert.equal(views[0].contents.disableEmulationCount, 0);
 });

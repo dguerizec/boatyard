@@ -112,10 +112,16 @@ export function createWebAppSurfaces({
         return null;
       }
 
-      const x = Math.ceil(rect.x);
-      const y = Math.ceil(rect.y);
-      const right = Math.floor(rect.right);
-      const bottom = Math.floor(rect.bottom);
+      // Native views do not inherit the renderer's CSS overflow clipping.
+      const container = host.closest(".webapp-host");
+      const clip = container?.getBoundingClientRect() || rect;
+      const x = Math.ceil(Math.max(rect.x, clip.x));
+      const y = Math.ceil(Math.max(rect.y, clip.y));
+      const right = Math.floor(Math.min(rect.right, clip.right));
+      const bottom = Math.floor(Math.min(rect.bottom, clip.bottom));
+      if (right <= x || bottom <= y) {
+        return null;
+      }
       const wcvInset = 2;
 
       return {
@@ -201,11 +207,20 @@ export function createWebAppSurfaces({
           continue;
         }
 
+        const virtualRect = host?.matches(".webapp-mobile-dev-viewport")
+          ? host.getBoundingClientRect()
+          : null;
         visibleKeys.push(webApp.key);
         showCalls.push(invokeWebApp("showWebApp", {
           key: webApp.key,
           url: webApp.url,
           bounds,
+          ...(virtualRect ? {
+            viewportSize: {
+              width: Math.round(virtualRect.width),
+              height: Math.round(virtualRect.height)
+            }
+          } : {}),
           autofillEnabled: isWebAppAutofillEnabled(webApp),
           backgroundColor: webApp.backgroundColor,
           label: webApp.label,

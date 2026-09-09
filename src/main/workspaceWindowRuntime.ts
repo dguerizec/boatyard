@@ -1,3 +1,4 @@
+import { applyWebAppViewport } from "./webAppViewport.js";
 import type {
   ContextMenuParams,
   BrowserWindowConstructorOptions,
@@ -578,7 +579,7 @@ export class WorkspaceWindowRuntime {
     }
   }
 
-  showWebApp({ key, url, bounds, autofillEnabled, backgroundColor, label, projectId, restoreUrl = true }: ShowWebAppPayload) {
+  showWebApp({ key, url, bounds, viewportSize, autofillEnabled, backgroundColor, label, projectId, restoreUrl = true }: ShowWebAppPayload) {
     if (!key) {
       throw new Error("Webapp key is required.");
     }
@@ -612,6 +613,7 @@ export class WorkspaceWindowRuntime {
     webApp.view.setBackgroundColor(getWebAppBackgroundColor(webApp.backgroundColor, this.theme));
     webApp.bounds = normalizeWebAppBounds(bounds);
     webApp.view.setBounds(webApp.bounds);
+    applyWebAppViewport(webApp.webContents, viewportSize);
     webApp.view.setVisible(this.visibleWebAppKeys.has(String(key)) && !this.isWebAppKeyFrozen(String(key)));
     this.activeWebAppKey = String(key);
 
