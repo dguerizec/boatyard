@@ -1,6 +1,87 @@
 {
-  "generatedForVersion": "0.13.0",
+  "generatedForVersion": "0.14.0",
   "releases": [
+    {
+      "version": "0.14.0",
+      "date": "2026-09-09",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Pane dragging",
+          "body": "Drag pane toolbars to slide panes or expanded groups while preserving their dimensions and resizing neighboring panes."
+        },
+        {
+          "category": "Added",
+          "title": "TwiCC service controls",
+          "body": "Upgrade and restart the local TwiCC service from Resources, with idle-session checks and confirmation before restarting."
+        },
+        {
+          "category": "Added",
+          "title": "TwiCC Peer inbox",
+          "body": "Open the inbox from the pane toolbar in a separate window, with an attention badge, while keeping your active pane available."
+        },
+        {
+          "category": "Added",
+          "title": "Agent Kanban controls",
+          "body": "Agents can list project sessions, move them between lanes, and adjust their priority through Boatyard’s MCP tools."
+        },
+        {
+          "category": "Added",
+          "title": "Pane screenshots for agents",
+          "body": "Agents can capture visible panes, including embedded web content, with optional cropping."
+        },
+        {
+          "category": "Added",
+          "title": "Project settings shortcuts",
+          "body": "Open settings from sidebar project and pinned shortcut menus, then use Back to return to the project."
+        },
+        {
+          "category": "Changed",
+          "title": "Pier workload controls",
+          "body": "Separate start/update and stop actions make workload operations explicit, with stop available only for running workloads."
+        },
+        {
+          "category": "Changed",
+          "title": "TwiCC Done lane",
+          "body": "The former Testing lane becomes Done, with existing session assignments migrated automatically."
+        },
+        {
+          "category": "Fixed",
+          "title": "Telegram message buttons",
+          "body": "Interactive bot choices now appear and work in Telegram panes and widgets."
+        },
+        {
+          "category": "Fixed",
+          "title": "Live Telegram updates",
+          "body": "Incoming messages and edits continue arriving after Boatyard restarts."
+        },
+        {
+          "category": "Fixed",
+          "title": "Background reload focus",
+          "body": "Web app reloads in background panes no longer steal keyboard input from the pane you are using."
+        },
+        {
+          "category": "Fixed",
+          "title": "Password save prompts",
+          "body": "A single form submission no longer opens duplicate save confirmations."
+        },
+        {
+          "category": "Fixed",
+          "title": "Open URL dialog placement",
+          "body": "The dialog stays within the Boatyard window, including when opened from panes near its edges."
+        },
+        {
+          "category": "Fixed",
+          "title": "Terminal tab renaming",
+          "body": "Renaming a tab again starts with its current label instead of its original name."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pier removal options",
+          "body": "Worktree removal now offers explicit volume and image retention controls and clarifies what will be deleted by default."
+        }
+      ]
+    },
     {
       "version": "0.13.0",
       "date": "2026-08-21",

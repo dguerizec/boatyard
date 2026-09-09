@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.14.0] - 2026-09-09
+
+### Summary
+
+- **v0.14.0: Smoother Panes and Connected Workflows** — Adds pane dragging, richer TwiCC controls, and agent screenshots while improving Telegram updates, Pier actions, and everyday navigation.
+
+### Added
+
+- **Pane dragging** — Drag pane toolbars to slide panes or expanded groups while preserving their dimensions and resizing neighboring panes.
+- **TwiCC service controls** — Upgrade and restart the local TwiCC service from Resources, with idle-session checks and confirmation before restarting.
+- **TwiCC Peer inbox** — Open the inbox from the pane toolbar in a separate window, with an attention badge, while keeping your active pane available.
+- **Agent Kanban controls** — Agents can list project sessions, move them between lanes, and adjust their priority through Boatyard’s MCP tools.
+- **Pane screenshots for agents** — Agents can capture visible panes, including embedded web content, with optional cropping.
+- **Project settings shortcuts** — Open settings from sidebar project and pinned shortcut menus, then use Back to return to the project.
+
+### Changed
+
+- **Pier workload controls** — Separate start/update and stop actions make workload operations explicit, with stop available only for running workloads.
+- **TwiCC Done lane** — The former Testing lane becomes Done, with existing session assignments migrated automatically.
+
+### Fixed
+
+- **Telegram message buttons** — Interactive bot choices now appear and work in Telegram panes and widgets.
+- **Live Telegram updates** — Incoming messages and edits continue arriving after Boatyard restarts.
+- **Background reload focus** — Web app reloads in background panes no longer steal keyboard input from the pane you are using.
+- **Password save prompts** — A single form submission no longer opens duplicate save confirmations.
+- **Open URL dialog placement** — The dialog stays within the Boatyard window, including when opened from panes near its edges.
+- **Terminal tab renaming** — Renaming a tab again starts with its current label instead of its original name.
+- **Pier removal options** — Worktree removal now offers explicit volume and image retention controls and clarifies what will be deleted by default.
+
 ## [0.13.0] - 2026-08-21
 
 ### Summary
