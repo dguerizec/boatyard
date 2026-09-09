@@ -60,6 +60,7 @@ test("project context menus do not bubble into the top bar context menu", async 
       createProjectGroupForProject: async () => undefined,
       explodeProjectGroup: async () => undefined,
       isProjectPinned: () => true,
+      selectEditProject() {},
       setProjectPinned: async () => undefined,
       showOverlayDialog: async () => false,
       updateProjectGroupName: async () => undefined

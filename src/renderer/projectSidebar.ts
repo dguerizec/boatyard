@@ -92,6 +92,7 @@ export function createProjectSidebar({
       createProjectGroupForProject,
       explodeProjectGroup,
       isProjectPinned,
+      selectEditProject,
       setProjectPinned,
       showOverlayDialog,
       updateProjectGroupName

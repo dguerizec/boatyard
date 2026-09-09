@@ -13,6 +13,7 @@ type ProjectSidebarGroupMenusOptions = {
   createProjectGroupForProject: (project: SidebarGroupProject, groupName: string) => Promise<void>;
   explodeProjectGroup: (groupName: string) => Promise<void>;
   isProjectPinned: (projectId: string) => boolean;
+  selectEditProject: (projectId: string) => void;
   setProjectPinned: (projectId: string, pinned: boolean) => Promise<void>;
   showOverlayDialog: (dialog: HTMLDialogElement, options: Record<string, unknown>) => Promise<boolean>;
   updateProjectGroupName: (groupName: string, nextGroupName: string) => Promise<void>;
@@ -85,6 +86,7 @@ export function createProjectSidebarGroupMenus({
   createProjectGroupForProject,
   explodeProjectGroup,
   isProjectPinned,
+  selectEditProject,
   setProjectPinned,
   showOverlayDialog,
   updateProjectGroupName
@@ -314,8 +316,21 @@ export function createProjectSidebarGroupMenus({
   }
 
   function openProjectContextMenu(event: MouseEvent, project: SidebarGroupProject) {
-    const menu = createProjectGroupMenu(event, 52);
+    const menu = createProjectGroupMenu(event, 132);
     const projectId = project.id || "";
+
+    const settingsItem = document.createElement("button");
+    settingsItem.className = "webapp-tab-menu-item";
+    settingsItem.type = "button";
+    settingsItem.setAttribute("role", "menuitem");
+    settingsItem.textContent = "Project settings";
+    settingsItem.disabled = !projectId;
+    settingsItem.addEventListener("click", () => {
+      closeProjectGroupMenu();
+      if (projectId) {
+        selectEditProject(projectId);
+      }
+    });
 
     const pinItem = document.createElement("button");
     pinItem.className = "webapp-tab-menu-item";
@@ -342,7 +357,7 @@ export function createProjectSidebarGroupMenus({
       openProjectCreateGroupDialog(project);
     });
 
-    menu.append(pinItem, createGroupItem);
+    menu.append(settingsItem, pinItem, createGroupItem);
     menu.querySelector("button")?.focus();
   }
 
