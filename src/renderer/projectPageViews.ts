@@ -2,6 +2,7 @@ import type { UnknownRecord } from "./rendererRecords";
 import type { RendererProject, RendererState } from "./rendererTypes";
 import type { WorkspaceLayout } from "./rendererTypes";
 import { createSettingsShell } from "./settingsShell.js";
+import { createToolIcon } from "./toolIcons.js";
 
 type ProjectPageViewsOptions = {
   addProject: (values: UnknownRecord) => Promise<RendererState>;
@@ -253,7 +254,14 @@ export function createProjectPageViews({
       ]
     });
 
-    dashboardGrid.append(shell.element);
+    const backButton = document.createElement("button");
+    backButton.className = "secondary-button project-settings-back-button";
+    backButton.type = "button";
+    backButton.title = "Back to project";
+    backButton.append(createToolIcon("arrowLeft"), "Back");
+    backButton.addEventListener("click", () => selectProject(projectId));
+
+    dashboardGrid.append(backButton, shell.element);
   }
 
   return Object.freeze({

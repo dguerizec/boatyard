@@ -1496,6 +1496,13 @@ body.sidebar-collapsed .workspace {
   margin: 0 auto;
 }
 
+.project-settings-back-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .project-settings-layout .project-form-page {
   padding: 16px;
 }
