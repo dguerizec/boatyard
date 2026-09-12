@@ -1001,9 +1001,31 @@
       return element.scrollHeight - element.scrollTop - element.clientHeight < 24;
     }
 
+    let followLatest = true;
+    let historyReady = false;
+    function scrollToLatest() {
+      if (followLatest && list.clientHeight > 0) {
+        list.scrollTop = list.scrollHeight;
+      }
+      if (historyReady && list.clientHeight > 0) {
+        list.style.visibility = "visible";
+        list.setAttribute("aria-busy", "false");
+      }
+    }
+    list.addEventListener("scroll", () => {
+      if (list.clientHeight > 0) {
+        followLatest = isScrolledToBottom(list);
+      }
+    });
+    // Widget attachment and grid sizing can happen after history has rendered.
+    const scrollResizeObserver = new ResizeObserver(scrollToLatest);
+    scrollResizeObserver.observe(list);
+    list.addEventListener("load", scrollToLatest, true);
+
     async function load(options: TelegramLoadOptions = {}) {
-      const shouldScrollToBottom = options.scrollToBottom === true || isScrolledToBottom(list);
-      const previousScrollTop = list.scrollTop;
+      historyReady = false;
+      list.style.visibility = "hidden";
+      list.setAttribute("aria-busy", "true");
       refreshButton.disabled = true;
       try {
         const data = await service.getMessages(project, props);
@@ -1014,14 +1036,18 @@
         for (const message of liveMessages.values()) {
           currentMessages = service.mergeMessages(currentMessages, message);
         }
+        const previousScrollTop = list.scrollTop;
+        followLatest = options.scrollToBottom === true || followLatest;
         renderMessages(list, currentMessages, showImagePreview, activateChoice);
-        list.scrollTop = shouldScrollToBottom ? list.scrollHeight : previousScrollTop;
+        list.scrollTop = previousScrollTop;
       } catch (error) {
         setStatusText(status, {
           state: "error",
           summary: (error as Error).message
         });
       } finally {
+        historyReady = true;
+        scrollToLatest();
         refreshButton.disabled = false;
       }
     }
@@ -1163,12 +1189,11 @@
 
     const unsubscribeTelegramMessage = service.onMessage((update: TelegramUpdate) => {
       if (!shell.isConnected) {
-        unsubscribeTelegramMessage();
+        cleanup();
         return;
       }
       if (doesTelegramUpdateMatchTarget(update, service.getTarget(project, props.projectConfig || props.pluginConfig, props.globalPluginConfig))) {
         if (update.message) {
-          const shouldScrollToBottom = isScrolledToBottom(list);
           const messageId = normalizeText(update.message.id);
           if (messageId) {
             liveMessages.set(messageId, update.message);
@@ -1182,16 +1207,18 @@
           }
           currentMessages = service.mergeMessages(currentMessages, update.message);
           renderMessages(list, currentMessages, showImagePreview, activateChoice);
-          if (shouldScrollToBottom) {
-            list.scrollTop = list.scrollHeight;
-          }
+          scrollToLatest();
           return;
         }
         load();
       }
     });
 
-    return unsubscribeTelegramMessage;
+    function cleanup() {
+      scrollResizeObserver.disconnect();
+      unsubscribeTelegramMessage();
+    }
+    return cleanup;
   }
 
   function createTelegramPane(container: HTMLElement, props: TelegramConversationProps = {}, service: TelegramRendererService) {

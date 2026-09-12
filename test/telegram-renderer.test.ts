@@ -18,6 +18,18 @@ class FakeElement {
   tagName: string;
   textContent = "";
   title = "";
+  style: Record<string, string> = {};
+  clientHeight = 0;
+  scrollHeight = 0;
+  private scrollPosition = 0;
+  get scrollTop() {
+    return this.scrollPosition;
+  }
+  set scrollTop(value: number) {
+    this.scrollPosition = this.clientHeight > 0
+      ? Math.max(0, Math.min(value, this.scrollHeight - this.clientHeight))
+      : 0;
+  }
   private listeners = new Map<string, EventHandler[]>();
 
   constructor(tagName: string) {
@@ -30,6 +42,10 @@ class FakeElement {
 
   append(...children: FakeElement[]) {
     this.children.push(...children);
+  }
+
+  replaceChildren(...children: FakeElement[]) {
+    this.children = children;
   }
 
   addEventListener(name: string, handler: EventHandler) {
@@ -74,7 +90,7 @@ type RendererWindow = Record<string, unknown> & {
   window?: RendererWindow;
 };
 
-function loadTelegramRendererService(openedUrls: string[] = []): TelegramRendererService {
+function loadTelegramRendererWindow(openedUrls: string[] = [], overrides: Record<string, unknown> = {}): RendererWindow {
   const rendererWindow: RendererWindow = {
     boatyard: {
       invokePlugin: async () => ({
@@ -87,9 +103,11 @@ function loadTelegramRendererService(openedUrls: string[] = []): TelegramRendere
       }
     }
   };
+  Object.assign(rendererWindow, overrides);
   const context = {
     console,
     URL,
+    ResizeObserver: overrides.ResizeObserver,
     document: {
       createElement: (tagName: string) => new FakeElement(tagName)
     },
@@ -108,7 +126,11 @@ function loadTelegramRendererService(openedUrls: string[] = []): TelegramRendere
     throw new Error("Telegram plugin registry was not initialized.");
   }
   registry.applyEnabledState({});
-  return registry.getService("boatyard.telegram");
+  return rendererWindow;
+}
+
+function loadTelegramRendererService(openedUrls: string[] = []): TelegramRendererService {
+  return loadTelegramRendererWindow(openedUrls).BoatyardPluginRegistry!.getService("boatyard.telegram");
 }
 
 function findByTag(root: FakeElement, tagName: string): FakeElement | null {
@@ -154,6 +176,54 @@ function requireElement(element: FakeElement | null): FakeElement {
   }
   return element;
 }
+
+test("Telegram widget follows the latest message after delayed layout and image loading", async () => {
+  let notifyResize = () => {};
+  const rendererWindow = loadTelegramRendererWindow([], {
+    ResizeObserver: class {
+      constructor(callback: () => void) { notifyResize = callback; }
+      observe() {}
+      disconnect() {}
+    }
+  });
+  rendererWindow.boatyard.invokePlugin = async () => ({
+    status: { state: "ready" },
+    messages: [{ id: 1, text: "Latest message" }]
+  });
+  const widgets = rendererWindow.BoatyardWidgetRegistry as {
+    get(id: string): { createElement(project: unknown): FakeElement };
+  };
+  const card = widgets.get("boatyard.telegram.topic").createElement({});
+  const list = requireElement(findByClass(card, "telegram-message-list"));
+  assert.equal(list.style.visibility, "hidden", "History stays hidden while loading");
+  assert.equal(list.attributes.get("aria-busy"), "true");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(getText(list).includes("Latest message"), true);
+  assert.equal(list.scrollTop, 0, "A detached widget cannot scroll yet");
+  assert.equal(list.style.visibility, "hidden", "Loaded history waits for layout before appearing");
+
+  list.clientHeight = 300;
+  list.scrollHeight = 1000;
+  notifyResize();
+  assert.equal(list.scrollTop, 700, "Attachment scrolls the loaded history to the bottom");
+  assert.equal(list.style.visibility, "visible");
+  assert.equal(list.attributes.get("aria-busy"), "false");
+  list.trigger("scroll");
+  list.clientHeight = 200;
+  notifyResize();
+  assert.equal(list.scrollTop, 800, "Grid sizing keeps the latest message visible");
+  list.scrollHeight = 1200;
+  list.trigger("load");
+  assert.equal(list.scrollTop, 1000, "Late image loading keeps the bottom visible");
+
+  list.scrollTop = 100;
+  list.trigger("scroll");
+  list.clientHeight = 250;
+  notifyResize();
+  list.scrollHeight = 1400;
+  list.trigger("load");
+  assert.equal(list.scrollTop, 100, "Reading older messages disables automatic scrolling");
+});
 
 test("Telegram renderer creates safe DOM for rich message blocks", () => {
   const openedUrls: string[] = [];
