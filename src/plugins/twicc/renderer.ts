@@ -922,7 +922,7 @@
       return Number.NaN;
     }
 
-    return Math.abs(number) <= 2 ? number * 100 : number;
+    return number;
   }
 
   function getBurnRateArcSegments(value: unknown) {
