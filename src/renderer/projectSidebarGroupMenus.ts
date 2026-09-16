@@ -13,6 +13,7 @@ type ProjectSidebarGroupMenusOptions = {
   createProjectGroupForProject: (project: SidebarGroupProject, groupName: string) => Promise<void>;
   explodeProjectGroup: (groupName: string) => Promise<void>;
   isProjectPinned: (projectId: string) => boolean;
+  onMenuOpenChange?: (open: boolean) => void;
   selectEditProject: (projectId: string) => void;
   setProjectPinned: (projectId: string, pinned: boolean) => Promise<void>;
   showOverlayDialog: (dialog: HTMLDialogElement, options: Record<string, unknown>) => Promise<boolean>;
@@ -86,6 +87,7 @@ export function createProjectSidebarGroupMenus({
   createProjectGroupForProject,
   explodeProjectGroup,
   isProjectPinned,
+  onMenuOpenChange,
   selectEditProject,
   setProjectPinned,
   showOverlayDialog,
@@ -101,6 +103,7 @@ export function createProjectSidebarGroupMenus({
     openProjectGroupMenu.cleanup?.();
     openProjectGroupMenu.remove();
     openProjectGroupMenu = null;
+    onMenuOpenChange?.(false);
   }
 
   function openProjectCreateGroupDialog(project: SidebarGroupProject) {
@@ -262,6 +265,7 @@ export function createProjectSidebarGroupMenus({
 
     document.body.append(menu);
     openProjectGroupMenu = menu;
+    onMenuOpenChange?.(true);
 
     function onPointerDown(pointerEvent: PointerEvent) {
       if (pointerEvent.target instanceof Node && !menu.contains(pointerEvent.target)) {

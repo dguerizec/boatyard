@@ -68,6 +68,7 @@ export function createProjectSidebar({
     let sidebarOverlayCloseTimer: ReturnType<typeof setTimeout> | null = null;
     let sidebarOverlayFreezeRequest = 0;
     let sidebarOverlayOpening = false;
+    let sidebarContextMenuOpen = false;
     let sidebarOverlayPointer: { x: number; y: number } | null = null;
     const autoExpandedProjectGroups = new Set<string>();
     const {
@@ -92,6 +93,14 @@ export function createProjectSidebar({
       createProjectGroupForProject,
       explodeProjectGroup,
       isProjectPinned,
+      onMenuOpenChange(open) {
+        sidebarContextMenuOpen = open;
+        if (open) {
+          cancelSidebarOverlayClose();
+        } else {
+          scheduleSidebarOverlayClose();
+        }
+      },
       selectEditProject,
       setProjectPinned,
       showOverlayDialog,
@@ -228,7 +237,8 @@ export function createProjectSidebar({
       cancelSidebarOverlayClose();
       sidebarOverlayCloseTimer = setTimeout(() => {
         if (
-          !isSidebarOverlayPointerInside()
+          !sidebarContextMenuOpen
+          && !isSidebarOverlayPointerInside()
           && !document.querySelector(".sidebar:hover, .sidebar:focus-within, .sidebar-rail:hover, .sidebar-rail:focus")
         ) {
           closeSidebarOverlay();
@@ -1265,7 +1275,7 @@ export function createProjectSidebar({
       sidebar?.addEventListener("focusin", cancelSidebarOverlayClose);
       sidebar?.addEventListener("focusout", scheduleSidebarOverlayClose);
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
+        if (event.key === "Escape" && !sidebarContextMenuOpen) {
           closeSidebarOverlay();
         }
       });
