@@ -4,6 +4,7 @@ import {
   TERMINAL_TAB_RENAME_TOOLTIP
 } from "./terminalTabDom.js";
 import { createTerminalTabMenuController } from "./terminalTabMenu.js";
+import { createTerminalLinksAddon } from "./terminalLinks.js";
 import { createTerminalSelectionBridge } from "./terminalSelectionBridge.js";
 import { createTerminalAttachmentCoordinator } from "./terminalAttachmentCoordinator.js";
 import {
@@ -826,7 +827,7 @@ export function createTerminalSurfaces({
       const TerminalConstructor = getXtermConstructor(globalScope);
       const FitAddonConstructor = getFitAddonConstructor(globalScope);
 
-      if (!TerminalConstructor || !FitAddonConstructor) {
+      if (!TerminalConstructor || !FitAddonConstructor || !globalScope.WebLinksAddon?.WebLinksAddon) {
         setTerminalStatus(card, "Terminal renderer unavailable.");
         return false;
       }
@@ -853,6 +854,11 @@ export function createTerminalSurfaces({
       });
       const fitAddon = new FitAddonConstructor();
       term.loadAddon(fitAddon);
+      term.loadAddon(createTerminalLinksAddon(
+        globalScope.WebLinksAddon.WebLinksAddon,
+        globalScope,
+        (url) => boatyard.openExternal(url)
+      ));
       term.open(viewport);
       await nextAnimationFrame();
       if (!card.isConnected || !terminalAttachmentCoordinator.isCurrent(attachmentAttempt)) {

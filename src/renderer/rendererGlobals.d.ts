@@ -154,6 +154,7 @@ type FitAddonGlobal = FitAddonConstructor | {
 type TerminalSurfacesGlobal = Window & {
   Terminal?: XtermGlobal;
   FitAddon?: FitAddonGlobal;
+  WebLinksAddon?: { WebLinksAddon: typeof import("@xterm/addon-web-links").WebLinksAddon };
   BoatyardTerminalSurfaces?: RendererModuleFactory;
 };
 
