@@ -93,6 +93,7 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
     const tools = ((toolsPayload.result as Record<string, unknown>).tools as Array<Record<string, unknown>>);
     assert.deepEqual(tools.map((tool) => tool.name), [
       "list_windows",
+      "switch_project",
       "get_pane_layout",
       "list_pane_types",
       "capture_pane",
@@ -246,4 +247,64 @@ test("MCP publishes plugin tools, validates schemas and routes to the selected c
     const refreshed = await request("tools/list", {});
     assert.equal(refreshed.result?.tools?.some((entry) => entry.name === definition.id), false);
   } finally { await service.stop(); }
+});
+
+test("switch_project validates its target and routes navigation through the selected window", async () => {
+  const settings: McpSettings = {
+    enabled: true, managedClientTokens: {}, port: await reservePort(), token: "test-navigation-token"
+  };
+  const requests: unknown[] = [];
+  const service = new McpServerService({
+    api: {
+      capturePane: async () => ({ data: "", metadata: {}, mimeType: "image/png" }),
+      listWindows: () => ({ windows: [] }),
+      requestPane: async (contextId, windowId, operation, input) => {
+        requests.push({ contextId, windowId, operation, input });
+        if (input.projectId === "missing") {
+          throw Object.assign(new Error("Project is unavailable."), { code: "PROJECT_NOT_FOUND" });
+        }
+        return { projectId: input.projectId, view: "project" };
+      }
+    },
+    getSettings: () => settings,
+    version: "test"
+  });
+  try {
+    const status = await service.configure();
+    const call = async (input: Record<string, unknown>) => {
+      const response = await fetch(status.endpoint, {
+        method: "POST",
+        headers: {
+          Accept: "application/json, text/event-stream",
+          Authorization: `Bearer ${settings.token}`,
+          "Content-Type": "application/json",
+          "MCP-Protocol-Version": "2025-06-18"
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
+          params: { name: "switch_project", arguments: input } })
+      });
+      return parseMcpResponse(await response.text());
+    };
+    const input = { contextId: "context-2", windowId: "window-3", projectId: "project-1" };
+    const payload = await call(input);
+    assert.deepEqual((payload.result as Record<string, unknown>).structuredContent, {
+      projectId: "project-1", view: "project"
+    });
+    assert.deepEqual(requests, [{
+      contextId: "context-2", windowId: "window-3", operation: "switch_project", input
+    }]);
+    for (const key of ["contextId", "windowId", "projectId"]) {
+      const invalid = { ...input } as Record<string, unknown>;
+      delete invalid[key];
+      const rejected = await call(invalid);
+      assert.ok(rejected.error || (rejected.result as Record<string, unknown>)?.isError);
+    }
+    assert.equal(requests.length, 1);
+    const missing = await call({ ...input, projectId: "missing" });
+    const result = missing.result as { isError: boolean; content: Array<{ text: string }> };
+    assert.equal(result.isError, true);
+    assert.equal(JSON.parse(result.content[0].text).code, "PROJECT_NOT_FOUND");
+  } finally {
+    await service.stop();
+  }
 });

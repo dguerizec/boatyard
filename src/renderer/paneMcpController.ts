@@ -44,6 +44,8 @@ type PaneMcpControllerOptions = {
   ) => WebAppDefinition;
   navigateWebApp: (key: string, action: string, url: string) => Promise<boolean>;
   normalizeAddressInput: (value: string) => string;
+  selectGlobal: () => void;
+  selectProject: (projectId: string) => void;
   setCurrentWebAppUrl: (key: string, url: string) => void;
   updateMobileDevViewport: (
     project: RendererProject,
@@ -159,6 +161,8 @@ export function createPaneMcpController({
   getSelectedWebApp,
   navigateWebApp,
   normalizeAddressInput,
+  selectGlobal,
+  selectProject,
   setCurrentWebAppUrl,
   updateMobileDevViewport
 }: PaneMcpControllerOptions) {
@@ -413,6 +417,16 @@ export function createPaneMcpController({
   }
 
   async function handle(operation: string, input: PaneMcpInput) {
+    if (operation === "switch_project") {
+      const projectId = requiredString(input, "projectId");
+      resolveProject(projectId);
+      if (projectId === "__global__") {
+        selectGlobal();
+      } else {
+        selectProject(projectId);
+      }
+      return { projectId, view: projectId === "__global__" ? "global" : "project" };
+    }
     if (operation === "get_pane_layout") {
       return getPaneLayout(input);
     }

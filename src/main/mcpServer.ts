@@ -172,6 +172,12 @@ export class McpServerService {
       windowId: z.string().min(1).describe("Boatyard window ID returned by list_windows"),
       projectId: z.string().min(1).describe("Project ID returned by list_windows; use __global__ for Global")
     };
+    protocolServer.registerTool("switch_project", {
+      title: "Switch active project",
+      description: "Display a project in the selected Boatyard window using the sidebar navigation. Use __global__ to display Global. Other windows are unaffected.",
+      inputSchema: z.object(targetSchema),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    }, async (input) => this.invokePane("switch_project", input));
     protocolServer.registerTool("get_pane_layout", {
       title: "Get active pane layout",
       description: "Read the active split tree, selected choice, mobile viewport, and web navigation state of every pane.",

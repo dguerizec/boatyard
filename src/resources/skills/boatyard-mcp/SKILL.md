@@ -1,6 +1,6 @@
 ---
 name: boatyard-mcp
-description: List, move and prioritize TwiCC Kanban sessions; inspect Boatyard windows and pane layouts, enumerate every pane dropdown entry including dynamic subtypes, update pane content and mobile viewport settings, navigate web panes, and capture visible pane screenshots through the authenticated local Boatyard MCP server. Use when a user asks to manage TwiCC Kanban sessions or inspect, explain, change, or visually inspect panes in a running Boatyard instance. Do not use for splitting or closing panes because those operations are not exposed yet.
+description: List, move and prioritize TwiCC Kanban sessions; switch the active project, inspect Boatyard windows and pane layouts, enumerate every pane dropdown entry including dynamic subtypes, update pane content and mobile viewport settings, navigate web panes, and capture visible pane screenshots through the authenticated local Boatyard MCP server. Use when a user asks to manage TwiCC Kanban sessions, switch projects, or inspect, explain, change, or visually inspect panes in a running Boatyard instance. Do not use for splitting or closing panes because those operations are not exposed yet.
 ---
 
 # Boatyard MCP
@@ -44,6 +44,15 @@ hermes mcp add boatyard --url "<copied endpoint>" --auth header
 ```
 
 If the Boatyard tools are unavailable, stop and tell the user that the `boatyard` MCP connection must be enabled, installed, or repaired. Do not work around a missing connection by reading Boatyard's private configuration or token files.
+
+## Switch projects
+
+Call `list_windows` to resolve the requested window and project, then call
+`switch_project` with its `contextId`, `windowId`, and `projectId`. Use
+`projectId: "__global__"` to display Global. This uses the same navigation as the
+sidebar and affects only the selected window. The result reports `projectId`
+and `view`; it does not wait for embedded web content to finish loading.
+Unknown projects are rejected before navigation with `PROJECT_NOT_FOUND`.
 
 ## Inspect panes
 
@@ -102,7 +111,7 @@ Only the pane displayed in the selected window can be captured. If Boatyard repo
 
 ## Respect the current boundary
 
-The current MCP can list windows, inspect layouts, enumerate choices, update an existing pane's entry and mobile viewport, navigate its web content, and capture a visible pane. It cannot create a split, close a pane, start a process, or inspect the rendered page as structured DOM/content. State that limitation when one of those operations is required; do not simulate success through unrelated UI or filesystem actions.
+The current MCP can list windows, switch projects, inspect layouts, enumerate choices, update an existing pane's entry and mobile viewport, navigate its web content, and capture a visible pane. It cannot create a split, close a pane, start a process, or inspect the rendered page as structured DOM/content. State that limitation when one of those operations is required; do not simulate success through unrelated UI or filesystem actions.
 
 
 ## Manage TwiCC Kanban sessions

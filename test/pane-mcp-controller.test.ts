@@ -66,6 +66,8 @@ test("pane MCP controller reports exact choices and updates content and viewport
     },
     navigateWebApp: async () => true,
     normalizeAddressInput: (url) => url,
+    selectGlobal: () => undefined,
+    selectProject: () => undefined,
     setCurrentWebAppUrl: () => undefined,
     updateMobileDevViewport: (_project, _paneId, webApp, update) => {
       const current = viewports.get(String(webApp.id));
@@ -134,6 +136,8 @@ test("pane MCP controller rejects unavailable choices and viewport capabilities 
     getSelectedWebApp: () => choices[0],
     navigateWebApp: async () => false,
     normalizeAddressInput: (url) => url,
+    selectGlobal: () => undefined,
+    selectProject: () => undefined,
     setCurrentWebAppUrl: () => undefined,
     updateMobileDevViewport: () => null
   });
@@ -178,6 +182,8 @@ test("pane MCP controller navigates the selected web pane through the shared run
       return true;
     },
     normalizeAddressInput: (url) => `https://${url}`,
+    selectGlobal: () => undefined,
+    selectProject: () => undefined,
     setCurrentWebAppUrl: (_key, url) => { currentUrl = url; },
     updateMobileDevViewport: () => ({ enabled: false, height: 844, width: 390 })
   });
@@ -218,6 +224,8 @@ test("pane MCP controller exposes capture bounds only for a visible current pane
     getSelectedWebApp: () => choices[0],
     navigateWebApp: async () => false,
     normalizeAddressInput: (url) => url,
+    selectGlobal: () => undefined,
+    selectProject: () => undefined,
     setCurrentWebAppUrl: () => undefined,
     updateMobileDevViewport: () => null
   });
@@ -240,4 +248,39 @@ test("pane MCP controller exposes capture bounds only for a visible current pane
     paneId: "pane-1",
     expectedRevision: before.revision
   }), (error) => error instanceof PaneMcpError && error.code === "PANE_NOT_VISIBLE");
+});
+
+test("switch_project navigates to existing projects and Global, rejecting invalid targets before mutation", async () => {
+  const selected: string[] = [];
+  const controller = createPaneMcpController({
+    assignWebAppToPane: () => undefined,
+    findPaneNode: findPane,
+    getCurrentWebAppUrl: () => undefined,
+    getGlobalWorkspace: () => ({ id: "__global__" }),
+    getMobileDevViewport: () => null,
+    getProjectById: (id) => id === "project-1" ? { id } : null,
+    getProjectPaneLayout: () => { throw new Error("Switching does not inspect panes."); },
+    getProjectWebApps: () => [],
+    getSelectedWebApp: () => ({}),
+    navigateWebApp: async () => false,
+    normalizeAddressInput: (url) => url,
+    selectGlobal: () => { selected.push("__global__"); },
+    selectProject: (id) => { selected.push(id); },
+    setCurrentWebAppUrl: () => undefined,
+    updateMobileDevViewport: () => null
+  });
+
+  assert.deepEqual(await controller.handle("switch_project", { projectId: "project-1" }), {
+    projectId: "project-1", view: "project"
+  });
+  assert.deepEqual(await controller.handle("switch_project", { projectId: "__global__" }), {
+    projectId: "__global__", view: "global"
+  });
+  await assert.rejects(controller.handle("switch_project", { projectId: "missing" }),
+    (error) => error instanceof PaneMcpError && error.code === "PROJECT_NOT_FOUND");
+  for (const projectId of [undefined, "", " ", 12]) {
+    await assert.rejects(controller.handle("switch_project", { projectId }),
+      (error) => error instanceof PaneMcpError && error.code === "INVALID_REQUEST");
+  }
+  assert.deepEqual(selected, ["project-1", "__global__"]);
 });

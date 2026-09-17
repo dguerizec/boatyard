@@ -819,6 +819,8 @@ const paneMcpController = createPaneMcpController({
     await boatyardWindow.boatyard.navigateWebApp(key, action, url) === true
   ),
   normalizeAddressInput,
+  selectGlobal,
+  selectProject,
   setCurrentWebAppUrl: (key, url) => webAppRuntime.setCurrentWebAppUrl(key, url),
   updateMobileDevViewport: (project, paneId, webApp, update) => {
     const visibleProject = webAppRuntime.getVisibleWebAppProject();
