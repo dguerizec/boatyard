@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { PluginTools } from "../../shared/pluginTypes.js";
 import {
   loadTwiccSessionFlow,
+  resolveTwiccSession,
   updateTwiccSessionFlowLane,
   updateTwiccSessionFlowPosition
 } from "./service.js";
@@ -29,6 +30,15 @@ function requireSessions(flow: Flow, ids: string[]): void {
 }
 
 export function registerTwiccTools({ tools, getOptions, resolveProject }: ToolContext): void {
+  tools.register({
+    id: "boatyard.twicc.resolve_session",
+    title: "Resolve TwiCC session",
+    description: "Resolve an exact session ID, including archived or hidden sessions, to its title, live state and conversation URL. Does not open or mutate the session. Use open_twicc_session to display it in a Boatyard TwiCC pane.",
+    inputSchema: z.object({ sessionId: z.string().trim().min(1).max(200) }).strict(),
+    readOnly: true,
+    invoke: (input) => resolveTwiccSession(input.sessionId, getOptions())
+  });
+
   // Serialize MCP mutations in this configuration so their read/modify/write
   // sequences cannot interleave. TwiCC annotation writes are not transactional.
   let mutationQueue: Promise<unknown> = Promise.resolve();

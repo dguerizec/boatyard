@@ -98,7 +98,8 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
       "list_pane_types",
       "capture_pane",
       "update_pane",
-      "navigate_pane"
+      "navigate_pane",
+      "open_twicc_session"
     ]);
 
     const captureResponse = await fetch(status.endpoint, {
@@ -307,4 +308,67 @@ test("switch_project validates its target and routes navigation through the sele
   } finally {
     await service.stop();
   }
+});
+
+test("MCP opens a resolved TwiCC session and reports optional plugin/backend failures", async () => {
+  let enabled = true;
+  let failure = false;
+  const calls: unknown[] = [];
+  const settings: McpSettings = {
+    enabled: true, managedClientTokens: {}, port: await reservePort(), token: "test-session-open-token"
+  };
+  const service = new McpServerService({
+    api: {
+      listWindows: () => ({}),
+      capturePane: async () => ({ data: "", metadata: {}, mimeType: "image/png" }),
+      listPluginTools: () => enabled ? [{
+        id: "boatyard.twicc.resolve_session", title: "Resolve", description: "Resolve",
+        inputSchema: z.object({ sessionId: z.string() }), readOnly: true, invoke: async () => ({})
+      }] : [],
+      invokePluginTool: async (contextId, id, input) => {
+        calls.push({ contextId, id, input });
+        if (failure) { throw Object.assign(new Error("TwiCC unavailable"), { code: "TWICC_UNAVAILABLE" }); }
+        return { sessionId: input.sessionId, title: "Example", url: "https://twicc.example/project/p/session/s", requiresUserAction: true };
+      },
+      requestPane: async (contextId, windowId, operation, input) => {
+        calls.push({ contextId, windowId, operation, input });
+        return { navigated: true };
+      }
+    },
+    getSettings: () => settings, version: "test"
+  });
+  try {
+    const { endpoint } = await service.configure();
+    async function open() {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { Accept: "application/json, text/event-stream", Authorization: `Bearer ${settings.token}`,
+          "Content-Type": "application/json", "MCP-Protocol-Version": "2025-06-18" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: {
+          name: "open_twicc_session", arguments: {
+            contextId: "context", windowId: "window", projectId: "project", paneId: "pane",
+            expectedRevision: "revision", sessionId: "s"
+          }
+        } })
+      });
+      return parseMcpResponse(await response.text()).result as Record<string, unknown>;
+    }
+    const result = await open();
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(calls, [
+      { contextId: "context", id: "boatyard.twicc.resolve_session", input: { sessionId: "s" } },
+      { contextId: "context", windowId: "window", operation: "open_twicc_session", input: {
+        contextId: "context", windowId: "window", projectId: "project", paneId: "pane",
+        expectedRevision: "revision", sessionId: "s", url: "https://twicc.example/project/p/session/s"
+      } }
+    ]);
+    calls.length = 0;
+    failure = true;
+    assert.match(JSON.stringify(await open()), /TWICC_UNAVAILABLE/);
+    assert.equal(calls.length, 1);
+    calls.length = 0;
+    enabled = false;
+    assert.match(JSON.stringify(await open()), /TWICC_PLUGIN_UNAVAILABLE/);
+    assert.equal(calls.length, 0);
+  } finally { await service.stop(); }
 });

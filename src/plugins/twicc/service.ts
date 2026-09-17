@@ -746,6 +746,57 @@ async function readTwiccRows(
   }
 }
 
+export async function resolveTwiccSession(sessionId: unknown, options: TwiccCommandOptions = {}) {
+  const id = normalizeText(sessionId);
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,199}$/.test(id)) {
+    throw Object.assign(new Error("Enter a valid TwiCC session ID (letters, digits, hyphens or underscores)."), { code: "INVALID_SESSION_ID" });
+  }
+  let baseUrl: URL;
+  try {
+    baseUrl = new URL(normalizeBaseUrl(options.globalConfig?.twiccBaseUrl));
+    if (!["http:", "https:"].includes(baseUrl.protocol) || baseUrl.username || baseUrl.password) {
+      throw new Error("Invalid base URL");
+    }
+  } catch {
+    throw Object.assign(new Error("Configure an HTTP(S) TwiCC base URL without credentials."), { code: "TWICC_INVALID_CONFIGURATION" });
+  }
+  let session: unknown;
+  try {
+    session = await runTwiccCommand("session", { session_id: id }, ["session", id], options);
+  } catch (error) {
+    const message = normalizeCommandError(error, "TwiCC unavailable");
+    const denied = /401|403|permission|forbidden|unauthorized|rejected/i.test(message);
+    const missing = /404|not found|does not exist|unknown session/i.test(message);
+    throw Object.assign(new Error(denied
+      ? "TwiCC denied access. Check the API token and session permissions in TwiCC."
+      : missing ? "TwiCC session not found. Check the ID and configured TwiCC instance."
+        : "TwiCC is unavailable. Check its service and Boatyard TwiCC settings, then retry; other panes remain usable."),
+    { code: denied ? "TWICC_PERMISSION_DENIED" : missing ? "TWICC_SESSION_NOT_FOUND" : "TWICC_UNAVAILABLE" });
+  }
+  if (session === null) {
+    throw Object.assign(new Error("TwiCC session not found. Check the ID and configured instance."), { code: "TWICC_SESSION_NOT_FOUND" });
+  }
+  if (!isTwiccSession(session) || session.id !== id || !session.project_id) {
+    throw Object.assign(new Error("TwiCC returned incomplete session metadata. Open the session manually in TwiCC."), { code: "TWICC_INVALID_RESPONSE" });
+  }
+  const url = buildTwiccSessionUrl(session.project_id, id, baseUrl.toString());
+  let processState = "unknown";
+  let warning: string | null = null;
+  try {
+    const processes = await readTwiccRows("processes", { includeHidden: true }, options);
+    const process = processes.find((row) => row.session_id === id);
+    processState = process ? String(process.state || "unknown") : "stopped";
+  } catch {
+    warning = "Live process state is unavailable; check the conversation in TwiCC.";
+  }
+  return {
+    sessionId: id, projectId: session.project_id, title: session.title || id,
+    url, processState, warning,
+    requiresUserAction: processState === "awaiting_user_input",
+    guidance: "The TwiCC pane displays the conversation and latest messages. Complete login, permission prompts and pending user input there."
+  };
+}
+
 async function runTwiccCommand(
   command: string,
   body: Record<string, unknown>,

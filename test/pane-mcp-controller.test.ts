@@ -189,6 +189,12 @@ test("pane MCP controller navigates the selected web pane through the shared run
   });
   const before = controller.getPaneLayout({ projectId: "project-1" });
 
+  await assert.rejects(controller.handle("open_twicc_session", {
+    projectId: "project-1", paneId: "pane-1", expectedRevision: before.revision,
+    url: "twicc.example/session/example"
+  }), { code: "PANE_TYPE_NOT_AVAILABLE" });
+  assert.equal(navigations.length, 0);
+
   const result = await controller.navigatePane({
     projectId: "project-1",
     paneId: "pane-1",
@@ -203,6 +209,18 @@ test("pane MCP controller navigates the selected web pane through the shared run
     url: "https://next.example.test/path"
   }]);
   assert.equal(result.revision, before.revision);
+  choices[0].id = "twicc-plugin";
+  const twiccRevision = controller.getPaneLayout({ projectId: "project-1" }).revision;
+  await assert.rejects(controller.handle("open_twicc_session", {
+    projectId: "project-1", paneId: "pane-1", expectedRevision: before.revision,
+    url: "twicc.example/session/example"
+  }), { code: "LAYOUT_CHANGED" });
+  await controller.handle("open_twicc_session", {
+    projectId: "project-1", paneId: "pane-1", expectedRevision: twiccRevision,
+    url: "twicc.example/session/example"
+  });
+  assert.equal(navigations.length, 2);
+
   assert.equal((result.layout.navigation as Record<string, unknown>).currentUrl, "https://next.example.test/path");
 });
 

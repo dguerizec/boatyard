@@ -140,3 +140,26 @@ A move to Done does not archive or stop an agent. Mutation results can be partia
 check `allSucceeded` and individual `results`; report failures and refresh the
 list before retrying. Reordering writes the lane's order sequentially, so do not
 claim atomicity or overwrite newer user choices with a blind retry.
+
+## Open a TwiCC session by ID
+
+When asked to display a TwiCC session, inspect the window, layout and pane choices
+as above. Select the TwiCC conversation choice with `update_pane` if needed, then
+call `open_twicc_session` with `contextId`, `windowId`, `projectId`, `paneId`, the
+latest `expectedRevision`, and the full `sessionId`. It resolves the session's
+actual TwiCC project and navigates only an already-selected TwiCC conversation
+pane. Do not guess a project URL from the current repository.
+
+The result includes session title, process state, URL and navigation acknowledgement.
+`requiresUserAction` means the user should respond in TwiCC; never approve a prompt
+or send a message merely to display a session. The pane itself shows the transcript
+and live updates. Navigation acknowledgement does not prove rendering or web login.
+For lookup only, use the plugin's read-only `boatyard.twicc.resolve_session` tool.
+
+Handle `TWICC_SESSION_NOT_FOUND`, `TWICC_PERMISSION_DENIED`, `TWICC_UNAVAILABLE` and
+`TWICC_PLUGIN_UNAVAILABLE` explicitly: check ID, permissions, service/settings or
+plugin availability respectively. Do not retry against another TwiCC instance.
+Refresh the layout after `LAYOUT_CHANGED`; select the appropriate pane after
+`PANE_TYPE_NOT_AVAILABLE`. If MCP is unavailable, explain how to enable/repair its
+connection and offer manual navigation through the TwiCC pane. If TwiCC is also
+unavailable, other Boatyard panes remain usable. Do not extract tokens from files.

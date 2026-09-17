@@ -260,6 +260,33 @@ export class McpServerService {
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
     }, async (input) => this.invokePane("navigate_pane", input));
+    protocolServer.registerTool("open_twicc_session", {
+      title: "Open TwiCC session in Boatyard",
+      description: "Resolve a session ID and open its conversation in an existing TwiCC pane. First use list_windows, get_pane_layout and list_pane_types; select the TwiCC choice with update_pane if needed. Returns metadata and navigation acknowledgement, not proof of page rendering. Pending user actions are completed in TwiCC.",
+      inputSchema: z.object({
+        ...targetSchema,
+        paneId: z.string().min(1),
+        expectedRevision: z.string().min(1),
+        sessionId: z.string().trim().min(1).max(200)
+      }).strict(),
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true }
+    }, async (input) => {
+      try {
+        if (!this.api.invokePluginTool || !this.api.listPluginTools?.().some((tool) => tool.id === "boatyard.twicc.resolve_session")) {
+          throw Object.assign(new Error("Enable the TwiCC plugin to open sessions. Other Boatyard panes remain available."), { code: "TWICC_PLUGIN_UNAVAILABLE" });
+        }
+        const session = await this.api.invokePluginTool(input.contextId, "boatyard.twicc.resolve_session", {
+          sessionId: input.sessionId
+        }) as Record<string, unknown>;
+        const navigation = await this.api.requestPane(input.contextId, input.windowId, "open_twicc_session", {
+          ...input, url: session.url
+        });
+        return jsonResult({ session, navigation });
+      } catch (error) {
+        return errorResult(error);
+      }
+    });
+
     for (const tool of this.api.listPluginTools?.() || []) {
       protocolServer.registerTool(tool.id, {
         title: tool.title,

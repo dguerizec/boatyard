@@ -439,6 +439,14 @@ export function createPaneMcpController({
     if (operation === "update_pane") {
       return updatePane(input);
     }
+    if (operation === "open_twicc_session") {
+      const { selectedWebApp, layoutDescription } = getPaneContext(input);
+      assertExpectedRevision(input, layoutDescription.revision);
+      if (selectedWebApp.id !== "twicc-plugin") {
+        throw new PaneMcpError("PANE_TYPE_NOT_AVAILABLE", "Select the TwiCC conversation choice with update_pane, then retry with the new revision.");
+      }
+      return navigatePane({ ...input, action: "open" });
+    }
     if (operation === "navigate_pane") {
       return navigatePane(input);
     }

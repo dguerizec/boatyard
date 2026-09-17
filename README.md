@@ -160,6 +160,7 @@ Implemented built-in plugins:
 
 - `boatyard.github`: a repository pane with sticky Overview, Code, Issues, Pull requests, Actions, and Settings navigation; an Overview pane that reuses the Actions and Pull Requests widget views; the standalone project widgets; and a priority-driven project status icon. GitHub projects migrate legacy Repo pane selections to the GitHub Code surface, while the generic Repo pane remains available with a Git icon for other Git hosts. The section positions stay fixed while repository views expose browser controls through a dismissible overlay, including the existing right-click history and hard-reload actions. These surfaces use the project's repository URL, share cached refreshes, hidden workflow state, and filter behavior, and route API work through a plugin-local priority queue with a shared rate-limit cooldown. Review and CI states remain independent. Completed workflow results appear only after Boatyard has observed the workflow running, then remain until the project is selected again.
 - `boatyard.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
+- [Open a TwiCC session by ID through Boatyard MCP](docs/twicc-session-mcp.md).
 - `boatyard.twicc`: Twicc conversation pane with a configurable, resizable Session Flow sidebar and compact browser controls; standalone Session Flow pane and widget; global/project settings; project creation action; and service.
 - `boatyard.telegram`: Telegram project topic pane, widget, global/project settings, and service.
 
