@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.15.0] - 2026-09-18
+
+### Summary
+
+- **v0.15.0: Smoother Navigation** — Adds clickable terminal links and assistant-driven project and session navigation, while fixing Telegram history positioning, sidebar menus, and TwiCC usage warnings.
+
+### Added
+
+- **Terminal web links** — Hold Ctrl and click an HTTP or HTTPS link in a terminal to open it in your external browser.
+- **Project switching through MCP** — Connected assistants can switch a selected Boatyard window to a project or the Global view.
+- **TwiCC session navigation** — Connected assistants can open a TwiCC session by ID in a selected conversation pane without replacing unrelated panes.
+
+### Fixed
+
+- **Telegram history positioning** — Loaded conversations now appear at the latest message and stay positioned as images load, while preserving manual scrolling through history.
+- **Sidebar context menus** — The overlay sidebar stays open while a project or group menu is active, and Escape closes the menu before dismissing the sidebar.
+- **TwiCC usage warnings** — Low burn rates now display correctly instead of triggering inflated usage warnings and premature exhaustion forecasts.
+
+### Documentation
+
+- **TwiCC session navigation guide** — Documents MCP setup, session opening, and recovery when navigation needs manual attention.
+
 ## [0.14.1] - 2026-09-09
 
 ### Summary
