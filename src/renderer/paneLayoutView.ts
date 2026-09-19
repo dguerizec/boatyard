@@ -29,11 +29,10 @@ import {
   type PaneMinimumAxis
 } from "./paneSplitGeometry.js";
 import {
-  clampPaneSidePanelWidth,
-  getPaneSidePanelStorageKey,
-  resizePaneSidePanelWidth
+  getPaneSidePanelStorageKey
 } from "./paneSidePanel.js";
 import { createPaneTranslation } from "./paneTranslation.js";
+import { createResizablePaneSidePanel } from "./resizablePaneSidePanel.js";
 import { attachPanePointerResize } from "./panePointerResize.js";
 
 type PaneLayoutHost = HTMLDivElement & {
@@ -1430,116 +1429,10 @@ export function createPaneLayoutView({
       state: PaneSidePanelState,
       persistKey: string
     ) {
-      const shell = document.createElement("div");
-      shell.className = "webapp-side-panel-shell";
-      shell.dataset.position = sidePanel.position;
-
-      const viewport = document.createElement("div");
-      viewport.className = "webapp-side-panel-viewport";
-
-      const panel = document.createElement("aside");
-      panel.className = "webapp-side-panel";
-      panel.setAttribute("aria-label", sidePanel.title);
-
-      const separator = document.createElement("div");
-      separator.className = "webapp-side-panel-separator";
-      separator.tabIndex = 0;
-      separator.setAttribute("role", "separator");
-      separator.setAttribute("aria-label", `Resize ${sidePanel.title}`);
-      separator.setAttribute("aria-orientation", "vertical");
-
-      if (sidePanel.position === "right") {
-        shell.append(viewport, separator, panel);
-      } else {
-        shell.append(panel, separator, viewport);
-      }
-      host.append(shell);
-
-      function applySize({ clampToHost = true } = {}) {
-        const containerWidth = shell.getBoundingClientRect().width;
-        const appliedWidth = clampToHost && containerWidth > 0
-          ? clampPaneSidePanelWidth(state.width, containerWidth, sidePanel)
-          : state.width;
-        panel.hidden = !state.open;
-        separator.hidden = !state.open;
-        panel.style.width = state.open ? `${appliedWidth}px` : "0px";
-        shell.dataset.open = String(state.open);
-        separator.setAttribute("aria-valuemin", String(sidePanel.minWidth));
-        separator.setAttribute("aria-valuemax", String(sidePanel.maxWidth));
-        separator.setAttribute("aria-valuenow", String(appliedWidth));
-      }
-
-      let startWidth = state.width;
-      const cleanupPointerResize = attachPanePointerResize(separator, {
-        canStart() {
-          startWidth = state.width;
-          return state.open;
-        },
-        onMove(moveEvent, origin) {
-          state.width = resizePaneSidePanelWidth({
-            clientX: moveEvent.clientX,
-            containerWidth: shell.getBoundingClientRect().width,
-            position: sidePanel.position,
-            sidePanel,
-            startClientX: origin.clientX,
-            startWidth
-          });
-          applySize({ clampToHost: false });
-          queueWebAppSync();
-        },
-        onCommit() {
-          persistPaneSidePanelState(persistKey, state);
-          queueWebAppSync();
-        }
+      return createResizablePaneSidePanel(host, sidePanel, state, {
+        onPersist: () => persistPaneSidePanelState(persistKey, state),
+        onResize: queueWebAppSync
       });
-
-      const handleSeparatorKeyDown = (event: KeyboardEvent) => {
-        if (!state.open || !["ArrowLeft", "ArrowRight"].includes(event.key)) {
-          return;
-        }
-        event.preventDefault();
-        const direction = event.key === "ArrowRight" ? 1 : -1;
-        const panelDirection = sidePanel.position === "right" ? -direction : direction;
-        state.width = clampPaneSidePanelWidth(
-          state.width + panelDirection * 16,
-          shell.getBoundingClientRect().width,
-          sidePanel
-        );
-        applySize({ clampToHost: false });
-        persistPaneSidePanelState(persistKey, state);
-        queueWebAppSync();
-      };
-      separator.addEventListener("keydown", handleSeparatorKeyDown);
-
-      let resizeObserver: ResizeObserver | null = null;
-      if (typeof ResizeObserver === "function") {
-        resizeObserver = new ResizeObserver(() => {
-          applySize();
-          queueWebAppSync();
-        });
-        resizeObserver.observe(shell);
-      }
-
-      applySize({ clampToHost: false });
-      window.requestAnimationFrame(() => {
-        applySize();
-        queueWebAppSync();
-      });
-
-      return {
-        cleanup() {
-          resizeObserver?.disconnect();
-          cleanupPointerResize();
-          separator.removeEventListener("keydown", handleSeparatorKeyDown);
-        },
-        panel,
-        sync() {
-          applySize();
-          persistPaneSidePanelState(persistKey, state);
-          queueWebAppSync();
-        },
-        viewport
-      };
     }
 
     function applySplitRatio(splitElement: HTMLElement, splitNode: PaneLayoutNode) {

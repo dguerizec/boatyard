@@ -99,3 +99,20 @@
 
 .file-editor-body[hidden], .file-editor-preview[hidden] { display: none; }
 .file-editor-preview { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--panel); }
+
+.file-editor-workspace { display: flex; flex: 1; min-width: 0; min-height: 0; overflow: hidden; }
+.file-editor-main { display: flex; flex-direction: column; background: var(--panel); }
+.file-browser { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 14px; background: var(--panel); }
+.file-browser-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); }
+.file-browser ul { list-style: none; margin: 0; padding: 0 0 0 12px; }
+.file-browser .file-browser-tree { flex: 1; min-height: 0; overflow: auto; padding: 6px; }
+.file-browser ul[hidden] { display: none; }
+.file-browser li { min-width: 0; }
+.file-editor .file-browser-entry { display: flex; align-items: center; gap: 5px; width: 100%; min-height: 30px; text-align: left; border: 1px solid transparent; background: transparent; padding: 4px; }
+.file-browser-entry-icon { flex: 0 0 14px; color: var(--muted); text-align: center; }
+.file-browser-entry-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.file-editor .file-browser-entry:hover { background: rgba(var(--accent-rgb), .08); }
+.file-editor .file-browser-entry[aria-current="page"] { background: rgba(var(--accent-rgb), .14); border-color: rgba(var(--accent-rgb), .4); color: var(--success-text); }
+.file-browser-message { padding: 8px; color: var(--muted); overflow-wrap: anywhere; }
+.file-browser-message button { display: block; margin-top: 6px; }
+.file-browser-more { margin: 6px 0; }

@@ -4,6 +4,16 @@ type IconNode = [tag: string, attrs: Record<string, string>][];
 
 // Selected Lucide icons, kept as local data so the renderer never depends on a CDN.
 const LUCIDE_TOOL_ICONS: Record<string, IconNode> = {
+  eye: [
+    ["path", { d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" }],
+    ["circle", { cx: "12", cy: "12", r: "3" }]
+  ],
+  folderTree: [
+    ["path", { d: "M20 10a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1h-2.5a1 1 0 0 1-.8-.4l-.9-1.2A1 1 0 0 0 15 3h-2a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z" }],
+    ["path", { d: "M20 21a1 1 0 0 0 1-1v-3a1 1 0 0 0-1-1h-2.9a1 1 0 0 1-.88-.55l-.42-.85a1 1 0 0 0-.92-.6H13a1 1 0 0 0-1 1v5a1 1 0 0 0 1 1Z" }],
+    ["path", { d: "M3 5a2 2 0 0 0 2 2h3" }],
+    ["path", { d: "M3 3v13a2 2 0 0 0 2 2h3" }]
+  ],
   git: [
     ["circle", { cx: "6", cy: "3", r: "3" }],
     ["circle", { cx: "18", cy: "6", r: "3" }],

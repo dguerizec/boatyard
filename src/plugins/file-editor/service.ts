@@ -74,3 +74,41 @@ export function saveProjectFile(root: string, file: string, text: string, revisi
     if (existsSync(temporary)) unlinkSync(temporary);
   }
 }
+
+export type ProjectDirectoryEntry = {
+  name: string;
+  path: string;
+  kind: "directory" | "file" | "unavailable";
+};
+export type ProjectDirectoryPage = {
+  path: string;
+  entries: ProjectDirectoryEntry[];
+  nextOffset: number | null;
+  total: number;
+};
+
+/** Read one directory only; avoid recursive scans of large worktrees. */
+export async function listProjectDirectory(root: string, directory = "", offset = 0): Promise<ProjectDirectoryPage> {
+  const base = realpathSync(root);
+  const target = directory === "" || directory === "." ? base : resolveProjectFile(root, directory);
+  if (!statSync(target).isDirectory()) throw new Error("Choose a project directory.");
+  if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Invalid directory offset.");
+  const { opendir } = await import("node:fs/promises");
+  const entries: ProjectDirectoryEntry[] = [];
+  for await (const entry of await opendir(target)) {
+    if (entries.length >= 10000) throw new Error("This directory has more than 10,000 entries. Enter a file path directly to open it.");
+    const path = relative(base, resolve(target, entry.name));
+    let kind: ProjectDirectoryEntry["kind"] = entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "unavailable";
+    if (entry.isSymbolicLink()) {
+      try {
+        const linked = statSync(resolveProjectFile(root, path));
+        kind = linked.isDirectory() ? "directory" : linked.isFile() ? "file" : "unavailable";
+      } catch { /* Outside-project and broken links stay visible but cannot be opened. */ }
+    }
+    entries.push({ name: entry.name, path, kind });
+  }
+  const order = { directory: 0, file: 1, unavailable: 2 };
+  entries.sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name, "en", { numeric: true }) || a.name.localeCompare(b.name));
+  const nextOffset = Math.min(entries.length, offset + 200);
+  return { path: relative(base, target), entries: entries.slice(offset, nextOffset), nextOffset: nextOffset < entries.length ? nextOffset : null, total: entries.length };
+}

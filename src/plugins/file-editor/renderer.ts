@@ -10,7 +10,11 @@ import { html } from "@codemirror/lang-html";
 import { markdown } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
 import { EditorDocument, type EditorDraft } from "./document";
-import type { FileSnapshot } from "./service";
+import type { FileSnapshot, ProjectDirectoryPage } from "./service";
+import { createToolIcon } from "../../renderer/toolIcons";
+import { createProjectFileBrowser } from "./browser";
+import { createResizablePaneSidePanel } from "../../renderer/resizablePaneSidePanel";
+import { normalizePaneSidePanel } from "../../renderer/paneSidePanel";
 import { createPreviewDocument, supportsPreview } from "./preview";
 
 const scope = window as BoatyardPluginRendererGlobal;
@@ -19,6 +23,47 @@ const positions = new Map<string, { anchor: number; head: number; scrollTop: num
 const pluginId = "boatyard.fileEditor";
 const documents = new Map<string, EditorDocument>();
 const active = new Map<EditorDocument, number>();
+type PaneControl = { open: boolean; enabled: boolean; label: string; button: HTMLButtonElement | null; toggle: (() => void) | null };
+const paneControls = new WeakMap<HTMLElement, Map<string, PaneControl>>();
+function getPaneControl(host: HTMLElement, key: "browse" | "preview"): PaneControl {
+  let controls = paneControls.get(host);
+  if (!controls) {
+    controls = new Map();
+    paneControls.set(host, controls);
+  }
+  let control = controls.get(key);
+  if (!control) {
+    control = { open: false, enabled: false, label: key === "browse" ? "project files" : "preview", button: null, toggle: null };
+    controls.set(key, control);
+  }
+  return control;
+}
+function syncPaneControl(control: PaneControl) {
+  if (!control.button) return;
+  control.button.disabled = !control.enabled || !control.toggle;
+  control.button.classList.toggle("active", control.open);
+  control.button.setAttribute("aria-pressed", String(control.open));
+  control.button.title = `${control.open ? "Hide" : "Show"} ${control.label}`;
+}
+function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord = {}) {
+  if (!(props.host instanceof HTMLElement)) return undefined;
+  const cleanups: Array<() => void> = [];
+  for (const definition of [
+    { key: "browse", icon: "folderTree", label: "Browse project files" },
+    { key: "preview", icon: "eye", label: "Preview" }
+  ] as const) {
+    const control = getPaneControl(props.host, definition.key);
+    const action = button("", () => control.toggle?.());
+    action.className = `webapp-tool-button file-editor-${definition.key}-button`;
+    action.setAttribute("aria-label", definition.label);
+    action.append(createToolIcon(definition.icon));
+    control.button = action;
+    syncPaneControl(control);
+    container.append(action);
+    cleanups.push(() => { if (control.button === action) control.button = null; });
+  }
+  return () => cleanups.forEach((cleanup) => cleanup());
+}
 let timer: ReturnType<typeof setInterval> | undefined;
 
 function poll() {
@@ -44,9 +89,9 @@ function subscribe(doc: EditorDocument, listener: () => void) {
   };
 }
 
-async function invoke(action: string, projectId: string, payload: Record<string, unknown> = {}) {
+async function invoke<T = FileSnapshot | null>(action: string, projectId: string, payload: Record<string, unknown> = {}) {
   if (!scope.boatyard?.invokePlugin) throw new Error("File access is unavailable.");
-  return await scope.boatyard.invokePlugin(pluginId, action, { ...payload, projectId }) as FileSnapshot | null;
+  return await scope.boatyard.invokePlugin(pluginId, action, { ...payload, projectId }) as T;
 }
 
 function language(path: string) {
@@ -83,6 +128,8 @@ function readDraft(key: string): EditorDraft | undefined {
 }
 
 function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
+  const previewControl = getPaneControl(container, "preview");
+  previewControl.enabled = false;
   const project = (props.project || {}) as { id: string; sourcePath: string };
   const prefix = `boatyard:file-editor:${JSON.stringify([project.id, project.sourcePath])}:`;
   const paneKey = `${prefix}pane:${String(props.paneId || "default")}`;
@@ -176,7 +223,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     previewVersion++;
     previewPendingSource = "";
     previewVisible = visible && Boolean(doc && supportsPreview(doc.base.path));
-    previewButton.setAttribute("aria-pressed", String(previewVisible));
+    previewControl.open = previewVisible;
+    syncPaneControl(previewControl);
     previewFrame.hidden = !previewVisible;
     editorHost.hidden = previewVisible;
     findButton.disabled = !view || previewVisible;
@@ -222,14 +270,9 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
 
   const openButton = button("Open", () => void openFile(pathInput.value));
-  const browseButton = button("Browse…", () => void openFile());
   const saveButton = button("Save", () => { if (doc) void doc.save(); });
   saveButton.title = "Save (Ctrl/Cmd+S)";
   saveButton.disabled = true;
-  const previewButton = button("Preview", () => setPreview(!previewVisible));
-  previewButton.setAttribute("aria-pressed", "false");
-  previewButton.title = "Preview Markdown, HTML or Mermaid";
-  previewButton.disabled = true;
   const findButton = button("Find", () => {
     if (!view) return;
     if (searchPanelOpen(view.state)) closeSearchPanel(view);
@@ -310,25 +353,25 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length), head: Math.min(position.head, view.state.doc.length) } });
       view.scrollDOM.scrollTop = position.scrollTop;
     }
-    previewButton.disabled = !supportsPreview(doc.base.path);
+    previewControl.enabled = supportsPreview(doc.base.path);
     setPreview(previewVisible);
     findButton.setAttribute("aria-pressed", String(searchPanelOpen(view.state)));
     refreshUi();
   }
 
-  async function openFile(path?: string) {
+  async function openFile(path: string) {
     if (opening || disposed) return;
     // Switching files preserves the previous draft, including when other panes show it.
     persist();
     if (persistenceError && doc?.dirty) { showError(persistenceError); return; }
     opening = true;
-    openButton.disabled = browseButton.disabled = true;
+    openButton.disabled = true;
     try {
       let snapshot: FileSnapshot | null;
       try {
-        snapshot = await invoke(path === undefined ? "choose" : "read", project.id, path === undefined ? {} : { path });
+        snapshot = await invoke("read", project.id, { path });
       } catch (error) {
-        const draft = path === undefined ? undefined : readDraft(draftKey(path));
+        const draft = readDraft(draftKey(path));
         if (!draft) throw error;
         // Missing or inaccessible files must not make their saved draft inaccessible.
         snapshot = { path: draft.path, text: draft.baseText, revision: draft.revision };
@@ -347,6 +390,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       unsubscribe?.();
       doc = next;
       pathInput.value = snapshot.path;
+      fileBrowser.setSelected(snapshot.path);
       setNotices();
       unsubscribe = subscribe(doc, refreshUi);
       rebuild();
@@ -355,7 +399,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     } catch (error) { if (!disposed) showError(error); }
     finally {
       opening = false;
-      openButton.disabled = browseButton.disabled = false;
+      openButton.disabled = false;
     }
   }
 
@@ -377,9 +421,52 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   });
   draftsButton.setAttribute("aria-pressed", "false");
   toolbar.addEventListener("submit", (event) => { event.preventDefault(); void openFile(pathInput.value); });
-  toolbar.append(pathInput, openButton, browseButton, saveButton, previewButton, findButton, draftsButton);
-  root.append(toolbar, notices, compare, editorHost, previewFrame, status);
+  toolbar.append(pathInput, openButton, saveButton, findButton, draftsButton);
+  const workspace = element("div", "file-editor-workspace");
+  const browserKey = `${paneKey}:browser`;
+  const browserState = { open: false, width: 240 };
+  try {
+    const saved = JSON.parse(localStorage.getItem(browserKey) || "null");
+    if (saved) {
+      browserState.open = saved.open === true;
+      if (Number.isFinite(saved.width)) browserState.width = Math.max(160, Math.min(520, saved.width));
+    }
+  } catch { /* Use defaults when browser settings cannot be restored. */ }
+  const browserLayout = createResizablePaneSidePanel(workspace, normalizePaneSidePanel({
+    title: "Project files", defaultOpen: false, defaultWidth: 240,
+    minWidth: 160, maxWidth: 520, minMainWidth: 160, position: "left"
+  })!, browserState, {
+    onPersist() {
+      try { localStorage.setItem(browserKey, JSON.stringify(browserState)); }
+      catch { /* Browsing remains available without persisted layout settings. */ }
+    },
+    onResize: () => view?.requestMeasure()
+  });
+  const fileBrowser = createProjectFileBrowser({
+    list: (path, offset) => invoke<ProjectDirectoryPage>("list", project.id, { path, offset }),
+    openFile
+  });
+  browserLayout.panel.append(fileBrowser.element);
+  browserLayout.viewport.classList.add("file-editor-main");
+  browserLayout.viewport.append(notices, compare, editorHost, previewFrame);
+  const browserControl = getPaneControl(container, "browse");
+  browserControl.open = browserState.open;
+  browserControl.enabled = true;
+  const toggleBrowser = () => {
+    browserState.open = !browserState.open;
+    browserControl.open = browserState.open;
+    syncPaneControl(browserControl);
+    browserLayout.sync();
+    if (browserState.open) fileBrowser.show();
+  };
+  const togglePreview = () => setPreview(!previewVisible);
+  previewControl.toggle = togglePreview;
+  syncPaneControl(previewControl);
+  browserControl.toggle = toggleBrowser;
+  syncPaneControl(browserControl);
+  root.append(toolbar, workspace, status);
   container.replaceChildren(root);
+  if (browserState.open) fileBrowser.show();
   try {
     const path = localStorage.getItem(paneKey);
     if (path) { pathInput.value = path; void openFile(path); }
@@ -389,6 +476,16 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     rememberPosition();
     clearTimeout(previewTimer);
     themeObserver.disconnect();
+    fileBrowser.cleanup();
+    browserLayout.cleanup();
+    if (browserControl.toggle === toggleBrowser) {
+      browserControl.toggle = null;
+      syncPaneControl(browserControl);
+    }
+    if (previewControl.toggle === togglePreview) {
+      previewControl.toggle = null;
+      syncPaneControl(previewControl);
+    }
     disposed = true;
     unsubscribe?.();
     view?.destroy();
@@ -404,7 +501,7 @@ registry?.register({
     ctx.panes.register({
       id: "boatyard.fileEditor.editor", webAppId: "boatyard.fileEditor.editor", key: "file-editor",
       title: "File Editor", icon: "fileEditor", kind: "dom", scope: "project",
-      isAvailable: ({ project } = {}) => Boolean(project?.sourcePath), render
+      isAvailable: ({ project } = {}) => Boolean(project?.sourcePath), render, renderHeaderActions
     });
   }
 });

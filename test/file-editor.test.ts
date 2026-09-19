@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync, statSync, chmodSync, linkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readProjectFile, saveProjectFile, MAX_FILE_BYTES } from "../src/plugins/file-editor/service";
+import { listProjectDirectory, readProjectFile, saveProjectFile, MAX_FILE_BYTES } from "../src/plugins/file-editor/service";
 import { EditorDocument, type FileAccess } from "../src/plugins/file-editor/document";
 
 function fixture() {
@@ -161,4 +161,53 @@ test("a save requested during a background read waits instead of being dropped",
   await Promise.all([refreshing, saving]);
   assert.equal(saved, "draft");
   assert.equal(doc.dirty, false);
+});
+
+
+test("project browser lists directories first, including hidden files, without recursing", async () => {
+  const f = fixture();
+  try {
+    mkdirSync(join(f.root, "docs"));
+    writeFileSync(join(f.root, ".gitignore"), "build/");
+    writeFileSync(join(f.root, "docs", "readme.md"), "# Docs");
+    const root = await listProjectDirectory(f.root);
+    assert.deepEqual(root.entries.map((entry) => [entry.name, entry.kind]), [["docs", "directory"], [".gitignore", "file"], ["file.ts", "file"]]);
+    assert.equal(root.nextOffset, null);
+    const docs = await listProjectDirectory(f.root, "docs");
+    assert.deepEqual(docs.entries, [{ name: "readme.md", path: join("docs", "readme.md"), kind: "file" }]);
+    await assert.rejects(listProjectDirectory(f.root, "file.ts"), /directory/);
+  } finally { f.cleanup(); }
+});
+
+test("project browser blocks traversal and outside links while allowing in-project directories", async () => {
+  const f = fixture();
+  try {
+    mkdirSync(join(f.root, "docs"));
+    symlinkSync(f.directory, join(f.root, "outside"));
+    symlinkSync(join(f.root, "missing"), join(f.root, "broken"));
+    symlinkSync(join(f.root, "docs"), join(f.root, "inside"));
+    const page = await listProjectDirectory(f.root);
+    assert.equal(page.entries.find((entry) => entry.name === "outside")?.kind, "unavailable");
+    assert.equal(page.entries.find((entry) => entry.name === "broken")?.kind, "unavailable");
+    assert.equal(page.entries.find((entry) => entry.name === "inside")?.kind, "directory");
+    assert.equal((await listProjectDirectory(f.root, "inside")).total, 0);
+    await assert.rejects(listProjectDirectory(f.root, "../"), /inside this project/);
+    await assert.rejects(listProjectDirectory(f.root, "outside"), /inside this project/);
+  } finally { f.cleanup(); }
+});
+
+test("project browser paginates large folders without dropping entries", async () => {
+  const f = fixture();
+  try {
+    for (let index = 0; index < 220; index++) writeFileSync(join(f.root, `item-${index}.txt`), "");
+    const first = await listProjectDirectory(f.root);
+    assert.equal(first.entries.length, 200);
+    assert.equal(first.total, 221);
+    assert.equal(first.nextOffset, 200);
+    const second = await listProjectDirectory(f.root, "", first.nextOffset!);
+    assert.equal(second.entries.length, 21);
+    assert.equal(second.nextOffset, null);
+    assert.equal(new Set([...first.entries, ...second.entries].map((entry) => entry.path)).size, 221);
+    await assert.rejects(listProjectDirectory(f.root, "", -1), /offset/);
+  } finally { f.cleanup(); }
 });

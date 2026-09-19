@@ -1,9 +1,8 @@
-import { dialog } from "electron";
 import type { PluginContext } from "../../shared/pluginTypes";
-import { readProjectFile, saveProjectFile } from "./service";
+import { listProjectDirectory, readProjectFile, saveProjectFile } from "./service";
 
 type EditorState = { projects?: { id: string; sourcePath?: string }[] };
-type FileInput = { projectId?: string; path?: string; text?: string; revision?: string };
+type FileInput = { projectId?: string; path?: string; text?: string; revision?: string; offset?: number };
 
 export function activate(ctx: PluginContext<EditorState>) {
   function rootFor(projectId?: string): string {
@@ -15,9 +14,7 @@ export function activate(ctx: PluginContext<EditorState>) {
   ctx.actions.handle<FileInput>("save", (input = {}) => saveProjectFile(
     rootFor(input.projectId), input.path || "", input.text!, input.revision || ""
   ));
-  ctx.actions.handle<FileInput>("choose", async (input = {}) => {
-    const root = rootFor(input.projectId);
-    const result = await dialog.showOpenDialog({ title: "Open project file", defaultPath: root, properties: ["openFile"] });
-    return result.canceled ? null : readProjectFile(rootFor(input.projectId), result.filePaths[0]);
-  });
+  ctx.actions.handle<FileInput>("list", (input = {}) => listProjectDirectory(
+    rootFor(input.projectId), input.path || "", input.offset ?? 0
+  ));
 }
