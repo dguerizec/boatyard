@@ -107,6 +107,16 @@ buildSync({
   target: "chrome142",
   minify: true
 });
+// Keep the diagram engine out of the editor's initial bundle.
+buildSync({
+  entryPoints: ["src/plugins/file-editor/mermaid.ts"],
+  outfile: "build/plugins/file-editor/mermaid.js",
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  target: "chrome142",
+  minify: true
+});
 writeFileSync(
   join(buildRoot, "package.json"),
   `${JSON.stringify({ main: "main/main.js" }, null, 2)}\n`

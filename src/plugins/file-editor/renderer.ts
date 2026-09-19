@@ -11,6 +11,7 @@ import { markdown } from "@codemirror/lang-markdown";
 import { python } from "@codemirror/lang-python";
 import { EditorDocument, type EditorDraft } from "./document";
 import type { FileSnapshot } from "./service";
+import { createPreviewDocument, supportsPreview } from "./preview";
 
 const scope = window as BoatyardPluginRendererGlobal;
 const registry = scope.BoatyardPluginRegistry;
@@ -98,6 +99,17 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const editorHost = element("div", "file-editor-body");
   const empty = element("p", "file-editor-empty", "Open a file to start editing. Unsaved drafts are kept locally.");
   editorHost.append(empty);
+  const previewFrame = element("iframe", "file-editor-preview");
+  previewFrame.title = "File preview";
+  previewFrame.setAttribute("sandbox", "allow-same-origin");
+  previewFrame.hidden = true;
+  let previewVisible = false;
+  let previewTimer: ReturnType<typeof setTimeout> | undefined;
+  let previewSource = "";
+  let previewPendingSource = "";
+  let previewVersion = 0;
+  let previewScrollTop = 0;
+  let previewPath = "";
   let doc: EditorDocument | undefined;
   let view: EditorView | undefined;
   let unsubscribe: (() => void) | undefined;
@@ -111,8 +123,72 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const editorTheme = () => document.documentElement.dataset.theme === "light" ? [] : oneDark;
   const themeObserver = new MutationObserver(() => {
     view?.dispatch({ effects: theme.reconfigure(editorTheme()) });
+    schedulePreview();
   });
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  function schedulePreview() {
+    if (!previewVisible || !doc || disposed) return;
+    const source = JSON.stringify([doc.base.path, doc.text, document.documentElement.dataset.theme]);
+    if (source === previewSource || source === previewPendingSource) return;
+    previewPendingSource = source;
+    clearTimeout(previewTimer);
+    const version = ++previewVersion;
+    previewTimer = setTimeout(async () => {
+      if (!previewVisible || !doc || disposed) return;
+      try {
+        const sameFile = previewPath === doc.base.path;
+        previewScrollTop = sameFile ? previewFrame.contentDocument?.scrollingElement?.scrollTop || 0 : 0;
+        previewPath = doc.base.path;
+        const styles = getComputedStyle(root);
+        const color = (name: string) => styles.getPropertyValue(name).trim();
+        const output = await createPreviewDocument(doc.text, doc.base.path, {
+          background: color("--panel"), text: color("--text"), muted: color("--muted"),
+          accent: color("--accent"), line: color("--line"), dark: document.documentElement.dataset.theme !== "light"
+        }, () => !disposed && previewVisible && version === previewVersion);
+        if (disposed || !previewVisible || version !== previewVersion) return;
+        previewFrame.srcdoc = output;
+        previewSource = source;
+      } catch (error) { if (!disposed && version === previewVersion) showError(error); }
+      finally { if (version === previewVersion) previewPendingSource = ""; }
+    }, 150);
+  }
+  previewFrame.addEventListener("load", () => {
+    const content = previewFrame.contentDocument;
+    if (!content || disposed) return;
+    if (content.scrollingElement) content.scrollingElement.scrollTop = previewScrollTop;
+    content.addEventListener("click", (event) => {
+      const target = event.target as Element | null;
+      const link = target?.closest?.("a");
+      if (!link) return;
+      const href = link.getAttribute("href") || "";
+      if (href.startsWith("#")) return;
+      event.preventDefault();
+      if (/^https?:\/\//i.test(href)) {
+        void scope.boatyard?.openExternal?.(href);
+      } else if (href && !/^[a-z][a-z\d+.-]*:|^\/\//i.test(href)) {
+        const directory = previewPath.replace(/[^/\\]*$/, "");
+        try { void openFile(directory + decodeURIComponent(href.split(/[?#]/)[0])); }
+        catch (error) { showError(error); }
+      }
+    });
+  });
+  function setPreview(visible: boolean) {
+    previewVersion++;
+    previewPendingSource = "";
+    previewVisible = visible && Boolean(doc && supportsPreview(doc.base.path));
+    previewButton.setAttribute("aria-pressed", String(previewVisible));
+    previewFrame.hidden = !previewVisible;
+    editorHost.hidden = previewVisible;
+    findButton.disabled = !view || previewVisible;
+    if (previewVisible) {
+      if (view) closeSearchPanel(view);
+      schedulePreview();
+    } else {
+      clearTimeout(previewTimer);
+      view?.requestMeasure();
+      view?.focus();
+    }
+  }
   function rememberPosition() {
     if (doc && view) positions.set(`${paneKey}:${doc.base.path}`, {
       anchor: view.state.selection.main.anchor, head: view.state.selection.main.head, scrollTop: view.scrollDOM.scrollTop
@@ -150,6 +226,10 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const saveButton = button("Save", () => { if (doc) void doc.save(); });
   saveButton.title = "Save (Ctrl/Cmd+S)";
   saveButton.disabled = true;
+  const previewButton = button("Preview", () => setPreview(!previewVisible));
+  previewButton.setAttribute("aria-pressed", "false");
+  previewButton.title = "Preview Markdown, HTML or Mermaid";
+  previewButton.disabled = true;
   const findButton = button("Find", () => {
     if (!view) return;
     if (searchPanelOpen(view.state)) closeSearchPanel(view);
@@ -181,6 +261,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   function refreshUi() {
     if (!doc || disposed) return;
     persist();
+    schedulePreview();
     saveButton.disabled = !doc.dirty || doc.busy || doc.conflict;
     status.textContent = [doc.base.path, doc.dirty ? "Unsaved changes" : "Saved", doc.busy ? "Working…" : "", doc.error, persistenceError].filter(Boolean).join(" · ");
     compare.hidden = !doc.conflict;
@@ -229,7 +310,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length), head: Math.min(position.head, view.state.doc.length) } });
       view.scrollDOM.scrollTop = position.scrollTop;
     }
-    findButton.disabled = false;
+    previewButton.disabled = !supportsPreview(doc.base.path);
+    setPreview(previewVisible);
     findButton.setAttribute("aria-pressed", String(searchPanelOpen(view.state)));
     refreshUi();
   }
@@ -269,7 +351,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       unsubscribe = subscribe(doc, refreshUi);
       rebuild();
       void doc.refresh();
-      view?.focus();
+      if (!previewVisible) view?.focus();
     } catch (error) { if (!disposed) showError(error); }
     finally {
       opening = false;
@@ -295,8 +377,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   });
   draftsButton.setAttribute("aria-pressed", "false");
   toolbar.addEventListener("submit", (event) => { event.preventDefault(); void openFile(pathInput.value); });
-  toolbar.append(pathInput, openButton, browseButton, saveButton, findButton, draftsButton);
-  root.append(toolbar, notices, compare, editorHost, status);
+  toolbar.append(pathInput, openButton, browseButton, saveButton, previewButton, findButton, draftsButton);
+  root.append(toolbar, notices, compare, editorHost, previewFrame, status);
   container.replaceChildren(root);
   try {
     const path = localStorage.getItem(paneKey);
@@ -305,6 +387,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   return () => {
     persist();
     rememberPosition();
+    clearTimeout(previewTimer);
     themeObserver.disconnect();
     disposed = true;
     unsubscribe?.();
