@@ -1,6 +1,7 @@
 import { cpSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
+import { buildSync } from "esbuild";
 
 const sourceRoot = "src";
 const buildRoot = "build";
@@ -96,6 +97,16 @@ run("npx", ["tsc", "-p", "tsconfig.renderer.json"]);
 copyStaticAssets(sourceRoot);
 copyBrowserScripts(join(sourceRoot, "renderer"));
 copyPluginRendererScripts();
+// Bundle the editor and its language packages for Electron's isolated renderer.
+buildSync({
+  entryPoints: ["src/plugins/file-editor/renderer.ts"],
+  outfile: "build/plugins/file-editor/renderer.js",
+  bundle: true,
+  format: "iife",
+  platform: "browser",
+  target: "chrome142",
+  minify: true
+});
 writeFileSync(
   join(buildRoot, "package.json"),
   `${JSON.stringify({ main: "main/main.js" }, null, 2)}\n`
