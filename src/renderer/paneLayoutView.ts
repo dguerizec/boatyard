@@ -1,3 +1,4 @@
+import { startPaneContentDrag } from "./paneContentDrag.js";
 import type {
   RendererPaneNode,
   RendererProject,
@@ -243,6 +244,7 @@ type PaneLayoutViewOptions = {
   resetVisibleWebAppHosts: () => void;
   queueWebAppSync: () => void;
   persistPaneLayout: (project: RendererProject) => void;
+  createPaneDragFreezeScope: () => { freeze(): unknown; restore(): unknown };
 };
 
 export function canReusePaneElement(
@@ -270,6 +272,7 @@ export function getMobileDevViewportKey(webApp: Pick<MobileDevWebApp, "id" | "ke
 }
 
 export function createPaneLayoutView({
+    createPaneDragFreezeScope,
     minWidgetRailWidth,
     webAppSplitResizerSize,
     dashboardGrid,
@@ -1553,6 +1556,7 @@ export function createPaneLayoutView({
       host.className = `webapp-host${isTerminalPane ? " terminal-pane-host" : ""}${isEmptyPane ? " empty-pane-host" : ""}`;
       host.setAttribute("role", "region");
       host.setAttribute("aria-label", `${project.name} ${selectedWebApp.label}`);
+      let paneDragCleanup: (() => void) | undefined;
       const pluginPaneProps = pluginPane ? {
         project,
         projectId: project.id,
@@ -1574,11 +1578,28 @@ export function createPaneLayoutView({
           return getProjectWebAppState(project, webAppId);
         },
         host,
+        startPaneDrag(event: DragEvent, webAppId: string, prepare: (paneId: string) => void) {
+          const targets = Array.from(dashboardGrid.querySelectorAll<HTMLElement>(".webapp-pane[data-pane-id]"))
+            .filter((target) => target.dataset.paneId !== paneNode.id && target.getBoundingClientRect().width > 0)
+            .filter((target) => getProjectWebApps(project, target.dataset.paneId!).some((app) => (app as PaneWebApp).id === webAppId))
+            .map((element) => ({ element, drop() {
+              const targetId = element.dataset.paneId!;
+              const targetNode = paneLayoutState.findPaneNode(getProjectPaneLayout(project), targetId) as PaneNode | null;
+              if (!targetNode) return;
+              prepare(targetId);
+              paneLayoutState.setSelectedWebAppForPane(targetId, webAppId);
+              targetNode.selectedWebAppId = webAppId;
+              persistPaneLayout(project);
+              renderPaneLayoutPreservingPanes(project, { forcePaneIds: [targetId] });
+            } }));
+          paneDragCleanup?.();
+          paneDragCleanup = startPaneContentDrag(event, targets, createPaneDragFreezeScope());
+        },
         openProjectWebApp(webAppId: string, url = "") {
           return openProjectWebApp(project.id, webAppId, url);
         }
       } : null;
-      const pluginPaneCleanupCallbacks: Array<() => void> = [];
+      const pluginPaneCleanupCallbacks: Array<() => void> = [() => paneDragCleanup?.()];
 
       const header = document.createElement("div");
       header.className = "webapp-pane-header";

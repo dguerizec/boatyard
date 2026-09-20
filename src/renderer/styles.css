@@ -4776,3 +4776,19 @@ textarea.form-control {
     padding-left: 9px;
   }
 }
+
+.pane-content-drop-target {
+  position: fixed;
+  z-index: 100000;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border: 2px dashed var(--line);
+  background: color-mix(in srgb, var(--panel) 75%, transparent);
+  color: var(--text);
+  pointer-events: auto;
+}
+.pane-content-drop-target.active {
+  border: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel));
+}

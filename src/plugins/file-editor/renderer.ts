@@ -23,7 +23,7 @@ type FilePosition = { anchor: number; head: number; scrollTop: number; scrollLef
 const pluginId = "boatyard.fileEditor";
 const documents = new Map<string, EditorDocument>();
 const active = new Map<EditorDocument, number>();
-type PaneControl = { open: boolean; enabled: boolean; label: string; button: HTMLButtonElement | null; toggle: (() => void) | null };
+type PaneControl = { open: boolean; enabled: boolean; label: string; button: HTMLButtonElement | null; toggle: (() => void) | null; drag?: (event: DragEvent) => void };
 const paneControls = new WeakMap<HTMLElement, Map<string, PaneControl>>();
 function getPaneControl(host: HTMLElement, key: "browse" | "preview"): PaneControl {
   let controls = paneControls.get(host);
@@ -40,10 +40,11 @@ function getPaneControl(host: HTMLElement, key: "browse" | "preview"): PaneContr
 }
 function syncPaneControl(control: PaneControl) {
   if (!control.button) return;
+  control.button.draggable = control.enabled && Boolean(control.drag);
   control.button.disabled = !control.enabled || !control.toggle;
   control.button.classList.toggle("active", control.open);
   control.button.setAttribute("aria-pressed", String(control.open));
-  control.button.title = `${control.open ? "Hide" : "Show"} ${control.label}`;
+  control.button.title = `${control.open ? "Hide" : "Show"} ${control.label}${control.drag ? " · Drag to another pane" : ""}`;
 }
 function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord = {}) {
   if (!(props.host instanceof HTMLElement)) return undefined;
@@ -57,6 +58,10 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
     action.className = `webapp-tool-button file-editor-${definition.key}-button`;
     action.setAttribute("aria-label", definition.label);
     action.append(createToolIcon(definition.icon));
+    if (definition.key === "preview") action.addEventListener("dragstart", (event) => {
+      if (control.enabled && control.drag) control.drag(event);
+      else event.preventDefault();
+    });
     control.button = action;
     syncPaneControl(control);
     container.append(action);
@@ -169,8 +174,12 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   previewFrame.setAttribute("sandbox", "allow-same-origin");
   previewFrame.hidden = true;
   let previewVisible = false;
-  try { previewVisible = localStorage.getItem(previewKey) === "true"; }
-  catch { /* Preview remains available without persisted preferences. */ }
+  let requestedPreviewPath: string | null = null;
+  try {
+    // A one-shot request survives cleanup of the previous content in the target pane.
+    requestedPreviewPath = localStorage.getItem(`${paneKey}:preview-file`);
+    previewVisible = Boolean(requestedPreviewPath) || localStorage.getItem(previewKey) === "true";
+  } catch { /* Preview remains available without persisted preferences. */ }
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let previewSource = "";
   let previewPendingSource = "";
@@ -269,14 +278,16 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     }
   }
   function rememberPosition() {
-    if (!doc || !view || restoringPosition) return;
+    if (!doc || restoringPosition) return;
     const position = positionFor(doc.base.path);
-    position.anchor = view.state.selection.main.anchor;
-    position.head = view.state.selection.main.head;
+    if (view) {
+      position.anchor = view.state.selection.main.anchor;
+      position.head = view.state.selection.main.head;
+    }
     if (previewVisible && loadedPreviewPath === doc.base.path && previewFrame.contentDocument?.scrollingElement) {
       position.previewScrollTop = previewFrame.contentDocument.scrollingElement.scrollTop;
     }
-    if (!editorHost.hidden) {
+    if (view && !editorHost.hidden) {
       position.scrollTop = view.scrollDOM.scrollTop;
       position.scrollLeft = view.scrollDOM.scrollLeft;
     }
@@ -523,6 +534,15 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     if (browserState.open) fileBrowser.show();
   };
   const togglePreview = () => setPreview(!previewVisible);
+  previewControl.drag = typeof props.startPaneDrag === "function" ? (event) => {
+    if (!doc || !supportsPreview(doc.base.path)) { event.preventDefault(); return; }
+    const path = doc.base.path;
+    const start = props.startPaneDrag as (event: DragEvent, webAppId: string, prepare: (paneId: string) => void) => void;
+    start(event, "boatyard.fileEditor.editor", (targetId) => {
+      localStorage.setItem(`${prefix}pane:${targetId}:preview-file`, path);
+      localStorage.setItem(`${prefix}pane:${targetId}:preview`, "true");
+    });
+  } : undefined;
   previewControl.toggle = togglePreview;
   syncPaneControl(previewControl);
   browserControl.toggle = toggleBrowser;
@@ -531,7 +551,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   container.replaceChildren(root);
   if (browserState.open) fileBrowser.show();
   try {
-    const path = localStorage.getItem(paneKey);
+    const path = requestedPreviewPath || localStorage.getItem(paneKey);
+    if (requestedPreviewPath) localStorage.removeItem(`${paneKey}:preview-file`);
     if (path) { pathInput.value = path; void openFile(path); }
   } catch { /* Opening files remains available when local storage is disabled. */ }
   return () => {
@@ -549,6 +570,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     }
     if (previewControl.toggle === togglePreview) {
       previewControl.toggle = null;
+      previewControl.drag = undefined;
       syncPaneControl(previewControl);
     }
     disposed = true;

@@ -547,6 +547,7 @@ boatyardWindow.BoatyardPaneNavigation = Object.freeze({
 });
 
 const paneLayoutView = createPaneLayoutView({
+  createPaneDragFreezeScope: () => webAppSurfaces.createFreezeScope(),
   minWidgetRailWidth: MIN_WIDGET_RAIL_WIDTH,
   webAppSplitResizerSize: WEBAPP_SPLIT_RESIZER_SIZE,
   dashboardGrid,
