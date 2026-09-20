@@ -646,7 +646,6 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     status.textContent = error instanceof Error ? error.message : String(error);
   }
   function setNotices(...nodes: Node[]) {
-    draftsButton.setAttribute("aria-pressed", "false");
     notices.replaceChildren(...nodes);
   }
   function confirmDiscard(action: () => void) {
@@ -1107,30 +1106,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     } finally { closingTab = false; }
   }
 
-  const draftsButton = button("Drafts", () => {
-    if (draftsButton.getAttribute("aria-pressed") === "true") {
-      setNotices();
-      return;
-    }
-    setNotices();
-    try {
-      const changedFiles = Object.keys(localStorage).filter((key) => key.startsWith(`${prefix}changes:`));
-      for (const key of changedFiles) {
-        const draft = readChangesDraft(JSON.parse(localStorage.getItem(key) || "null"));
-        if (draft) notices.append(button(draft.path, () => void openFile(draft.path)));
-      }
-      const keys = Object.keys(localStorage).filter((key) => (key.startsWith(`${prefix}draft:`) || key.startsWith(`${prefix}block-draft:`)));
-      if (!keys.length && !changedFiles.length) notices.append(element("span", "", "No unsaved drafts."));
-      for (const key of keys) {
-        const draft = readDraft(key);
-        if (draft) notices.append(button(draft.path + (draft.block ? ` · Block ${draft.block.index + 1}` : ""), () => void openFile(draft.path, undefined, draft.block?.index)));
-      }
-      draftsButton.setAttribute("aria-pressed", "true");
-    } catch (error) { showError(error); }
-  });
-  draftsButton.setAttribute("aria-pressed", "false");
   const fileActions = element("div", "file-editor-file-actions");
-  fileActions.append(saveButton, findButton, draftsButton);
+  fileActions.append(saveButton, findButton);
   toolbar.append(fileTabs.element, fileActions);
   const workspace = element("div", "file-editor-workspace");
   const browserKey = `${paneKey}:browser`;
