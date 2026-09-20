@@ -6,6 +6,9 @@ export type HexSource = {
   size: number;
   revision: string;
   initialOffset?: number;
+  history?(forward: boolean): Promise<void>;
+  canUndo?: boolean;
+  canRedo?: boolean;
   scrolled?(offset: number): void;
   read(offset: number): Promise<Chunk>;
   activate(offset: number): Promise<boolean>;
@@ -95,13 +98,16 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
     const local = index - baseOffset;
     const before = bytes.slice(local, local + replacement.length);
     if (before.every((value, i) => value === replacement[i])) return;
-    undo.push({ offset: index, before, after: replacement.slice() });
-    if (undo.length > 100) undo.shift();
-    redo.length = 0;
+    if (!source?.history) {
+      undo.push({ offset: index, before, after: replacement.slice() });
+      if (undo.length > 100) undo.shift();
+      redo.length = 0;
+    }
     bytes.set(replacement, local); notify();
   }
   function history(forward: boolean) {
     if (disabled) return;
+    if (source?.history) { void source.history(forward); return; }
     const change = (forward ? redo : undo).pop();
     if (!change) return;
     (forward ? undo : redo).push(change);
@@ -140,8 +146,8 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
         return value === undefined ? " " : value >= 32 && value <= 126 ? String.fromCharCode(value) : ".";
       }).join("");
     }
-    undoButton.disabled = disabled || !undo.length;
-    redoButton.disabled = disabled || !redo.length;
+    undoButton.disabled = disabled || !(source?.history ? source.canUndo : undo.length);
+    redoButton.disabled = disabled || !(source?.history ? source.canRedo : redo.length);
   }
   function render() {
     if (disposed || !viewport.clientHeight) return;

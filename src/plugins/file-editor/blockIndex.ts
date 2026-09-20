@@ -1,3 +1,4 @@
+import { readChangesDraft, type FilePatch } from "./changes";
 import { constants } from "node:fs";
 import { access, open, stat, mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
@@ -186,6 +187,44 @@ export class ProjectFileIndex {
     const index = await this.get(target);
     const block = index.blocks[blockIndex];
     if (index.revision !== revision || !block) throw new Error("The file changed on disk. Compare or reload it before saving.");
+    const snapshot = await this.read(root, path, blockIndex, true);
+    return this.saveChanges(root, path, revision, [{ block: blockIndex, offset: block.offset,
+      before: bytesToHex(contentBytes(snapshot)), after: bytesToHex(replacement) }], blockIndex);
+  }
+
+  async rebaseChanges(root: string, path: string, revision: string, patches: FilePatch[], size: number): Promise<FilePatch[]> {
+    const target = resolveEditorFile(root, path);
+    const index = await this.get(target);
+    if (index.revision !== revision || index.size !== size) throw new Error("The file changed size or revision. Compare it again before keeping the changeset.");
+    if (!readChangesDraft({ path, revision, size, patches })) throw new Error("Invalid file changeset.");
+    const file = await open(target, constants.O_RDONLY | constants.O_NONBLOCK);
+    try {
+      const result: FilePatch[] = [];
+      for (const patch of patches) {
+        const block = index.blocks[patch.block];
+        if (!block || patch.offset < block.offset || patch.offset + patch.before.length / 2 > block.offset + block.length) {
+          throw new Error("The indexed boundaries changed. Reload the file before rebasing the changeset.");
+        }
+        const bytes = Buffer.alloc(patch.before.length / 2);
+        let received = 0;
+        while (received < bytes.length) {
+          const { bytesRead } = await file.read(bytes, received, bytes.length - received, patch.offset + received);
+          if (!bytesRead) throw new Error("The file changed while comparing the changeset.");
+          received += bytesRead;
+        }
+        result.push({ ...patch, before: bytesToHex(bytes) });
+      }
+      if (signature(await file.stat({ bigint: true })) !== index.signature || resolveEditorFile(root, path) !== target
+        || signature(await stat(target, { bigint: true })) !== index.signature) throw new Error("The file changed while comparing the changeset.");
+      return result;
+    } finally { await file.close(); }
+  }
+
+  async saveChanges(root: string, path: string, revision: string, patches: FilePatch[], blockIndex = 0): Promise<FileSnapshot> {
+    const target = resolveEditorFile(root, path);
+    const index = await this.get(target);
+    if (index.revision !== revision) throw new Error("The file changed on disk. Compare or reload it before saving.");
+    if (!readChangesDraft({ path, revision, size: index.size, patches }) || !Number.isSafeInteger(blockIndex) || blockIndex < 0) throw new Error("Invalid file changeset.");
     await access(target, constants.W_OK);
     const input = await open(target, constants.O_RDONLY | constants.O_NONBLOCK);
     const temporary = join(dirname(target), `.boatyard-editor-${randomUUID()}.tmp`);
@@ -206,20 +245,27 @@ export class ProjectFileIndex {
             written += result.bytesWritten;
           }
         }
-        async function copy(start: number, end: number, write: boolean) {
+        async function copy(start: number, end: number, write: boolean, expected?: Uint8Array) {
           for (let position = start; position < end;) {
             const { bytesRead } = await input.read(buffer, 0, Math.min(buffer.length, end - position), position);
             if (!bytesRead) throw new Error("The file changed during save.");
             const bytes = buffer.subarray(0, bytesRead);
+            if (expected && !bytes.equals(expected.subarray(position - start, position - start + bytesRead))) {
+              throw new Error("The changeset does not match the original file. Reload it before saving.");
+            }
             hash.update(bytes);
             if (write) await writeAll(bytes);
             position += bytesRead;
           }
         }
-        await copy(0, block.offset, true);
-        await copy(block.offset, block.offset + block.length, false);
-        await writeAll(replacement);
-        await copy(block.offset + block.length, index.size, true);
+        let position = 0;
+        for (const patch of patches) {
+          await copy(position, patch.offset, true);
+          await copy(patch.offset, patch.offset + patch.before.length / 2, false, contentBytes({ text: patch.before, encoding: "hex" }));
+          await writeAll(contentBytes({ text: patch.after, encoding: "hex" }));
+          position = patch.offset + patch.before.length / 2;
+        }
+        await copy(position, index.size, true);
         if (hash.digest("hex") !== revision || signature(await input.stat({ bigint: true })) !== index.signature
           || resolveEditorFile(root, path) !== target || signature(await stat(target, { bigint: true })) !== index.signature) {
           throw new Error("The file changed during save. Compare or reload it before saving.");

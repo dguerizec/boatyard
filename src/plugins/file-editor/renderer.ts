@@ -1,10 +1,11 @@
+import { FileChanges, readChangesDraft } from "./changes";
 import { contentBytes } from "./bytes";
 import { createBlockNavigation } from "./blockNavigation";
 import { createHexView } from "./hexView";
 import { imageMimeType, type ImageSnapshot } from "./imageTypes";
 import { EditorPaneLinks } from "./paneLinks";
 import { basicSetup } from "codemirror";
-import { Compartment, EditorState } from "@codemirror/state";
+import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { oneDark } from "@codemirror/theme-one-dark";
@@ -27,6 +28,7 @@ const registry = scope.BoatyardPluginRegistry;
 type FilePosition = { anchor: number; head: number; scrollTop: number; scrollLeft: number; previewScrollTop: number };
 const pluginId = "boatyard.fileEditor";
 const documents = new Map<string, EditorDocument>();
+const changesets = new Map<string, FileChanges>();
 const active = new Map<EditorDocument, number>();
 const projectLinks = new Map<string, EditorPaneLinks>();
 const linkedHosts = new Map<string, HTMLElement>();
@@ -94,6 +96,7 @@ function poll() {
   for (const doc of active.keys()) void doc.refresh();
 }
 function subscribe(doc: EditorDocument, listener: () => void) {
+  doc.connectChanges();
   doc.listeners.add(listener);
   active.set(doc, (active.get(doc) || 0) + 1);
   if (!timer) {
@@ -106,6 +109,7 @@ function subscribe(doc: EditorDocument, listener: () => void) {
     if (count) active.set(doc, count);
     else {
       active.delete(doc);
+      doc.disconnectChanges();
       // Block drafts are persisted before detaching; do not retain visited file contents.
       if (doc.base.block) {
         const release = () => {
@@ -213,6 +217,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   let positionTimer: ReturnType<typeof setTimeout> | undefined;
   let restoringPosition = false;
   const draftKey = (path: string, block?: number) => block === undefined ? `${prefix}draft:${path}` : `${prefix}block-draft:${JSON.stringify([path, block])}`;
+  const changesKey = (path: string) => `${prefix}changes:${path}`;
   const documentKey = () => doc ? draftKey(doc.base.path, doc.base.block?.index) : "";
   const savedBlock = (path: string): number | undefined => {
     try {
@@ -253,6 +258,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   let previewPath = "";
   let loadedPreviewPath = "";
   let openedImage: ImageSnapshot | undefined;
+  const currentBlock = () => doc?.base.block ? (doc.changes?.viewBlock(doc.base.block) ?? doc.base.block) : undefined;
   const currentPath = () => openedImage?.path || doc?.base.path;
   const imageHost = element("div", "file-editor-image");
   imageHost.hidden = true;
@@ -285,7 +291,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       let low = 0, high = block.positions.length - 1;
       while (low < high) {
         const middle = Math.ceil((low + high) / 2);
-        if (block.positions[middle].offset <= offset) low = middle;
+        if ((current.changes?.blockOffset(middle, block.positions[middle].offset) ?? block.positions[middle].offset) <= offset) low = middle;
         else high = middle - 1;
       }
       return low;
@@ -298,20 +304,25 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       const saved = localStorage.getItem(`${paneKey}:hex-position:${path}`);
       if (saved !== null && Number.isSafeInteger(Number(saved)) && Number(saved) >= 0) initialOffset = Number(saved);
     } catch { /* Optional scroll preferences. */ }
-    hexView.update(bytes, path, block?.offset, current.saving, {
-      size: block ? block.size + sizeDelta : bytes.length, revision: `${revision}:${sizeDelta}`, initialOffset,
+    hexView.update(bytes, path, block ? (current.changes?.blockStart(current.base) ?? block.offset) : 0, current.locked, {
+      size: current.changes?.length ?? (block ? block.size + sizeDelta : bytes.length),
+      revision: `${revision}:${current.changes?.version ?? sizeDelta}`, initialOffset,
+      history: current.changes ? (forward) => historyChanges(forward) : undefined,
+      canUndo: current.changes?.canUndo, canRedo: current.changes?.canRedo,
       scrolled: (offset) => {
         try { localStorage.setItem(`${paneKey}:hex-position:${path}`, String(offset)); } catch { /* Editing remains available. */ }
       },
       read: async (offset) => {
-        const snapshot = (await invoke("read", project.id, { path, block: blockAt(diskOffset(offset)) }))!;
+        const snapshot = (await invoke("read", project.id, { path, block: blockAt(current.changes ? offset : diskOffset(offset)) }))!;
         if (snapshot.revision !== revision) throw new Error("The file changed on disk. Reload it before continuing.");
         const start = snapshot.block?.offset ?? 0;
-        return { offset: block && start > block.offset ? start + sizeDelta : start, bytes: contentBytes(snapshot) };
+        return { offset: current.changes ? current.changes.blockStart(snapshot) : block && start > block.offset ? start + sizeDelta : start,
+          bytes: current.changes ? current.changes.apply(snapshot) : contentBytes(snapshot) };
       },
       activate: async (offset) => {
         if (disposed || doc !== current || opening || current.saving) return false;
-        if (current.dirty) {
+        if (current.conflict || current.locked) return false;
+        if (current.dirty && !current.changes) {
           showError("Save the current changes before editing another part of the file. Scrolling remains available.");
           return false;
         }
@@ -483,6 +494,15 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     }
     if (!doc) return;
     try {
+      if (doc.changes) {
+        const changes = doc.changes.draft(doc.base.path);
+        if (changes) localStorage.setItem(changesKey(doc.base.path), JSON.stringify(changes));
+        else localStorage.removeItem(changesKey(doc.base.path));
+        for (const key of Object.keys(localStorage).filter((key) => key.startsWith(`${prefix}block-draft:`))) {
+          const legacy = readDraft(key);
+          if (legacy?.path === doc.base.path && legacy.revision === doc.changes.revision) localStorage.removeItem(key);
+        }
+      }
       const draft = doc.draft();
       if (draft) localStorage.setItem(documentKey(), JSON.stringify(draft));
       else localStorage.removeItem(documentKey());
@@ -503,18 +523,25 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
   function confirmDiscard(action: () => void) {
     if (!doc?.dirty) { action(); return; }
-    setNotices(element("span", "", "Discard this unsaved draft?"),
+    setNotices(element("span", "", "Discard all unsaved changes to this file?"),
       button("Discard draft", () => { setNotices(); action(); }),
       button("Cancel", () => setNotices()));
   }
 
+  async function historyChanges(forward: boolean) {
+    const current = doc;
+    const index = current?.changes?.history(forward);
+    if (index === undefined || !current) return;
+    if (index !== current.base.block?.index) await openFile(current.base.path, undefined, index);
+  }
   function navigateBlock(index: number, fraction?: number) {
-    if (!doc?.base.block || opening || doc.saving) return;
+    if (!doc?.base.block || opening || doc.saving || Boolean(doc.changes?.saving)) return;
     if (index === doc.base.block.index && fraction !== undefined && view) {
       view.scrollDOM.scrollTop = fraction * Math.max(0, view.scrollDOM.scrollHeight - view.scrollDOM.clientHeight);
       return;
     }
-    if (doc.dirty) {
+    if (doc.conflict) { showError("Resolve the file changeset conflict before opening another block."); return; }
+    if (doc.dirty && !doc.changes) {
       showError("Save or discard this block's changes before navigating to another block.");
       const current = doc;
       setNotices(
@@ -563,7 +590,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     button("Use disk version", () => confirmDiscard(() => { doc?.useDisk(); rebuild(); })),
     button("Keep my version", () => {
       const comparedRevision = doc?.disk.revision;
-      setNotices(element("span", "", "Keep your version for the next save, replacing the disk version shown below?"),
+      setNotices(element("span", "", doc?.changes ? "Keep all modified ranges against the compared disk revision, including changes in other blocks?" : "Keep your version for the next save, replacing the disk version shown below?"),
         button("Keep my version", () => {
           if (doc?.disk.revision !== comparedRevision) {
             setNotices(element("span", "", "The disk version changed again. Compare it before continuing."));
@@ -580,9 +607,9 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     if (!doc || disposed) return;
     persist();
     editorHost.classList.toggle("file-editor-paged", Boolean(doc.base.block));
-    blockNavigation.update(hexMode ? undefined : doc.base.block, !hexMode && !previewVisible, opening || doc.saving);
-    const locked = Boolean(doc.saving && doc.base.block);
-    const firstLine = doc.base.block?.line ?? 1;
+    blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !previewVisible, opening || doc.saving || Boolean(doc.changes?.saving));
+    const locked = Boolean(doc.locked && doc.base.block);
+    const firstLine = currentBlock()?.line ?? 1;
     if (view && (viewLocked !== locked || viewFirstLine !== firstLine)) {
       viewLocked = locked; viewFirstLine = firstLine;
       view.dispatch({ effects: [
@@ -596,8 +623,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     syncPaneControl(previewControl);
     if (doc.base.block && previewControl.button) previewControl.button.title = "Preview requires the complete file; this file is loaded in blocks.";
     schedulePreview();
-    saveButton.disabled = !doc.dirty || doc.busy || doc.conflict;
-    status.textContent = [doc.base.path, doc.dirty ? "Unsaved changes" : "Saved", doc.busy ? "Working…" : "", doc.error, persistenceError, previewVisible && imageMimeType(doc.base.path) ? imageInfo : ""].filter(Boolean).join(" · ");
+    saveButton.disabled = !doc.dirty || doc.busy || doc.changes?.saving || doc.conflict;
+    status.textContent = [doc.base.path, doc.dirty ? "Unsaved changes" : "Saved", (doc.busy || doc.changes?.saving) ? "Working…" : "", doc.changes?.dirty ? `${doc.changes.edits.length} modified ranges` : "", doc.error, persistenceError, previewVisible && imageMimeType(doc.base.path) ? imageInfo : ""].filter(Boolean).join(" · ");
     compare.hidden = !doc.conflict;
     if (doc.conflict && compareText.textContent !== doc.disk.text) compareText.textContent = doc.disk.text;
     if (view && !hexMode && bom + view.state.sliceDoc() !== doc.text) {
@@ -643,17 +670,22 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     }
     bom = (!doc.base.block?.offset && doc.text.startsWith("\uFEFF")) ? "\uFEFF" : "";
     viewLocked = false;
-    viewFirstLine = doc.base.block?.line ?? 1;
+    viewFirstLine = currentBlock()?.line ?? 1;
     view = new EditorView({
       parent: editorHost,
       state: EditorState.create({
         doc: doc.text.slice(bom.length),
         extensions: [basicSetup, theme.of(editorTheme()), doc.base.block ? [] : language(doc.base.path),
           editable.of(EditorView.editable.of(true)),
-          numbering.of(lineNumbers({ formatNumber: (number) => String(number + (doc?.base.block?.line ?? 1) - 1) })),
+          numbering.of(lineNumbers({ formatNumber: (number) => String(number + viewFirstLine - 1) })),
           lineSeparator.of(EditorState.lineSeparator.of(doc.text.includes("\r\n") ? "\r\n" : "\n")),
           EditorView.contentAttributes.of({ "aria-label": "File contents" }),
           EditorView.theme({ "&": { height: "100%", backgroundColor: "var(--panel)" }, ".cm-scroller": { overflow: "auto", fontFamily: "monospace" } }),
+          Prec.highest(keymap.of(doc.changes ? [
+            { key: "Mod-z", run: () => { void historyChanges(false); return true; } },
+            { key: "Mod-Shift-z", run: () => { void historyChanges(true); return true; } },
+            { key: "Mod-y", run: () => { void historyChanges(true); return true; } }
+          ] : [])),
           keymap.of([{ key: "Mod-s", run: () => { if (doc) void doc.save(); return true; } }]),
           EditorView.domEventHandlers({ scroll: () => {
             if (!restoringPosition) schedulePosition();
@@ -676,7 +708,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
 
   async function openFile(path: string, linkedVersion?: number, requestedBlock?: number, preserveHexFocus = false) {
-    if (opening || disposed || doc?.saving) return;
+    if (opening || disposed || doc?.saving || doc?.changes?.saving) return;
     // Switching files preserves the previous draft, including when other panes show it.
     persist();
     if (persistenceError && doc?.dirty) { showError(persistenceError); return; }
@@ -739,11 +771,52 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       }
       if (!snapshot || disposed || (linkedVersion !== undefined && linkedVersion !== linkVersion)) return;
       const key = draftKey(snapshot.path, snapshot.block?.index);
+      let changes: FileChanges | undefined;
+      if (snapshot.block) {
+        const fileKey = changesKey(snapshot.path);
+        changes = changesets.get(fileKey);
+        if (!changes) {
+          let saved;
+          try { saved = readChangesDraft(JSON.parse(localStorage.getItem(fileKey) || "null")); } catch { /* Ignore malformed changesets. */ }
+          changes = new FileChanges(snapshot, saved);
+          if (!saved) {
+            for (const legacyKey of Object.keys(localStorage).filter((key) => key.startsWith(`${prefix}block-draft:`))) {
+              const legacy = readDraft(legacyKey);
+              if (legacy?.path === snapshot.path && legacy.block && legacy.revision === changes.revision) {
+                changes.edit({ ...legacy, text: legacy.baseText, encoding: legacy.baseEncoding }, contentBytes(legacy));
+              }
+            }
+          }
+          changesets.set(fileKey, changes);
+        } else {
+          if (changes.saving) { showError("Wait for the file save to finish before opening another block."); return; }
+          if (!changes.dirty && snapshot.revision !== changes.revision) {
+            snapshot = (await invoke("read", project.id, { path: snapshot.path, block: snapshot.block.index }))!;
+            if (disposed || (linkedVersion !== undefined && linkedVersion !== linkVersion)) return;
+          }
+          changes.observe(snapshot);
+        }
+        if (changes.dirty && snapshot.revision !== changes.revision && doc?.base.path === snapshot.path) {
+          showError("The file changed on disk. Resolve the changeset conflict before opening another block.");
+          doc.notify(); return;
+        }
+      }
       let next = documents.get(key);
       if (!next) {
         let currentBlock = snapshot.block?.index;
         next = new EditorDocument(snapshot, {
           read: async (file) => (await invoke("read", project.id, { path: file, block: next?.base.block?.index }))!,
+          rebaseChanges: async (file, revision, patches, size) =>
+            (await invoke<import("./changes").FilePatch[]>("rebaseChanges", project.id, { path: file, revision, patches, size })),
+          saveChanges: async (file, revision, patches) => {
+            const oldKey = draftKey(file, next?.base.block?.index);
+            const saved = (await invoke("saveChanges", project.id, { path: file, revision, patches, block: next?.base.block?.index }))!;
+            // Complete draft cleanup even if the initiating pane closed during the save.
+            try { localStorage.removeItem(changesKey(file)); } catch { /* Active panes retry persistence. */ }
+            const newKey = draftKey(file, saved.block?.index);
+            if (oldKey !== newKey && next) { documents.delete(oldKey); documents.set(newKey, next); }
+            return saved;
+          },
           save: async (file, text, revision, encoding) => {
             currentBlock = next?.base.block?.index;
             const saved = (await invoke("save", project.id, { path: file, text, revision, encoding, block: currentBlock }))!;
@@ -758,7 +831,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
             }
             return saved;
           }
-        }, readDraft(key));
+        }, readDraft(key), changes);
         documents.set(key, next);
       }
       persist();
@@ -786,7 +859,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     finally {
       opening = false;
       openButton.disabled = false;
-      if (doc) blockNavigation.update(hexMode ? undefined : doc.base.block, !hexMode && !previewVisible, doc.saving);
+      if (doc) blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !previewVisible, doc.saving);
       const pending = pendingLinkedPath;
       pendingLinkedPath = undefined;
       if (pending && pending !== currentPath() && !disposed) void openFile(pending, linkVersion);
@@ -800,8 +873,13 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     }
     setNotices();
     try {
+      const changedFiles = Object.keys(localStorage).filter((key) => key.startsWith(`${prefix}changes:`));
+      for (const key of changedFiles) {
+        const draft = readChangesDraft(JSON.parse(localStorage.getItem(key) || "null"));
+        if (draft) notices.append(button(draft.path, () => void openFile(draft.path)));
+      }
       const keys = Object.keys(localStorage).filter((key) => (key.startsWith(`${prefix}draft:`) || key.startsWith(`${prefix}block-draft:`)));
-      if (!keys.length) notices.append(element("span", "", "No unsaved drafts."));
+      if (!keys.length && !changedFiles.length) notices.append(element("span", "", "No unsaved drafts."));
       for (const key of keys) {
         const draft = readDraft(key);
         if (draft) notices.append(button(draft.path + (draft.block ? ` · Block ${draft.block.index + 1}` : ""), () => void openFile(draft.path, undefined, draft.block?.index)));
@@ -863,7 +941,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     rebuild();
   };
   const toggleHex = () => {
-    if (opening || doc?.saving) return;
+    if (opening || doc?.saving || doc?.changes?.saving) return;
     if (hexMode && doc?.base.block && imageMimeType(doc.base.path)) {
       if (doc.dirty) { showError("Save this block before opening the complete image preview."); return; }
       hexMode = false; persistHexMode();
