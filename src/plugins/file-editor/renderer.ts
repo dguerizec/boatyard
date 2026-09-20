@@ -1107,7 +1107,13 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
 
   const fileActions = element("div", "file-editor-file-actions");
-  fileActions.append(saveButton, findButton);
+  for (const [action, icon, label] of [[findButton, "search", "Find"], [saveButton, "save", "Save"]] as const) {
+    action.classList.add("webapp-tool-button");
+    action.setAttribute("aria-label", label);
+    action.replaceChildren(createToolIcon(icon));
+  }
+  findButton.title = "Find (Ctrl/Cmd+F)";
+  fileActions.append(findButton, saveButton);
   toolbar.append(fileTabs.element, fileActions);
   const workspace = element("div", "file-editor-workspace");
   const browserKey = `${paneKey}:browser`;
