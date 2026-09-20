@@ -165,10 +165,12 @@ function activate(ctx: TwiccPluginContext) {
     try {
       const result = await migrateTwiccSessionFlowLanes(getOptions());
       if (!result.allSucceeded) {
-        console.warn("TwiCC Done lane migration is incomplete; failed sessions will be retried on next startup.");
+        const failures = result.results.filter((session) => session.status === "failed")
+          .map((session) => `${session.sessionId}: ${session.error}`).join("; ");
+        console.warn(`TwiCC Done lane migration is incomplete; failed sessions will be retried on next startup. ${failures}`);
       }
-    } catch {
-      console.warn("TwiCC Done lane migration could not run; it will be retried on next startup.");
+    } catch (error) {
+      console.warn(`TwiCC Done lane migration could not run; it will be retried on next startup. ${error instanceof Error ? error.message : String(error)}`);
     }
   });
 

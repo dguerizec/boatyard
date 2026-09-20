@@ -13,6 +13,8 @@ const TWICC_SESSION_FLOW_ORIGIN_ANNOTATION = "sessionFlowOrigin";
 const TWICC_SESSION_FLOW_ORDER_ANNOTATION = "sessionFlowOrder";
 const TWICC_SESSION_FLOW_TWICC_ORIGIN = "twicc";
 const TWICC_PROJECT_CACHE_TTL_MS = 600000;
+// Paginated session lists can exceed Node's default 1 MiB output limit.
+const TWICC_COMMAND_MAX_BUFFER = 16 * 1024 * 1024;
 const TWICC_SESSION_FLOW_LANE_RANKS: Record<TwiccSessionFlowLane, number> = {
   in_progress: 0,
   backlog: 1,
@@ -806,7 +808,9 @@ async function runTwiccCommand(
   // Never silently target the local instance when a configured server fails.
   if (shouldUseRpc(options)) { return rpcCommand(command, body, options); }
   if (!options.execFileAsync) { throw new Error("TwiCC command runner is required."); }
-  const { stdout } = await options.execFileAsync("twicc", args, { timeout: 30000, windowsHide: true });
+  const { stdout } = await options.execFileAsync("twicc", args, {
+    timeout: 30000, windowsHide: true, maxBuffer: TWICC_COMMAND_MAX_BUFFER
+  });
   return JSON.parse(String(stdout || "null"));
 }
 

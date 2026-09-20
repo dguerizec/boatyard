@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { PluginToolDefinition } from "../src/shared/pluginTypes.js";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import type { ExecFileAsync, PluginToolDefinition } from "../src/shared/pluginTypes.js";
 import { registerTwiccTools } from "../src/plugins/twicc/tools.js";
 import { migrateTwiccSessionFlowLanes, loadTwiccSessionFlow } from "../src/plugins/twicc/service.js";
 
@@ -126,6 +128,38 @@ test("Kanban reorder preserves selected order, rejects bad anchors and stops on 
   const result = await f.call("reorder_sessions", { lane: "backlog", sessionIds: ["b"], position: "first" });
   assert.equal(result.allSucceeded, false);
   assert.equal(f.calls.filter((call) => call.command.startsWith("update")).length, 1);
+});
+
+test("CLI migration reads pages larger than 1 MiB and migrates sessions on later pages", async () => {
+  const execFileAsync = promisify(execFile);
+  const offsets: number[] = [];
+  const updated: string[] = [];
+  const result = await migrateTwiccSessionFlowLanes({
+    execFileAsync: (async (_command: string, args: string[], options: Record<string, unknown>) => {
+      if (args[0] === "sessions") {
+        const offsetIndex = args.indexOf("--offset");
+        const offset = offsetIndex < 0 ? 0 : Number(args[offsetIndex + 1]);
+        offsets.push(offset);
+        if (!offset) {
+          return execFileAsync(process.execPath, ["-e", `
+            process.stdout.write(JSON.stringify(Array.from({ length: 1000 }, (_, id) => ({
+              id: String(id), title: 'x'.repeat(2048)
+            }))));
+          `], options);
+        }
+        return { stdout: JSON.stringify([
+          { id: "legacy", annotations: { boatyard: { sessionFlowLane: "testing" } } }
+        ]) };
+      }
+      assert.equal(args[0], "update-session");
+      assert.ok(args.includes("set:boatyard.sessionFlowLane=done"));
+      updated.push(args[1]);
+      return { stdout: JSON.stringify({ status: "updated" }) };
+    }) as unknown as ExecFileAsync
+  });
+  assert.deepEqual(offsets, [0, 1000]);
+  assert.deepEqual(updated, ["legacy"]);
+  assert.equal(result.allSucceeded, true);
 });
 
 test("Legacy lane migration is separate, includes archived/hidden and preserves other annotations", async () => {

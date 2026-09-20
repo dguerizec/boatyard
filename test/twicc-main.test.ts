@@ -4,6 +4,35 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { activate } = require(`${process.cwd()}/build/plugins/twicc/main`);
 
+test("TwiCC startup migration logs the cause of read and session update failures", async (t: any) => {
+  const warnings: string[] = [];
+  t.mock.method(console, "warn", (message: string) => warnings.push(message));
+  for (const failRead of [true, false]) {
+    let migrate: () => Promise<void> = async () => {};
+    activate({
+      actions: { handle() {} },
+      execFileAsync: async (_command: string, args: string[]) => {
+        if (failRead) { throw new Error("TwiCC connection refused"); }
+        if (args[0] === "sessions") {
+          return { stdout: JSON.stringify([
+            { id: "legacy-session", annotations: { boatyard: { sessionFlowLane: "testing" } } }
+          ]) };
+        }
+        throw new Error("Session update denied");
+      },
+      getState: () => ({}),
+      projectInspectors: { register() {} },
+      tools: { register() {} },
+      stateMigrations: { register(callback: () => Promise<void>) { migrate = callback; } },
+      resources: { registerProvider() {} }
+    });
+    await migrate();
+  }
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[0], /could not run.*TwiCC connection refused/);
+  assert.match(warnings[1], /incomplete.*legacy-session: Session update denied/);
+});
+
 test("TwiCC main plugin registers its system resource provider", () => {
   const resourceProviders: string[] = [];
   activate({
