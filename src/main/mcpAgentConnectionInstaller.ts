@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import {
   chmodSync,
@@ -6,6 +8,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  unlinkSync,
   writeFileSync
 } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -15,9 +18,10 @@ import {
   isMcpAgentTargetId,
   type McpAgentTargetId
 } from "./mcpAgentTargets.js";
+import { CODEX_MCP_TOKEN_VARIABLE, readCodexMcpToken, updateCodexMcpEnv } from "./codexMcpEnv.js";
 
-const CODEX_BLOCK_START = "# >>> Boatyard managed MCP connection: boatyard";
-const CODEX_BLOCK_END = "# <<< Boatyard managed MCP connection: boatyard";
+const execFileAsync = promisify(execFile);
+type CodexCommandRunner = (args: string[], options: { env: NodeJS.ProcessEnv; cwd: string }) => Promise<string>;
 
 export type McpAgentConnectionState =
   | "conflict"
@@ -42,6 +46,7 @@ export type McpAgentConnectionMutationResult = {
 
 type McpAgentConnectionInstallerOptions = {
   environment?: Record<string, string | undefined>;
+  runCodexCommand?: CodexCommandRunner;
   getEndpoint: () => string;
   getManagedToken: (targetId: McpAgentTargetId) => string | undefined;
   getOrCreateManagedToken: (targetId: McpAgentTargetId) => string;
@@ -59,13 +64,6 @@ type ConnectionTarget = {
 type ParsedConfig = {
   entry: unknown;
   source: unknown;
-};
-
-type CodexBlock = {
-  end: number;
-  endpoint: string | null;
-  owned: boolean;
-  start: number;
 };
 
 function resolveConfiguredDirectory(value: string | undefined, fallback: string): string {
@@ -162,112 +160,20 @@ function parseHermesConfig(text: string | null): ParsedConfig {
   };
 }
 
-function createCodexBlock(endpoint: string, token: string): string {
-  return [
-    CODEX_BLOCK_START,
-    "[mcp_servers.boatyard]",
-    `url = ${JSON.stringify(endpoint)}`,
-    `http_headers = { Authorization = ${JSON.stringify(`Bearer ${token}`)} }`,
-    CODEX_BLOCK_END
-  ].join("\n");
-}
-
-function findCodexBlock(text: string, token: string): CodexBlock | null {
-  const start = text.indexOf(CODEX_BLOCK_START);
-  const endMarker = text.indexOf(CODEX_BLOCK_END);
-  if (start < 0 && endMarker < 0) {
-    return null;
-  }
-  if (
-    start < 0 ||
-    endMarker < start ||
-    text.indexOf(CODEX_BLOCK_START, start + CODEX_BLOCK_START.length) >= 0 ||
-    text.indexOf(CODEX_BLOCK_END, endMarker + CODEX_BLOCK_END.length) >= 0
-  ) {
-    throw new Error("The Boatyard-managed Codex MCP block is malformed.");
-  }
-  const end = endMarker + CODEX_BLOCK_END.length;
-  const block = text.slice(start, end);
-  const lines = block.split("\n");
-  let endpoint: string | null = null;
-  if (lines.length === 5 && lines[0] === CODEX_BLOCK_START && lines[1] === "[mcp_servers.boatyard]") {
-    const urlValue = lines[2]?.slice("url = ".length);
-    try {
-      const parsed = JSON.parse(urlValue || "null");
-      endpoint = typeof parsed === "string" ? parsed : null;
-    } catch {
-      endpoint = null;
-    }
-  }
-  return {
-    end,
-    endpoint,
-    owned: endpoint !== null && block === createCodexBlock(endpoint, token),
-    start
-  };
-}
-
-function hasUnmanagedCodexEntry(text: string, managedBlock: CodexBlock | null): boolean {
-  const outside = managedBlock
-    ? `${text.slice(0, managedBlock.start)}${text.slice(managedBlock.end)}`
-    : text;
-  const boatyardKey = "(?:boatyard|\\\"boatyard\\\"|'boatyard')";
-  if (new RegExp(
-    `^\\s*\\[{1,2}\\s*mcp_servers\\s*\\.\\s*${boatyardKey}\\s*]{1,2}\\s*(?:#.*)?$`,
-    "m"
-  ).test(outside)) {
-    return true;
-  }
-  if (new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${boatyardKey}(?:\\s*\\.|\\s*=)`, "m").test(outside)) {
-    return true;
-  }
-  const parentHeader = /^\s*\[\s*mcp_servers\s*]\s*(?:#.*)?$/gm;
-  let parentMatch: RegExpExecArray | null;
-  while ((parentMatch = parentHeader.exec(outside))) {
-    const bodyStart = parentMatch.index + parentMatch[0].length;
-    const nextHeader = /^\s*\[/gm;
-    nextHeader.lastIndex = bodyStart;
-    const bodyEnd = nextHeader.exec(outside)?.index ?? outside.length;
-    const body = outside.slice(bodyStart, bodyEnd);
-    if (new RegExp(`^\\s*${boatyardKey}(?:\\s*\\.|\\s*=)`, "m").test(body)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function appendCodexBlock(text: string, block: string): string {
-  if (!text) {
-    return `${block}\n`;
-  }
-  const separator = text.endsWith("\n\n") ? "" : text.endsWith("\n") ? "\n" : "\n\n";
-  return `${text}${separator}${block}\n`;
-}
-
-function removeCodexBlock(text: string, block: CodexBlock): string {
-  let before = text.slice(0, block.start);
-  let after = text.slice(block.end);
-  if (before.endsWith("\n") && after.startsWith("\n")) {
-    after = after.slice(1);
-  }
-  if (!before && after.startsWith("\n")) {
-    after = after.slice(1);
-  }
-  if (!after && before.endsWith("\n\n")) {
-    before = before.slice(0, -1);
-  }
-  return `${before}${after}`;
-}
-
 export class McpAgentConnectionInstaller {
   private readonly getEndpoint: () => string;
   private readonly getManagedToken: (targetId: McpAgentTargetId) => string | undefined;
   private readonly getOrCreateManagedToken: (targetId: McpAgentTargetId) => string;
   private readonly revokeManagedToken: (targetId: McpAgentTargetId) => boolean;
   private readonly targets: ConnectionTarget[];
+  private readonly codexEnvironment: NodeJS.ProcessEnv;
+  private readonly homeDirectory: string;
+  private readonly runCodexCommand: CodexCommandRunner;
+  private mutation: Promise<unknown> = Promise.resolve();
 
   constructor({
     environment = process.env,
+    runCodexCommand,
     getEndpoint,
     getManagedToken,
     getOrCreateManagedToken,
@@ -279,6 +185,14 @@ export class McpAgentConnectionInstaller {
     this.getOrCreateManagedToken = getOrCreateManagedToken;
     this.revokeManagedToken = revokeManagedToken;
     const codexRoot = resolveConfiguredDirectory(environment.CODEX_HOME, join(homeDirectory, ".codex"));
+    this.homeDirectory = homeDirectory;
+    this.codexEnvironment = { ...environment, CODEX_HOME: codexRoot };
+    this.runCodexCommand = runCodexCommand || (async (args, options) => {
+      const { stdout } = await execFileAsync("codex", args, {
+        ...options, encoding: "utf8", timeout: 15_000, maxBuffer: 1024 * 1024, windowsHide: true
+      });
+      return stdout;
+    });
     const claudeRoot = resolveConfiguredDirectory(environment.CLAUDE_CONFIG_DIR, homeDirectory);
     const hermesRoot = resolveConfiguredDirectory(environment.HERMES_HOME, join(homeDirectory, ".hermes"));
     const configPaths: Record<McpAgentTargetId, { path: string; type: ConnectionTarget["type"] }> = {
@@ -294,13 +208,41 @@ export class McpAgentConnectionInstaller {
     }));
   }
 
-  list(): McpAgentConnectionStatus[] {
-    return this.targets.map((target) => this.inspect(target));
+  async list(): Promise<McpAgentConnectionStatus[]> {
+    return Promise.all(this.targets.map((target) => this.inspect(target)));
   }
 
-  install(targetId: unknown): McpAgentConnectionMutationResult {
+  private enqueueMutation(operation: () => Promise<McpAgentConnectionMutationResult>) {
+    const result = this.mutation.then(operation);
+    this.mutation = result.catch(() => undefined);
+    return result;
+  }
+
+  install(targetId: unknown): Promise<McpAgentConnectionMutationResult> {
+    return this.enqueueMutation(() => this.installTarget(targetId));
+  }
+
+  uninstall(targetId: unknown, options: { force?: boolean } = {}): Promise<McpAgentConnectionMutationResult> {
+    return this.enqueueMutation(() => this.uninstallTarget(targetId, options));
+  }
+
+  private async codexCommand(args: string[]): Promise<string> {
+    try {
+      return await this.runCodexCommand(["mcp", ...args], {
+        env: this.codexEnvironment, cwd: this.homeDirectory
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error("Codex CLI was not found. Install Codex and make it available on PATH.");
+      }
+      // CLI diagnostics may contain configuration values, including credentials.
+      throw new Error(`Codex MCP ${args[0]} failed. Check the Codex installation and configuration.`);
+    }
+  }
+
+  private async installTarget(targetId: unknown): Promise<McpAgentConnectionMutationResult> {
     const target = this.getTarget(targetId);
-    const initial = this.inspect(target);
+    const initial = await this.inspect(target);
     if (initial.state === "conflict" || initial.state === "modified") {
       throw new Error(initial.detail);
     }
@@ -310,7 +252,7 @@ export class McpAgentConnectionInstaller {
     const previousToken = this.getManagedToken(target.id);
     const token = this.getOrCreateManagedToken(target.id);
     try {
-      this.writeConnection(target, this.getEndpoint(), token);
+      await this.writeConnection(target, this.getEndpoint(), token);
     } catch (error) {
       if (!previousToken) {
         this.revokeManagedToken(target.id);
@@ -319,30 +261,34 @@ export class McpAgentConnectionInstaller {
     }
     return {
       message: `${initial.state === "updateAvailable" ? "Updated" : "Installed"} the Boatyard MCP connection for ${target.label}. Restart the agent to load it.`,
-      target: this.inspect(target)
+      target: await this.inspect(target)
     };
   }
 
-  uninstall(targetId: unknown, options: { force?: boolean } = {}): McpAgentConnectionMutationResult {
+  private async uninstallTarget(targetId: unknown, options: { force?: boolean }): Promise<McpAgentConnectionMutationResult> {
     const target = this.getTarget(targetId);
-    const status = this.inspect(target);
+    const status = await this.inspect(target);
     const token = this.getManagedToken(target.id);
-    if (status.state === "conflict") {
-      throw new Error("Boatyard will not remove an MCP connection it does not own.");
-    }
-    if (status.state === "modified" && options.force !== true) {
-      throw new Error("This MCP connection contains local changes. Confirm their removal before uninstalling it.");
-    }
-    if (status.state !== "notInstalled") {
-      if (!token) {
-        throw new Error("Boatyard cannot verify ownership of this MCP connection.");
+    if (target.type === "codex-toml") {
+      await this.removeConnection(target);
+    } else {
+      if (status.state === "conflict") {
+        throw new Error("Boatyard will not remove an MCP connection it does not own.");
       }
-      this.removeConnection(target, token);
+      if (status.state === "modified" && options.force !== true) {
+        throw new Error("This MCP connection contains local changes. Confirm their removal before uninstalling it.");
+      }
+      if (status.state !== "notInstalled") {
+        if (!token) {
+          throw new Error("Boatyard cannot verify ownership of this MCP connection.");
+        }
+        await this.removeConnection(target);
+      }
     }
     this.revokeManagedToken(target.id);
     return {
       message: `Uninstalled the Boatyard MCP connection for ${target.label} and revoked its token.`,
-      target: this.inspect(target)
+      target: await this.inspect(target)
     };
   }
 
@@ -357,7 +303,7 @@ export class McpAgentConnectionInstaller {
     return target;
   }
 
-  private inspect(target: ConnectionTarget): McpAgentConnectionStatus {
+  private async inspect(target: ConnectionTarget): Promise<McpAgentConnectionStatus> {
     const token = this.getManagedToken(target.id);
     const base = {
       configPath: target.configPath,
@@ -367,27 +313,28 @@ export class McpAgentConnectionInstaller {
     };
     const endpoint = this.getEndpoint();
     try {
-      const text = readConfigFile(target.configPath);
       if (target.type === "codex-toml") {
-        const source = text || "";
-        const block = findCodexBlock(source, token || "");
-        const unmanagedEntry = hasUnmanagedCodexEntry(source, block);
-        if (!token) {
-          return block || unmanagedEntry
-            ? { ...base, detail: "A Boatyard MCP entry already exists, but it is not managed by Boatyard.", state: "conflict" }
-            : { ...base, detail: "The MCP connection is not installed.", state: "notInstalled" };
+        const output = await this.codexCommand(["list", "--json"]);
+        let entries: unknown;
+        try {
+          entries = JSON.parse(output);
+        } catch {
+          throw new Error("Codex returned an invalid MCP server list.");
         }
-        if (!block && !unmanagedEntry) {
-          return { ...base, detail: "A managed token exists, but the Codex connection is missing.", state: "notInstalled" };
+        if (!Array.isArray(entries)) throw new Error("Codex returned an invalid MCP server list.");
+        const server = entries.find((entry) => isRecord(entry) && entry.name === "boatyard");
+        const entry = server?.transport;
+        if (server === undefined) {
+          return { ...base, detail: "The MCP connection is not installed.", state: "notInstalled" };
         }
-        if (!block || unmanagedEntry || !block.owned) {
-          return { ...base, detail: "The Boatyard-managed Codex MCP entry was changed locally.", state: "modified" };
-        }
-        return block.endpoint === endpoint
-          ? { ...base, detail: "The current Boatyard MCP connection is installed.", state: "installed" }
-          : { ...base, detail: "The connection endpoint needs to be updated.", state: "updateAvailable" };
+        return isRecord(entry) && entry.url === endpoint && token &&
+          server.enabled !== false && entry.bearer_token_env_var === CODEX_MCP_TOKEN_VARIABLE &&
+          readCodexMcpToken(readConfigFile(join(dirname(target.configPath), ".env")) || "") === token
+          ? { ...base, detail: "The Boatyard MCP connection is installed.", state: "installed" }
+          : { ...base, detail: "The connection settings need to be updated.", state: "updateAvailable" };
       }
 
+      const text = readConfigFile(target.configPath);
       const parsed = target.type === "claude-json" ? parseClaudeConfig(text) : parseHermesConfig(text);
       if (!token) {
         return parsed.entry === undefined
@@ -413,17 +360,24 @@ export class McpAgentConnectionInstaller {
     }
   }
 
-  private writeConnection(target: ConnectionTarget, endpoint: string, token: string): void {
-    const text = readConfigFile(target.configPath);
+  private async writeConnection(target: ConnectionTarget, endpoint: string, token: string): Promise<void> {
     if (target.type === "codex-toml") {
-      const source = text || "";
-      const block = findCodexBlock(source, token);
-      const next = block
-        ? `${source.slice(0, block.start)}${createCodexBlock(endpoint, token)}${source.slice(block.end)}`
-        : appendCodexBlock(source, createCodexBlock(endpoint, token));
-      writeSecretFileAtomically(target.configPath, next);
+      const envPath = join(dirname(target.configPath), ".env");
+      const previous = readConfigFile(envPath);
+      const next = updateCodexMcpEnv(previous || "", token);
+      writeSecretFileAtomically(envPath, next);
+      try {
+        await this.codexCommand(["add", "boatyard", "--url", endpoint, "--bearer-token-env-var", CODEX_MCP_TOKEN_VARIABLE]);
+      } catch (error) {
+        if (readConfigFile(envPath) === next) {
+          if (previous === null) unlinkSync(envPath);
+          else writeSecretFileAtomically(envPath, previous);
+        }
+        throw error;
+      }
       return;
     }
+    const text = readConfigFile(target.configPath);
     if (target.type === "claude-json") {
       const parsed = parseClaudeConfig(text);
       const source = parsed.source as Record<string, unknown>;
@@ -439,19 +393,22 @@ export class McpAgentConnectionInstaller {
     writeSecretFileAtomically(target.configPath, document.toString());
   }
 
-  private removeConnection(target: ConnectionTarget, token: string): void {
-    const text = readConfigFile(target.configPath);
-    if (text === null) {
-      return;
-    }
+  private async removeConnection(target: ConnectionTarget): Promise<void> {
     if (target.type === "codex-toml") {
-      const block = findCodexBlock(text, token);
-      if (!block) {
-        return;
+      const envPath = join(dirname(target.configPath), ".env");
+      // Validate access before removing the MCP entry; re-read after the command
+      // so unrelated edits made while Codex runs are retained.
+      readConfigFile(envPath);
+      await this.codexCommand(["remove", "boatyard"]);
+      const source = readConfigFile(envPath);
+      if (source !== null) {
+        const next = updateCodexMcpEnv(source);
+        if (next !== source) writeSecretFileAtomically(envPath, next);
       }
-      writeSecretFileAtomically(target.configPath, removeCodexBlock(text, block));
       return;
     }
+    const text = readConfigFile(target.configPath);
+    if (text === null) return;
     if (target.type === "claude-json") {
       const parsed = parseClaudeConfig(text);
       const source = parsed.source as Record<string, unknown>;
