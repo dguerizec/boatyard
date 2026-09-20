@@ -107,6 +107,8 @@
 .file-editor-main { display: flex; flex-direction: column; background: var(--panel); }
 .file-browser { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: 14px; background: var(--panel); }
 .file-browser-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); }
+.file-browser-actions { display: flex; gap: 6px; margin-left: auto; }
+.file-editor .file-browser-actions .webapp-tool-button { padding: 0; }
 .file-browser ul { list-style: none; margin: 0; padding: 0 0 0 12px; }
 .file-browser .file-browser-tree { flex: 1; min-height: 0; overflow: auto; padding: 6px; }
 .file-browser ul[hidden] { display: none; }

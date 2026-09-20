@@ -4,7 +4,7 @@ Choose **File Editor** in a project's pane selector. The project must have a loc
 
 Each pane keeps its opened files in a horizontally scrollable tab strip. Click a tab to switch files; opening an already opened file selects its existing tab. Identical filenames show their paths to distinguish them. Modified files display a dot. Close a tab with its close icon, middle-click, or Delete while the tab has focus; modified tabs ask whether to **Save**, **Discard changes**, or **Cancel**. Save closes the tab only after a successful save; discarding also removes the local draft and reverts the shared changes. Linked panes close the tab together after this decision. Arrow keys and Home/End navigate the tabs. Closing the active tab selects its neighbor; closing the last tab leaves the pane empty. Split the layout to keep several files visible at once. Opening a different file preserves the previous unsaved draft. Drafts are saved automatically for recovery after an unexpected shutdown; restored tabs recover their modifications and show the modified-file dot. The pane restores its open tabs, selected file, and Preview mode when reopened or after an application restart. Each file remembers its cursor, selection, editor scroll position (both axes), and preview scroll position separately in each pane. Preview remains enabled when switching files. Files without a rendered preview use a read-only text or Hex view, including files loaded in blocks. Drafts are stored locally in the application's browser storage, including file contents; clearing that storage deletes them. A storage error is shown if a draft cannot be persisted.
 
-- Drag the boundary between the browser and editor to resize it, or focus the boundary and use the left/right arrow keys. The browser width and visibility are remembered per pane. **Refresh** reloads the folder listing; large folders offer **Load more**. Hidden files are included, while broken links and links outside the project are disabled.
+- Drag the boundary between the browser and editor to resize it, or focus the boundary and use the left/right arrow keys. The browser width and visibility are remembered per pane. The **Refresh project files** circular-arrow icon reloads the folder listing; large folders offer **Load more**. Hidden files are included, while broken links and links outside the project are disabled.
 - **Save** or **Ctrl/Cmd+S** writes the file. Editing can continue during a save for files loaded in full; block edits pause until their save and reindex finish.
 - The **Preview** eye icon in the pane toolbar toggles a rendered view of the current Markdown, HTML, or Mermaid draft, without saving. Click it again to return to the editor with the draft intact. It is disabled for other file types.
 - **Find** or **Ctrl/Cmd+F** opens CodeMirror's search and replace panel. **Find** stays highlighted while the panel is open; click it again to close the panel.
@@ -90,7 +90,7 @@ Changesets are stored as local drafts per file and shared by linked panes. The o
 ## Git changes
 
 The file browser displays Git status badges and marks folders containing changes.
-The **Changes** filter lists modified, staged, untracked, renamed, conflicted, and
+The **Show Git changes only** comparison icon filters modified, staged, untracked, renamed, conflicted, and
 removed files; each entry has an **Open diff** action. Status badges describe the
 index and working tree, while unsaved editor drafts remain separate until saved.
 
