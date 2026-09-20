@@ -9,6 +9,7 @@ import { createBlockNavigation } from "./blockNavigation";
 import { createHexView } from "./hexView";
 import { imageMimeType, type ImageSnapshot } from "./imageTypes";
 import { EditorPaneLinks } from "./paneLinks";
+import { editorVim } from "./vim";
 import { basicSetup } from "codemirror";
 import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
@@ -39,7 +40,7 @@ const projectLinks = new Map<string, EditorPaneLinks>();
 const linkedHosts = new Map<string, HTMLElement>();
 type PaneControl = { open: boolean; enabled: boolean; label: string; button: HTMLButtonElement | null; toggle: (() => void) | null; drag?: (event: DragEvent) => void; highlight?: (active: boolean) => void };
 const paneControls = new WeakMap<HTMLElement, Map<string, PaneControl>>();
-function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | "hex" | "diff" | "open"): PaneControl {
+function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | "hex" | "diff" | "open" | "vim"): PaneControl {
   let controls = paneControls.get(host);
   if (!controls) {
     controls = new Map();
@@ -47,7 +48,7 @@ function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | 
   }
   let control = controls.get(key);
   if (!control) {
-    control = { open: false, enabled: false, label: key === "open" ? "open files" : key === "browse" ? "project files" : key === "link" ? "linked files" : key === "hex" ? "hex editor" : key === "diff" ? "Git diff" : "preview", button: null, toggle: null };
+    control = { open: false, enabled: false, label: key === "vim" ? "Vim mode" : key === "open" ? "open files" : key === "browse" ? "project files" : key === "link" ? "linked files" : key === "hex" ? "hex editor" : key === "diff" ? "Git diff" : "preview", button: null, toggle: null };
     controls.set(key, control);
   }
   return control;
@@ -59,6 +60,7 @@ function syncPaneControl(control: PaneControl) {
   control.button.disabled = !control.enabled || !control.toggle;
   control.button.classList.toggle("active", control.open);
   control.button.setAttribute("aria-pressed", String(control.open));
+  if (control.label === "Vim mode") { control.button.title = control.open ? "Disable Vim mode (standard editing)" : "Enable Vim mode"; return; }
   if (control.label === "open files") { control.button.title = "Open files"; control.button.removeAttribute("aria-pressed"); return; }
   if (control.label === "image preview") { control.button.title = "Image preview · Drag to another pane"; return; }
   if (control.label === "linked files") { control.button.title = "Unlink file navigation"; return; }
@@ -70,6 +72,7 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
   for (const definition of [
     { key: "open", icon: "folderOpen", label: "Open files" },
     { key: "browse", icon: "folderTree", label: "Browse project files" },
+    { key: "vim", icon: "", label: "Vim mode" },
     { key: "diff", icon: "gitCompareArrows", label: "Git diff" },
     { key: "hex", icon: "binary", label: "Hex editor" },
     { key: "preview", icon: "eye", label: "Preview" },
@@ -79,7 +82,8 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
     const action = button("", () => control.toggle?.());
     action.className = `webapp-tool-button file-editor-${definition.key}-button`;
     action.setAttribute("aria-label", definition.label);
-    action.append(createToolIcon(definition.icon));
+    if (definition.key === "vim") action.textContent = "Vi";
+    else action.append(createToolIcon(definition.icon));
     if (definition.key === "preview" || definition.key === "diff" || definition.key === "hex") action.addEventListener("dragstart", (event) => {
       if (control.enabled && control.drag) control.drag(event);
       else event.preventDefault();
@@ -187,6 +191,27 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const prefix = `boatyard:file-editor:${JSON.stringify([project.id, project.sourcePath])}:`;
   const paneKey = `${prefix}pane:${String(props.paneId || "default")}`;
   const paneId = String(props.paneId || "default");
+  const vimControl = getPaneControl(container, "vim");
+  const vimCompartment = new Compartment();
+  let vimEnabled = false;
+  try { vimEnabled = localStorage.getItem(`${paneKey}:vim`) === "true"; } catch { /* Optional editing preference. */ }
+  const vimExtension = () => vimEnabled ? editorVim({
+    save: () => { if (doc) void doc.save(); },
+    history: doc?.changes ? (forward) => { void historyChanges(forward); } : undefined,
+    error: showError
+  }) : [];
+  const toggleVim = () => {
+    vimEnabled = !vimEnabled;
+    try { localStorage.setItem(`${paneKey}:vim`, String(vimEnabled)); } catch { /* Editing remains available in memory. */ }
+    view?.dispatch({ effects: vimCompartment.reconfigure(vimExtension()) });
+    vimControl.open = vimEnabled;
+    syncPaneControl(vimControl);
+    if (!editorHost.hidden) view?.focus();
+  };
+  vimControl.open = vimEnabled;
+  vimControl.enabled = true;
+  vimControl.toggle = toggleVim;
+  syncPaneControl(vimControl);
   const openControl = getPaneControl(container, "open");
   let savedTabs: unknown;
   try { savedTabs = JSON.parse(localStorage.getItem(`${paneKey}:tabs`) || "null"); } catch { /* Ignore malformed tab preferences. */ }
@@ -864,7 +889,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       parent: editorHost,
       state: EditorState.create({
         doc: doc.text.slice(bom.length),
-        extensions: [basicSetup, gitView.extension, theme.of(editorTheme()), doc.base.block ? [] : language(doc.base.path),
+        extensions: [vimCompartment.of(vimExtension()), basicSetup, gitView.extension, theme.of(editorTheme()), doc.base.block ? [] : language(doc.base.path),
           readOnly.of(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath))),
           editable.of(EditorView.editable.of(!deletedGitPath)),
           numbering.of(lineNumbers({ formatNumber: (number) => String(number + viewFirstLine - 1) })),
@@ -1381,6 +1406,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       previewControl.drag = undefined;
       syncPaneControl(previewControl);
     }
+    if (vimControl.toggle === toggleVim) { vimControl.toggle = null; vimControl.enabled = false; syncPaneControl(vimControl); }
     openControl.toggle = null; openControl.enabled = false; syncPaneControl(openControl);
     disposed = true;
     unsubscribe?.();

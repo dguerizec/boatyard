@@ -12,6 +12,29 @@ Each pane keeps its opened files in a horizontally scrollable tab strip. Click a
 - JavaScript, TypeScript, JSX/TSX, JSON, CSS, HTML, Markdown, and Python have syntax highlighting. Other UTF-8 files can be edited as plain text.
 - The editor follows Boatyard's light or dark theme.
 
+## Vim mode
+
+Click **Vi** in the pane toolbar to toggle Vim keybindings. The highlighted button
+means Vim is enabled; click it again to return to standard editing. This preference
+is remembered per pane. Switching modes preserves the draft, cursor, and undo
+history. Vim applies to the text editor, including inline Git diffs; Hex and
+rendered previews retain their own controls.
+
+The editor's Vim status bar shows **NORMAL**, **INSERT**, or **VISUAL** and accepts
+searches and Ex commands. Start with `h/j/k/l` for movement, `i` to insert, Escape
+to return to Normal, `v` for Visual selection, `dd` to delete a line, `yy`/`p` to
+copy/paste, `/` to search, and `u`/`Ctrl+R` to undo/redo. The keybindings come from
+`@replit/codemirror-vim`; this is Vim emulation, not a full Vim/Neovim runtime.
+
+Use `:w` or `:write` to save the current file through Boatyard's usual revision
+checks and conflict handling. Save errors remain visible in the editor status.
+Write ranges, file arguments, and `:w!` are unsupported; use the existing conflict
+controls when a file changes on disk. Tab closing still uses Boatyard's tab
+controls. For paged files, Vim motions and searches operate on the loaded block;
+undo/redo uses the shared file-wide history and saving writes all modified blocks.
+
+## Saving and disk changes
+
 Visible documents are checked for disk changes every three seconds and when the window regains focus. Clean documents reload automatically. Dirty documents retain the draft and display the disk version for comparison. Choose **Use disk version** to discard the draft after confirmation, or **Keep my version** to accept the compared disk revision before explicitly saving your draft. Every save checks the revision again, including after conflict resolution. A deleted or inaccessible file leaves the draft available; saving requires the file to exist and be writable again.
 
 Existing files inside or outside the project can be edited using text or Hex mode. Files larger than 2 MiB are loaded in indexed blocks. It preserves a UTF-8 BOM, uniform LF/CRLF line endings, and file permission bits. Mixed line endings may be normalized on editing. Relative paths and browser entries stay inside the project; external files selected in the native picker retain their absolute paths. External paths are preserved in drafts, linked panes, and restored views. Symlinks opened through an absolute path resolve to their canonical target; files with multiple hard links cannot be saved. Saves use a temporary sibling and rename, with content checks before replacement; this is optimistic conflict detection, not a filesystem lock against other applications. It does not yet provide file creation or language-server completion.
