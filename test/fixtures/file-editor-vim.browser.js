@@ -187,4 +187,4 @@ check(host.querySelectorAll('[role=tab]').length === 1 && host.textContent.inclu
 ex(currentView(), 'q'); await tick();
 check(!host.querySelector('.cm-editor') && host.isConnected, 'Last :q leaves pane open and empty');
 cleanup();
-window.vimTestResult = 'passed';
+window.browserTestResult = 'passed';

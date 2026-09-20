@@ -173,6 +173,8 @@
 .file-editor-diff[hidden] { display: none; }
 .file-editor .cm-line.file-editor-added-line { background: rgba(100, 180, 128, .16); }
 .file-editor .file-editor-removed-lines { margin: 0; padding: 0 4px; background: rgba(229, 107, 111, .16); border-left: 3px solid rgba(229, 107, 111, .65); color: var(--text); font: inherit; white-space: pre; user-select: text; }
+/* Preserve empty and trailing blank rows without changing the original text. */
+.file-editor .file-editor-removed-lines::after { content: "\200b"; }
 .file-editor .file-editor-git-marker { border: 0; border-radius: 0; background: transparent; padding: 0 3px; font: inherit; line-height: inherit; color: var(--accent); }
 .file-editor .file-editor-git-marker.Added { color: var(--success-text); }
 .file-editor .file-editor-git-marker.Deleted { color: #e56b6f; }
