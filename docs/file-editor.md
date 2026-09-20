@@ -30,6 +30,8 @@ Open PNG, JPEG, GIF, WebP, AVIF, BMP, ICO, or SVG files from the file browser or
 
 ## Hex editing
 
+Drag the **Hex editor** icon onto another pane to open a linked File Editor in Hex mode. Drop targets highlight as with Preview and Git diff. The panes share their tabs and selected file while keeping their own view modes.
+
 The **Hex editor** binary icon in the pane toolbar switches between text editing and hexadecimal byte editing. Files that are not UTF-8 text open in Hex automatically. Hex shows offsets, sixteen bytes per row, and an ASCII column in a continuous, virtualized scroll view. Only visible rows and a small margin are rendered. The scrollbar spans the complete file; blocks are loaded on demand into a bounded cache. Enter any absolute hexadecimal offset and click Go to jump there. The scroll position is remembered per file and pane. Arrow keys move between bytes. Enter two hexadecimal digits to replace a byte, or paste complete byte pairs to overwrite a range. This version overwrites bytes without inserting or deleting them.
 
 Text, Hex, and Preview use the same unsaved document. Hex preserves exact bytes, including BOMs and line endings; returning to text requires valid UTF-8 without NUL bytes. The Preview icon renders supported documents and images using their current draft bytes. Save or Ctrl/Cmd+S writes the bytes using the same revision and project-boundary checks as text saves. Hex has Undo/Redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y shortcuts. Binary drafts and the selected Hex mode are restored locally after reopening. Find is available in text mode.

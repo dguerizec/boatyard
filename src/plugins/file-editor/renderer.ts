@@ -79,7 +79,7 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
     action.className = `webapp-tool-button file-editor-${definition.key}-button`;
     action.setAttribute("aria-label", definition.label);
     action.append(createToolIcon(definition.icon));
-    if (definition.key === "preview" || definition.key === "diff") action.addEventListener("dragstart", (event) => {
+    if (definition.key === "preview" || definition.key === "diff" || definition.key === "hex") action.addEventListener("dragstart", (event) => {
       if (control.enabled && control.drag) control.drag(event);
       else event.preventDefault();
     });
@@ -207,6 +207,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   let pendingLinkedPath: string | undefined;
   let linkVersion = 0;
   const hexControl = getPaneControl(container, "hex");
+  let requestedHexPath: string | null = null;
+  try { requestedHexPath = localStorage.getItem(`${paneKey}:hex-file`); } catch { /* Optional navigation request. */ }
   let hexMode = false;
   try { hexMode = localStorage.getItem(`${paneKey}:hex`) === "true"; } catch { /* Use text mode by default. */ }
   const persistHexMode = () => {
@@ -286,6 +288,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     previewVisible = Boolean(requestedPreviewPath) || localStorage.getItem(previewKey) === "true";
   } catch { /* Preview remains available without persisted preferences. */ }
   if (diffMode) { previewVisible = false; hexMode = false; }
+  if (requestedHexPath) { hexMode = true; diffMode = false; previewVisible = false; persistDiffMode(); }
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let previewSource = "";
   let previewPendingSource = "";
@@ -1193,32 +1196,25 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   };
   const toggleDiff = () => setDiff(!diffMode);
   diffControl.toggle = toggleDiff;
-  diffControl.drag = typeof props.startPaneDrag === "function" ? (event) => {
-    const path = currentPath(); if (!path) { event.preventDefault(); return; }
-    const start = props.startPaneDrag as (event: DragEvent, webAppId: string, prepare: (paneId: string) => void) => void;
-    start(event, "boatyard.fileEditor.editor", (targetId) => {
-      localStorage.setItem(`${prefix}pane:${targetId}:diff-file`, path);
-      localStorage.setItem(`${prefix}pane:${targetId}:diff`, "true");
-      localStorage.setItem(`${prefix}pane:${targetId}:preview`, "false");
-      paneLinks.link(paneId, targetId, path, tabs.paths);
-    });
-  } : undefined;
-  syncPaneControl(diffControl);
   hexControl.toggle = toggleHex;
-  syncPaneControl(hexControl);
-  previewControl.drag = typeof props.startPaneDrag === "function" ? (event) => {
-    const path = currentPath();
-    if (!path) { event.preventDefault(); return; }
-    const start = props.startPaneDrag as (event: DragEvent, webAppId: string, prepare: (paneId: string) => void) => void;
-    start(event, "boatyard.fileEditor.editor", (targetId) => {
-      localStorage.setItem(`${prefix}pane:${targetId}:preview-file`, path);
-      localStorage.setItem(`${prefix}pane:${targetId}:preview`, "true");
-      localStorage.setItem(`${prefix}pane:${targetId}:diff`, "false");
-      paneLinks.link(paneId, targetId, path, tabs.paths);
-    });
-  } : undefined;
   previewControl.toggle = togglePreview;
-  syncPaneControl(previewControl);
+  for (const [mode, control] of [["diff", diffControl], ["hex", hexControl], ["preview", previewControl]] as const) {
+    control.drag = typeof props.startPaneDrag === "function" ? (event) => {
+      const path = currentPath();
+      if (!path) { event.preventDefault(); return; }
+      const start = props.startPaneDrag as (event: DragEvent, webAppId: string, prepare: (paneId: string) => void) => void;
+      start(event, "boatyard.fileEditor.editor", (targetId) => {
+        const targetKey = `${prefix}pane:${targetId}`;
+        for (const viewMode of ["diff", "hex", "preview"]) {
+          localStorage.removeItem(`${targetKey}:${viewMode}-file`);
+          localStorage.setItem(`${targetKey}:${viewMode}`, String(viewMode === mode));
+        }
+        localStorage.setItem(`${targetKey}:${mode}-file`, path);
+        paneLinks.link(paneId, targetId, path, tabs.paths);
+      });
+    } : undefined;
+    syncPaneControl(control);
+  }
   browserControl.toggle = toggleBrowser;
   syncPaneControl(browserControl);
   async function pickFiles() {
@@ -1280,7 +1276,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   try {
     const previous = localStorage.getItem(paneKey);
     const restore = Array.isArray(savedTabs) ? (tabs.paths.includes(previous || "") ? previous : tabs.paths[0]) : previous;
-    const path = initialLinkedPath !== undefined ? initialLinkedPath : requestedDiffPath || requestedPreviewPath || restore;
+    const path = initialLinkedPath !== undefined ? initialLinkedPath : requestedHexPath || requestedDiffPath || requestedPreviewPath || restore;
+    if (requestedHexPath) localStorage.removeItem(`${paneKey}:hex-file`);
     if (requestedDiffPath) localStorage.removeItem(`${paneKey}:diff-file`);
     if (requestedPreviewPath) localStorage.removeItem(`${paneKey}:preview-file`);
     if (path) void openFile(path, initialLinkedPath !== undefined ? linkVersion : undefined);
@@ -1312,7 +1309,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       browserControl.toggle = null;
       syncPaneControl(browserControl);
     }
-    if (hexControl.toggle === toggleHex) { hexControl.toggle = null; syncPaneControl(hexControl); }
+    if (hexControl.toggle === toggleHex) { hexControl.toggle = null; hexControl.drag = undefined; syncPaneControl(hexControl); }
     if (previewControl.toggle === togglePreview) {
       previewControl.toggle = null;
       previewControl.drag = undefined;
