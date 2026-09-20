@@ -624,7 +624,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     if (doc.base.block && previewControl.button) previewControl.button.title = "Preview requires the complete file; this file is loaded in blocks.";
     schedulePreview();
     saveButton.disabled = !doc.dirty || doc.busy || doc.changes?.saving || doc.conflict;
-    status.textContent = [doc.base.path, doc.dirty ? "Unsaved changes" : "Saved", (doc.busy || doc.changes?.saving) ? "Working…" : "", doc.changes?.dirty ? `${doc.changes.edits.length} modified ranges` : "", doc.error, persistenceError, previewVisible && imageMimeType(doc.base.path) ? imageInfo : ""].filter(Boolean).join(" · ");
+    status.textContent = [doc.base.path, doc.dirty ? "Unsaved changes" : "No unsaved changes", (doc.busy || doc.changes?.saving) ? "Working…" : "", doc.changes?.dirty ? `${doc.changes.edits.length} modified ranges` : "", doc.error, persistenceError, previewVisible && imageMimeType(doc.base.path) ? imageInfo : ""].filter(Boolean).join(" · ");
     compare.hidden = !doc.conflict;
     if (doc.conflict && compareText.textContent !== doc.disk.text) compareText.textContent = doc.disk.text;
     if (view && !hexMode && bom + view.state.sliceDoc() !== doc.text) {
