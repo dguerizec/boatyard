@@ -253,14 +253,15 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const fileTabs = createFileTabs(tabs, {
     select: async (path) => { if (path !== currentPath()) await openFile(path); },
     close: closeTab,
-    dirty: (path) => {
-      const cached = documents.get(draftKey(path));
-      if (cached) return cached.dirty;
-      const changes = changesets.get(changesKey(path));
-      if (changes) return changes.dirty;
-      try { return Boolean(localStorage.getItem(draftKey(path)) || localStorage.getItem(changesKey(path))); } catch { return false; }
-    }
+    dirty: isTabDirty
   });
+  function isTabDirty(path: string): boolean {
+    const cached = documents.get(draftKey(path));
+    if (cached) return cached.dirty;
+    const changes = changesets.get(changesKey(path));
+    if (changes) return changes.dirty;
+    try { return Boolean(localStorage.getItem(draftKey(path)) || localStorage.getItem(changesKey(path))); } catch { return false; }
+  }
   function updateTabs() {
     fileTabs.update(opening || Boolean(doc?.saving || doc?.changes?.saving));
     openControl.enabled = !opening && !pickerPending && !doc?.saving && !doc?.changes?.saving;
@@ -1029,12 +1030,69 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     try { localStorage.removeItem(paneKey); } catch { /* Optional navigation preference. */ }
   }
 
+  let closeDialog: HTMLDialogElement | undefined;
+  function confirmTabClose(path: string): Promise<string> {
+    return new Promise((resolve) => {
+      const dialog = document.createElement("dialog");
+      closeDialog = dialog;
+      dialog.className = "plugin-settings-dialog file-editor-close-dialog";
+      dialog.setAttribute("aria-label", "Save changes before closing?");
+      const panel = element("div", "plugin-settings-dialog-panel");
+      const header = element("header", "plugin-settings-dialog-header");
+      header.append(element("h3", "", "Save changes before closing?"));
+      const copy = element("p", "", `${path} has unsaved changes. Discarding will remove its local draft and revert the changes in every pane showing this file.`);
+      const actions = element("div", "form-actions");
+      const cancel = button("Cancel", () => dialog.close("cancel"));
+      const discard = button("Discard changes", () => dialog.close("discard"));
+      const save = button("Save", () => dialog.close("save"));
+      cancel.className = discard.className = "secondary-button";
+      save.className = "primary-button";
+      actions.append(cancel, discard, save);
+      panel.append(header, copy, actions); dialog.append(panel);
+      let settled = false;
+      const settle = (choice: string) => {
+        if (settled) return;
+        settled = true;
+        if (closeDialog === dialog) closeDialog = undefined;
+        dialog.remove(); resolve(choice);
+      };
+      dialog.addEventListener("close", () => settle(dialog.returnValue || "cancel"), { once: true });
+      dialog.addEventListener("cancel", (event) => { event.preventDefault(); dialog.close("cancel"); });
+      const overlay = (window as Window & { BoatyardOverlayDialog?: { show(dialog: HTMLDialogElement, options: { freeze: string; freezeMargin: number }): Promise<boolean> } }).BoatyardOverlayDialog;
+      if (overlay) void overlay.show(dialog, { freeze: "overlap", freezeMargin: 16 }).then((shown) => {
+        if (!shown || disposed) { if (dialog.open) dialog.close("cancel"); settle("cancel"); }
+        else cancel.focus();
+      }, () => settle("cancel"));
+      else { document.body.append(dialog); dialog.showModal(); cancel.focus(); }
+    });
+  }
+
   async function closeTab(path: string) {
     if (closingTab || opening || doc?.saving || doc?.changes?.saving) return;
     persist(); rememberPosition();
-    if (persistenceError && doc?.dirty) { showError(persistenceError); return; }
     closingTab = true;
     try {
+      if (isTabDirty(path)) {
+        const choice = await confirmTabClose(path);
+        if (disposed || choice === "cancel" || !tabs.paths.includes(path)) return;
+        const previous = currentPath();
+        if (previous !== path) await openFile(path);
+        const current = doc;
+        if (disposed || !current || current.base.path !== path) return;
+        if (current.saving || current.changes?.saving) { showError("Wait for the file save to finish before closing."); return; }
+        if (choice === "save") {
+          await current.save();
+          if (disposed) return;
+          if (current.dirty || current.error || current.conflict) {
+            showError(current.error || "The file could not be saved. Resolve its conflict before closing.");
+            paneLinks.opened(paneId, path, tabs.paths);
+            return;
+          }
+        } else current.useDisk();
+        persist(); updateTabs();
+        if (previous && previous !== path) await openFile(previous);
+      }
+      if (persistenceError && doc?.dirty) { showError(persistenceError); return; }
       if (currentPath() === path) {
         const next = tabs.neighbor(path);
         if (next) {
@@ -1248,6 +1306,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     highlight(false);
     if (linkedHosts.get(paneKey) === container) linkedHosts.delete(paneKey);
     if (linkControl.highlight === highlight) linkControl.highlight = undefined;
+    if (closeDialog?.open) closeDialog.close("cancel");
     detachLinks();
     if (linkControl.toggle === unlink) { linkControl.toggle = null; syncPaneControl(linkControl); }
     persist();

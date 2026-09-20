@@ -38,7 +38,7 @@ export function createFileTabs(model: FileTabs, options: {
         const label = document.createElement("span"); tab.append(label);
         const close = document.createElement("button"); close.type = "button"; close.className = "file-editor-tab-close";
         close.append(createToolIcon("close")); close.setAttribute("aria-label", `Close ${path}`);
-        close.title = "Close tab · Unsaved drafts are kept";
+        close.title = "Close tab";
         tab.addEventListener("click", () => void options.select(path));
         close.addEventListener("click", () => void options.close(path));
         host.addEventListener("auxclick", (event) => { if (event.button === 1 && !tab.disabled) { event.preventDefault(); void options.close(path); } });
