@@ -30,7 +30,7 @@ export function createFileTabs(model: FileTabs, options: {
   const items = new Map<string, { host: HTMLElement; tab: HTMLButtonElement; label: HTMLElement; close: HTMLButtonElement }>();
   function update(disabled = false) {
     for (const [path, item] of items) if (!model.paths.includes(path)) { item.host.remove(); items.delete(path); }
-    for (const path of model.paths) {
+    for (const [index, path] of model.paths.entries()) {
       let item = items.get(path);
       if (!item) {
         const host = document.createElement("div"); host.className = "file-editor-tab"; host.setAttribute("role", "presentation");
@@ -52,6 +52,7 @@ export function createFileTabs(model: FileTabs, options: {
         });
         host.append(tab, close); element.append(host); item = { host, tab, label, close }; items.set(path, item);
       }
+      if (element.children[index] !== item.host) element.insertBefore(item.host, element.children[index] || null);
       const name = path.split(/[\\/]/).pop() || path;
       const duplicate = model.paths.some((other) => other !== path && other.split(/[\\/]/).pop() === name);
       const dirty = options.dirty(path);

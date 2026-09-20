@@ -1,5 +1,5 @@
-type LinkGroup = { panes: string[]; path: string };
-type Listener = (linked: boolean, path?: string) => void;
+type LinkGroup = { panes: string[]; path: string; paths: string[] };
+type Listener = (linked: boolean, path?: string, paths?: readonly string[]) => void;
 
 /** File navigation is shared; each pane keeps its own view mode and position. */
 export class EditorPaneLinks {
@@ -14,7 +14,8 @@ export class EditorPaneLinks {
       const unique = [...new Set<string>(panes)];
       if (unique.length < 2) continue;
       unique.forEach((id) => seen.add(id));
-      this.groups.push({ panes: unique, path: group.path });
+      const paths = Array.isArray(group.paths) ? [...new Set<string>(group.paths.filter((path: unknown): path is string => typeof path === "string" && Boolean(path)))] : group.path ? [group.path] : [];
+      this.groups.push({ panes: unique, path: paths.includes(group.path) ? group.path : paths[0] || "", paths });
     }
   }
 
@@ -22,7 +23,7 @@ export class EditorPaneLinks {
     this.save(this.groups);
     for (const [pane, listener] of this.listeners) {
       const group = this.groups.find((entry) => entry.panes.includes(pane));
-      listener(Boolean(group), group?.path);
+      listener(Boolean(group), group?.path, group ? [...group.paths] : undefined);
     }
   }
 
@@ -33,20 +34,21 @@ export class EditorPaneLinks {
   attach(pane: string, listener: Listener) {
     this.listeners.set(pane, listener);
     const group = this.groups.find((entry) => entry.panes.includes(pane));
-    listener(Boolean(group), group?.path);
+    listener(Boolean(group), group?.path, group ? [...group.paths] : undefined);
     return () => { if (this.listeners.get(pane) === listener) this.listeners.delete(pane); };
   }
 
-  link(source: string, target: string, path: string) {
+  link(source: string, target: string, path: string, paths: readonly string[] = [path]) {
     if (source === target) return;
     this.remove(target);
     let group = this.groups.find((entry) => entry.panes.includes(source));
     if (!group) {
-      group = { panes: [source], path };
+      group = { panes: [source], path, paths: [...paths] };
       this.groups.push(group);
     }
     group.panes.push(target);
     group.path = path;
+    group.paths = [...paths];
     this.notify();
   }
 
@@ -60,9 +62,12 @@ export class EditorPaneLinks {
     this.notify();
   }
 
-  opened(pane: string, path: string) {
+  opened(pane: string, path: string, paths?: readonly string[]) {
     const group = this.groups.find((entry) => entry.panes.includes(pane));
-    if (!group || group.path === path) return;
+    if (!group) return;
+    const next = paths ? [...paths] : [...new Set([...group.paths, path].filter(Boolean))];
+    if (group.path === path && JSON.stringify(group.paths) === JSON.stringify(next)) return;
+    group.paths = next;
     group.path = path;
     this.notify();
   }

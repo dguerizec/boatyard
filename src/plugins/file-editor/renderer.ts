@@ -285,7 +285,6 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     previewVisible = Boolean(requestedPreviewPath) || localStorage.getItem(previewKey) === "true";
   } catch { /* Preview remains available without persisted preferences. */ }
   if (diffMode) { previewVisible = false; hexMode = false; }
-  let textPreviewPreference = previewVisible;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let previewSource = "";
   let previewPendingSource = "";
@@ -342,7 +341,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       const saved = localStorage.getItem(`${paneKey}:hex-position:${path}`);
       if (saved !== null && Number.isSafeInteger(Number(saved)) && Number(saved) >= 0) initialOffset = Number(saved);
     } catch { /* Optional scroll preferences. */ }
-    hexView.update(bytes, path, block ? (current.changes?.blockStart(current.base) ?? block.offset) : 0, current.locked, {
+    hexView.update(bytes, path, block ? (current.changes?.blockStart(current.base) ?? block.offset) : 0, current.locked || previewVisible, {
       size: current.changes?.length ?? (block ? block.size + sizeDelta : bytes.length),
       revision: `${revision}:${current.changes?.version ?? sizeDelta}`, initialOffset,
       history: current.changes ? (forward) => historyChanges(forward) : undefined,
@@ -359,7 +358,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       },
       activate: async (offset) => {
         if (disposed || doc !== current || opening || current.saving) return false;
-        if (current.conflict || current.locked) return false;
+        if (current.conflict || current.locked || previewVisible) return false;
         if (current.dirty && !current.changes) {
           showError("Save the current changes before editing another part of the file. Scrolling remains available.");
           return false;
@@ -381,6 +380,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const theme = new Compartment();
   const lineSeparator = new Compartment();
   const editable = new Compartment();
+  const readOnly = new Compartment();
   const numbering = new Compartment();
   let viewLocked = false;
   let viewFirstLine = 1;
@@ -436,14 +436,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     rememberPosition(); diffMode = value; persistDiffMode();
     if (value) { previewVisible = false; hexMode = false; persistHexMode(); }
     if (doc && !deletedGitPath && !view) rebuild(false);
-    editorHost.hidden = previewVisible || hexMode;
-    hexHost.hidden = previewVisible || !hexMode || diffMode;
-    previewFrame.hidden = !previewVisible;
-    imageHost.hidden = true;
-    previewControl.open = previewVisible; hexControl.open = hexMode && !diffMode;
-    syncPaneControl(previewControl); syncPaneControl(hexControl);
-    findButton.disabled = !view || previewVisible;
-    blockNavigation.update(currentBlock(), !diffMode && !hexMode && !previewVisible, false);
+    setPreview(previewVisible, false);
+    blockNavigation.update(currentBlock(), !diffMode && !hexMode, false);
     updateGitView();
     if (!value) { restorePosition(); view?.focus(); }
   }
@@ -475,7 +469,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   });
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   function schedulePreview() {
-    if (!previewVisible || !doc || doc.base.block || disposed) return;
+    if (!doc || doc.base.block || disposed || (!previewVisible && imageHost.hidden)) return;
     const mime = imageMimeType(doc.base.path);
     if (mime) {
       const source = JSON.stringify([doc.base.path, doc.text, doc.encoding]);
@@ -489,7 +483,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       previewSource = source;
       return;
     }
-    if (doc.encoding === "hex") return;
+    if (doc.encoding === "hex" || !supportsPreview(doc.base.path)) return;
     const source = JSON.stringify([doc.base.path, doc.text, document.documentElement.dataset.theme]);
     if (source === previewSource || source === previewPendingSource) return;
     previewPendingSource = source;
@@ -547,22 +541,26 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     rememberPosition();
     previewVersion++;
     previewPendingSource = "";
-    previewVisible = visible && Boolean(doc && !doc.base.block && (imageMimeType(doc.base.path) || (doc.encoding !== "hex" && supportsPreview(doc.base.path))));
-    if (!doc || (!doc.base.block && !imageMimeType(doc.base.path))) {
-      textPreviewPreference = previewVisible;
-      try { localStorage.setItem(previewKey, String(previewVisible)); }
-      catch { /* Optional view preferences must not prevent editing. */ }
-    }
+    previewVisible = visible;
+    try { localStorage.setItem(previewKey, String(previewVisible)); }
+    catch { /* Optional view preferences must not prevent editing. */ }
     previewControl.open = previewVisible;
     syncPaneControl(previewControl);
-    const imagePreview = previewVisible && Boolean(doc && imageMimeType(doc.base.path));
+    const imagePreview = Boolean(doc && !doc.base.block && imageMimeType(doc.base.path) && (previewVisible || !hexMode));
+    const rendered = previewVisible && Boolean(doc && !doc.base.block && doc.encoding !== "hex" && supportsPreview(doc.base.path));
     imageHost.hidden = !imagePreview;
-    previewFrame.hidden = !previewVisible || imagePreview;
-    editorHost.hidden = previewVisible || hexMode;
-    hexHost.hidden = previewVisible || !hexMode || diffMode;
+    previewFrame.hidden = !rendered || imagePreview;
+    editorHost.hidden = rendered || imagePreview || hexMode;
+    hexHost.hidden = rendered || imagePreview || !hexMode || diffMode;
     hexControl.open = hexMode && !previewVisible;
     syncPaneControl(hexControl);
     findButton.disabled = !view || previewVisible;
+    if (view) view.dispatch({ effects: [
+      readOnly.reconfigure(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath) || Boolean(doc?.locked && doc.base.block))),
+      editable.reconfigure(EditorView.editable.of(!previewVisible && !deletedGitPath && !doc?.locked))
+    ] });
+    if (hexMode && doc) updateHexView();
+    if (!rendered && !imagePreview) restorePosition();
     if (previewVisible) {
       if (view) closeSearchPanel(view);
       schedulePreview();
@@ -658,6 +656,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
 
   async function historyChanges(forward: boolean) {
+    if (previewVisible) return;
     const current = doc;
     const index = current?.changes?.history(forward);
     if (index === undefined || !current) return;
@@ -738,21 +737,21 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     persist();
     updateTabs();
     editorHost.classList.toggle("file-editor-paged", Boolean(doc.base.block));
-    blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !previewVisible && !diffMode, opening || doc.saving || Boolean(doc.changes?.saving));
-    const locked = Boolean(doc.locked && doc.base.block);
+    blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !diffMode, opening || doc.saving || Boolean(doc.changes?.saving));
+    const locked = previewVisible || Boolean(doc.locked && doc.base.block);
     const firstLine = currentBlock()?.line ?? 1;
     if (view && (viewLocked !== locked || viewFirstLine !== firstLine)) {
       viewLocked = locked; viewFirstLine = firstLine;
       view.dispatch({ effects: [
         editable.reconfigure(EditorView.editable.of(!locked)),
+        readOnly.reconfigure(EditorState.readOnly.of(locked)),
         numbering.reconfigure(lineNumbers({ formatNumber: (number) => String(number + firstLine - 1) }))
       ] });
     }
-    if (doc.encoding === "hex" && !hexMode && !diffMode && !(previewVisible && imageMimeType(doc.base.path))) { hexMode = true; previewVisible = false; rebuild(false); return; }
+    if (doc.encoding === "hex" && !hexMode && !diffMode && imageHost.hidden) { hexMode = true; rebuild(false); return; }
     if (hexMode) updateHexView();
-    previewControl.enabled = !doc.base.block && (Boolean(imageMimeType(doc.base.path)) || (doc.encoding !== "hex" && supportsPreview(doc.base.path)));
+    previewControl.enabled = true;
     syncPaneControl(previewControl);
-    if (doc.base.block && previewControl.button) previewControl.button.title = "Preview requires the complete file; this file is loaded in blocks.";
     schedulePreview();
     saveButton.disabled = !doc.dirty || doc.busy || doc.changes?.saving || doc.conflict;
     status.textContent = [doc.base.path, doc.dirty ? "Unsaved changes" : "No unsaved changes", (doc.busy || doc.changes?.saving) ? "Working…" : "", doc.changes?.dirty ? `${doc.changes.edits.length} modified ranges` : "", doc.error, persistenceError, previewVisible && imageMimeType(doc.base.path) ? imageInfo : ""].filter(Boolean).join(" · ");
@@ -784,9 +783,9 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     view = undefined;
     editorHost.replaceChildren();
     hexControl.enabled = true;
-    if (previewVisible && !doc.base.block && imageMimeType(doc.base.path) && !hexMode) {
+    if (!doc.base.block && imageMimeType(doc.base.path) && (!hexMode || previewVisible)) {
       restoringPosition = false;
-      setPreview(true, focus);
+      setPreview(previewVisible, focus);
       refreshUi();
       return;
     }
@@ -795,7 +794,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       persistHexMode();
       updateHexView();
       restoringPosition = false;
-      setPreview(false, focus);
+      setPreview(previewVisible, focus);
       refreshUi();
       return;
     }
@@ -807,7 +806,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       state: EditorState.create({
         doc: doc.text.slice(bom.length),
         extensions: [basicSetup, gitView.extension, theme.of(editorTheme()), doc.base.block ? [] : language(doc.base.path),
-          EditorState.readOnly.of(Boolean(deletedGitPath)),
+          readOnly.of(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath))),
           editable.of(EditorView.editable.of(!deletedGitPath)),
           numbering.of(lineNumbers({ formatNumber: (number) => String(number + viewFirstLine - 1) })),
           lineSeparator.of(EditorState.lineSeparator.of(doc.text.includes("\r\n") ? "\r\n" : "\n")),
@@ -832,7 +831,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     });
     const position = positionFor(doc.base.path);
     view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length), head: Math.min(position.head, view.state.doc.length) } });
-    previewControl.enabled = !doc.base.block && (Boolean(imageMimeType(doc.base.path)) || (doc.encoding !== "hex" && supportsPreview(doc.base.path)));
+    previewControl.enabled = true;
     setPreview(previewVisible, focus);
     if (previewVisible) restoringPosition = false;
     findButton.setAttribute("aria-pressed", String(searchPanelOpen(view.state)));
@@ -844,14 +843,15 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     // Switching files preserves the previous draft, including when other panes show it.
     persist();
     if (persistenceError && doc?.dirty) { showError(persistenceError); return; }
+    const navigationVersion = linkVersion;
     opening = true;
     updateTabs();
     status.textContent = "Indexing and opening file…";
     const block = requestedBlock ?? savedBlock(path);
     try {
-      if (imageMimeType(path) && !hexMode && requestedBlock === undefined) {
+      if (imageMimeType(path) && (!hexMode || previewVisible) && requestedBlock === undefined) {
         const image = await invoke<ImageSnapshot>("readImage", project.id, { path });
-        if (disposed || (linkedVersion !== undefined && linkedVersion !== linkVersion)) return;
+        if (disposed || (navigationVersion !== linkVersion)) return;
         if (image.size > 2 * 1024 * 1024) {
           rememberPosition();
           unsubscribe?.(); unsubscribe = undefined;
@@ -881,14 +881,13 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
           findButton.setAttribute("aria-pressed", "false");
           previewControl.label = "image preview";
           previewControl.enabled = true;
-          previewControl.open = true;
+          previewControl.open = previewVisible;
           syncPaneControl(previewControl);
           persistenceError = "";
           persist();
-          if (!pendingLinkedPath || pendingLinkedPath === image.path) paneLinks.opened(paneId, image.path);
+          if (linkedVersion === undefined && !closingTab) paneLinks.opened(paneId, image.path, tabs.paths);
           return;
         }
-        previewVisible = true;
       }
       let snapshot: FileSnapshot | null;
       try {
@@ -902,7 +901,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
           snapshot = await invoke("read", project.id, { path });
         } else throw error;
       }
-      if (!snapshot || disposed || (linkedVersion !== undefined && linkedVersion !== linkVersion)) return;
+      if (!snapshot || disposed || (navigationVersion !== linkVersion)) return;
       const key = draftKey(snapshot.path, snapshot.block?.index);
       let changes: FileChanges | undefined;
       if (snapshot.block) {
@@ -925,7 +924,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
           if (changes.saving) { showError("Wait for the file save to finish before opening another block."); return; }
           if (!changes.dirty && snapshot.revision !== changes.revision) {
             snapshot = (await invoke("read", project.id, { path: snapshot.path, block: snapshot.block.index }))!;
-            if (disposed || (linkedVersion !== undefined && linkedVersion !== linkVersion)) return;
+            if (disposed || (navigationVersion !== linkVersion)) return;
           }
           changes.observe(snapshot);
         }
@@ -972,7 +971,6 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       rememberPosition();
       if (doc !== next) unsubscribe?.();
       else { unsubscribe?.(); documents.set(key, next); }
-      if ((openedImage || (doc && (doc.base.block || imageMimeType(doc.base.path)))) && !imageMimeType(snapshot.path)) previewVisible = textPreviewPreference;
       previewControl.label = "preview";
       openedImage = undefined;
       imageHost.hidden = true;
@@ -980,22 +978,22 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       previewSource = "";
       deletedGitPath = "";
       doc = next;
-      if (doc.base.block) previewVisible = false;
+      if (previewVisible) { hexMode = doc.encoding === "hex"; persistHexMode(); }
       openedTab(snapshot.path);
       fileBrowser.setSelected(snapshot.path);
       setNotices();
       unsubscribe = subscribe(doc, refreshUi);
       rebuild(linkedVersion === undefined && !preserveHexFocus);
-      if (!pendingLinkedPath || pendingLinkedPath === snapshot.path) paneLinks.opened(paneId, snapshot.path);
+      if (linkedVersion === undefined && !closingTab) paneLinks.opened(paneId, snapshot.path, tabs.paths);
       void doc.refresh();
       resetGit();
       if (diffMode) setDiff(true);
       if (!previewVisible && !diffMode && linkedVersion === undefined) view?.focus();
     } catch (error) {
-      if (!disposed && diffMode) {
+      if (!disposed && navigationVersion === linkVersion && diffMode) {
         try {
           const baseline = await invoke<GitBaseline>("gitBaseline", project.id, { path });
-          if (!disposed && baseline.available && baseline.deleted) { showDeletedDiff(path); return; }
+          if (!disposed && navigationVersion === linkVersion && baseline.available && baseline.deleted) { showDeletedDiff(path); return; }
         } catch { /* Show the original open failure. */ }
       }
       if (!disposed) showError(error);
@@ -1003,11 +1001,32 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     finally {
       opening = false;
       updateTabs();
-      if (doc) blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !previewVisible && !diffMode, doc.saving);
+      if (doc) blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !diffMode, doc.saving);
       const pending = pendingLinkedPath;
       pendingLinkedPath = undefined;
-      if (pending && pending !== currentPath() && !disposed) void openFile(pending, linkVersion);
+      if (pending !== undefined && !disposed) {
+        if (!pending) { persist(); if (!persistenceError || !doc?.dirty) clearFile(); }
+        else if (pending !== currentPath()) void openFile(pending, linkVersion);
+      }
     }
+  }
+
+  function clearFile() {
+    unsubscribe?.(); unsubscribe = undefined; view?.destroy(); view = undefined;
+    doc = undefined; openedImage = undefined; deletedGitPath = "";
+    previewVersion++; clearTimeout(previewTimer); previewPendingSource = ""; previewSource = "";
+    gitVersion++; gitBaseline = undefined; gitPath = "";
+    editorHost.replaceChildren(empty); editorHost.hidden = false;
+    previewFrame.hidden = imageHost.hidden = hexHost.hidden = true;
+    imageElement.removeAttribute("src"); previewFrame.removeAttribute("srcdoc");
+    compare.hidden = true; setNotices(); fileBrowser.setSelected("");
+    blockNavigation.update(undefined, false, false);
+    gitView.update("", undefined, "", undefined); gitView.show(false);
+    for (const control of [previewControl, hexControl, diffControl]) { control.enabled = false; control.open = false; syncPaneControl(control); }
+    saveButton.disabled = findButton.disabled = true;
+    findButton.setAttribute("aria-pressed", "false");
+    status.textContent = "Open files from the pane toolbar or browse project files.";
+    try { localStorage.removeItem(paneKey); } catch { /* Optional navigation preference. */ }
   }
 
   async function closeTab(path: string) {
@@ -1022,24 +1041,11 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
           await openFile(next);
           if (currentPath() === path) return;
         } else {
-          unsubscribe?.(); unsubscribe = undefined; view?.destroy(); view = undefined;
-          doc = undefined; openedImage = undefined; deletedGitPath = "";
-          previewVersion++; clearTimeout(previewTimer); previewPendingSource = ""; previewSource = "";
-          gitVersion++; gitBaseline = undefined; gitPath = "";
-          editorHost.replaceChildren(empty); editorHost.hidden = false;
-          previewFrame.hidden = imageHost.hidden = hexHost.hidden = true;
-          imageElement.removeAttribute("src"); previewFrame.removeAttribute("srcdoc");
-          compare.hidden = true; setNotices(); fileBrowser.setSelected("");
-          blockNavigation.update(undefined, false, false);
-          gitView.update("", undefined, "", undefined); gitView.show(false);
-          for (const control of [previewControl, hexControl, diffControl]) { control.enabled = false; control.open = false; syncPaneControl(control); }
-          saveButton.disabled = findButton.disabled = true;
-          findButton.setAttribute("aria-pressed", "false");
-          status.textContent = "Open files from the pane toolbar or browse project files.";
-          try { localStorage.removeItem(paneKey); } catch { /* Optional navigation preference. */ }
+          clearFile();
         }
       }
       tabs.close(path); persistTabs(); updateTabs(); fileTabs.reveal();
+      paneLinks.opened(paneId, tabs.active, tabs.paths);
     } finally { closingTab = false; }
   }
 
@@ -1111,7 +1117,12 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const togglePreview = () => {
     if (deletedGitPath) return;
     if (diffMode) { diffMode = false; persistDiffMode(); gitView.show(false); diffControl.open = false; syncPaneControl(diffControl); }
-    if (openedImage || doc?.base.block) return;
+    if (openedImage) {
+      previewVisible = !previewVisible;
+      try { localStorage.setItem(previewKey, String(previewVisible)); } catch { /* Optional view preference. */ }
+      previewControl.open = previewVisible; syncPaneControl(previewControl);
+      return;
+    }
     if (view && !hexMode) { setPreview(!previewVisible); return; }
     rememberPosition();
     const visible = !previewVisible;
@@ -1148,7 +1159,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       localStorage.setItem(`${prefix}pane:${targetId}:diff-file`, path);
       localStorage.setItem(`${prefix}pane:${targetId}:diff`, "true");
       localStorage.setItem(`${prefix}pane:${targetId}:preview`, "false");
-      paneLinks.link(paneId, targetId, path);
+      paneLinks.link(paneId, targetId, path, tabs.paths);
     });
   } : undefined;
   syncPaneControl(diffControl);
@@ -1156,13 +1167,13 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   syncPaneControl(hexControl);
   previewControl.drag = typeof props.startPaneDrag === "function" ? (event) => {
     const path = currentPath();
-    if (!path || (!openedImage && !imageMimeType(path) && (doc?.encoding === "hex" || !supportsPreview(path)))) { event.preventDefault(); return; }
+    if (!path) { event.preventDefault(); return; }
     const start = props.startPaneDrag as (event: DragEvent, webAppId: string, prepare: (paneId: string) => void) => void;
     start(event, "boatyard.fileEditor.editor", (targetId) => {
       localStorage.setItem(`${prefix}pane:${targetId}:preview-file`, path);
       localStorage.setItem(`${prefix}pane:${targetId}:preview`, "true");
       localStorage.setItem(`${prefix}pane:${targetId}:diff`, "false");
-      paneLinks.link(paneId, targetId, path);
+      paneLinks.link(paneId, targetId, path, tabs.paths);
     });
   } : undefined;
   previewControl.toggle = togglePreview;
@@ -1208,26 +1219,30 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   linkControl.enabled = true;
   let initialLinkedPath: string | undefined;
   let linksReady = false;
-  const detachLinks = paneLinks.attach(paneId, (linked, path) => {
+  let linkedState = "";
+  const detachLinks = paneLinks.attach(paneId, (linked, path, paths) => {
+    const state = JSON.stringify([linked, path, paths]);
+    if (state === linkedState) return;
+    linkedState = state;
     highlight(false);
     linkVersion++;
     linkControl.open = linked;
     syncPaneControl(linkControl);
+    if (paths) { tabs.paths = [...paths]; tabs.active = path || ""; persistTabs(); updateTabs(); }
     if (!linksReady) { initialLinkedPath = path; return; }
     if (!linked) { pendingLinkedPath = undefined; return; }
-    if (path && path !== currentPath()) {
-      if (opening) pendingLinkedPath = path;
-      else void openFile(path, linkVersion);
-    }
+    if (opening) { pendingLinkedPath = path || ""; return; }
+    if (!path) { persist(); rememberPosition(); if (!persistenceError || !doc?.dirty) clearFile(); }
+    else if (path !== currentPath()) void openFile(path, linkVersion);
   });
   linksReady = true;
   try {
     const previous = localStorage.getItem(paneKey);
     const restore = Array.isArray(savedTabs) ? (tabs.paths.includes(previous || "") ? previous : tabs.paths[0]) : previous;
-    const path = requestedDiffPath || requestedPreviewPath || (Array.isArray(savedTabs) && !tabs.paths.length ? null : initialLinkedPath) || restore;
+    const path = initialLinkedPath !== undefined ? initialLinkedPath : requestedDiffPath || requestedPreviewPath || restore;
     if (requestedDiffPath) localStorage.removeItem(`${paneKey}:diff-file`);
     if (requestedPreviewPath) localStorage.removeItem(`${paneKey}:preview-file`);
-    if (path) void openFile(path);
+    if (path) void openFile(path, initialLinkedPath !== undefined ? linkVersion : undefined);
   } catch { /* Opening files remains available when local storage is disabled. */ }
   return () => {
     highlight(false);

@@ -46,3 +46,28 @@ test("multiple previews link together and retarget without leaving old peers lin
   links.unlink("a");
   assert.deepEqual(links.peers("c"), []);
 });
+
+test("linked panes adopt the source tabs and share closing, order and empty state", () => {
+  let saved: unknown;
+  const links = new EditorPaneLinks((groups) => { saved = JSON.parse(JSON.stringify(groups)); });
+  let snapshot: unknown;
+  links.attach("preview", (_linked, path, paths) => { snapshot = { path, paths }; });
+  links.link("editor", "preview", "b.txt", ["c.md", "b.txt", "a.ts"]);
+  assert.deepEqual(snapshot, { path: "b.txt", paths: ["c.md", "b.txt", "a.ts"] });
+  links.opened("preview", "a.ts", ["c.md", "a.ts"]);
+  assert.deepEqual(snapshot, { path: "a.ts", paths: ["c.md", "a.ts"] });
+  const restored = new EditorPaneLinks(() => {}, saved);
+  restored.attach("editor", (_linked, path, paths) => { snapshot = { path, paths }; });
+  assert.deepEqual(snapshot, { path: "a.ts", paths: ["c.md", "a.ts"] });
+  restored.opened("preview", "", []);
+  assert.deepEqual(snapshot, { path: "", paths: [] });
+});
+
+test("legacy links restore the current file as their first tab", () => {
+  const links = new EditorPaneLinks(() => {}, [{ panes: ["a", "b"], path: "old.md" }]);
+  links.attach("b", (linked, path, paths) => {
+    assert.equal(linked, true);
+    assert.equal(path, "old.md");
+    assert.deepEqual(paths, ["old.md"]);
+  });
+});
