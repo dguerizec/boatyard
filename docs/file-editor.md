@@ -9,7 +9,7 @@ Each pane keeps its opened files in a horizontally scrollable tab strip. Click a
 - The **Preview** eye icon in the pane toolbar toggles a rendered view of the current Markdown, HTML, or Mermaid draft, without saving. Click it again to return to the editor with the draft intact. It is disabled for other file types.
 - **Find** or **Ctrl/Cmd+F** opens CodeMirror's search and replace panel. **Find** stays highlighted while the panel is open; click it again to close the panel.
 - Undo/redo, line numbers, bracket matching, indentation, and selection are provided by CodeMirror.
-- JavaScript, TypeScript, JSX/TSX, JSON, CSS, HTML, Markdown, and Python have syntax highlighting. Other UTF-8 files can be edited as plain text.
+- JavaScript, TypeScript, JSX/TSX, JSON, CSS, HTML, Markdown, Python, and TOML (`.toml`) have syntax highlighting. Docker build files are recognized as `Dockerfile`, `Containerfile`, variants such as `Dockerfile.dev`, and files ending in `.dockerfile` or `.containerfile`. Other UTF-8 files can be edited as plain text.
 - The editor follows Boatyard's light or dark theme.
 
 ## Vim mode

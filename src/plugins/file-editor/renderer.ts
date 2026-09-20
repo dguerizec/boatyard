@@ -15,12 +15,7 @@ import { Compartment, EditorState, Prec } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { oneDark } from "@codemirror/theme-one-dark";
-import { javascript } from "@codemirror/lang-javascript";
-import { json } from "@codemirror/lang-json";
-import { css } from "@codemirror/lang-css";
-import { html } from "@codemirror/lang-html";
-import { markdown } from "@codemirror/lang-markdown";
-import { python } from "@codemirror/lang-python";
+import { language } from "./language";
 import { EditorDocument, type EditorDraft } from "./document";
 import type { FileSnapshot, ProjectDirectoryPage } from "./service";
 import { createToolIcon } from "../../renderer/toolIcons";
@@ -146,19 +141,6 @@ function subscribe(doc: EditorDocument, listener: () => void) {
 async function invoke<T = FileSnapshot | null>(action: string, projectId: string, payload: Record<string, unknown> = {}) {
   if (!scope.boatyard?.invokePlugin) throw new Error("File access is unavailable.");
   return await scope.boatyard.invokePlugin(pluginId, action, { ...payload, projectId }) as T;
-}
-
-function language(path: string) {
-  const extension = path.split(".").pop()?.toLowerCase();
-  if (["js", "jsx", "mjs", "cjs", "ts", "tsx"].includes(extension || "")) {
-    return javascript({ jsx: extension === "jsx" || extension === "tsx", typescript: extension === "ts" || extension === "tsx" });
-  }
-  if (extension === "json") return json();
-  if (extension === "css") return css();
-  if (extension === "html" || extension === "htm") return html();
-  if (extension === "md" || extension === "markdown") return markdown();
-  if (extension === "py") return python();
-  return [];
 }
 
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = "") {
