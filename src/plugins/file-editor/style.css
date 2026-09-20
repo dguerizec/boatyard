@@ -1,8 +1,11 @@
 .file-editor {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  width: 100%;
+  height: calc(100% - 4px);
+  width: calc(100% - 4px);
+  position: relative;
+  top: 2px;
+  left: 2px;
   min-height: 0;
   min-width: 0;
   color: var(--text);
