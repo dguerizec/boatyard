@@ -6,6 +6,8 @@ const hex = (value: number) => value.toString(16).padStart(2, "0").toUpperCase()
 export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => void, onSave: () => void) {
   let bytes = new Uint8Array();
   let page = 0;
+  let baseOffset = 0;
+  let disabled = false;
   let changing = false;
   let fileKey = "";
   const undo: Change[] = [];
@@ -30,8 +32,8 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
   const next = button("Next", () => { page++; render(); });
   function go() {
     if (!/^(?:0x)?[\da-f]+$/i.test(offset.value)) { offset.setCustomValidity("Enter a hexadecimal byte offset."); offset.reportValidity(); return; }
-    const index = parseInt(offset.value.replace(/^0x/i, ""), 16);
-    if (index >= bytes.length) { offset.setCustomValidity("Offset is outside this file."); offset.reportValidity(); return; }
+    const index = parseInt(offset.value.replace(/^0x/i, ""), 16) - baseOffset;
+    if (index < 0 || index >= bytes.length) { offset.setCustomValidity("Offset is outside this block."); offset.reportValidity(); return; }
     offset.setCustomValidity("");
     focusByte(index);
   }
@@ -48,7 +50,7 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
     renderValues();
   }
   function edit(index: number, replacement: Uint8Array) {
-    if (index + replacement.length > bytes.length) return;
+    if (disabled || index + replacement.length > bytes.length) return;
     const before = bytes.slice(index, index + replacement.length);
     if (before.every((value, i) => value === replacement[i])) return;
     undo.push({ offset: index, before, after: replacement.slice() });
@@ -58,6 +60,7 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
     notify();
   }
   function history(forward: boolean) {
+    if (disabled) return;
     const change = (forward ? redo : undo).pop();
     if (!change) return;
     (forward ? undo : redo).push(change);
@@ -71,13 +74,13 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
     grid.querySelector<HTMLInputElement>(`input[data-offset="${index}"]`)?.focus();
   }
   function renderValues() {
-    for (const input of grid.querySelectorAll<HTMLInputElement>("input[data-offset]")) input.value = hex(bytes[Number(input.dataset.offset)]);
+    for (const input of grid.querySelectorAll<HTMLInputElement>("input[data-offset]")) { input.value = hex(bytes[Number(input.dataset.offset)]); input.disabled = disabled; }
     for (const ascii of grid.querySelectorAll<HTMLElement>("[data-ascii]")) {
       const start = Number(ascii.dataset.ascii);
       ascii.textContent = Array.from(bytes.subarray(start, start + 16), (byte) => byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : ".").join("");
     }
-    undoButton.disabled = !undo.length;
-    redoButton.disabled = !redo.length;
+    undoButton.disabled = disabled || !undo.length;
+    redoButton.disabled = disabled || !redo.length;
   }
   function render() {
     page = Math.max(0, Math.min(page, Math.ceil(bytes.length / PAGE_BYTES) - 1));
@@ -85,13 +88,13 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
     const end = Math.min(bytes.length, start + PAGE_BYTES);
     previous.disabled = page === 0;
     next.disabled = end === bytes.length;
-    caption.textContent = bytes.length ? `0x${start.toString(16).toUpperCase()}–0x${(end - 1).toString(16).toUpperCase()} · ${bytes.length} bytes` : "Empty file";
+    caption.textContent = bytes.length ? `0x${(start + baseOffset).toString(16).toUpperCase()}–0x${(end - 1 + baseOffset).toString(16).toUpperCase()} · ${bytes.length} bytes` : "Empty file";
     grid.replaceChildren();
     for (let row = start; row < end; row += 16) {
       const line = document.createElement("div");
       line.className = "file-editor-hex-row";
       const address = document.createElement("span");
-      address.textContent = row.toString(16).padStart(8, "0").toUpperCase();
+      address.textContent = (row + baseOffset).toString(16).padStart(8, "0").toUpperCase();
       line.append(address);
       for (let column = 0; column < 16; column++) {
         const index = row + column;
@@ -100,7 +103,7 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
         input.dataset.offset = String(index);
         input.maxLength = 2;
         input.spellcheck = false;
-        input.setAttribute("aria-label", `Byte 0x${index.toString(16).toUpperCase()}`);
+        input.setAttribute("aria-label", `Byte 0x${(index + baseOffset).toString(16).toUpperCase()}`);
         input.addEventListener("focus", () => input.select());
         input.addEventListener("input", () => {
           input.setCustomValidity("");
@@ -137,9 +140,12 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
   });
   render();
   return {
-    update(value: Uint8Array, key: string) {
+    update(value: Uint8Array, key: string, start = 0, locked = false) {
+      if (disabled !== locked) { disabled = locked; renderValues(); }
+      const moved = baseOffset !== start;
+      baseOffset = start;
       if (changing) return;
-      if (fileKey === key && value.length === bytes.length && value.every((byte, index) => byte === bytes[index])) return;
+      if (!moved && fileKey === key && value.length === bytes.length && value.every((byte, index) => byte === bytes[index])) return;
       if (fileKey !== key) page = 0;
       fileKey = key;
       bytes = value.slice();

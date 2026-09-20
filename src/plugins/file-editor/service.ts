@@ -1,3 +1,4 @@
+import type { FileBlock } from "./blockIndex";
 import { byteContent, contentBytes, type ByteEncoding } from "./bytes";
 import { imageMimeType, type ImageSnapshot } from "./imageTypes";
 import { constants, accessSync, closeSync, existsSync, fstatSync, fchmodSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, fsyncSync } from "node:fs";
@@ -5,7 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
-export type FileSnapshot = { path: string; text: string; revision: string; encoding?: ByteEncoding };
+export type FileSnapshot = { path: string; text: string; revision: string; encoding?: ByteEncoding; block?: FileBlock };
 
 export function resolveProjectFile(root: string, file: string): string {
   if (!root || !file || file.includes("\0")) throw new Error("Choose a file inside this project.");

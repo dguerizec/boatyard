@@ -15,12 +15,13 @@ export class EditorDocument {
   disk: FileSnapshot;
   error = "";
   busy = false;
+  saving = false;
   private refreshPending: Promise<void> | null = null;
   readonly listeners = new Set<() => void>();
 
   constructor(snapshot: FileSnapshot, private access: FileAccess, draft?: EditorDraft) {
     this.disk = snapshot;
-    this.base = draft ? { path: snapshot.path, text: draft.baseText, encoding: draft.baseEncoding, revision: draft.revision } : snapshot;
+    this.base = draft ? { block: draft.block, path: snapshot.path, text: draft.baseText, encoding: draft.baseEncoding, revision: draft.revision } : snapshot;
     this.text = draft?.text ?? snapshot.text;
     this.encoding = draft ? draft.encoding : snapshot.encoding;
     if (sameContent(this, snapshot)) this.base = snapshot;
@@ -32,6 +33,7 @@ export class EditorDocument {
   notify() { for (const listener of this.listeners) listener(); }
 
   edit(text: string) {
+    if (this.saving && this.base.block) return;
     this.encoding = undefined;
     this.text = text;
     this.notify();
@@ -39,6 +41,7 @@ export class EditorDocument {
 
   get bytes() { return contentBytes(this); }
   editBytes(bytes: Uint8Array) {
+    if (this.saving && this.base.block) return;
     const content = byteContent(bytes);
     this.text = content.text;
     this.encoding = content.encoding;
@@ -74,12 +77,18 @@ export class EditorDocument {
     if (this.refreshPending) await this.refreshPending;
     if (this.busy || !this.dirty || this.conflict) return;
     this.busy = true;
+    this.saving = true;
     this.error = "";
     this.notify();
     const text = this.text;
     const encoding = this.encoding;
     try {
       const snapshot = await this.access.save(this.base.path, text, this.base.revision, encoding);
+      if (this.base.block) {
+        // Reindexing may pull adjacent bytes into this block after a size change.
+        this.text = snapshot.text;
+        this.encoding = snapshot.encoding;
+      }
       this.base = snapshot;
       this.disk = snapshot;
       // Keep edits made while the save was in flight.
@@ -87,6 +96,7 @@ export class EditorDocument {
       this.error = error instanceof Error ? error.message : String(error);
     } finally {
       this.busy = false;
+      this.saving = false;
       this.notify();
     }
   }
