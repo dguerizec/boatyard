@@ -224,10 +224,10 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const root = element("section", "file-editor");
   const toolbar = element("form", "file-editor-toolbar");
   const pathInput = element("input");
-  pathInput.placeholder = "Project-relative file path";
-  pathInput.setAttribute("aria-label", "Project-relative file path");
+  pathInput.placeholder = "Project-relative or absolute file path";
+  pathInput.setAttribute("aria-label", "Project-relative or absolute file path");
   pathInput.spellcheck = false;
-  const status = element("div", "file-editor-status", "Open a file from this project.");
+  const status = element("div", "file-editor-status", "Open a project file or enter an absolute file path.");
   status.setAttribute("role", "status");
   const notices = element("div", "file-editor-notices");
   const editorHost = element("div", "file-editor-body");
@@ -401,8 +401,10 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
         void scope.boatyard?.openExternal?.(href);
       } else if (href && !/^[a-z][a-z\d+.-]*:|^\/\//i.test(href)) {
         const directory = previewPath.replace(/[^/\\]*$/, "");
-        try { void openFile(directory + decodeURIComponent(href.split(/[?#]/)[0])); }
-        catch (error) { showError(error); }
+        try {
+          const path = decodeURIComponent(href.split(/[?#]/)[0]);
+          void openFile(path.startsWith("/") ? path : directory + path);
+        } catch (error) { showError(error); }
       }
     });
   });

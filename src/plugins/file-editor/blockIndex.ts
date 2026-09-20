@@ -1,9 +1,9 @@
-import { constants, realpathSync } from "node:fs";
+import { constants } from "node:fs";
 import { access, open, stat, mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
-import { dirname, join, relative } from "node:path";
+import { dirname, join } from "node:path";
 import { byteContent, bytesToHex, contentBytes, type ByteEncoding } from "./bytes";
-import { MAX_FILE_BYTES, resolveProjectFile, type FileSnapshot } from "./service";
+import { MAX_FILE_BYTES, resolveEditorFile, editorFilePath, type FileSnapshot } from "./service";
 
 export const BLOCK_BYTES = MAX_FILE_BYTES;
 export type BlockPosition = {
@@ -139,7 +139,7 @@ export class ProjectFileIndex {
 
   async read(root: string, path: string, blockIndex = 0, forceBlock = false): Promise<FileSnapshot> {
     if (!Number.isSafeInteger(blockIndex) || blockIndex < 0) throw new Error("Invalid file block.");
-    const target = resolveProjectFile(root, path);
+    const target = resolveEditorFile(root, path);
     const index = await this.get(target);
     const block = index.blocks[blockIndex];
     if (!block) throw new Error("This block no longer exists. Open the file again.");
@@ -155,7 +155,7 @@ export class ProjectFileIndex {
         received += bytesRead;
       }
       if (received !== bytes.length || digest(bytes) !== block.hash || signature(await file.stat({ bigint: true })) !== index.signature
-        || resolveProjectFile(root, path) !== target || signature(await stat(target, { bigint: true })) !== index.signature) {
+        || resolveEditorFile(root, path) !== target || signature(await stat(target, { bigint: true })) !== index.signature) {
         this.indexes.delete(target);
         await this.get(target, true);
         throw new Error("The file changed while reading. Open it again.");
@@ -163,7 +163,7 @@ export class ProjectFileIndex {
     } finally { await file.close(); }
     const positions = index.blocks.map(({ hash: _hash, ...position }) => position);
     return {
-      path: relative(realpathSync(root), target),
+      path: editorFilePath(root, target),
       ...(index.binary ? { text: bytesToHex(bytes), encoding: "hex" as const } : byteContent(bytes)),
       revision: index.revision,
       ...(index.blocks.length > 1 || forceBlock ? { block: {
@@ -182,7 +182,7 @@ export class ProjectFileIndex {
       || (encoding !== undefined && encoding !== "hex")) throw new Error("Invalid block edit.");
     const replacement = contentBytes({ text, encoding });
     if (replacement.length > BLOCK_BYTES * 2) throw new Error("An edited block can contain at most 4 MiB. Save before adding more text.");
-    const target = resolveProjectFile(root, path);
+    const target = resolveEditorFile(root, path);
     const index = await this.get(target);
     const block = index.blocks[blockIndex];
     if (index.revision !== revision || !block) throw new Error("The file changed on disk. Compare or reload it before saving.");
@@ -221,12 +221,12 @@ export class ProjectFileIndex {
         await writeAll(replacement);
         await copy(block.offset + block.length, index.size, true);
         if (hash.digest("hex") !== revision || signature(await input.stat({ bigint: true })) !== index.signature
-          || resolveProjectFile(root, path) !== target || signature(await stat(target, { bigint: true })) !== index.signature) {
+          || resolveEditorFile(root, path) !== target || signature(await stat(target, { bigint: true })) !== index.signature) {
           throw new Error("The file changed during save. Compare or reload it before saving.");
         }
         await output.sync();
       } finally { await output.close(); }
-      if (resolveProjectFile(root, path) !== target || signature(await stat(target, { bigint: true })) !== index.signature) {
+      if (resolveEditorFile(root, path) !== target || signature(await stat(target, { bigint: true })) !== index.signature) {
         throw new Error("The file changed during save. Compare or reload it before saving.");
       }
       await rename(temporary, target);

@@ -141,8 +141,8 @@ export function createProjectFileBrowser({ list, openFile }: {
     element,
     show() { if (!root.loaded && !root.busy) void load(root); },
     setSelected(path: string) {
-      selected = path;
-      const parents = path.split(/[\\/]/).slice(0, -1);
+      selected = /^(?:[\\/]|[a-z]:[\\/])/i.test(path) ? "" : path;
+      const parents = selected.split(/[\\/]/).slice(0, -1);
       for (let index = 1; index <= parents.length; index++) {
         const directory = parents.slice(0, index).join("/");
         expanded.add(directory);

@@ -40,12 +40,12 @@ test("editor refuses stale saves and leaves the external version untouched", () 
   } finally { f.cleanup(); }
 });
 
-test("editor confines file access to the project, including symlinks", () => {
+test("editor confines relative file access to the project, including symlinks", () => {
   const f = fixture();
   try {
     writeFileSync(join(f.directory, "outside"), "private");
     symlinkSync(join(f.directory, "outside"), join(f.root, "escape"));
-    for (const path of ["../outside", "escape", f.directory]) {
+    for (const path of ["../outside", "escape"]) {
       assert.throws(() => readProjectFile(f.root, path), /inside this project/);
       assert.throws(() => saveProjectFile(f.root, path, "bad", ""), /inside this project/);
     }
@@ -269,4 +269,41 @@ test("text and hex share a draft and survive binary edits, restoration and undo"
   assert.equal(restored.encoding, undefined);
   assert.equal(restored.text, base.text);
   assert.equal(restored.dirty, false);
+});
+
+test("editor opens absolute external paths and keeps canonical paths through saves", () => {
+  const f = fixture();
+  try {
+    const path = join(f.directory, "external.txt");
+    writeFileSync(path, "external\r\n");
+    chmodSync(path, 0o640);
+    const alias = join(f.directory, "alias.txt");
+    symlinkSync(path, alias);
+    const before = readProjectFile(f.root, alias);
+    assert.equal(before.path, path);
+    const saved = saveProjectFile(f.root, before.path, "edited\r\n", before.revision);
+    assert.equal(saved.path, path);
+    assert.equal(readFileSync(path, "utf8"), "edited\r\n");
+    assert.equal(statSync(path).mode & 0o777, 0o640);
+    assert.equal(readProjectFile(f.root, join(f.root, "file.ts")).path, "file.ts");
+    assert.throws(() => saveProjectFile(f.root, path, "stale", before.revision), /changed on disk/);
+    assert.throws(() => readProjectFile(f.root, f.directory), /regular files/);
+  } finally { f.cleanup(); }
+});
+
+test("external binary files and image previews accept absolute paths", () => {
+  const f = fixture();
+  try {
+    const path = join(f.directory, "external.bin");
+    writeFileSync(path, Buffer.from([0, 255, 127]));
+    const before = readProjectEditableFile(f.root, path);
+    assert.equal(before.path, path);
+    const saved = saveProjectBytes(f.root, path, "01ff7f", before.revision, "hex");
+    assert.equal(saved.path, path);
+    assert.deepEqual(readFileSync(path), Buffer.from([1, 255, 127]));
+    const image = join(f.directory, "external.svg");
+    writeFileSync(image, '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');
+    assert.equal(readProjectImage(f.root, image).path, image);
+    assert.match(readProjectImage(f.root, image).dataUrl, /^data:image\/svg\+xml;base64,/);
+  } finally { f.cleanup(); }
 });

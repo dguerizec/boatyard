@@ -175,3 +175,22 @@ test("block documents keep metadata in drafts and adopt reindexed content after 
     assert.equal(document.saving, false);
   } finally { await f.cleanup(); }
 });
+
+test("large external files retain absolute paths through indexing and block saves", async () => {
+  const f = await fixture();
+  try {
+    const path = join(f.directory, "external.txt");
+    await writeFile(path, "a".repeat(BLOCK_BYTES) + "external tail");
+    const before = await f.index.read(f.root, path, 1);
+    assert.equal(before.path, path);
+    assert.equal(before.text, "external tail");
+    const after = await f.index.save(f.root, before.path, 1, before.revision, "edited tail");
+    assert.equal(after.path, path);
+    assert.equal(after.text, "edited tail");
+    assert.equal(await readFile(path, "utf8"), "a".repeat(BLOCK_BYTES) + "edited tail");
+    assert.deepEqual(await new ProjectFileIndex(f.cache).read(f.root, path, 1), after);
+    await assert.rejects(f.index.save(f.root, path, 1, before.revision, "stale"), /changed on disk/);
+    await assert.rejects(f.index.read(f.root, "../external.txt"), /inside this project/);
+    await assert.rejects(f.index.read(f.root, f.directory), /regular files/);
+  } finally { await f.cleanup(); }
+});

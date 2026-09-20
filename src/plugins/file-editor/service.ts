@@ -19,6 +19,18 @@ export function resolveProjectFile(root: string, file: string): string {
   return target;
 }
 
+/** Absolute paths explicitly opt into external files; project-relative paths stay scoped. */
+export function resolveEditorFile(root: string, file: string): string {
+  if (!file || file.includes("\0")) throw new Error("Choose a file path.");
+  return isAbsolute(file) ? realpathSync(file) : resolveProjectFile(root, file);
+}
+
+/** Keep project files relative and external files canonical and absolute. */
+export function editorFilePath(root: string, target: string): string {
+  const local = relative(realpathSync(root), target);
+  return local && local !== ".." && !local.startsWith(`..${sep}`) && !isAbsolute(local) ? local : target;
+}
+
 function readFileBytes(target: string, limit: number): Buffer {
   const descriptor = openSync(target, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
@@ -42,15 +54,15 @@ function readFileBytes(target: string, limit: number): Buffer {
 
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export function readProjectImage(root: string, file: string): ImageSnapshot {
-  const target = resolveProjectFile(root, file);
+  const target = resolveEditorFile(root, file);
   const mime = imageMimeType(target);
   if (!mime) throw new Error("This image format is not supported.");
   const bytes = readFileBytes(target, MAX_IMAGE_BYTES);
-  return { path: relative(realpathSync(root), target), dataUrl: `data:${mime};base64,${bytes.toString("base64")}`, size: bytes.length };
+  return { path: editorFilePath(root, target), dataUrl: `data:${mime};base64,${bytes.toString("base64")}`, size: bytes.length };
 }
 
 export function readProjectFile(root: string, file: string): FileSnapshot {
-  const target = resolveProjectFile(root, file);
+  const target = resolveEditorFile(root, file);
   const bytes = readFileBytes(target, MAX_FILE_BYTES);
   if (bytes.includes(0)) throw new Error("Binary files are not supported.");
   let text: string;
@@ -59,13 +71,13 @@ export function readProjectFile(root: string, file: string): FileSnapshot {
   } catch {
     throw new Error("Only UTF-8 text files are supported.");
   }
-  return { path: relative(realpathSync(root), target), text, revision: createHash("sha256").update(bytes).digest("hex") };
+  return { path: editorFilePath(root, target), text, revision: createHash("sha256").update(bytes).digest("hex") };
 }
 
 export function readProjectEditableFile(root: string, file: string): FileSnapshot {
-  const target = resolveProjectFile(root, file);
+  const target = resolveEditorFile(root, file);
   const bytes = readFileBytes(target, MAX_FILE_BYTES);
-  return { path: relative(realpathSync(root), target), ...byteContent(bytes), revision: createHash("sha256").update(bytes).digest("hex") };
+  return { path: editorFilePath(root, target), ...byteContent(bytes), revision: createHash("sha256").update(bytes).digest("hex") };
 }
 
 export function saveProjectFile(root: string, file: string, text: string, revision: string): FileSnapshot {
@@ -83,7 +95,7 @@ export function saveProjectBytes(root: string, file: string, text: string, revis
   }
   const bytes = contentBytes({ text, encoding });
   if (bytes.length > MAX_FILE_BYTES) throw new Error("Files larger than 2 MiB are not supported.");
-  const target = resolveProjectFile(root, file);
+  const target = resolveEditorFile(root, file);
   const current = readProjectEditableFile(root, file);
   if (current.revision !== revision) throw new Error("The file changed on disk. Compare or reload it before saving.");
   const stats = statSync(target);
@@ -99,7 +111,7 @@ export function saveProjectBytes(root: string, file: string, text: string, revis
     } finally {
       closeSync(descriptor);
     }
-    if (resolveProjectFile(root, file) !== target || readProjectEditableFile(root, file).revision !== revision) {
+    if (resolveEditorFile(root, file) !== target || readProjectEditableFile(root, file).revision !== revision) {
       throw new Error("The file changed on disk. Compare or reload it before saving.");
     }
     renameSync(temporary, target);
