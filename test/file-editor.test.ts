@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync, statSync, chmodSync, linkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listProjectDirectory, readProjectImage, MAX_IMAGE_BYTES, readProjectFile, saveProjectFile, MAX_FILE_BYTES } from "../src/plugins/file-editor/service";
+import { listProjectDirectory, readProjectEditableFile, saveProjectBytes, readProjectImage, MAX_IMAGE_BYTES, readProjectFile, saveProjectFile, MAX_FILE_BYTES } from "../src/plugins/file-editor/service";
 import { EditorDocument, type FileAccess } from "../src/plugins/file-editor/document";
 
 function fixture() {
@@ -232,4 +232,41 @@ test("image reads preserve bytes and enforce project boundaries and size limits"
     writeFileSync(join(f.root, "large.png"), Buffer.alloc(MAX_IMAGE_BYTES + 1));
     assert.throws(() => readProjectImage(f.root, "large.png"), /20 MiB/);
   } finally { f.cleanup(); }
+});
+
+test("hex edits preserve arbitrary bytes, BOM and CRLF and use revision-checked saves", async () => {
+  const f = fixture();
+  try {
+    const original = Buffer.from([0xef, 0xbb, 0xbf, 65, 13, 10, 0, 255]);
+    writeFileSync(join(f.root, "bytes.bin"), original);
+    const first = readProjectEditableFile(f.root, "bytes.bin");
+    assert.equal(first.encoding, "hex");
+    assert.equal(first.text, original.toString("hex"));
+    const next = saveProjectBytes(f.root, "bytes.bin", "efbbbf420d0a00ff", first.revision, "hex");
+    assert.deepEqual(readFileSync(join(f.root, "bytes.bin")), Buffer.from([0xef, 0xbb, 0xbf, 66, 13, 10, 0, 255]));
+    assert.throws(() => saveProjectBytes(f.root, "bytes.bin", "ff", first.revision, "hex"), /changed on disk/);
+    assert.throws(() => saveProjectBytes(f.root, "bytes.bin", "0xz", next.revision, "hex"), /Invalid hexadecimal/);
+    symlinkSync(join(f.directory, "outside.bin"), join(f.root, "escape.bin"));
+    writeFileSync(join(f.directory, "outside.bin"), original);
+    assert.throws(() => saveProjectBytes(f.root, "escape.bin", "ff", next.revision, "hex"), /inside this project/);
+  } finally { f.cleanup(); }
+});
+
+test("text and hex share a draft and survive binary edits, restoration and undo", () => {
+  const base = { path: "file.md", text: "\uFEFFHello\r\n", revision: "original" };
+  const access: FileAccess = { read: async () => base, save: async () => base };
+  const doc = new EditorDocument(base, access);
+  const original = doc.bytes;
+  const binary = original.slice();
+  binary[3] = 255;
+  doc.editBytes(binary);
+  assert.equal(doc.encoding, "hex");
+  assert.equal(doc.dirty, true);
+  const restored = new EditorDocument(base, access, doc.draft()!);
+  assert.deepEqual(restored.bytes, binary);
+  assert.equal(restored.conflict, false);
+  restored.editBytes(original);
+  assert.equal(restored.encoding, undefined);
+  assert.equal(restored.text, base.text);
+  assert.equal(restored.dirty, false);
 });

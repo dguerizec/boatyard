@@ -138,3 +138,14 @@
 }
 .file-editor-image[hidden] { display: none; }
 .file-editor-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+.file-editor-hex { flex: 1; min-height: 0; min-width: 0; overflow: auto; }
+.file-editor-hex[hidden] { display: none; }
+.file-editor-hex .file-editor-toolbar { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.file-editor-hex .file-editor-toolbar input { flex: 0 1 140px; width: 140px; }
+.file-editor-hex-grid { padding: 10px; font: 13px/1.6 monospace; min-width: max-content; }
+.file-editor-hex-row { display: grid; grid-template-columns: 9ch repeat(16, 3ch) 18ch; gap: 4px; align-items: center; }
+.file-editor-hex-row input { width: 3ch; min-width: 0; padding: 2px 0; text-align: center; font: inherit; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 3px; }
+.file-editor-hex-row input:hover { border-color: var(--line); }
+.file-editor-hex-row input:focus { border-color: var(--accent); outline: 1px solid var(--accent); }
+.file-editor-hex-row > span { color: var(--muted); white-space: pre; }

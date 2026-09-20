@@ -4,6 +4,12 @@ type IconNode = [tag: string, attrs: Record<string, string>][];
 
 // Selected Lucide icons, kept as local data so the renderer never depends on a CDN.
 const LUCIDE_TOOL_ICONS: Record<string, IconNode> = {
+  binary: [
+    ["rect", { x: "14", y: "14", width: "4", height: "6", rx: "2" }],
+    ["rect", { x: "6", y: "4", width: "4", height: "6", rx: "2" }],
+    ["path", { d: "M6 20h4" }], ["path", { d: "M14 10h4" }],
+    ["path", { d: "M6 14h2v6" }], ["path", { d: "M14 4h2v6" }]
+  ],
   eye: [
     ["path", { d: "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" }],
     ["circle", { cx: "12", cy: "12", r: "3" }]

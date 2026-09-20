@@ -1,10 +1,11 @@
+import { byteContent, contentBytes, type ByteEncoding } from "./bytes";
 import { imageMimeType, type ImageSnapshot } from "./imageTypes";
 import { constants, accessSync, closeSync, existsSync, fstatSync, fchmodSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, fsyncSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
 export const MAX_FILE_BYTES = 2 * 1024 * 1024;
-export type FileSnapshot = { path: string; text: string; revision: string };
+export type FileSnapshot = { path: string; text: string; revision: string; encoding?: ByteEncoding };
 
 export function resolveProjectFile(root: string, file: string): string {
   if (!root || !file || file.includes("\0")) throw new Error("Choose a file inside this project.");
@@ -60,12 +61,29 @@ export function readProjectFile(root: string, file: string): FileSnapshot {
   return { path: relative(realpathSync(root), target), text, revision: createHash("sha256").update(bytes).digest("hex") };
 }
 
+export function readProjectEditableFile(root: string, file: string): FileSnapshot {
+  const target = resolveProjectFile(root, file);
+  const bytes = readFileBytes(target, MAX_FILE_BYTES);
+  return { path: relative(realpathSync(root), target), ...byteContent(bytes), revision: createHash("sha256").update(bytes).digest("hex") };
+}
+
 export function saveProjectFile(root: string, file: string, text: string, revision: string): FileSnapshot {
   if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > MAX_FILE_BYTES || text.includes("\0")) {
     throw new Error("Save requires a UTF-8 text file of at most 2 MiB.");
   }
+  // Preserve the text-only API contract for callers that do not request byte editing.
+  readProjectFile(root, file);
+  return saveProjectBytes(root, file, text, revision);
+}
+
+export function saveProjectBytes(root: string, file: string, text: string, revision: string, encoding?: ByteEncoding): FileSnapshot {
+  if (typeof text !== "string" || text.length > MAX_FILE_BYTES * 2 || (encoding !== undefined && encoding !== "hex")) {
+    throw new Error("Save requires a file of at most 2 MiB.");
+  }
+  const bytes = contentBytes({ text, encoding });
+  if (bytes.length > MAX_FILE_BYTES) throw new Error("Files larger than 2 MiB are not supported.");
   const target = resolveProjectFile(root, file);
-  const current = readProjectFile(root, file);
+  const current = readProjectEditableFile(root, file);
   if (current.revision !== revision) throw new Error("The file changed on disk. Compare or reload it before saving.");
   const stats = statSync(target);
   if (stats.nlink > 1) throw new Error("Saving files with multiple hard links is not supported.");
@@ -75,16 +93,16 @@ export function saveProjectFile(root: string, file: string, text: string, revisi
     const descriptor = openSync(temporary, "wx", stats.mode & 0o777);
     try {
       fchmodSync(descriptor, stats.mode & 0o777);
-      writeFileSync(descriptor, text, "utf8");
+      writeFileSync(descriptor, bytes);
       fsyncSync(descriptor);
     } finally {
       closeSync(descriptor);
     }
-    if (resolveProjectFile(root, file) !== target || readProjectFile(root, file).revision !== revision) {
+    if (resolveProjectFile(root, file) !== target || readProjectEditableFile(root, file).revision !== revision) {
       throw new Error("The file changed on disk. Compare or reload it before saving.");
     }
     renameSync(temporary, target);
-    return readProjectFile(root, file);
+    return readProjectEditableFile(root, file);
   } finally {
     if (existsSync(temporary)) unlinkSync(temporary);
   }

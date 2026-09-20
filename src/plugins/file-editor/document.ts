@@ -1,14 +1,16 @@
+import { byteContent, contentBytes, sameContent, type ByteEncoding } from "./bytes";
 import type { FileSnapshot } from "./service";
 
-export type EditorDraft = FileSnapshot & { baseText: string };
+export type EditorDraft = FileSnapshot & { baseText: string; baseEncoding?: ByteEncoding };
 export type FileAccess = {
   read(path: string): Promise<FileSnapshot>;
-  save(path: string, text: string, revision: string): Promise<FileSnapshot>;
+  save(path: string, text: string, revision: string, encoding?: ByteEncoding): Promise<FileSnapshot>;
 };
 
 /** One document per file, shared by every visible editor pane. */
 export class EditorDocument {
   text: string;
+  encoding?: ByteEncoding;
   base: FileSnapshot;
   disk: FileSnapshot;
   error = "";
@@ -18,18 +20,28 @@ export class EditorDocument {
 
   constructor(snapshot: FileSnapshot, private access: FileAccess, draft?: EditorDraft) {
     this.disk = snapshot;
-    this.base = draft ? { path: snapshot.path, text: draft.baseText, revision: draft.revision } : snapshot;
+    this.base = draft ? { path: snapshot.path, text: draft.baseText, encoding: draft.baseEncoding, revision: draft.revision } : snapshot;
     this.text = draft?.text ?? snapshot.text;
-    if (this.text === snapshot.text) this.base = snapshot;
+    this.encoding = draft ? draft.encoding : snapshot.encoding;
+    if (sameContent(this, snapshot)) this.base = snapshot;
   }
 
-  get dirty() { return this.text !== this.base.text; }
+  get dirty() { return !sameContent(this, this.base); }
   get conflict() { return this.disk.revision !== this.base.revision; }
 
   notify() { for (const listener of this.listeners) listener(); }
 
   edit(text: string) {
+    this.encoding = undefined;
     this.text = text;
+    this.notify();
+  }
+
+  get bytes() { return contentBytes(this); }
+  editBytes(bytes: Uint8Array) {
+    const content = byteContent(bytes);
+    this.text = content.text;
+    this.encoding = content.encoding;
     this.notify();
   }
 
@@ -41,9 +53,10 @@ export class EditorDocument {
     try {
       const snapshot = await this.access.read(this.base.path);
       // A user may have started editing while the disk read was in flight.
-      if (!this.dirty || snapshot.text === this.text) {
+      if (!this.dirty || sameContent(snapshot, this)) {
         this.base = snapshot;
         this.text = snapshot.text;
+        this.encoding = snapshot.encoding;
       }
       this.disk = snapshot;
       this.error = "";
@@ -64,8 +77,9 @@ export class EditorDocument {
     this.error = "";
     this.notify();
     const text = this.text;
+    const encoding = this.encoding;
     try {
-      const snapshot = await this.access.save(this.base.path, text, this.base.revision);
+      const snapshot = await this.access.save(this.base.path, text, this.base.revision, encoding);
       this.base = snapshot;
       this.disk = snapshot;
       // Keep edits made while the save was in flight.
@@ -79,6 +93,7 @@ export class EditorDocument {
 
   useDisk() {
     this.text = this.disk.text;
+    this.encoding = this.disk.encoding;
     this.base = this.disk;
     this.error = "";
     this.notify();
@@ -92,6 +107,6 @@ export class EditorDocument {
   }
 
   draft(): EditorDraft | null {
-    return this.dirty ? { ...this.base, baseText: this.base.text, text: this.text } : null;
+    return this.dirty ? { ...this.base, baseText: this.base.text, baseEncoding: this.base.encoding, text: this.text, encoding: this.encoding } : null;
   }
 }

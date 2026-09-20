@@ -14,7 +14,7 @@ Each pane displays one file. Split the layout to keep several files visible. Ope
 
 Visible documents are checked for disk changes every three seconds and when the window regains focus. Clean documents reload automatically. Dirty documents retain the draft and display the disk version for comparison. Choose **Use disk version** to discard the draft after confirmation, or **Keep my version** to accept the compared disk revision before explicitly saving your draft. Every save checks the revision again, including after conflict resolution. A deleted or inaccessible file leaves the draft available; saving requires the file to exist and be writable again.
 
-This first version edits existing UTF-8 text files up to 2 MiB inside the project. It preserves a UTF-8 BOM, uniform LF/CRLF line endings, and file permission bits. Mixed line endings may be normalized on editing. Symlinks must resolve inside the project; files with multiple hard links cannot be saved. Saves use a temporary sibling and rename, with content checks before replacement; this is optimistic conflict detection, not a filesystem lock against other applications. It does not yet provide file creation, Git diffs, or language-server completion.
+This version edits existing files up to 2 MiB inside the project, using text or Hex mode. It preserves a UTF-8 BOM, uniform LF/CRLF line endings, and file permission bits. Mixed line endings may be normalized on editing. Symlinks must resolve inside the project; files with multiple hard links cannot be saved. Saves use a temporary sibling and rename, with content checks before replacement; this is optimistic conflict detection, not a filesystem lock against other applications. It does not yet provide file creation, Git diffs, or language-server completion.
 
 ## Preview
 
@@ -26,4 +26,10 @@ The preview follows the selected theme and reflects changes to the current docum
 
 ## Images
 
-Open PNG, JPEG, GIF, WebP, AVIF, BMP, ICO, or SVG files from the file browser or path field to view them in the same File Editor pane. Images fit inside the pane; their dimensions and file size appear in the status bar. Image files are read-only, with Save and Find disabled, and can be up to 20 MiB. SVG files render as images, without executing scripts. Image navigation also follows pane links, and switching back to a text file preserves its draft. The last opened image is restored after reopening the pane.
+Open PNG, JPEG, GIF, WebP, AVIF, BMP, ICO, or SVG files from the file browser or path field to view them in the same File Editor pane. Images fit inside the pane; their dimensions and file size appear in the status bar. The image view does not edit pixels directly; Hex mode can edit the bytes of images up to 2 MiB. Images up to 20 MiB can be viewed. SVG files render as images, without executing scripts. Image navigation also follows pane links, and switching back to a text file preserves its draft. The last opened image is restored after reopening the pane.
+
+## Hex editing
+
+The **Hex editor** binary icon in the pane toolbar switches between text editing and hexadecimal byte editing. Files that are not UTF-8 text open in Hex automatically. Hex shows offsets, sixteen bytes per row, and an ASCII column, with 256 bytes per page. Use Previous/Next or enter a hexadecimal offset and click Go to navigate. Arrow keys move between bytes. Enter two hexadecimal digits to replace a byte, or paste complete byte pairs to overwrite a range. This version overwrites bytes without inserting or deleting them.
+
+Text, Hex, and Preview use the same unsaved document. Hex preserves exact bytes, including BOMs and line endings; returning to text requires valid UTF-8 without NUL bytes. The Preview icon renders supported documents and images using their current draft bytes. Files up to 2 MiB can be edited. Save or Ctrl/Cmd+S writes the bytes using the same revision and project-boundary checks as text saves. Hex has Undo/Redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y shortcuts. Binary drafts and the selected Hex mode are restored locally after reopening. Find is available in text mode.

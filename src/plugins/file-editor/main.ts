@@ -1,8 +1,8 @@
 import type { PluginContext } from "../../shared/pluginTypes";
-import { listProjectDirectory, readProjectImage, readProjectFile, saveProjectFile } from "./service";
+import { listProjectDirectory, readProjectImage, readProjectEditableFile, saveProjectBytes } from "./service";
 
 type EditorState = { projects?: { id: string; sourcePath?: string }[] };
-type FileInput = { projectId?: string; path?: string; text?: string; revision?: string; offset?: number };
+type FileInput = { projectId?: string; path?: string; text?: string; revision?: string; offset?: number; encoding?: "hex" };
 
 export function activate(ctx: PluginContext<EditorState>) {
   function rootFor(projectId?: string): string {
@@ -11,9 +11,9 @@ export function activate(ctx: PluginContext<EditorState>) {
     return project.sourcePath;
   }
   ctx.actions.handle<FileInput>("readImage", (input = {}) => readProjectImage(rootFor(input.projectId), input.path || ""));
-  ctx.actions.handle<FileInput>("read", (input = {}) => readProjectFile(rootFor(input.projectId), input.path || ""));
-  ctx.actions.handle<FileInput>("save", (input = {}) => saveProjectFile(
-    rootFor(input.projectId), input.path || "", input.text!, input.revision || ""
+  ctx.actions.handle<FileInput>("read", (input = {}) => readProjectEditableFile(rootFor(input.projectId), input.path || ""));
+  ctx.actions.handle<FileInput>("save", (input = {}) => saveProjectBytes(
+    rootFor(input.projectId), input.path || "", input.text!, input.revision || "", input.encoding
   ));
   ctx.actions.handle<FileInput>("list", (input = {}) => listProjectDirectory(
     rootFor(input.projectId), input.path || "", input.offset ?? 0

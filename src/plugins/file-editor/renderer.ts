@@ -1,3 +1,4 @@
+import { createHexView } from "./hexView";
 import { imageMimeType, type ImageSnapshot } from "./imageTypes";
 import { EditorPaneLinks } from "./paneLinks";
 import { basicSetup } from "codemirror";
@@ -29,7 +30,7 @@ const projectLinks = new Map<string, EditorPaneLinks>();
 const linkedHosts = new Map<string, HTMLElement>();
 type PaneControl = { open: boolean; enabled: boolean; label: string; button: HTMLButtonElement | null; toggle: (() => void) | null; drag?: (event: DragEvent) => void; highlight?: (active: boolean) => void };
 const paneControls = new WeakMap<HTMLElement, Map<string, PaneControl>>();
-function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link"): PaneControl {
+function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | "hex"): PaneControl {
   let controls = paneControls.get(host);
   if (!controls) {
     controls = new Map();
@@ -37,7 +38,7 @@ function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link"): 
   }
   let control = controls.get(key);
   if (!control) {
-    control = { open: false, enabled: false, label: key === "browse" ? "project files" : key === "link" ? "linked files" : "preview", button: null, toggle: null };
+    control = { open: false, enabled: false, label: key === "browse" ? "project files" : key === "link" ? "linked files" : key === "hex" ? "hex editor" : "preview", button: null, toggle: null };
     controls.set(key, control);
   }
   return control;
@@ -59,6 +60,7 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
   for (const definition of [
     { key: "browse", icon: "folderTree", label: "Browse project files" },
     { key: "preview", icon: "eye", label: "Preview" },
+    { key: "hex", icon: "binary", label: "Hex editor" },
     { key: "link", icon: "link", label: "Unlink file navigation" }
   ] as const) {
     const control = getPaneControl(props.host, definition.key);
@@ -142,7 +144,10 @@ function button(text: string, action: () => void) {
 function readDraft(key: string): EditorDraft | undefined {
   try {
     const value = JSON.parse(localStorage.getItem(key) || "null");
-    if (value && ["path", "text", "baseText", "revision"].every((field) => typeof value[field] === "string")) return value;
+    if (value && ["path", "text", "baseText", "revision"].every((field) => typeof value[field] === "string")
+      && ["encoding", "baseEncoding"].every((field) => value[field] === undefined || value[field] === "hex")
+      && (value.encoding !== "hex" || /^(?:[\da-f]{2})*$/i.test(value.text))
+      && (value.baseEncoding !== "hex" || /^(?:[\da-f]{2})*$/i.test(value.baseText))) return value;
   } catch { /* A malformed draft must not prevent opening a file. */ }
   return undefined;
 }
@@ -167,6 +172,12 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const linkControl = getPaneControl(container, "link");
   let pendingLinkedPath: string | undefined;
   let linkVersion = 0;
+  const hexControl = getPaneControl(container, "hex");
+  let hexMode = false;
+  try { hexMode = localStorage.getItem(`${paneKey}:hex`) === "true"; } catch { /* Use text mode by default. */ }
+  const persistHexMode = () => {
+    try { localStorage.setItem(`${paneKey}:hex`, String(hexMode)); } catch { /* Optional view preference. */ }
+  };
   const previewKey = `${paneKey}:preview`;
   const positions = new Map<string, FilePosition>();
   function positionFor(path: string): FilePosition {
@@ -192,7 +203,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   pathInput.placeholder = "Project-relative file path";
   pathInput.setAttribute("aria-label", "Project-relative file path");
   pathInput.spellcheck = false;
-  const status = element("div", "file-editor-status", "Open a text file or image from this project.");
+  const status = element("div", "file-editor-status", "Open a file from this project.");
   status.setAttribute("role", "status");
   const notices = element("div", "file-editor-notices");
   const editorHost = element("div", "file-editor-body");
@@ -209,6 +220,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     requestedPreviewPath = localStorage.getItem(`${paneKey}:preview-file`);
     previewVisible = Boolean(requestedPreviewPath) || localStorage.getItem(previewKey) === "true";
   } catch { /* Preview remains available without persisted preferences. */ }
+  let textPreviewPreference = previewVisible;
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let previewSource = "";
   let previewPendingSource = "";
@@ -222,14 +234,22 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   imageHost.hidden = true;
   const imageElement = element("img");
   imageHost.append(imageElement);
+  let imageInfo = "";
   imageElement.addEventListener("load", () => {
-    if (openedImage) status.textContent = `${openedImage.path} · ${imageElement.naturalWidth} × ${imageElement.naturalHeight} · ${Math.ceil(openedImage.size / 1024)} KiB`;
+    imageInfo = `${imageElement.naturalWidth} × ${imageElement.naturalHeight} · ${Math.ceil((openedImage?.size ?? doc?.bytes.length ?? 0) / 1024)} KiB`;
+    if (openedImage) status.textContent = `${openedImage.path} · ${imageInfo}`;
+    else if (doc && previewVisible && imageMimeType(doc.base.path)) refreshUi();
   });
   imageElement.addEventListener("error", () => {
-    if (openedImage) status.textContent = `${openedImage.path} · This image could not be decoded.`;
+    imageInfo = "This image could not be decoded.";
+    if (openedImage) status.textContent = `${openedImage.path} · ${imageInfo}`;
+    else if (doc && previewVisible && imageMimeType(doc.base.path)) refreshUi();
   });
   let doc: EditorDocument | undefined;
   let view: EditorView | undefined;
+  const hexHost = element("div", "file-editor-hex");
+  hexHost.hidden = true;
+  const hexView = createHexView(hexHost, (bytes) => doc?.editBytes(bytes), () => { if (doc) void doc.save(); });
   let unsubscribe: (() => void) | undefined;
   let disposed = false;
   let opening = false;
@@ -246,13 +266,27 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   function schedulePreview() {
     if (!previewVisible || !doc || disposed) return;
+    const mime = imageMimeType(doc.base.path);
+    if (mime) {
+      const source = JSON.stringify([doc.base.path, doc.text, doc.encoding]);
+      if (previewSource === source) return;
+      const bytes = doc.bytes;
+      let binary = "";
+      for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+      imageInfo = "";
+      imageElement.alt = doc.base.path;
+      imageElement.src = `data:${mime};base64,${btoa(binary)}`;
+      previewSource = source;
+      return;
+    }
+    if (doc.encoding === "hex") return;
     const source = JSON.stringify([doc.base.path, doc.text, document.documentElement.dataset.theme]);
     if (source === previewSource || source === previewPendingSource) return;
     previewPendingSource = source;
     clearTimeout(previewTimer);
     const version = ++previewVersion;
     previewTimer = setTimeout(async () => {
-      if (!previewVisible || !doc || disposed) return;
+      if (!previewVisible || !doc || doc.encoding === "hex" || disposed) return;
       try {
         const sameFile = previewPath === doc.base.path;
         previewScrollTop = sameFile ? previewFrame.contentDocument?.scrollingElement?.scrollTop || 0 : positionFor(doc.base.path).previewScrollTop;
@@ -301,13 +335,21 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     rememberPosition();
     previewVersion++;
     previewPendingSource = "";
-    previewVisible = visible && Boolean(doc && supportsPreview(doc.base.path));
-    try { localStorage.setItem(previewKey, String(previewVisible)); }
-    catch { /* Optional view preferences must not prevent editing. */ }
+    previewVisible = visible && Boolean(doc && (imageMimeType(doc.base.path) || (doc.encoding !== "hex" && supportsPreview(doc.base.path))));
+    if (!doc || !imageMimeType(doc.base.path)) {
+      textPreviewPreference = previewVisible;
+      try { localStorage.setItem(previewKey, String(previewVisible)); }
+      catch { /* Optional view preferences must not prevent editing. */ }
+    }
     previewControl.open = previewVisible;
     syncPaneControl(previewControl);
-    previewFrame.hidden = !previewVisible;
-    editorHost.hidden = previewVisible;
+    const imagePreview = previewVisible && Boolean(doc && imageMimeType(doc.base.path));
+    imageHost.hidden = !imagePreview;
+    previewFrame.hidden = !previewVisible || imagePreview;
+    editorHost.hidden = previewVisible || hexMode;
+    hexHost.hidden = previewVisible || !hexMode;
+    hexControl.open = hexMode && !previewVisible;
+    syncPaneControl(hexControl);
     findButton.disabled = !view || previewVisible;
     if (previewVisible) {
       if (view) closeSearchPanel(view);
@@ -315,7 +357,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     } else {
       clearTimeout(previewTimer);
       restorePosition();
-      if (focus) view?.focus();
+      if (focus) { if (hexMode) hexView.focus(); else view?.focus(); }
     }
   }
   function rememberPosition() {
@@ -358,7 +400,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   window.addEventListener("pagehide", flushPosition);
 
   function persist() {
-    if (openedImage) {
+    if (openedImage && !doc) {
       try { localStorage.setItem(paneKey, openedImage.path); } catch { /* Images have no unsaved edits. */ }
       return;
     }
@@ -422,12 +464,16 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   function refreshUi() {
     if (!doc || disposed) return;
     persist();
+    if (doc.encoding === "hex" && !hexMode && !(previewVisible && imageMimeType(doc.base.path))) { hexMode = true; previewVisible = false; rebuild(false); return; }
+    if (hexMode) hexView.update(doc.bytes, doc.base.path);
+    previewControl.enabled = Boolean(imageMimeType(doc.base.path)) || (doc.encoding !== "hex" && supportsPreview(doc.base.path));
+    syncPaneControl(previewControl);
     schedulePreview();
     saveButton.disabled = !doc.dirty || doc.busy || doc.conflict;
-    status.textContent = [doc.base.path, doc.dirty ? "Unsaved changes" : "Saved", doc.busy ? "Working…" : "", doc.error, persistenceError].filter(Boolean).join(" · ");
+    status.textContent = [doc.base.path, doc.dirty ? "Unsaved changes" : "Saved", doc.busy ? "Working…" : "", doc.error, persistenceError, previewVisible && imageMimeType(doc.base.path) ? imageInfo : ""].filter(Boolean).join(" · ");
     compare.hidden = !doc.conflict;
     if (doc.conflict && compareText.textContent !== doc.disk.text) compareText.textContent = doc.disk.text;
-    if (view && bom + view.state.sliceDoc() !== doc.text) {
+    if (view && !hexMode && bom + view.state.sliceDoc() !== doc.text) {
       const nextBom = doc.text.startsWith("\uFEFF") ? "\uFEFF" : "";
       bom = nextBom;
       syncing = true;
@@ -450,7 +496,24 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     if (!doc) return;
     restoringPosition = true;
     view?.destroy();
+    view = undefined;
     editorHost.replaceChildren();
+    hexControl.enabled = true;
+    if (previewVisible && imageMimeType(doc.base.path) && !hexMode) {
+      restoringPosition = false;
+      setPreview(true, focus);
+      refreshUi();
+      return;
+    }
+    if (doc.encoding === "hex") hexMode = true;
+    if (hexMode) {
+      persistHexMode();
+      hexView.update(doc.bytes, doc.base.path);
+      restoringPosition = false;
+      setPreview(false, focus);
+      refreshUi();
+      return;
+    }
     bom = doc.text.startsWith("\uFEFF") ? "\uFEFF" : "";
     view = new EditorView({
       parent: editorHost,
@@ -471,7 +534,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     });
     const position = positionFor(doc.base.path);
     view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length), head: Math.min(position.head, view.state.doc.length) } });
-    previewControl.enabled = supportsPreview(doc.base.path);
+    previewControl.enabled = Boolean(imageMimeType(doc.base.path)) || (doc.encoding !== "hex" && supportsPreview(doc.base.path));
     setPreview(previewVisible, focus);
     if (previewVisible) restoringPosition = false;
     findButton.setAttribute("aria-pressed", String(searchPanelOpen(view.state)));
@@ -486,37 +549,44 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     opening = true;
     openButton.disabled = true;
     try {
-      if (imageMimeType(path)) {
+      if (imageMimeType(path) && !hexMode) {
         const image = await invoke<ImageSnapshot>("readImage", project.id, { path });
         if (disposed || (linkedVersion !== undefined && linkedVersion !== linkVersion)) return;
-        rememberPosition();
-        unsubscribe?.(); unsubscribe = undefined;
-        doc = undefined;
-        view?.destroy(); view = undefined;
-        editorHost.replaceChildren();
-        openedImage = image;
-        previewVersion++;
-        clearTimeout(previewTimer);
-        previewPendingSource = "";
-        previewFrame.hidden = true;
-        editorHost.hidden = true;
-        imageHost.hidden = false;
-        imageElement.alt = image.path;
-        status.textContent = `${image.path} · Loading image…`;
-        imageElement.src = image.dataUrl;
-        pathInput.value = image.path;
-        fileBrowser.setSelected(image.path);
-        setNotices(); compare.hidden = true;
-        saveButton.disabled = true; findButton.disabled = true;
-        findButton.setAttribute("aria-pressed", "false");
-        previewControl.label = "image preview";
-        previewControl.enabled = true;
-        previewControl.open = true;
-        syncPaneControl(previewControl);
-        persistenceError = "";
-        persist();
-        if (!pendingLinkedPath || pendingLinkedPath === image.path) paneLinks.opened(paneId, image.path);
-        return;
+        if (image.size > 2 * 1024 * 1024) {
+          rememberPosition();
+          unsubscribe?.(); unsubscribe = undefined;
+          doc = undefined;
+          view?.destroy(); view = undefined;
+          editorHost.replaceChildren();
+          openedImage = image;
+          previewVersion++;
+          clearTimeout(previewTimer);
+          previewPendingSource = "";
+          previewFrame.hidden = true;
+          editorHost.hidden = true;
+          imageHost.hidden = false;
+          hexHost.hidden = true;
+          hexControl.enabled = true;
+          hexControl.open = false;
+          syncPaneControl(hexControl);
+          imageElement.alt = image.path;
+          status.textContent = `${image.path} · Loading image…`;
+          imageElement.src = image.dataUrl;
+          pathInput.value = image.path;
+          fileBrowser.setSelected(image.path);
+          setNotices(); compare.hidden = true;
+          saveButton.disabled = true; findButton.disabled = true;
+          findButton.setAttribute("aria-pressed", "false");
+          previewControl.label = "image preview";
+          previewControl.enabled = true;
+          previewControl.open = true;
+          syncPaneControl(previewControl);
+          persistenceError = "";
+          persist();
+          if (!pendingLinkedPath || pendingLinkedPath === image.path) paneLinks.opened(paneId, image.path);
+          return;
+        }
+        previewVisible = true;
       }
       let snapshot: FileSnapshot | null;
       try {
@@ -525,7 +595,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
         const draft = readDraft(draftKey(path));
         if (!draft) throw error;
         // Missing or inaccessible files must not make their saved draft inaccessible.
-        snapshot = { path: draft.path, text: draft.baseText, revision: draft.revision };
+        snapshot = { path: draft.path, text: draft.baseText, encoding: draft.baseEncoding, revision: draft.revision };
       }
       if (!snapshot || disposed || (linkedVersion !== undefined && linkedVersion !== linkVersion)) return;
       const key = draftKey(snapshot.path);
@@ -533,16 +603,18 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       if (!next) {
         next = new EditorDocument(snapshot, {
           read: async (file) => (await invoke("read", project.id, { path: file }))!,
-          save: async (file, text, revision) => (await invoke("save", project.id, { path: file, text, revision }))!
+          save: async (file, text, revision, encoding) => (await invoke("save", project.id, { path: file, text, revision, encoding }))!
         }, readDraft(key));
         documents.set(key, next);
       }
       rememberPosition();
       unsubscribe?.();
+      if ((openedImage || (doc && imageMimeType(doc.base.path))) && !imageMimeType(snapshot.path)) previewVisible = textPreviewPreference;
       previewControl.label = "preview";
       openedImage = undefined;
       imageHost.hidden = true;
       imageElement.removeAttribute("src");
+      previewSource = "";
       doc = next;
       pathInput.value = snapshot.path;
       fileBrowser.setSelected(snapshot.path);
@@ -607,7 +679,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   });
   browserLayout.panel.append(fileBrowser.element);
   browserLayout.viewport.classList.add("file-editor-main");
-  browserLayout.viewport.append(notices, compare, editorHost, previewFrame, imageHost);
+  browserLayout.viewport.append(notices, compare, editorHost, hexHost, previewFrame, imageHost);
   const browserControl = getPaneControl(container, "browse");
   browserControl.open = browserState.open;
   browserControl.enabled = true;
@@ -618,10 +690,33 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     browserLayout.sync();
     if (browserState.open) fileBrowser.show();
   };
-  const togglePreview = () => { if (!openedImage) setPreview(!previewVisible); };
+  const togglePreview = () => {
+    if (openedImage) return;
+    if (view && !hexMode) { setPreview(!previewVisible); return; }
+    rememberPosition();
+    const visible = !previewVisible;
+    hexMode = !visible && doc?.encoding === "hex";
+    persistHexMode();
+    previewVisible = visible;
+    rebuild();
+  };
+  const toggleHex = () => {
+    if (opening) return;
+    rememberPosition();
+    if (hexMode && doc?.encoding === "hex" && !imageMimeType(doc.base.path)) { showError("These bytes are not valid UTF-8 text. Continue editing in Hex mode."); return; }
+    hexMode = !hexMode;
+    persistHexMode();
+    if (openedImage) {
+      void openFile(openedImage.path).then(() => {
+        if (openedImage) { hexMode = false; persistHexMode(); }
+      });
+    } else { previewVisible = !hexMode && Boolean(doc && imageMimeType(doc.base.path)); rebuild(); }
+  };
+  hexControl.toggle = toggleHex;
+  syncPaneControl(hexControl);
   previewControl.drag = typeof props.startPaneDrag === "function" ? (event) => {
     const path = currentPath();
-    if (!path || (!openedImage && !supportsPreview(path))) { event.preventDefault(); return; }
+    if (!path || (!openedImage && !imageMimeType(path) && (doc?.encoding === "hex" || !supportsPreview(path)))) { event.preventDefault(); return; }
     const start = props.startPaneDrag as (event: DragEvent, webAppId: string, prepare: (paneId: string) => void) => void;
     start(event, "boatyard.fileEditor.editor", (targetId) => {
       localStorage.setItem(`${prefix}pane:${targetId}:preview-file`, path);
@@ -689,6 +784,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       browserControl.toggle = null;
       syncPaneControl(browserControl);
     }
+    if (hexControl.toggle === toggleHex) { hexControl.toggle = null; syncPaneControl(hexControl); }
     if (previewControl.toggle === togglePreview) {
       previewControl.toggle = null;
       previewControl.drag = undefined;
