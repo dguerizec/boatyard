@@ -164,17 +164,10 @@
 .file-editor-file-scroll > div { width: 1px; }
 .file-editor-paged .cm-scroller::-webkit-scrollbar:vertical { width: 0; }
 
-.file-editor-diff { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+.file-editor-diff { flex: 0 0 auto; min-width: 0; }
 .file-editor-diff[hidden] { display: none; }
-.file-editor-diff-body { flex: 1; min-height: 0; overflow: hidden; }
-.file-editor-diff-body .cm-mergeView { height: 100%; overflow: auto; }
-.file-editor .file-editor-diff .cm-editor.cm-merge-a .cm-changedText,
-.file-editor .file-editor-diff .cm-editor .cm-deletedText { background: rgba(229, 107, 111, .16); }
-.file-editor .file-editor-diff .cm-editor.cm-merge-b .cm-changedText { background: rgba(100, 180, 128, .16); }
-.file-editor-diff-labels { display: flex; gap: 12px; padding: 6px 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-.file-editor-diff-labels > span { flex: 1; }
-.file-editor-diff-labels.unified { flex-wrap: wrap; }
-.file-editor-diff-labels[hidden] { display: none; }
+.file-editor .cm-line.file-editor-added-line { background: rgba(100, 180, 128, .16); }
+.file-editor .file-editor-removed-lines { margin: 0; padding: 0 4px; background: rgba(229, 107, 111, .16); border-left: 3px solid rgba(229, 107, 111, .65); color: var(--text); font: inherit; white-space: pre; user-select: text; }
 .file-editor .file-editor-git-marker { border: 0; border-radius: 0; background: transparent; padding: 0 3px; font: inherit; line-height: inherit; color: var(--accent); }
 .file-editor .file-editor-git-marker.Added { color: var(--success-text); }
 .file-editor .file-editor-git-marker.Deleted { color: #e56b6f; }

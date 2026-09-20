@@ -360,7 +360,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   let viewLocked = false;
   let viewFirstLine = 1;
   const editorTheme = () => document.documentElement.dataset.theme === "light" ? [] : oneDark;
-  const gitView = createGitView(diffHost, editorTheme, () => setDiff(true));
+  const gitView = createGitView(diffHost, () => setDiff(true));
   let gitBaseline: GitBaseline | undefined;
   let gitPath = "", gitError = "", gitVersion = 0;
   let gitPending = false;
@@ -370,7 +370,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     const path = doc?.base.path || "";
     const supported = Boolean(doc && !doc.base.block && doc.encoding !== "hex" && !openedImage);
     const reason = doc?.base.block ? "Git diff currently requires a complete text file; paged files are not supported." : "Git diff is available for text files only.";
-    gitView.update(path, doc?.text || "", supported && gitPath === path ? gitBaseline : undefined,
+    gitView.update(path, supported && gitPath === path ? gitBaseline : undefined,
       supported ? gitError : reason, supported ? view : undefined);
     diffControl.enabled = Boolean(doc && !openedImage);
     diffControl.open = diffMode;
@@ -408,15 +408,15 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   function setDiff(value: boolean) {
     if (deletedGitPath && !value) { showError("This file was deleted. Its Git diff is read-only."); return; }
     rememberPosition(); diffMode = value; persistDiffMode();
-    if (value) { previewVisible = false; hexMode = false; persistHexMode(); if (view) closeSearchPanel(view); }
+    if (value) { previewVisible = false; hexMode = false; persistHexMode(); }
     if (doc && !deletedGitPath && !view) rebuild(false);
-    editorHost.hidden = previewVisible || hexMode || diffMode;
+    editorHost.hidden = previewVisible || hexMode;
     hexHost.hidden = previewVisible || !hexMode || diffMode;
     previewFrame.hidden = !previewVisible;
     imageHost.hidden = true;
     previewControl.open = previewVisible; hexControl.open = hexMode && !diffMode;
     syncPaneControl(previewControl); syncPaneControl(hexControl);
-    findButton.disabled = !view || diffMode || previewVisible;
+    findButton.disabled = !view || previewVisible;
     blockNavigation.update(currentBlock(), !diffMode && !hexMode && !previewVisible, false);
     updateGitView();
     if (!value) { restorePosition(); view?.focus(); }
@@ -433,6 +433,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     pathInput.value = path; fileBrowser.setSelected(path); setNotices(); compare.hidden = true;
     saveButton.disabled = true; hexControl.enabled = previewControl.enabled = false;
     status.textContent = `${path} · Deleted from working tree${retainedDraft ? " · Local draft retained" : ""} · Read-only diff`;
+    rebuild(false);
+    hexControl.enabled = previewControl.enabled = false;
     resetGit(); setDiff(true); persist();
   }
   async function openDiff(path: string, deleted = false) {
@@ -443,7 +445,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
   const themeObserver = new MutationObserver(() => {
     view?.dispatch({ effects: theme.reconfigure(editorTheme()) });
-    schedulePreview(); gitView.refreshTheme();
+    schedulePreview();
   });
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   function schedulePreview() {
@@ -530,11 +532,11 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     const imagePreview = previewVisible && Boolean(doc && imageMimeType(doc.base.path));
     imageHost.hidden = !imagePreview;
     previewFrame.hidden = !previewVisible || imagePreview;
-    editorHost.hidden = previewVisible || hexMode || diffMode;
+    editorHost.hidden = previewVisible || hexMode;
     hexHost.hidden = previewVisible || !hexMode || diffMode;
     hexControl.open = hexMode && !previewVisible;
     syncPaneControl(hexControl);
-    findButton.disabled = !view || previewVisible || diffMode;
+    findButton.disabled = !view || previewVisible;
     if (previewVisible) {
       if (view) closeSearchPanel(view);
       schedulePreview();
@@ -778,7 +780,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       state: EditorState.create({
         doc: doc.text.slice(bom.length),
         extensions: [basicSetup, gitView.extension, theme.of(editorTheme()), doc.base.block ? [] : language(doc.base.path),
-          editable.of(EditorView.editable.of(true)),
+          EditorState.readOnly.of(Boolean(deletedGitPath)),
+          editable.of(EditorView.editable.of(!deletedGitPath)),
           numbering.of(lineNumbers({ formatNumber: (number) => String(number + viewFirstLine - 1) })),
           lineSeparator.of(EditorState.lineSeparator.of(doc.text.includes("\r\n") ? "\r\n" : "\n")),
           EditorView.contentAttributes.of({ "aria-label": "File contents" }),
@@ -1031,9 +1034,9 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   browserLayout.panel.append(fileBrowser.element);
   browserLayout.viewport.classList.add("file-editor-main");
   const content = element("div", "file-editor-content");
-  content.append(editorHost, hexHost, previewFrame, imageHost, diffHost, blockNavigation.rail);
+  content.append(editorHost, hexHost, previewFrame, imageHost, blockNavigation.rail);
   blockNavigation.update(undefined, false, false);
-  browserLayout.viewport.append(notices, compare, blockNavigation.toolbar, content);
+  browserLayout.viewport.append(notices, compare, blockNavigation.toolbar, diffHost, content);
   const browserControl = getPaneControl(container, "browse");
   browserControl.open = browserState.open;
   browserControl.enabled = true;

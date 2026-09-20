@@ -54,13 +54,19 @@ removed files; each entry has an **Open diff** action. Status badges describe th
 index and working tree, while unsaved editor drafts remain separate until saved.
 
 Text editors show clickable Git gutter markers for added, modified, and deleted
-lines. The **Git diff** toolbar icon toggles a read-only comparison of **HEAD →
-current content**, including unsaved drafts. It uses a side-by-side layout in wide
-panes and a unified layout in narrow panes. **Previous change** and **Next change**
-navigate between changed regions. Return to Text mode to edit; a linked Diff pane
-updates as you type. Drag the Diff icon to another pane to create that linked
-view, using the same link/unlink controls as Preview. The Diff mode is remembered
-per pane.
+lines. The **Git diff** toolbar icon toggles an editable inline comparison of
+**HEAD → current content**, including unsaved drafts, inside the original text
+editor. Added and replacement lines remain editable on a green background. Old
+lines are folded by default: a gutter chevron expands them as red, read-only
+blocks. Collapsed blocks occupy no additional text rows. Old lines are display
+widgets and never enter the saved document, clipboard selections of the current
+text, or Undo/Redo history. The original editor, cursor, search, and editing
+history remain available when toggling Diff.
+
+**Previous change** and **Next change** navigate between changed regions. Drag
+the Diff icon to another pane to create a linked inline editor, using the same
+link/unlink controls as Preview. Both panes share the current draft. The Diff
+mode is remembered per pane; original lines start folded when reopening a file.
 
 Untracked files use an empty baseline. Repositories without a first commit also
 use an empty baseline. Staged renames compare against the original HEAD path.
