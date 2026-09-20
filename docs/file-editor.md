@@ -29,8 +29,20 @@ copy/paste, `/` to search, and `u`/`Ctrl+R` to undo/redo. The keybindings come f
 Use `:w` or `:write` to save the current file through Boatyard's usual revision
 checks and conflict handling. Save errors remain visible in the editor status.
 Write ranges, file arguments, and `:w!` are unsupported; use the existing conflict
-controls when a file changes on disk. Tab closing still uses Boatyard's tab
-controls. For paged files, Vim motions and searches operate on the loaded block;
+controls when a file changes on disk.
+
+- `:q` / `:quit` closes the current tab only if it has no unsaved changes.
+- `:wq` saves and closes the current tab after a successful save. Conflicts, save
+  failures, or new edits during the save leave the tab open.
+- `:q!` / `:quit!` discards the draft and closes without confirmation. As with
+  **Discard changes** in the tab dialog, this reverts the shared draft in other
+  panes displaying the file. Linked panes also follow tab closure.
+
+These commands close a file tab, not the pane or application. Closing the last
+file leaves an empty pane. Close commands do not accept ranges or filenames;
+`:wq!` is unsupported and cannot bypass conflict checks.
+
+For paged files, Vim motions and searches operate on the loaded block;
 undo/redo uses the shared file-wide history and saving writes all modified blocks.
 
 ## Saving and disk changes

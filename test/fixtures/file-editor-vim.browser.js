@@ -48,13 +48,22 @@ first.destroy(); second.destroy();
 let pane;
 const paneSaves = [];
 let diskText = "pane text";
+let diskRevision = "one";
+let saveError = "";
+let saveWait;
 window.BoatyardPluginRegistry = { register(_manifest, plugin) {
   plugin.activate({ status: { set() {} }, panes: { register(value) { pane = value; } } });
 } };
 window.boatyard = { invokePlugin: async (_plugin, action, payload) => {
-  if (action === 'save') { paneSaves.push(payload); diskText = payload.text; return { path: payload.path, text: diskText, revision: 'two' }; }
+  if (action === 'save') {
+    paneSaves.push(payload);
+    if (saveWait) await saveWait;
+    if (saveError) throw new Error(saveError);
+    diskText = payload.text; diskRevision = 'two';
+    return { path: payload.path, text: diskText, revision: diskRevision };
+  }
   if (action === 'read' || action === 'readEditable') return {
-    path: payload.path, text: diskText, revision: 'one', size: 9, mtimeMs: 1
+    path: payload.path, text: diskText, revision: diskRevision, size: 9, mtimeMs: 1
   };
   if (action === 'gitStatus') return { available: false, entries: [] };
   if (action === 'gitBaseline') return { available: false };
@@ -95,5 +104,65 @@ toggle = header.querySelector('.file-editor-vim-button');
 check(toggle.getAttribute('aria-pressed') === 'true' && host.querySelector('.cm-vim-panel'), 'Vim restored after remount');
 toggle.click();
 check(!host.querySelector('.cm-vim-panel'), 'Pane toolbar returns to standard editing');
+cleanup();
+
+const tick = () => new Promise(r => setTimeout(r, 0));
+const currentView = () => EditorView.findFromDOM(host.querySelector('.cm-content'));
+const openScenario = async (path, paths = [path]) => {
+  localStorage.setItem(paneKey, path);
+  localStorage.setItem(`${paneKey}:tabs`, JSON.stringify(paths));
+  localStorage.setItem(`${paneKey}:vim`, 'true');
+  cleanup = mount(); await settle();
+  check(host.querySelector('.cm-editor'), 'Scenario opens editor');
+};
+await openScenario('quit.txt');
+let target = currentView();
+target.dispatch({ changes: { from: 0, insert: 'unsaved ' } });
+const savesBeforeQuit = paneSaves.length;
+ex(target, 'q'); await tick();
+check(host.querySelector('.cm-editor') && host.textContent.includes('Unsaved changes.'), ':q refuses dirty tabs');
+check(!document.querySelector('dialog') && paneSaves.length === savesBeforeQuit, ':q neither prompts nor saves');
+for (const command of ['q other.txt', 'wq!', '1,2q', '1,2wq']) { ex(target, command); await tick(); }
+check(host.querySelector('.cm-editor') && paneSaves.length === savesBeforeQuit, 'Unsupported close arguments leave tab intact');
+ex(target, 'q!'); await tick();
+check(!host.querySelector('.cm-editor') && paneSaves.length === savesBeforeQuit, ':q! discards and closes without saving');
+check(!Object.values(localStorage).some(value => value.includes('unsaved ')), ':q! removes the discarded draft');
+cleanup();
+
+await openScenario('write-quit.txt');
+target = currentView();
+target.dispatch({ changes: { from: 0, insert: 'save me ' } });
+saveError = 'Simulated save failure';
+ex(target, 'wq'); await tick();
+check(host.querySelector('.cm-editor') && host.textContent.includes(saveError), ':wq keeps failed save open');
+check(target.state.doc.toString().startsWith('save me '), ':wq keeps failed draft');
+saveError = '';
+let releaseSave;
+saveWait = new Promise(resolve => { releaseSave = resolve; });
+ex(target, 'wq'); await tick();
+check(host.querySelector('.cm-editor'), ':wq waits for save completion');
+target.dispatch({ changes: { from: 0, insert: 'newer ' } });
+releaseSave(); await tick(); saveWait = undefined;
+check(host.querySelector('.cm-editor') && target.state.doc.toString().startsWith('newer '), ':wq preserves edits made during save');
+ex(target, 'wq'); await tick();
+check(!host.querySelector('.cm-editor') && diskText.startsWith('newer save me '), ':wq closes after successful save');
+cleanup();
+
+await openScenario('conflict.txt');
+target = currentView();
+target.dispatch({ changes: { from: 0, insert: 'local conflict ' } });
+diskText = 'external change'; diskRevision = 'external';
+window.dispatchEvent(new Event('focus')); await tick();
+const savesBeforeConflict = paneSaves.length;
+ex(target, 'wq'); await tick();
+check(host.querySelector('.cm-editor') && paneSaves.length === savesBeforeConflict, ':wq refuses disk conflicts without writing');
+check(target.state.doc.toString().startsWith('local conflict '), 'Conflict retains draft');
+ex(target, 'q!'); await tick(); cleanup();
+
+await openScenario('first.txt', ['first.txt', 'next.txt']);
+ex(currentView(), 'quit'); await tick();
+check(host.querySelectorAll('[role=tab]').length === 1 && host.textContent.includes('next.txt'), ':quit closes only current tab and selects neighbor');
+ex(currentView(), 'q'); await tick();
+check(!host.querySelector('.cm-editor') && host.isConnected, 'Last :q leaves pane open and empty');
 cleanup();
 window.vimTestResult = 'passed';

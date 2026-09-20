@@ -3,6 +3,7 @@ import { CodeMirror, getCM, Vim, vim } from "@replit/codemirror-vim";
 
 type Actions = {
   save: () => void;
+  close?: (mode: "quit" | "save" | "discard") => void;
   history?: (forward: boolean) => void;
   error: (message: string) => void;
 };
@@ -18,6 +19,19 @@ Vim.defineEx("write", "w", (cm, params) => {
   }
   owner.save();
 });
+
+for (const [name, prefix] of [["quit", "q"], ["wq", "wq"]] as const) {
+  Vim.defineEx(name, prefix, (cm, params) => {
+    const owner = actions.get(cm);
+    if (!owner) return;
+    const argument = params.argString?.trim() || "";
+    if (params.lineEnd !== undefined || (argument && !(name === "quit" && argument === "!"))) {
+      owner.error(`Vim :${name} does not support ranges or arguments${name === "quit" ? " other than !" : ""}.`);
+      return;
+    }
+    owner.close?.(name === "wq" ? "save" : argument === "!" ? "discard" : "quit");
+  });
+}
 
 for (const [name, forward] of [["undo", false], ["redo", true]] as const) {
   const original = CodeMirror.commands[name];

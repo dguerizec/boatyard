@@ -197,6 +197,11 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   try { vimEnabled = localStorage.getItem(`${paneKey}:vim`) === "true"; } catch { /* Optional editing preference. */ }
   const vimExtension = () => vimEnabled ? editorVim({
     save: () => { if (doc) void doc.save(); },
+    close: (mode) => {
+      const path = currentPath();
+      // Let Vim finish handling the command before destroying its editor view.
+      if (path) queueMicrotask(() => { void closeTab(path, mode).catch(showError); });
+    },
     history: doc?.changes ? (forward) => { void historyChanges(forward); } : undefined,
     error: showError
   }) : [];
@@ -1156,13 +1161,17 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     });
   }
 
-  async function closeTab(path: string) {
-    if (closingTab || opening || doc?.saving || doc?.changes?.saving) return;
+  async function closeTab(path: string, mode: "ask" | "quit" | "save" | "discard" = "ask") {
+    if (disposed || closingTab || opening || doc?.saving || doc?.changes?.saving) return;
     persist(); rememberPosition();
     closingTab = true;
     try {
       if (isTabDirty(path)) {
-        const choice = await confirmTabClose(path);
+        if (mode === "quit") {
+          showError("Unsaved changes. Use :wq to save and close or :q! to discard and close.");
+          return;
+        }
+        const choice = mode === "ask" ? await confirmTabClose(path) : mode;
         if (disposed || choice === "cancel" || !tabs.paths.includes(path)) return;
         const previous = currentPath();
         if (previous !== path) await openFile(path);
