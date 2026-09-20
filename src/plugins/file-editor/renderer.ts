@@ -1,3 +1,4 @@
+import { EditorPaneLinks } from "./paneLinks";
 import { basicSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
@@ -23,9 +24,11 @@ type FilePosition = { anchor: number; head: number; scrollTop: number; scrollLef
 const pluginId = "boatyard.fileEditor";
 const documents = new Map<string, EditorDocument>();
 const active = new Map<EditorDocument, number>();
-type PaneControl = { open: boolean; enabled: boolean; label: string; button: HTMLButtonElement | null; toggle: (() => void) | null; drag?: (event: DragEvent) => void };
+const projectLinks = new Map<string, EditorPaneLinks>();
+const linkedHosts = new Map<string, HTMLElement>();
+type PaneControl = { open: boolean; enabled: boolean; label: string; button: HTMLButtonElement | null; toggle: (() => void) | null; drag?: (event: DragEvent) => void; highlight?: (active: boolean) => void };
 const paneControls = new WeakMap<HTMLElement, Map<string, PaneControl>>();
-function getPaneControl(host: HTMLElement, key: "browse" | "preview"): PaneControl {
+function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link"): PaneControl {
   let controls = paneControls.get(host);
   if (!controls) {
     controls = new Map();
@@ -33,17 +36,19 @@ function getPaneControl(host: HTMLElement, key: "browse" | "preview"): PaneContr
   }
   let control = controls.get(key);
   if (!control) {
-    control = { open: false, enabled: false, label: key === "browse" ? "project files" : "preview", button: null, toggle: null };
+    control = { open: false, enabled: false, label: key === "browse" ? "project files" : key === "link" ? "linked files" : "preview", button: null, toggle: null };
     controls.set(key, control);
   }
   return control;
 }
 function syncPaneControl(control: PaneControl) {
   if (!control.button) return;
+  control.button.hidden = control.label === "linked files" && !control.open;
   control.button.draggable = control.enabled && Boolean(control.drag);
   control.button.disabled = !control.enabled || !control.toggle;
   control.button.classList.toggle("active", control.open);
   control.button.setAttribute("aria-pressed", String(control.open));
+  if (control.label === "linked files") { control.button.title = "Unlink file navigation"; return; }
   control.button.title = `${control.open ? "Hide" : "Show"} ${control.label}${control.drag ? " · Drag to another pane" : ""}`;
 }
 function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord = {}) {
@@ -51,7 +56,8 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
   const cleanups: Array<() => void> = [];
   for (const definition of [
     { key: "browse", icon: "folderTree", label: "Browse project files" },
-    { key: "preview", icon: "eye", label: "Preview" }
+    { key: "preview", icon: "eye", label: "Preview" },
+    { key: "link", icon: "link", label: "Unlink file navigation" }
   ] as const) {
     const control = getPaneControl(props.host, definition.key);
     const action = button("", () => control.toggle?.());
@@ -62,6 +68,13 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
       if (control.enabled && control.drag) control.drag(event);
       else event.preventDefault();
     });
+    if (definition.key === "link") {
+      action.addEventListener("mouseenter", () => control.highlight?.(true));
+      action.addEventListener("mouseleave", () => control.highlight?.(false));
+      action.addEventListener("focus", () => control.highlight?.(true));
+      action.addEventListener("blur", () => control.highlight?.(false));
+      cleanups.push(() => control.highlight?.(false));
+    }
     control.button = action;
     syncPaneControl(control);
     container.append(action);
@@ -138,6 +151,20 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const project = (props.project || {}) as { id: string; sourcePath: string };
   const prefix = `boatyard:file-editor:${JSON.stringify([project.id, project.sourcePath])}:`;
   const paneKey = `${prefix}pane:${String(props.paneId || "default")}`;
+  const paneId = String(props.paneId || "default");
+  let links = projectLinks.get(prefix);
+  if (!links) {
+    let saved: unknown;
+    try { saved = JSON.parse(localStorage.getItem(`${prefix}links`) || "[]"); } catch { /* Ignore unavailable link preferences. */ }
+    links = new EditorPaneLinks((groups) => {
+      try { localStorage.setItem(`${prefix}links`, JSON.stringify(groups)); } catch { /* Navigation still works in memory. */ }
+    }, saved);
+    projectLinks.set(prefix, links);
+  }
+  const paneLinks = links;
+  const linkControl = getPaneControl(container, "link");
+  let pendingLinkedPath: string | undefined;
+  let linkVersion = 0;
   const previewKey = `${paneKey}:preview`;
   const positions = new Map<string, FilePosition>();
   function positionFor(path: string): FilePosition {
@@ -256,7 +283,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       }
     });
   });
-  function setPreview(visible: boolean) {
+  function setPreview(visible: boolean, focus = true) {
     rememberPosition();
     previewVersion++;
     previewPendingSource = "";
@@ -274,7 +301,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     } else {
       clearTimeout(previewTimer);
       restorePosition();
-      view?.focus();
+      if (focus) view?.focus();
     }
   }
   function rememberPosition() {
@@ -401,7 +428,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     }
   }
 
-  function rebuild() {
+  function rebuild(focus = true) {
     if (!doc) return;
     restoringPosition = true;
     view?.destroy();
@@ -427,13 +454,13 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     const position = positionFor(doc.base.path);
     view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length), head: Math.min(position.head, view.state.doc.length) } });
     previewControl.enabled = supportsPreview(doc.base.path);
-    setPreview(previewVisible);
+    setPreview(previewVisible, focus);
     if (previewVisible) restoringPosition = false;
     findButton.setAttribute("aria-pressed", String(searchPanelOpen(view.state)));
     refreshUi();
   }
 
-  async function openFile(path: string) {
+  async function openFile(path: string, linkedVersion?: number) {
     if (opening || disposed) return;
     // Switching files preserves the previous draft, including when other panes show it.
     persist();
@@ -450,7 +477,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
         // Missing or inaccessible files must not make their saved draft inaccessible.
         snapshot = { path: draft.path, text: draft.baseText, revision: draft.revision };
       }
-      if (!snapshot || disposed) return;
+      if (!snapshot || disposed || (linkedVersion !== undefined && linkedVersion !== linkVersion)) return;
       const key = draftKey(snapshot.path);
       let next = documents.get(key);
       if (!next) {
@@ -467,13 +494,17 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       fileBrowser.setSelected(snapshot.path);
       setNotices();
       unsubscribe = subscribe(doc, refreshUi);
-      rebuild();
+      rebuild(linkedVersion === undefined);
+      if (!pendingLinkedPath || pendingLinkedPath === snapshot.path) paneLinks.opened(paneId, snapshot.path);
       void doc.refresh();
-      if (!previewVisible) view?.focus();
+      if (!previewVisible && linkedVersion === undefined) view?.focus();
     } catch (error) { if (!disposed) showError(error); }
     finally {
       opening = false;
       openButton.disabled = false;
+      const pending = pendingLinkedPath;
+      pendingLinkedPath = undefined;
+      if (pending && pending !== doc?.base.path && !disposed) void openFile(pending, linkVersion);
     }
   }
 
@@ -541,6 +572,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     start(event, "boatyard.fileEditor.editor", (targetId) => {
       localStorage.setItem(`${prefix}pane:${targetId}:preview-file`, path);
       localStorage.setItem(`${prefix}pane:${targetId}:preview`, "true");
+      paneLinks.link(paneId, targetId, path);
     });
   } : undefined;
   previewControl.toggle = togglePreview;
@@ -550,12 +582,47 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   root.append(toolbar, workspace, status);
   container.replaceChildren(root);
   if (browserState.open) fileBrowser.show();
+  linkedHosts.set(paneKey, container);
+  let highlighted: HTMLElement[] = [];
+  const highlight = (active: boolean) => {
+    highlighted.forEach((pane) => pane.classList.remove("file-editor-linked-highlight"));
+    highlighted = [];
+    if (active) for (const id of paneLinks.peers(paneId)) {
+      const host = linkedHosts.get(`${prefix}pane:${id}`);
+      const pane = host?.closest<HTMLElement>(".webapp-pane") || host;
+      if (pane) { pane.classList.add("file-editor-linked-highlight"); highlighted.push(pane); }
+    }
+  };
+  linkControl.highlight = highlight;
+  const unlink = () => { highlight(false); paneLinks.unlink(paneId); };
+  linkControl.toggle = unlink;
+  linkControl.enabled = true;
+  let initialLinkedPath: string | undefined;
+  let linksReady = false;
+  const detachLinks = paneLinks.attach(paneId, (linked, path) => {
+    highlight(false);
+    linkVersion++;
+    linkControl.open = linked;
+    syncPaneControl(linkControl);
+    if (!linksReady) { initialLinkedPath = path; return; }
+    if (!linked) { pendingLinkedPath = undefined; return; }
+    if (path && path !== doc?.base.path) {
+      if (opening) pendingLinkedPath = path;
+      else void openFile(path, linkVersion);
+    }
+  });
+  linksReady = true;
   try {
-    const path = requestedPreviewPath || localStorage.getItem(paneKey);
+    const path = requestedPreviewPath || initialLinkedPath || localStorage.getItem(paneKey);
     if (requestedPreviewPath) localStorage.removeItem(`${paneKey}:preview-file`);
     if (path) { pathInput.value = path; void openFile(path); }
   } catch { /* Opening files remains available when local storage is disabled. */ }
   return () => {
+    highlight(false);
+    if (linkedHosts.get(paneKey) === container) linkedHosts.delete(paneKey);
+    if (linkControl.highlight === highlight) linkControl.highlight = undefined;
+    detachLinks();
+    if (linkControl.toggle === unlink) { linkControl.toggle = null; syncPaneControl(linkControl); }
     persist();
     rememberPosition();
     clearTimeout(previewTimer);

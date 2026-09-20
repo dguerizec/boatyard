@@ -116,3 +116,12 @@
 .file-browser-message { padding: 8px; color: var(--muted); overflow-wrap: anywhere; }
 .file-browser-message button { display: block; margin-top: 6px; }
 .file-browser-more { margin: 6px 0; }
+
+.file-editor-link-button[hidden] { display: none; }
+.file-editor-linked-highlight {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+.file-editor-linked-highlight > .webapp-pane-header {
+  background: color-mix(in srgb, var(--accent) 20%, var(--panel));
+}
