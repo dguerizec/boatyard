@@ -175,8 +175,12 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const paneId = String(props.paneId || "default");
   const vimControl = getPaneControl(container, "vim");
   const vimCompartment = new Compartment();
-  let vimEnabled = false;
-  try { vimEnabled = localStorage.getItem(`${paneKey}:vim`) === "true"; } catch { /* Optional editing preference. */ }
+  const globalConfig = (props.globalPluginConfig || {}) as { vimByDefault?: string };
+  let vimEnabled = globalConfig.vimByDefault === "enabled";
+  try {
+    const saved = localStorage.getItem(`${paneKey}:vim`);
+    if (saved === "true" || saved === "false") vimEnabled = saved === "true";
+  } catch { /* Use the plugin default when pane preferences are unavailable. */ }
   const vimExtension = () => vimEnabled ? editorVim({
     save: () => { if (doc) void doc.save(); },
     close: (mode) => {
@@ -1407,9 +1411,22 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
 
 registry?.register({
   id: pluginId, name: "File Editor", version: "0.1.0", apiVersion: "0.1",
-  contributes: { panes: ["boatyard.fileEditor.editor"] }, permissions: ["pane:dom", "projectConfig:read"]
+  contributes: { panes: ["boatyard.fileEditor.editor"], globalSettings: ["boatyard.fileEditor.global"] }, permissions: ["pane:dom", "projectConfig:read"]
 }, {
   activate(ctx) {
+    ctx.settings.registerGlobalSection({
+      id: "boatyard.fileEditor.global",
+      title: "File Editor",
+      fields: [{
+        key: "vimByDefault",
+        label: "Vim mode by default",
+        type: "select",
+        valueType: "text",
+        defaultValue: "disabled",
+        options: [{ value: "disabled", label: "Disabled" }, { value: "enabled", label: "Enabled" }],
+        description: "Use Vim when opening an editor pane without a saved Vi preference. A choice made with the pane's Vi button takes precedence."
+      }]
+    });
     ctx.status.set({ state: "ready", summary: "Project file editing is available" });
     ctx.panes.register({
       id: "boatyard.fileEditor.editor", webAppId: "boatyard.fileEditor.editor", key: "file-editor",

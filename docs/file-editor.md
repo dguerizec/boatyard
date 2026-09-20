@@ -16,7 +16,11 @@ Each pane keeps its opened files in a horizontally scrollable tab strip. Click a
 
 Click **Vi** in the pane toolbar to toggle Vim keybindings. The highlighted button
 means Vim is enabled; click it again to return to standard editing. This preference
-is remembered per pane. Switching modes preserves the draft, cursor, and undo
+is remembered per pane. In **Settings → Plugins → File Editor**, set **Vim mode
+by default** to **Enabled** to start panes in Vim when they have no saved Vi
+preference. The default is **Disabled**; an explicit choice with the pane button
+takes precedence. Changes to the default apply when an editor pane is opened
+again. Switching modes preserves the draft, cursor, and undo
 history. Vim applies to the text editor, including inline Git diffs; Hex and
 rendered previews retain their own controls.
 

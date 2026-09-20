@@ -45,14 +45,15 @@ check(first.state.doc.toString() === draft, 'Standard Vim redo');
 first.destroy(); second.destroy();
 
 // Exercise the actual pane/header integration with an isolated file bridge.
-let pane;
+let pane, settingsSection;
+let globalPluginConfig = {};
 const paneSaves = [];
 let diskText = "pane text";
 let diskRevision = "one";
 let saveError = "";
 let saveWait;
 window.BoatyardPluginRegistry = { register(_manifest, plugin) {
-  plugin.activate({ status: { set() {} }, panes: { register(value) { pane = value; } } });
+  plugin.activate({ settings: { registerGlobalSection(section) { settingsSection = section; } }, status: { set() {} }, panes: { register(value) { pane = value; } } });
 } };
 window.boatyard = { invokePlugin: async (_plugin, action, payload) => {
   if (action === 'save') {
@@ -77,7 +78,7 @@ localStorage.setItem(paneKey, 'example.txt');
 const host = document.createElement('div'), header = document.createElement('div');
 document.body.append(header, host);
 const mount = () => {
-  const cleanup = pane.render(host, { project, paneId: 'test' });
+  const cleanup = pane.render(host, { project, paneId: 'test', globalPluginConfig });
   const headerCleanup = pane.renderHeaderActions(header, { host });
   return () => { headerCleanup(); cleanup(); header.replaceChildren(); };
 };
@@ -104,6 +105,27 @@ toggle = header.querySelector('.file-editor-vim-button');
 check(toggle.getAttribute('aria-pressed') === 'true' && host.querySelector('.cm-vim-panel'), 'Vim restored after remount');
 toggle.click();
 check(!host.querySelector('.cm-vim-panel'), 'Pane toolbar returns to standard editing');
+cleanup();
+
+check(settingsSection.id === 'boatyard.fileEditor.global', 'File Editor global settings registered');
+check(settingsSection.fields.find(field => field.key === 'vimByDefault').defaultValue === 'disabled', 'Vim default is opt-in');
+localStorage.removeItem(`${paneKey}:vim`);
+globalPluginConfig = { vimByDefault: 'enabled' };
+cleanup = mount(); await settle();
+toggle = header.querySelector('.file-editor-vim-button');
+check(toggle.getAttribute('aria-pressed') === 'true' && host.querySelector('.cm-vim-panel'), 'Plugin default enables Vim in a pane without override');
+check(localStorage.getItem(`${paneKey}:vim`) === null, 'Using default does not create a pane override');
+toggle.click(); cleanup();
+cleanup = mount(); await settle();
+check(!host.querySelector('.cm-vim-panel'), 'Explicit standard mode overrides enabled plugin default');
+header.querySelector('.file-editor-vim-button').click(); cleanup();
+globalPluginConfig = { vimByDefault: 'disabled' };
+cleanup = mount(); await settle();
+check(host.querySelector('.cm-vim-panel'), 'Explicit Vim mode overrides disabled plugin default');
+cleanup();
+localStorage.removeItem(`${paneKey}:vim`);
+cleanup = mount(); await settle();
+check(!host.querySelector('.cm-vim-panel'), 'Pane without override follows changed plugin default');
 cleanup();
 
 const tick = () => new Promise(r => setTimeout(r, 0));
