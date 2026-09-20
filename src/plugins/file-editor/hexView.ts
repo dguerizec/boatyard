@@ -1,3 +1,4 @@
+import type { ByteSelection } from "./selection";
 import { hexGeometry, hexRowAtScroll, hexScrollAtRow, HEX_ROW_BYTES, HEX_ROW_HEIGHT } from "./hexViewport";
 
 type Change = { offset: number; before: Uint8Array; after: Uint8Array };
@@ -9,6 +10,7 @@ export type HexSource = {
   history?(forward: boolean): Promise<void>;
   canUndo?: boolean;
   canRedo?: boolean;
+  selected?(selection: ByteSelection): void;
   scrolled?(offset: number): void;
   read(offset: number): Promise<Chunk>;
   activate(offset: number): Promise<boolean>;
@@ -25,6 +27,27 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
   let source: HexSource | undefined;
   let frame = 0, renderedStart = -1, renderedEnd = -1;
   let focusRequest = 0;
+  let selection: ByteSelection = { anchor: 0, head: 0 };
+  let pivot = 0, focusing = false, dragging = false;
+  function selectByte(index: number, extend = false) {
+    if (!extend) pivot = index;
+    selection = extend ? (index >= pivot ? { anchor: pivot, head: index + 1 } : { anchor: pivot + 1, head: index }) : { anchor: index, head: index };
+    source?.selected?.({ ...selection });
+    renderValues();
+  }
+  function reveal(index: number) {
+    const row = Math.floor(Math.max(0, Math.min(size - 1, index)) / HEX_ROW_BYTES);
+    const first = hexRowAtScroll(size, viewport.clientHeight, viewport.scrollTop);
+    const visible = hexGeometry(size, viewport.clientHeight).visible;
+    if (row < first || row >= first + visible) viewport.scrollTop = hexScrollAtRow(size, viewport.clientHeight, row < first ? row : row - visible + 1);
+    render();
+    const cell = layer.querySelector<HTMLElement>(`input[data-offset="${Math.max(0, Math.min(size - 1, index))}"]`);
+    if (cell) {
+      const bounds = cell.getBoundingClientRect(), frame = viewport.getBoundingClientRect();
+      if (bounds.left < frame.left) viewport.scrollLeft -= frame.left - bounds.left;
+      else if (bounds.right > frame.right) viewport.scrollLeft += bounds.right - frame.right;
+    }
+  }
   let pendingRow: number | undefined;
   let reportedOffset = -1;
   let wheelRemainder = 0;
@@ -114,15 +137,12 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
     bytes.set(forward ? change.after : change.before, change.offset - baseOffset);
     notify(); void focusByte(change.offset);
   }
-  async function focusByte(index: number) {
+  async function focusByte(index: number, extend = false) {
     if (!size) { viewport.focus(); return; }
     const request = ++focusRequest, key = fileKey;
     index = Math.max(0, Math.min(size - 1, index));
-    const row = Math.floor(index / HEX_ROW_BYTES);
-    const first = hexRowAtScroll(size, viewport.clientHeight, viewport.scrollTop);
-    const visible = hexGeometry(size, viewport.clientHeight).visible;
-    if (row < first || row >= first + visible) viewport.scrollTop = hexScrollAtRow(size, viewport.clientHeight, row);
-    render();
+    selectByte(index, extend);
+    reveal(index);
     if (!active(index)) {
       try { if (!await source?.activate(index)) return; }
       catch (error) { source?.error(error); return; }
@@ -130,12 +150,16 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
     if (disposed || request !== focusRequest || key !== fileKey) return;
     renderValues();
     const input = layer.querySelector<HTMLInputElement>(`input[data-offset="${index}"]`);
+    focusing = true;
     input?.focus({ preventScroll: true }); input?.select();
+    focusing = false;
   }
   function renderValues() {
     for (const input of layer.querySelectorAll<HTMLInputElement>("input[data-offset]")) {
       const index = Number(input.dataset.offset), value = valueAt(index);
       if (document.activeElement !== input || input.readOnly || input.value.length === 2) input.value = value === undefined ? "··" : hex(value);
+      const from = Math.min(selection.anchor, selection.head), to = Math.max(selection.anchor, selection.head);
+      input.classList.toggle("selected", from === to ? index === Math.min(size - 1, from) : index >= from && index < to);
       input.readOnly = !active(index);
       input.disabled = disabled;
     }
@@ -176,9 +200,12 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
           input.dataset.offset = String(index); input.maxLength = 2; input.spellcheck = false;
           input.setAttribute("aria-label", `Byte 0x${index.toString(16).toUpperCase()}`);
           input.addEventListener("pointerdown", (event) => {
-            if (!active(index)) { event.preventDefault(); void focusByte(index); }
+            if (event.button !== 0) return;
+            event.preventDefault(); dragging = true;
+            void focusByte(index, event.shiftKey);
           });
-          input.addEventListener("focus", () => { if (!active(index)) void focusByte(index); else input.select(); });
+          input.addEventListener("pointerenter", (event) => { if (dragging && event.buttons === 1) void focusByte(index, true); });
+          input.addEventListener("focus", () => { if (focusing) return; if (!active(index)) void focusByte(index); else { selectByte(index); input.select(); } });
           input.addEventListener("input", () => {
             input.setCustomValidity("");
             if (/^[\da-f]{2}$/i.test(input.value)) edit(index, Uint8Array.of(parseInt(input.value, 16)));
@@ -194,9 +221,9 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
           });
           input.addEventListener("keydown", (event) => {
             const directions: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -16, ArrowDown: 16, PageUp: -geometry.visible * 16, PageDown: geometry.visible * 16 };
-            if (event.key in directions) { event.preventDefault(); void focusByte(index + directions[event.key]); }
+            if (event.key in directions) { event.preventDefault(); void focusByte(index + directions[event.key], event.shiftKey); }
             if (event.key === "Home" || event.key === "End") {
-              event.preventDefault(); void focusByte(event.ctrlKey || event.metaKey ? (event.key === "Home" ? 0 : size - 1) : (event.key === "Home" ? row : Math.min(row + 15, size - 1)));
+              event.preventDefault(); void focusByte(event.ctrlKey || event.metaKey ? (event.key === "Home" ? 0 : size - 1) : (event.key === "Home" ? row : Math.min(row + 15, size - 1)), event.shiftKey);
             }
           });
           line.append(input);
@@ -208,6 +235,8 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
     // One request per missing region, including rows straddling a UTF-8-aligned block boundary.
     for (let index = start; index < end; index++) if (valueAt(index) === undefined) { load(index); break; }
   }
+  const stopDragging = () => { dragging = false; };
+  window.addEventListener("pointerup", stopDragging);
   viewport.addEventListener("scroll", schedule);
   viewport.addEventListener("wheel", (event) => {
     if (!event.deltaY || event.ctrlKey || event.shiftKey) return;
@@ -240,10 +269,16 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
         bytes = value.slice(); undo.length = 0; redo.length = 0;
       }
       fileKey = key; baseOffset = start;
-      if (changedFile) { pendingRow = Math.floor((source?.initialOffset ?? start) / 16); renderedStart = -1; reportedOffset = -1; }
+      if (changedFile) { selection = { anchor: start, head: start }; pivot = start; pendingRow = Math.floor((source?.initialOffset ?? start) / 16); renderedStart = -1; reportedOffset = -1; }
       renderValues(); schedule();
     },
+    setSelection(value: ByteSelection) {
+      selection = { anchor: Math.max(0, Math.min(size, value.anchor)), head: Math.max(0, Math.min(size, value.head)) };
+      pivot = selection.anchor;
+      reveal(selection.head > selection.anchor ? selection.head - 1 : selection.head);
+      renderValues();
+    },
     focus: () => { void focusByte(baseOffset); },
-    cleanup() { disposed = true; generation++; cancelAnimationFrame(frame); observer.disconnect(); chunks.clear(); }
+    cleanup() { window.removeEventListener("pointerup", stopDragging); disposed = true; generation++; cancelAnimationFrame(frame); observer.disconnect(); chunks.clear(); }
   };
 }

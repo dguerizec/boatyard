@@ -1,3 +1,4 @@
+import { TextBytePositions, type ByteSelection } from "./selection";
 import { FileTabs, createFileTabs } from "./tabs";
 import { createGitView } from "./gitView";
 import { cachedGit } from "./gitCache";
@@ -321,22 +322,76 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const hexHost = element("div", "file-editor-hex");
   hexHost.hidden = true;
   const hexView = createHexView(hexHost, (bytes) => doc?.editBytes(bytes), () => { if (doc) void doc.save(); });
+  let applyingSelection = false;
+  let selectionVersion = 0;
+  let pendingSelection: { path: string; value: ByteSelection } | undefined;
+  let mappedText = "", mappedBom = false, bytePositions: TextBytePositions | undefined;
+  function positionsFor(current: EditorDocument) {
+    const stripBom = !current.base.block?.offset;
+    if (!bytePositions || mappedText !== current.text || mappedBom !== stripBom) {
+      mappedText = current.text; mappedBom = stripBom;
+      bytePositions = new TextBytePositions(mappedText, stripBom);
+    }
+    return bytePositions;
+  }
+  function selectionBlock(current: EditorDocument, offset: number) {
+    const block = current.base.block;
+    if (!block) return 0;
+    let low = 0, high = block.positions.length - 1;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if ((current.changes?.blockOffset(middle, block.positions[middle].offset) ?? block.positions[middle].offset) <= offset) low = middle;
+      else high = middle - 1;
+    }
+    return low;
+  }
+  function publishSelection(value: ByteSelection) {
+    if (applyingSelection || opening || restoringPosition || disposed || !doc) return;
+    selectionVersion++;
+    pendingSelection = undefined;
+    paneLinks.selected(paneId, doc.base.path, value);
+  }
+  function applyLinkedSelection() {
+    const pending = pendingSelection;
+    if (!pending || opening || disposed || !doc || doc.base.path !== pending.path) return;
+    if (previewVisible && editorHost.hidden && hexHost.hidden) { pendingSelection = undefined; return; }
+    if (hexMode) {
+      pendingSelection = undefined;
+      hexView.setSelection(pending.value);
+      return;
+    }
+    const head = pending.value.head > pending.value.anchor ? pending.value.head - 1 : pending.value.head;
+    const block = selectionBlock(doc, head);
+    if (doc.base.block && block !== doc.base.block.index) {
+      pendingSelection = undefined;
+      const version = selectionVersion;
+      void openFile(pending.path, linkVersion, block).then(() => {
+        if (!disposed && version === selectionVersion && doc?.base.path === pending.path && doc.base.block?.index === block) {
+          pendingSelection = pending; applyLinkedSelection();
+        }
+      });
+      return;
+    }
+    if (!view || doc.encoding === "hex") return;
+    pendingSelection = undefined;
+    const start = doc.changes?.blockStart(doc.base) ?? doc.base.block?.offset ?? 0;
+    const selection = positionsFor(doc).toText({ anchor: pending.value.anchor - start, head: pending.value.head - start });
+    applyingSelection = true;
+    try { view.dispatch({ selection, effects: EditorView.scrollIntoView(selection.head, { y: "nearest", x: "nearest" }) }); }
+    finally { applyingSelection = false; }
+  }
+  const detachSelection = paneLinks.watchSelection(paneId, (path, value) => {
+    selectionVersion++;
+    pendingSelection = { path, value };
+    applyLinkedSelection();
+  });
   function updateHexView() {
     if (!doc) return;
     const current = doc;
     const block = current.base.block;
     const revision = current.base.revision;
     const path = current.base.path;
-    const blockAt = (offset: number) => {
-      if (!block) return 0;
-      let low = 0, high = block.positions.length - 1;
-      while (low < high) {
-        const middle = Math.ceil((low + high) / 2);
-        if ((current.changes?.blockOffset(middle, block.positions[middle].offset) ?? block.positions[middle].offset) <= offset) low = middle;
-        else high = middle - 1;
-      }
-      return low;
-    };
+    const blockAt = (offset: number) => selectionBlock(current, offset);
     const bytes = current.bytes;
     const sizeDelta = block ? bytes.length - block.length : 0;
     const diskOffset = (offset: number) => block && offset >= block.offset + bytes.length ? offset - sizeDelta : offset;
@@ -346,6 +401,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       if (saved !== null && Number.isSafeInteger(Number(saved)) && Number(saved) >= 0) initialOffset = Number(saved);
     } catch { /* Optional scroll preferences. */ }
     hexView.update(bytes, path, block ? (current.changes?.blockStart(current.base) ?? block.offset) : 0, current.locked || previewVisible, {
+      selected: publishSelection,
       size: current.changes?.length ?? (block ? block.size + sizeDelta : bytes.length),
       revision: `${revision}:${current.changes?.version ?? sizeDelta}`, initialOffset,
       history: current.changes ? (forward) => historyChanges(forward) : undefined,
@@ -829,6 +885,11 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
             if (update.selectionSet || update.docChanged) schedulePosition();
             findButton.setAttribute("aria-pressed", String(searchPanelOpen(update.state)));
             if (update.docChanged && !syncing) doc?.edit(bom + update.state.sliceDoc());
+            if ((update.selectionSet || update.docChanged) && !syncing && !hexMode && view?.hasFocus && doc) {
+              const positions = positionsFor(doc), selection = update.state.selection.main;
+              const start = doc.changes?.blockStart(doc.base) ?? doc.base.block?.offset ?? 0;
+              publishSelection({ anchor: start + positions.byte(selection.anchor), head: start + positions.byte(selection.head) });
+            }
           })]
       })
     });
@@ -1005,6 +1066,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       opening = false;
       updateTabs();
       if (doc) blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !diffMode, doc.saving);
+      applyLinkedSelection();
       const pending = pendingLinkedPath;
       pendingLinkedPath = undefined;
       if (pending !== undefined && !disposed) {
@@ -1261,13 +1323,14 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     const state = JSON.stringify([linked, path, paths]);
     if (state === linkedState) return;
     linkedState = state;
+    if (pendingSelection?.path !== path) { selectionVersion++; pendingSelection = undefined; }
     highlight(false);
     linkVersion++;
     linkControl.open = linked;
     syncPaneControl(linkControl);
     if (paths) { tabs.paths = [...paths]; tabs.active = path || ""; persistTabs(); updateTabs(); }
     if (!linksReady) { initialLinkedPath = path; return; }
-    if (!linked) { pendingLinkedPath = undefined; return; }
+    if (!linked) { selectionVersion++; pendingSelection = undefined; pendingLinkedPath = undefined; return; }
     if (opening) { pendingLinkedPath = path || ""; return; }
     if (!path) { persist(); rememberPosition(); if (!persistenceError || !doc?.dirty) clearFile(); }
     else if (path !== currentPath()) void openFile(path, linkVersion);
@@ -1287,6 +1350,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     if (linkedHosts.get(paneKey) === container) linkedHosts.delete(paneKey);
     if (linkControl.highlight === highlight) linkControl.highlight = undefined;
     if (closeDialog?.open) closeDialog.close("cancel");
+    detachSelection();
     detachLinks();
     if (linkControl.toggle === unlink) { linkControl.toggle = null; syncPaneControl(linkControl); }
     persist();

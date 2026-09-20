@@ -190,3 +190,8 @@
 .file-editor-tab-close svg { width: 14px; height: 14px; }
 .file-editor-file-actions { display: flex; flex: 0 0 auto; gap: 6px; }
 .file-editor-filebar:has(.file-editor-tabs:empty) .file-editor-tabs { min-height: 30px; }
+
+.file-editor .file-editor-hex-row input.selected {
+  background: rgba(var(--accent-rgb), .25);
+  border-color: var(--accent);
+}

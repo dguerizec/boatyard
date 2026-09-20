@@ -1,8 +1,10 @@
+import type { ByteSelection } from "./selection";
 type LinkGroup = { panes: string[]; path: string; paths: string[] };
 type Listener = (linked: boolean, path?: string, paths?: readonly string[]) => void;
 
 /** File navigation is shared; each pane keeps its own view mode and position. */
 export class EditorPaneLinks {
+  private selectionListeners = new Map<string, (path: string, selection: ByteSelection) => void>();
   private groups: LinkGroup[] = [];
   private listeners = new Map<string, Listener>();
 
@@ -25,6 +27,17 @@ export class EditorPaneLinks {
       const group = this.groups.find((entry) => entry.panes.includes(pane));
       listener(Boolean(group), group?.path, group ? [...group.paths] : undefined);
     }
+  }
+
+  watchSelection(pane: string, listener: (path: string, selection: ByteSelection) => void) {
+    this.selectionListeners.set(pane, listener);
+    return () => { if (this.selectionListeners.get(pane) === listener) this.selectionListeners.delete(pane); };
+  }
+
+  selected(pane: string, path: string, selection: ByteSelection) {
+    const group = this.groups.find((entry) => entry.panes.includes(pane));
+    if (!group || group.path !== path) return;
+    for (const peer of group.panes) if (peer !== pane) this.selectionListeners.get(peer)?.(path, { ...selection });
   }
 
   peers(pane: string): string[] {
