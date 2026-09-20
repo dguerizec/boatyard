@@ -176,3 +176,14 @@
 .file-browser-git-status { margin-left: auto; flex-shrink: 0; color: var(--accent); font: bold 12px monospace; }
 .file-editor .file-browser-diff-button { position: absolute; top: 2px; right: 0; padding: 4px; border-color: transparent; background: transparent; }
 .file-browser-diff-button svg { width: 16px; height: 16px; }
+
+.file-editor-filebar { flex-wrap: nowrap; padding: 6px; gap: 8px; min-width: 0; }
+.file-editor-tabs { display: flex; flex: 1; min-width: 0; gap: 4px; overflow-x: auto; }
+.file-editor-tab { display: flex; flex: 0 0 auto; align-items: center; border: 1px solid var(--line); border-radius: 5px; max-width: 300px; }
+.file-editor .file-editor-tab > button { border: 0; background: transparent; }
+.file-editor .file-editor-tab > [role="tab"] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-editor-tab.active { background: rgba(var(--accent-rgb), .14); border-color: rgba(var(--accent-rgb), .65); }
+.file-editor-tab-close { display: flex; flex: 0 0 auto; align-items: center; }
+.file-editor-tab-close svg { width: 14px; height: 14px; }
+.file-editor-file-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.file-editor-filebar:has(.file-editor-tabs:empty) .file-editor-tabs { min-height: 30px; }

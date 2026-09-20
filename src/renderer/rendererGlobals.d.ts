@@ -159,6 +159,7 @@ type TerminalSurfacesGlobal = Window & {
 };
 
 type BoatyardPluginRendererBridge = {
+  selectFiles?: (currentPath?: string) => Promise<string[]>;
   invokePlugin?: (pluginId: string, actionName: string, payload?: unknown) => Promise<unknown>;
   onPluginEvent?: (pluginId: string, eventName: string, callback: (payload: unknown) => void) => () => void;
   openExternal?: (url: string) => unknown;

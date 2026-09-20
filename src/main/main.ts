@@ -1,3 +1,4 @@
+import { selectEditorFiles } from "./filePicker.js";
 import { applyWebAppViewport } from "./webAppViewport.js";
 import type {
   BrowserWindow as ElectronBrowserWindow,
@@ -1452,6 +1453,10 @@ function registerIpcHandlers() {
     });
     return true;
   });
+
+  ipcMain.handle("files:select", (event: IpcMainInvokeEvent, currentPath: unknown) =>
+    selectEditorFiles(dialog, getWorkspaceWindowForWebContents(event.sender)?.window || mainWindow, currentPath)
+  );
 
   ipcMain.handle("settings:select-projects-base-path", async (
     event: IpcMainInvokeEvent,

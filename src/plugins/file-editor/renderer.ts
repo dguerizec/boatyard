@@ -1,3 +1,4 @@
+import { FileTabs, createFileTabs } from "./tabs";
 import { createGitView } from "./gitView";
 import { cachedGit } from "./gitCache";
 import type { GitBaseline, EditorGitStatus } from "./git";
@@ -37,7 +38,7 @@ const projectLinks = new Map<string, EditorPaneLinks>();
 const linkedHosts = new Map<string, HTMLElement>();
 type PaneControl = { open: boolean; enabled: boolean; label: string; button: HTMLButtonElement | null; toggle: (() => void) | null; drag?: (event: DragEvent) => void; highlight?: (active: boolean) => void };
 const paneControls = new WeakMap<HTMLElement, Map<string, PaneControl>>();
-function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | "hex" | "diff"): PaneControl {
+function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | "hex" | "diff" | "open"): PaneControl {
   let controls = paneControls.get(host);
   if (!controls) {
     controls = new Map();
@@ -45,7 +46,7 @@ function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | 
   }
   let control = controls.get(key);
   if (!control) {
-    control = { open: false, enabled: false, label: key === "browse" ? "project files" : key === "link" ? "linked files" : key === "hex" ? "hex editor" : key === "diff" ? "Git diff" : "preview", button: null, toggle: null };
+    control = { open: false, enabled: false, label: key === "open" ? "open files" : key === "browse" ? "project files" : key === "link" ? "linked files" : key === "hex" ? "hex editor" : key === "diff" ? "Git diff" : "preview", button: null, toggle: null };
     controls.set(key, control);
   }
   return control;
@@ -57,6 +58,7 @@ function syncPaneControl(control: PaneControl) {
   control.button.disabled = !control.enabled || !control.toggle;
   control.button.classList.toggle("active", control.open);
   control.button.setAttribute("aria-pressed", String(control.open));
+  if (control.label === "open files") { control.button.title = "Open files"; control.button.removeAttribute("aria-pressed"); return; }
   if (control.label === "image preview") { control.button.title = "Image preview · Drag to another pane"; return; }
   if (control.label === "linked files") { control.button.title = "Unlink file navigation"; return; }
   control.button.title = `${control.open ? "Hide" : "Show"} ${control.label}${control.drag ? " · Drag to another pane" : ""}`;
@@ -65,6 +67,7 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
   if (!(props.host instanceof HTMLElement)) return undefined;
   const cleanups: Array<() => void> = [];
   for (const definition of [
+    { key: "open", icon: "folderOpen", label: "Open files" },
     { key: "browse", icon: "folderTree", label: "Browse project files" },
     { key: "diff", icon: "gitCompareArrows", label: "Git diff" },
     { key: "hex", icon: "binary", label: "Hex editor" },
@@ -183,6 +186,13 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const prefix = `boatyard:file-editor:${JSON.stringify([project.id, project.sourcePath])}:`;
   const paneKey = `${prefix}pane:${String(props.paneId || "default")}`;
   const paneId = String(props.paneId || "default");
+  const openControl = getPaneControl(container, "open");
+  let savedTabs: unknown;
+  try { savedTabs = JSON.parse(localStorage.getItem(`${paneKey}:tabs`) || "null"); } catch { /* Ignore malformed tab preferences. */ }
+  const tabs = new FileTabs(savedTabs);
+  function persistTabs() {
+    try { localStorage.setItem(`${paneKey}:tabs`, JSON.stringify(tabs.paths)); } catch { /* Draft persistence is checked separately. */ }
+  }
   let links = projectLinks.get(prefix);
   if (!links) {
     let saved: unknown;
@@ -239,12 +249,25 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     } catch { return undefined; }
   };
   const root = element("section", "file-editor");
-  const toolbar = element("form", "file-editor-toolbar");
-  const pathInput = element("input");
-  pathInput.placeholder = "Project-relative or absolute file path";
-  pathInput.setAttribute("aria-label", "Project-relative or absolute file path");
-  pathInput.spellcheck = false;
-  const status = element("div", "file-editor-status", "Open a project file or enter an absolute file path.");
+  const toolbar = element("div", "file-editor-toolbar file-editor-filebar");
+  const fileTabs = createFileTabs(tabs, {
+    select: async (path) => { if (path !== currentPath()) await openFile(path); },
+    close: closeTab,
+    dirty: (path) => {
+      const cached = documents.get(draftKey(path));
+      if (cached) return cached.dirty;
+      const changes = changesets.get(changesKey(path));
+      if (changes) return changes.dirty;
+      try { return Boolean(localStorage.getItem(draftKey(path)) || localStorage.getItem(changesKey(path))); } catch { return false; }
+    }
+  });
+  function updateTabs() {
+    fileTabs.update(opening || Boolean(doc?.saving || doc?.changes?.saving));
+    openControl.enabled = !opening && !pickerPending && !doc?.saving && !doc?.changes?.saving;
+    syncPaneControl(openControl);
+  }
+  function openedTab(path: string) { tabs.open(path); persistTabs(); updateTabs(); fileTabs.reveal(); }
+  const status = element("div", "file-editor-status", "Open files from the pane toolbar or browse project files.");
   status.setAttribute("role", "status");
   const notices = element("div", "file-editor-notices");
   const editorHost = element("div", "file-editor-body");
@@ -350,6 +373,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   let unsubscribe: (() => void) | undefined;
   let disposed = false;
   let opening = false;
+  let pickerPending = false;
+  let closingTab = false;
   let persistenceError = "";
   let bom = "";
   let syncing = false;
@@ -383,6 +408,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
   async function refreshGit() {
     if (disposed || gitPending) return;
+    updateTabs();
     const version = gitVersion;
     const path = doc?.base.path;
     gitPending = true;
@@ -430,7 +456,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       read: async () => { throw new Error("This file was deleted."); },
       save: async () => { throw new Error("Deleted-file diffs are read-only."); }
     });
-    pathInput.value = path; fileBrowser.setSelected(path); setNotices(); compare.hidden = true;
+    openedTab(path); fileBrowser.setSelected(path); setNotices(); compare.hidden = true;
     saveButton.disabled = true; hexControl.enabled = previewControl.enabled = false;
     status.textContent = `${path} · Deleted from working tree${retainedDraft ? " · Local draft retained" : ""} · Read-only diff`;
     rebuild(false);
@@ -674,7 +700,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     });
   }
   const blockNavigation = createBlockNavigation(navigateBlock);
-  const openButton = button("Open", () => void openFile(pathInput.value));
+
   const saveButton = button("Save", () => { if (doc) void doc.save(); });
   saveButton.title = "Save (Ctrl/Cmd+S)";
   saveButton.disabled = true;
@@ -710,6 +736,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     if (!doc || disposed || deletedGitPath) return;
     scheduleGitView();
     persist();
+    updateTabs();
     editorHost.classList.toggle("file-editor-paged", Boolean(doc.base.block));
     blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !previewVisible && !diffMode, opening || doc.saving || Boolean(doc.changes?.saving));
     const locked = Boolean(doc.locked && doc.base.block);
@@ -818,7 +845,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     persist();
     if (persistenceError && doc?.dirty) { showError(persistenceError); return; }
     opening = true;
-    openButton.disabled = true;
+    updateTabs();
     status.textContent = "Indexing and opening file…";
     const block = requestedBlock ?? savedBlock(path);
     try {
@@ -847,7 +874,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
           imageElement.alt = image.path;
           status.textContent = `${image.path} · Loading image…`;
           imageElement.src = image.dataUrl;
-          pathInput.value = image.path;
+          openedTab(image.path);
           fileBrowser.setSelected(image.path);
           setNotices(); compare.hidden = true;
           saveButton.disabled = true; findButton.disabled = true;
@@ -954,7 +981,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       deletedGitPath = "";
       doc = next;
       if (doc.base.block) previewVisible = false;
-      pathInput.value = snapshot.path;
+      openedTab(snapshot.path);
       fileBrowser.setSelected(snapshot.path);
       setNotices();
       unsubscribe = subscribe(doc, refreshUi);
@@ -975,12 +1002,45 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     }
     finally {
       opening = false;
-      openButton.disabled = false;
+      updateTabs();
       if (doc) blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !previewVisible && !diffMode, doc.saving);
       const pending = pendingLinkedPath;
       pendingLinkedPath = undefined;
       if (pending && pending !== currentPath() && !disposed) void openFile(pending, linkVersion);
     }
+  }
+
+  async function closeTab(path: string) {
+    if (closingTab || opening || doc?.saving || doc?.changes?.saving) return;
+    persist(); rememberPosition();
+    if (persistenceError && doc?.dirty) { showError(persistenceError); return; }
+    closingTab = true;
+    try {
+      if (currentPath() === path) {
+        const next = tabs.neighbor(path);
+        if (next) {
+          await openFile(next);
+          if (currentPath() === path) return;
+        } else {
+          unsubscribe?.(); unsubscribe = undefined; view?.destroy(); view = undefined;
+          doc = undefined; openedImage = undefined; deletedGitPath = "";
+          previewVersion++; clearTimeout(previewTimer); previewPendingSource = ""; previewSource = "";
+          gitVersion++; gitBaseline = undefined; gitPath = "";
+          editorHost.replaceChildren(empty); editorHost.hidden = false;
+          previewFrame.hidden = imageHost.hidden = hexHost.hidden = true;
+          imageElement.removeAttribute("src"); previewFrame.removeAttribute("srcdoc");
+          compare.hidden = true; setNotices(); fileBrowser.setSelected("");
+          blockNavigation.update(undefined, false, false);
+          gitView.update("", undefined, "", undefined); gitView.show(false);
+          for (const control of [previewControl, hexControl, diffControl]) { control.enabled = false; control.open = false; syncPaneControl(control); }
+          saveButton.disabled = findButton.disabled = true;
+          findButton.setAttribute("aria-pressed", "false");
+          status.textContent = "Open files from the pane toolbar or browse project files.";
+          try { localStorage.removeItem(paneKey); } catch { /* Optional navigation preference. */ }
+        }
+      }
+      tabs.close(path); persistTabs(); updateTabs(); fileTabs.reveal();
+    } finally { closingTab = false; }
   }
 
   const draftsButton = button("Drafts", () => {
@@ -1005,8 +1065,9 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     } catch (error) { showError(error); }
   });
   draftsButton.setAttribute("aria-pressed", "false");
-  toolbar.addEventListener("submit", (event) => { event.preventDefault(); void openFile(pathInput.value); });
-  toolbar.append(pathInput, openButton, saveButton, findButton, draftsButton);
+  const fileActions = element("div", "file-editor-file-actions");
+  fileActions.append(saveButton, findButton, draftsButton);
+  toolbar.append(fileTabs.element, fileActions);
   const workspace = element("div", "file-editor-workspace");
   const browserKey = `${paneKey}:browser`;
   const browserState = { open: false, width: 240 };
@@ -1108,6 +1169,20 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   syncPaneControl(previewControl);
   browserControl.toggle = toggleBrowser;
   syncPaneControl(browserControl);
+  async function pickFiles() {
+    if (pickerPending || opening || doc?.saving || doc?.changes?.saving) return;
+    pickerPending = true; updateTabs();
+    try {
+      if (!scope.boatyard?.selectFiles) throw new Error("The native file picker is unavailable.");
+      const path = currentPath();
+      const initial = path && /^(?:[\\/]|[a-z]:[\\/])/i.test(path) ? path : `${project.sourcePath.replace(/[\\/]+$/, "")}/${path || ""}`;
+      const paths = await scope.boatyard.selectFiles(initial);
+      for (const path of paths) { if (disposed) return; await openFile(path); }
+    } catch (error) { if (!disposed) showError(error); }
+    finally { pickerPending = false; if (!disposed) updateTabs(); }
+  }
+  openControl.toggle = () => { void pickFiles(); };
+  updateTabs();
   root.append(toolbar, workspace, status);
   container.replaceChildren(root);
   if (browserState.open) fileBrowser.show();
@@ -1147,10 +1222,12 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   });
   linksReady = true;
   try {
-    const path = requestedDiffPath || requestedPreviewPath || initialLinkedPath || localStorage.getItem(paneKey);
+    const previous = localStorage.getItem(paneKey);
+    const restore = Array.isArray(savedTabs) ? (tabs.paths.includes(previous || "") ? previous : tabs.paths[0]) : previous;
+    const path = requestedDiffPath || requestedPreviewPath || (Array.isArray(savedTabs) && !tabs.paths.length ? null : initialLinkedPath) || restore;
     if (requestedDiffPath) localStorage.removeItem(`${paneKey}:diff-file`);
     if (requestedPreviewPath) localStorage.removeItem(`${paneKey}:preview-file`);
-    if (path) { pathInput.value = path; void openFile(path); }
+    if (path) void openFile(path);
   } catch { /* Opening files remains available when local storage is disabled. */ }
   return () => {
     highlight(false);
@@ -1184,6 +1261,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       previewControl.drag = undefined;
       syncPaneControl(previewControl);
     }
+    openControl.toggle = null; openControl.enabled = false; syncPaneControl(openControl);
     disposed = true;
     unsubscribe?.();
     view?.destroy();

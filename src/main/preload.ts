@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateSettings: (patch: unknown) => ipcRenderer.invoke("settings:update", patch),
   updateNavigation: (navigation: unknown) => ipcRenderer.invoke("navigation:update", navigation),
   updateOnboarding: (onboarding: unknown) => ipcRenderer.invoke("onboarding:update", onboarding),
+  selectFiles: (currentPath: unknown) => ipcRenderer.invoke("files:select", currentPath),
   selectProjectsBasePath: (currentPath: unknown, title: unknown = undefined) => (
     ipcRenderer.invoke("settings:select-projects-base-path", currentPath, title)
   ),
