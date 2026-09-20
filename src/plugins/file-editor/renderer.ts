@@ -19,7 +19,7 @@ import { createPreviewDocument, supportsPreview } from "./preview";
 
 const scope = window as BoatyardPluginRendererGlobal;
 const registry = scope.BoatyardPluginRegistry;
-const positions = new Map<string, { anchor: number; head: number; scrollTop: number }>();
+type FilePosition = { anchor: number; head: number; scrollTop: number; scrollLeft: number; previewScrollTop: number };
 const pluginId = "boatyard.fileEditor";
 const documents = new Map<string, EditorDocument>();
 const active = new Map<EditorDocument, number>();
@@ -133,6 +133,24 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const project = (props.project || {}) as { id: string; sourcePath: string };
   const prefix = `boatyard:file-editor:${JSON.stringify([project.id, project.sourcePath])}:`;
   const paneKey = `${prefix}pane:${String(props.paneId || "default")}`;
+  const previewKey = `${paneKey}:preview`;
+  const positions = new Map<string, FilePosition>();
+  function positionFor(path: string): FilePosition {
+    let position = positions.get(path);
+    if (!position) {
+      position = { anchor: 0, head: 0, scrollTop: 0, scrollLeft: 0, previewScrollTop: 0 };
+      try {
+        const saved = JSON.parse(localStorage.getItem(`${paneKey}:position:${path}`) || "null");
+        for (const key of Object.keys(position) as Array<keyof FilePosition>) {
+          if (Number.isFinite(saved?.[key]) && saved[key] >= 0) position[key] = Math.floor(saved[key]);
+        }
+      } catch { /* Use defaults when position storage is unavailable or malformed. */ }
+      positions.set(path, position);
+    }
+    return position;
+  }
+  let positionTimer: ReturnType<typeof setTimeout> | undefined;
+  let restoringPosition = false;
   const draftKey = (path: string) => `${prefix}draft:${path}`;
   const root = element("section", "file-editor");
   const toolbar = element("form", "file-editor-toolbar");
@@ -151,12 +169,15 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   previewFrame.setAttribute("sandbox", "allow-same-origin");
   previewFrame.hidden = true;
   let previewVisible = false;
+  try { previewVisible = localStorage.getItem(previewKey) === "true"; }
+  catch { /* Preview remains available without persisted preferences. */ }
   let previewTimer: ReturnType<typeof setTimeout> | undefined;
   let previewSource = "";
   let previewPendingSource = "";
   let previewVersion = 0;
   let previewScrollTop = 0;
   let previewPath = "";
+  let loadedPreviewPath = "";
   let doc: EditorDocument | undefined;
   let view: EditorView | undefined;
   let unsubscribe: (() => void) | undefined;
@@ -184,7 +205,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       if (!previewVisible || !doc || disposed) return;
       try {
         const sameFile = previewPath === doc.base.path;
-        previewScrollTop = sameFile ? previewFrame.contentDocument?.scrollingElement?.scrollTop || 0 : 0;
+        previewScrollTop = sameFile ? previewFrame.contentDocument?.scrollingElement?.scrollTop || 0 : positionFor(doc.base.path).previewScrollTop;
         previewPath = doc.base.path;
         const styles = getComputedStyle(root);
         const color = (name: string) => styles.getPropertyValue(name).trim();
@@ -203,6 +224,13 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     const content = previewFrame.contentDocument;
     if (!content || disposed) return;
     if (content.scrollingElement) content.scrollingElement.scrollTop = previewScrollTop;
+    const loadedPath = previewPath;
+    loadedPreviewPath = loadedPath;
+    content.addEventListener("scroll", () => {
+      if (!previewVisible || !loadedPath || loadedPath !== doc?.base.path) return;
+      positionFor(loadedPath).previewScrollTop = content.scrollingElement?.scrollTop || 0;
+      schedulePosition();
+    });
     content.addEventListener("click", (event) => {
       const target = event.target as Element | null;
       const link = target?.closest?.("a");
@@ -220,9 +248,12 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     });
   });
   function setPreview(visible: boolean) {
+    rememberPosition();
     previewVersion++;
     previewPendingSource = "";
     previewVisible = visible && Boolean(doc && supportsPreview(doc.base.path));
+    try { localStorage.setItem(previewKey, String(previewVisible)); }
+    catch { /* Optional view preferences must not prevent editing. */ }
     previewControl.open = previewVisible;
     syncPaneControl(previewControl);
     previewFrame.hidden = !previewVisible;
@@ -233,15 +264,46 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       schedulePreview();
     } else {
       clearTimeout(previewTimer);
-      view?.requestMeasure();
+      restorePosition();
       view?.focus();
     }
   }
   function rememberPosition() {
-    if (doc && view) positions.set(`${paneKey}:${doc.base.path}`, {
-      anchor: view.state.selection.main.anchor, head: view.state.selection.main.head, scrollTop: view.scrollDOM.scrollTop
+    if (!doc || !view || restoringPosition) return;
+    const position = positionFor(doc.base.path);
+    position.anchor = view.state.selection.main.anchor;
+    position.head = view.state.selection.main.head;
+    if (previewVisible && loadedPreviewPath === doc.base.path && previewFrame.contentDocument?.scrollingElement) {
+      position.previewScrollTop = previewFrame.contentDocument.scrollingElement.scrollTop;
+    }
+    if (!editorHost.hidden) {
+      position.scrollTop = view.scrollDOM.scrollTop;
+      position.scrollLeft = view.scrollDOM.scrollLeft;
+    }
+    try { localStorage.setItem(`${paneKey}:position:${doc.base.path}`, JSON.stringify(position)); }
+    catch { /* Editing remains available without persisted positions. */ }
+  }
+  function schedulePosition() {
+    clearTimeout(positionTimer);
+    positionTimer = setTimeout(rememberPosition, 150);
+  }
+  function restorePosition() {
+    if (!doc || !view) return;
+    const currentView = view;
+    const position = { ...positionFor(doc.base.path) };
+    restoringPosition = true;
+    currentView.requestMeasure({
+      read: () => undefined,
+      write: () => {
+        if (view !== currentView || disposed) return;
+        currentView.scrollDOM.scrollTop = position.scrollTop;
+        currentView.scrollDOM.scrollLeft = position.scrollLeft;
+        restoringPosition = false;
+      }
     });
   }
+  const flushPosition = () => { rememberPosition(); persist(); };
+  window.addEventListener("pagehide", flushPosition);
 
   function persist() {
     if (!doc) return;
@@ -330,6 +392,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
 
   function rebuild() {
     if (!doc) return;
+    restoringPosition = true;
     view?.destroy();
     editorHost.replaceChildren();
     bom = doc.text.startsWith("\uFEFF") ? "\uFEFF" : "";
@@ -342,19 +405,19 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
           EditorView.contentAttributes.of({ "aria-label": "File contents" }),
           EditorView.theme({ "&": { height: "100%", backgroundColor: "var(--panel)" }, ".cm-scroller": { overflow: "auto", fontFamily: "monospace" } }),
           keymap.of([{ key: "Mod-s", run: () => { if (doc) void doc.save(); return true; } }]),
+          EditorView.domEventHandlers({ scroll: () => { if (!restoringPosition) schedulePosition(); } }),
           EditorView.updateListener.of((update) => {
+            if (update.selectionSet || update.docChanged) schedulePosition();
             findButton.setAttribute("aria-pressed", String(searchPanelOpen(update.state)));
             if (update.docChanged && !syncing) doc?.edit(bom + update.state.sliceDoc());
           })]
       })
     });
-    const position = positions.get(`${paneKey}:${doc.base.path}`);
-    if (position) {
-      view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length), head: Math.min(position.head, view.state.doc.length) } });
-      view.scrollDOM.scrollTop = position.scrollTop;
-    }
+    const position = positionFor(doc.base.path);
+    view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length), head: Math.min(position.head, view.state.doc.length) } });
     previewControl.enabled = supportsPreview(doc.base.path);
     setPreview(previewVisible);
+    if (previewVisible) restoringPosition = false;
     findButton.setAttribute("aria-pressed", String(searchPanelOpen(view.state)));
     refreshUi();
   }
@@ -475,6 +538,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     persist();
     rememberPosition();
     clearTimeout(previewTimer);
+    clearTimeout(positionTimer);
+    window.removeEventListener("pagehide", flushPosition);
     themeObserver.disconnect();
     fileBrowser.cleanup();
     browserLayout.cleanup();
