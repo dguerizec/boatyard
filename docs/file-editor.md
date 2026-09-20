@@ -45,3 +45,32 @@ Large files use one shared changeset in Text and Hex modes. Edit several blocks 
 **Save** writes every modified range in a single atomic replacement. It streams untouched ranges, checks the complete original revision and the bytes being replaced, then rebuilds the index. Editing pauses across linked panes during that save. A failed save retains the whole changeset. Disk conflicts keep it intact for comparison; **Keep my version** explicitly rebases modified ranges onto the compared revision when the file size and affected block boundaries are unchanged, while **Use disk version** discards the entire file's changeset after confirmation.
 
 Changesets are stored as local drafts per file and shared by linked panes. The original file must remain available to reconstruct untouched content. A storage error blocks navigation that would lose an unpersisted draft. Hex pastes currently must fit inside the active edit block. Memory holds active edit blocks, sparse changed ranges, bounded history, and a bounded Hex read cache.
+
+## Git changes
+
+The file browser displays Git status badges and marks folders containing changes.
+The **Changes** filter lists modified, staged, untracked, renamed, conflicted, and
+removed files; each entry has an **Open diff** action. Status badges describe the
+index and working tree, while unsaved editor drafts remain separate until saved.
+
+Text editors show clickable Git gutter markers for added, modified, and deleted
+lines. The **Git diff** toolbar icon toggles a read-only comparison of **HEAD →
+current content**, including unsaved drafts. It uses a side-by-side layout in wide
+panes and a unified layout in narrow panes. **Previous change** and **Next change**
+navigate between changed regions. Return to Text mode to edit; a linked Diff pane
+updates as you type. Drag the Diff icon to another pane to create that linked
+view, using the same link/unlink controls as Preview. The Diff mode is remembered
+per pane.
+
+Untracked files use an empty baseline. Repositories without a first commit also
+use an empty baseline. Staged renames compare against the original HEAD path.
+Deleted files open as read-only diffs from the Changes list; existing text drafts
+are retained and shown instead of an empty current version. External files use
+their own enclosing Git working tree. Git failures are shown without replacing
+or discarding drafts. No staging, unstaging, or Git writes occur in this mode.
+
+This first version compares complete UTF-8 text files: paged files, binary files,
+and HEAD versions larger than 2 MiB display an explicit unavailable message.
+Line endings are normalized for the visual comparison. Expensive comparisons may
+use a simplified diff, identified in the view. Git metadata refreshes with the
+editor polling cycle and window focus; requests are shared between panes.

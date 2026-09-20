@@ -1,3 +1,4 @@
+import { editorGitBaseline, editorGitStatus } from "./git";
 import type { FilePatch } from "./changes";
 import { join } from "node:path";
 import { ProjectFileIndex } from "./blockIndex";
@@ -14,6 +15,8 @@ export function activate(ctx: PluginContext<EditorState>) {
     if (!project?.sourcePath) throw new Error("This project has no local directory.");
     return project.sourcePath;
   }
+  ctx.actions.handle<FileInput>("gitStatus", (input = {}) => editorGitStatus(rootFor(input.projectId)));
+  ctx.actions.handle<FileInput>("gitBaseline", (input = {}) => editorGitBaseline(rootFor(input.projectId), input.path || ""));
   ctx.actions.handle<FileInput>("readImage", (input = {}) => readProjectImage(rootFor(input.projectId), input.path || ""));
   ctx.actions.handle<FileInput>("read", (input = {}) => fileIndex.read(rootFor(input.projectId), input.path || "", input.block ?? 0, input.block !== undefined));
   ctx.actions.handle<FileInput>("save", (input = {}) => input.block === undefined
