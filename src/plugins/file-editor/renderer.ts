@@ -66,9 +66,9 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
   const cleanups: Array<() => void> = [];
   for (const definition of [
     { key: "browse", icon: "folderTree", label: "Browse project files" },
-    { key: "preview", icon: "eye", label: "Preview" },
     { key: "diff", icon: "gitCompareArrows", label: "Git diff" },
     { key: "hex", icon: "binary", label: "Hex editor" },
+    { key: "preview", icon: "eye", label: "Preview" },
     { key: "link", icon: "link", label: "Unlink file navigation" }
   ] as const) {
     const control = getPaneControl(props.host, definition.key);
