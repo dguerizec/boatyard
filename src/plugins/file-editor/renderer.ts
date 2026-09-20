@@ -1,3 +1,4 @@
+import { contentBytes } from "./bytes";
 import { createBlockNavigation } from "./blockNavigation";
 import { createHexView } from "./hexView";
 import { imageMimeType, type ImageSnapshot } from "./imageTypes";
@@ -273,6 +274,53 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const hexHost = element("div", "file-editor-hex");
   hexHost.hidden = true;
   const hexView = createHexView(hexHost, (bytes) => doc?.editBytes(bytes), () => { if (doc) void doc.save(); });
+  function updateHexView() {
+    if (!doc) return;
+    const current = doc;
+    const block = current.base.block;
+    const revision = current.base.revision;
+    const path = current.base.path;
+    const blockAt = (offset: number) => {
+      if (!block) return 0;
+      let low = 0, high = block.positions.length - 1;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (block.positions[middle].offset <= offset) low = middle;
+        else high = middle - 1;
+      }
+      return low;
+    };
+    const bytes = current.bytes;
+    const sizeDelta = block ? bytes.length - block.length : 0;
+    const diskOffset = (offset: number) => block && offset >= block.offset + bytes.length ? offset - sizeDelta : offset;
+    let initialOffset: number | undefined;
+    try {
+      const saved = localStorage.getItem(`${paneKey}:hex-position:${path}`);
+      if (saved !== null && Number.isSafeInteger(Number(saved)) && Number(saved) >= 0) initialOffset = Number(saved);
+    } catch { /* Optional scroll preferences. */ }
+    hexView.update(bytes, path, block?.offset, current.saving, {
+      size: block ? block.size + sizeDelta : bytes.length, revision: `${revision}:${sizeDelta}`, initialOffset,
+      scrolled: (offset) => {
+        try { localStorage.setItem(`${paneKey}:hex-position:${path}`, String(offset)); } catch { /* Editing remains available. */ }
+      },
+      read: async (offset) => {
+        const snapshot = (await invoke("read", project.id, { path, block: blockAt(diskOffset(offset)) }))!;
+        if (snapshot.revision !== revision) throw new Error("The file changed on disk. Reload it before continuing.");
+        const start = snapshot.block?.offset ?? 0;
+        return { offset: block && start > block.offset ? start + sizeDelta : start, bytes: contentBytes(snapshot) };
+      },
+      activate: async (offset) => {
+        if (disposed || doc !== current || opening || current.saving) return false;
+        if (current.dirty) {
+          showError("Save the current changes before editing another part of the file. Scrolling remains available.");
+          return false;
+        }
+        await openFile(path, undefined, blockAt(offset), true);
+        return doc?.base.path === path && doc.base.block?.index === blockAt(offset);
+      },
+      error: showError
+    });
+  }
   let unsubscribe: (() => void) | undefined;
   let disposed = false;
   let opening = false;
@@ -530,7 +578,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     if (!doc || disposed) return;
     persist();
     editorHost.classList.toggle("file-editor-paged", Boolean(doc.base.block));
-    blockNavigation.update(doc.base.block, !hexMode && !previewVisible, opening || doc.saving);
+    blockNavigation.update(hexMode ? undefined : doc.base.block, !hexMode && !previewVisible, opening || doc.saving);
     const locked = Boolean(doc.saving && doc.base.block);
     const firstLine = doc.base.block?.line ?? 1;
     if (view && (viewLocked !== locked || viewFirstLine !== firstLine)) {
@@ -541,7 +589,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       ] });
     }
     if (doc.encoding === "hex" && !hexMode && !(previewVisible && imageMimeType(doc.base.path))) { hexMode = true; previewVisible = false; rebuild(false); return; }
-    if (hexMode) hexView.update(doc.bytes, documentKey(), doc.base.block?.offset, doc.saving);
+    if (hexMode) updateHexView();
     previewControl.enabled = !doc.base.block && (Boolean(imageMimeType(doc.base.path)) || (doc.encoding !== "hex" && supportsPreview(doc.base.path)));
     syncPaneControl(previewControl);
     if (doc.base.block && previewControl.button) previewControl.button.title = "Preview requires the complete file; this file is loaded in blocks.";
@@ -585,7 +633,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     if (doc.encoding === "hex") hexMode = true;
     if (hexMode) {
       persistHexMode();
-      hexView.update(doc.bytes, documentKey(), doc.base.block?.offset, doc.saving);
+      updateHexView();
       restoringPosition = false;
       setPreview(false, focus);
       refreshUi();
@@ -625,7 +673,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     refreshUi();
   }
 
-  async function openFile(path: string, linkedVersion?: number, requestedBlock?: number) {
+  async function openFile(path: string, linkedVersion?: number, requestedBlock?: number, preserveHexFocus = false) {
     if (opening || disposed || doc?.saving) return;
     // Switching files preserves the previous draft, including when other panes show it.
     persist();
@@ -728,7 +776,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       fileBrowser.setSelected(snapshot.path);
       setNotices();
       unsubscribe = subscribe(doc, refreshUi);
-      rebuild(linkedVersion === undefined);
+      rebuild(linkedVersion === undefined && !preserveHexFocus);
       if (!pendingLinkedPath || pendingLinkedPath === snapshot.path) paneLinks.opened(paneId, snapshot.path);
       void doc.refresh();
       if (!previewVisible && linkedVersion === undefined) view?.focus();
@@ -736,7 +784,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     finally {
       opening = false;
       openButton.disabled = false;
-      if (doc) blockNavigation.update(doc.base.block, !hexMode && !previewVisible, doc.saving);
+      if (doc) blockNavigation.update(hexMode ? undefined : doc.base.block, !hexMode && !previewVisible, doc.saving);
       const pending = pendingLinkedPath;
       pendingLinkedPath = undefined;
       if (pending && pending !== currentPath() && !disposed) void openFile(pending, linkVersion);
@@ -898,6 +946,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     themeObserver.disconnect();
     fileBrowser.cleanup();
     blockNavigation.cleanup();
+    hexView.cleanup();
     browserLayout.cleanup();
     if (browserControl.toggle === toggleBrowser) {
       browserControl.toggle = null;

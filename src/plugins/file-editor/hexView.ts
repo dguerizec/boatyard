@@ -1,21 +1,44 @@
-const PAGE_BYTES = 256;
+import { hexGeometry, hexRowAtScroll, hexScrollAtRow, HEX_ROW_BYTES, HEX_ROW_HEIGHT } from "./hexViewport";
+
 type Change = { offset: number; before: Uint8Array; after: Uint8Array };
+type Chunk = { offset: number; bytes: Uint8Array };
+export type HexSource = {
+  size: number;
+  revision: string;
+  initialOffset?: number;
+  scrolled?(offset: number): void;
+  read(offset: number): Promise<Chunk>;
+  activate(offset: number): Promise<boolean>;
+  error(error: unknown): void;
+};
 const hex = (value: number) => value.toString(16).padStart(2, "0").toUpperCase();
 
-/** Bounded DOM even for large files; editing overwrites bytes without resizing them. */
+/** Render visible rows only; disk blocks remain an internal, bounded read cache. */
 export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => void, onSave: () => void) {
   let bytes = new Uint8Array();
-  let page = 0;
-  let baseOffset = 0;
-  let disabled = false;
-  let changing = false;
-  let fileKey = "";
-  const undo: Change[] = [];
-  const redo: Change[] = [];
+  let baseOffset = 0, size = 0, generation = 0;
+  let disabled = false, changing = false, disposed = false;
+  let fileKey = "", revision = "";
+  let source: HexSource | undefined;
+  let frame = 0, renderedStart = -1, renderedEnd = -1;
+  let focusRequest = 0;
+  let pendingRow: number | undefined;
+  let reportedOffset = -1;
+  let wheelRemainder = 0;
+  const chunks = new Map<number, Chunk>();
+  const pending = new Set<number>();
+  const undo: Change[] = [], redo: Change[] = [];
   const toolbar = document.createElement("div");
   toolbar.className = "file-editor-toolbar";
+  const viewport = document.createElement("div");
+  viewport.className = "file-editor-hex-viewport";
+  viewport.tabIndex = 0;
+  viewport.setAttribute("aria-label", "Hexadecimal file contents");
   const grid = document.createElement("div");
   grid.className = "file-editor-hex-grid";
+  const layer = document.createElement("div");
+  layer.className = "file-editor-hex-rows";
+  grid.append(layer); viewport.append(grid);
   const caption = document.createElement("span");
   const offset = document.createElement("input");
   offset.placeholder = "Hex offset";
@@ -23,135 +46,198 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
   offset.size = 10;
   function button(label: string, action: () => void) {
     const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = label;
+    button.type = "button"; button.textContent = label;
     button.addEventListener("click", action);
     return button;
   }
-  const previous = button("Previous", () => { page = Math.max(0, page - 1); render(); });
-  const next = button("Next", () => { page++; render(); });
   function go() {
     if (!/^(?:0x)?[\da-f]+$/i.test(offset.value)) { offset.setCustomValidity("Enter a hexadecimal byte offset."); offset.reportValidity(); return; }
-    const index = parseInt(offset.value.replace(/^0x/i, ""), 16) - baseOffset;
-    if (index < 0 || index >= bytes.length) { offset.setCustomValidity("Offset is outside this block."); offset.reportValidity(); return; }
+    const index = parseInt(offset.value.replace(/^0x/i, ""), 16);
+    if (!Number.isSafeInteger(index) || index >= size) { offset.setCustomValidity("Offset is outside this file."); offset.reportValidity(); return; }
     offset.setCustomValidity("");
-    focusByte(index);
+    void focusByte(index);
   }
   offset.addEventListener("input", () => offset.setCustomValidity(""));
   offset.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); go(); } });
   const undoButton = button("Undo", () => history(false));
   const redoButton = button("Redo", () => history(true));
-  toolbar.append(previous, next, offset, button("Go", go), undoButton, redoButton, caption);
-  host.replaceChildren(toolbar, grid);
+  toolbar.append(offset, button("Go", go), undoButton, redoButton, caption);
+  host.replaceChildren(toolbar, viewport);
 
+  function active(index: number) { return index >= baseOffset && index < baseOffset + bytes.length; }
+  function valueAt(index: number): number | undefined {
+    if (active(index)) return bytes[index - baseOffset];
+    for (const chunk of chunks.values()) if (index >= chunk.offset && index < chunk.offset + chunk.bytes.length) return chunk.bytes[index - chunk.offset];
+    return undefined;
+  }
+  function schedule() {
+    if (!frame && !disposed) frame = requestAnimationFrame(() => { frame = 0; render(); });
+  }
+  function load(index: number) {
+    if (!source || pending.size >= 2 || pending.has(index) || valueAt(index) !== undefined) return;
+    const version = generation;
+    pending.add(index);
+    void source.read(index).then((chunk) => {
+      if (disposed || version !== generation) return;
+      chunks.delete(chunk.offset); chunks.set(chunk.offset, chunk);
+      while (chunks.size > 3) chunks.delete(chunks.keys().next().value!);
+      renderValues(); schedule();
+    }).catch((error) => { if (!disposed && version === generation) source?.error(error); })
+      .finally(() => { if (version === generation) pending.delete(index); });
+  }
   function notify() {
     changing = true;
     try { onEdit(bytes); } finally { changing = false; }
     renderValues();
   }
   function edit(index: number, replacement: Uint8Array) {
-    if (disabled || index + replacement.length > bytes.length) return;
-    const before = bytes.slice(index, index + replacement.length);
+    if (disabled || !active(index) || index + replacement.length > baseOffset + bytes.length) return;
+    const local = index - baseOffset;
+    const before = bytes.slice(local, local + replacement.length);
     if (before.every((value, i) => value === replacement[i])) return;
     undo.push({ offset: index, before, after: replacement.slice() });
     if (undo.length > 100) undo.shift();
     redo.length = 0;
-    bytes.set(replacement, index);
-    notify();
+    bytes.set(replacement, local); notify();
   }
   function history(forward: boolean) {
     if (disabled) return;
     const change = (forward ? redo : undo).pop();
     if (!change) return;
     (forward ? undo : redo).push(change);
-    bytes.set(forward ? change.after : change.before, change.offset);
-    notify();
-    focusByte(change.offset);
+    bytes.set(forward ? change.after : change.before, change.offset - baseOffset);
+    notify(); void focusByte(change.offset);
   }
-  function focusByte(index: number) {
-    index = Math.max(0, Math.min(bytes.length - 1, index));
-    if (Math.floor(index / PAGE_BYTES) !== page) { page = Math.floor(index / PAGE_BYTES); render(); }
-    grid.querySelector<HTMLInputElement>(`input[data-offset="${index}"]`)?.focus();
+  async function focusByte(index: number) {
+    if (!size) { viewport.focus(); return; }
+    const request = ++focusRequest, key = fileKey;
+    index = Math.max(0, Math.min(size - 1, index));
+    const row = Math.floor(index / HEX_ROW_BYTES);
+    const first = hexRowAtScroll(size, viewport.clientHeight, viewport.scrollTop);
+    const visible = hexGeometry(size, viewport.clientHeight).visible;
+    if (row < first || row >= first + visible) viewport.scrollTop = hexScrollAtRow(size, viewport.clientHeight, row);
+    render();
+    if (!active(index)) {
+      try { if (!await source?.activate(index)) return; }
+      catch (error) { source?.error(error); return; }
+    }
+    if (disposed || request !== focusRequest || key !== fileKey) return;
+    renderValues();
+    const input = layer.querySelector<HTMLInputElement>(`input[data-offset="${index}"]`);
+    input?.focus({ preventScroll: true }); input?.select();
   }
   function renderValues() {
-    for (const input of grid.querySelectorAll<HTMLInputElement>("input[data-offset]")) { input.value = hex(bytes[Number(input.dataset.offset)]); input.disabled = disabled; }
-    for (const ascii of grid.querySelectorAll<HTMLElement>("[data-ascii]")) {
+    for (const input of layer.querySelectorAll<HTMLInputElement>("input[data-offset]")) {
+      const index = Number(input.dataset.offset), value = valueAt(index);
+      if (document.activeElement !== input || input.readOnly || input.value.length === 2) input.value = value === undefined ? "··" : hex(value);
+      input.readOnly = !active(index);
+      input.disabled = disabled;
+    }
+    for (const ascii of layer.querySelectorAll<HTMLElement>("[data-ascii]")) {
       const start = Number(ascii.dataset.ascii);
-      ascii.textContent = Array.from(bytes.subarray(start, start + 16), (byte) => byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : ".").join("");
+      ascii.textContent = Array.from({ length: Math.min(16, size - start) }, (_, i) => {
+        const value = valueAt(start + i);
+        return value === undefined ? " " : value >= 32 && value <= 126 ? String.fromCharCode(value) : ".";
+      }).join("");
     }
     undoButton.disabled = disabled || !undo.length;
     redoButton.disabled = disabled || !redo.length;
   }
   function render() {
-    page = Math.max(0, Math.min(page, Math.ceil(bytes.length / PAGE_BYTES) - 1));
-    const start = page * PAGE_BYTES;
-    const end = Math.min(bytes.length, start + PAGE_BYTES);
-    previous.disabled = page === 0;
-    next.disabled = end === bytes.length;
-    caption.textContent = bytes.length ? `0x${(start + baseOffset).toString(16).toUpperCase()}–0x${(end - 1 + baseOffset).toString(16).toUpperCase()} · ${bytes.length} bytes` : "Empty file";
-    grid.replaceChildren();
-    for (let row = start; row < end; row += 16) {
-      const line = document.createElement("div");
-      line.className = "file-editor-hex-row";
-      const address = document.createElement("span");
-      address.textContent = (row + baseOffset).toString(16).padStart(8, "0").toUpperCase();
-      line.append(address);
-      for (let column = 0; column < 16; column++) {
-        const index = row + column;
-        if (index >= bytes.length) { line.append(document.createElement("span")); continue; }
-        const input = document.createElement("input");
-        input.dataset.offset = String(index);
-        input.maxLength = 2;
-        input.spellcheck = false;
-        input.setAttribute("aria-label", `Byte 0x${(index + baseOffset).toString(16).toUpperCase()}`);
-        input.addEventListener("focus", () => input.select());
-        input.addEventListener("input", () => {
-          input.setCustomValidity("");
-          if (/^[\da-f]{2}$/i.test(input.value)) edit(index, Uint8Array.of(parseInt(input.value, 16)));
-        });
-        input.addEventListener("blur", () => { if (index < bytes.length) input.value = hex(bytes[index]); });
-        input.addEventListener("paste", (event) => {
-          event.preventDefault();
-          const value = (event.clipboardData?.getData("text") || "").replace(/\s+/g, "");
-          if (!/^(?:[\da-f]{2})+$/i.test(value) || value.length / 2 > bytes.length - index) {
-            input.setCustomValidity("Paste complete hexadecimal byte pairs that fit inside the file."); input.reportValidity(); return;
-          }
-          input.setCustomValidity("");
-          edit(index, Uint8Array.from(value.match(/../g)!, (pair) => parseInt(pair, 16)));
-        });
-        input.addEventListener("keydown", (event) => {
-          const direction: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -16, ArrowDown: 16 };
-          if (event.key in direction) { event.preventDefault(); focusByte(index + direction[event.key]); }
-        });
-        line.append(input);
+    if (disposed || !viewport.clientHeight) return;
+    const geometry = hexGeometry(size, viewport.clientHeight);
+    grid.style.height = `${geometry.height}px`;
+    if (pendingRow !== undefined) {
+      viewport.scrollTop = hexScrollAtRow(size, viewport.clientHeight, pendingRow);
+      pendingRow = undefined;
+    }
+    const first = hexRowAtScroll(size, viewport.clientHeight, viewport.scrollTop);
+    if (reportedOffset !== first * 16) { reportedOffset = first * 16; source?.scrolled?.(reportedOffset); }
+    const start = Math.max(0, first - 3) * 16;
+    const end = Math.min(size, (first + geometry.visible + 4) * 16);
+    layer.style.top = `${viewport.scrollTop - (first - start / 16) * HEX_ROW_HEIGHT}px`;
+    caption.textContent = size ? `0x${(first * 16).toString(16).toUpperCase()} · ${size.toLocaleString()} bytes` : "Empty file";
+    if (start !== renderedStart || end !== renderedEnd) {
+      renderedStart = start; renderedEnd = end;
+      layer.replaceChildren();
+      for (let row = start; row < end; row += 16) {
+        const line = document.createElement("div"); line.className = "file-editor-hex-row";
+        const address = document.createElement("span"); address.textContent = row.toString(16).padStart(8, "0").toUpperCase(); line.append(address);
+        for (let column = 0; column < 16; column++) {
+          const index = row + column;
+          if (index >= size) { line.append(document.createElement("span")); continue; }
+          const input = document.createElement("input");
+          input.dataset.offset = String(index); input.maxLength = 2; input.spellcheck = false;
+          input.setAttribute("aria-label", `Byte 0x${index.toString(16).toUpperCase()}`);
+          input.addEventListener("pointerdown", (event) => {
+            if (!active(index)) { event.preventDefault(); void focusByte(index); }
+          });
+          input.addEventListener("focus", () => { if (!active(index)) void focusByte(index); else input.select(); });
+          input.addEventListener("input", () => {
+            input.setCustomValidity("");
+            if (/^[\da-f]{2}$/i.test(input.value)) edit(index, Uint8Array.of(parseInt(input.value, 16)));
+          });
+          input.addEventListener("blur", () => { const value = valueAt(index); if (value !== undefined) input.value = hex(value); });
+          input.addEventListener("paste", (event) => {
+            event.preventDefault();
+            const value = (event.clipboardData?.getData("text") || "").replace(/\s+/g, "");
+            if (!active(index) || !/^(?:[\da-f]{2})+$/i.test(value) || value.length / 2 > baseOffset + bytes.length - index) {
+              input.setCustomValidity("Paste complete hexadecimal byte pairs that fit inside the loaded edit block."); input.reportValidity(); return;
+            }
+            input.setCustomValidity(""); edit(index, Uint8Array.from(value.match(/../g)!, (pair) => parseInt(pair, 16)));
+          });
+          input.addEventListener("keydown", (event) => {
+            const directions: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -16, ArrowDown: 16, PageUp: -geometry.visible * 16, PageDown: geometry.visible * 16 };
+            if (event.key in directions) { event.preventDefault(); void focusByte(index + directions[event.key]); }
+            if (event.key === "Home" || event.key === "End") {
+              event.preventDefault(); void focusByte(event.ctrlKey || event.metaKey ? (event.key === "Home" ? 0 : size - 1) : (event.key === "Home" ? row : Math.min(row + 15, size - 1)));
+            }
+          });
+          line.append(input);
+        }
+        const ascii = document.createElement("span"); ascii.dataset.ascii = String(row); line.append(ascii); layer.append(line);
       }
-      const ascii = document.createElement("span");
-      ascii.dataset.ascii = String(row);
-      line.append(ascii);
-      grid.append(line);
     }
     renderValues();
+    // One request per missing region, including rows straddling a UTF-8-aligned block boundary.
+    for (let index = start; index < end; index++) if (valueAt(index) === undefined) { load(index); break; }
   }
+  viewport.addEventListener("scroll", schedule);
+  viewport.addEventListener("wheel", (event) => {
+    if (!event.deltaY || event.ctrlKey || event.shiftKey) return;
+    event.preventDefault();
+    const first = hexRowAtScroll(size, viewport.clientHeight, viewport.scrollTop);
+    const pixels = event.deltaY * (event.deltaMode === 1 ? HEX_ROW_HEIGHT : event.deltaMode === 2 ? viewport.clientHeight : 1);
+    wheelRemainder += pixels;
+    const rows = Math.trunc(wheelRemainder / HEX_ROW_HEIGHT);
+    wheelRemainder -= rows * HEX_ROW_HEIGHT;
+    viewport.scrollLeft += event.deltaX;
+    viewport.scrollTop = hexScrollAtRow(size, viewport.clientHeight, first + rows);
+    schedule();
+  }, { passive: false });
   host.addEventListener("keydown", (event) => {
     if (!event.ctrlKey && !event.metaKey) return;
     if (event.key.toLowerCase() === "s") { event.preventDefault(); onSave(); }
     if (event.key.toLowerCase() === "z") { event.preventDefault(); history(event.shiftKey); }
     if (event.key.toLowerCase() === "y") { event.preventDefault(); history(true); }
   });
-  render();
+  const observer = new ResizeObserver(schedule); observer.observe(viewport);
   return {
-    update(value: Uint8Array, key: string, start = 0, locked = false) {
-      if (disabled !== locked) { disabled = locked; renderValues(); }
-      const moved = baseOffset !== start;
-      baseOffset = start;
-      if (changing) return;
-      if (!moved && fileKey === key && value.length === bytes.length && value.every((byte, index) => byte === bytes[index])) return;
-      if (fileKey !== key) page = 0;
-      fileKey = key;
-      bytes = value.slice();
-      undo.length = 0; redo.length = 0;
-      render();
+    update(value: Uint8Array, key: string, start = 0, locked = false, nextSource?: HexSource) {
+      disabled = locked; source = nextSource;
+      size = source?.size ?? value.length;
+      const changedFile = key !== fileKey;
+      if (changedFile || revision !== (source?.revision ?? "")) {
+        generation++; chunks.clear(); pending.clear(); revision = source?.revision ?? "";
+      }
+      if (!changing && (changedFile || start !== baseOffset || value.length !== bytes.length || value.some((byte, index) => byte !== bytes[index]))) {
+        bytes = value.slice(); undo.length = 0; redo.length = 0;
+      }
+      fileKey = key; baseOffset = start;
+      if (changedFile) { pendingRow = Math.floor((source?.initialOffset ?? start) / 16); renderedStart = -1; reportedOffset = -1; }
+      renderValues(); schedule();
     },
-    focus: () => grid.querySelector<HTMLInputElement>("input")?.focus()
+    focus: () => { void focusByte(baseOffset); },
+    cleanup() { disposed = true; generation++; cancelAnimationFrame(frame); observer.disconnect(); chunks.clear(); }
   };
 }
