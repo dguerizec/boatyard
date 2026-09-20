@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync, statSync, chmodSync, linkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listProjectDirectory, readProjectFile, saveProjectFile, MAX_FILE_BYTES } from "../src/plugins/file-editor/service";
+import { listProjectDirectory, readProjectImage, MAX_IMAGE_BYTES, readProjectFile, saveProjectFile, MAX_FILE_BYTES } from "../src/plugins/file-editor/service";
 import { EditorDocument, type FileAccess } from "../src/plugins/file-editor/document";
 
 function fixture() {
@@ -65,7 +65,7 @@ test("editor rejects binary, invalid UTF-8, oversized, directory and hard-linked
       assert.throws(() => readProjectFile(f.root, "file.ts"), error);
     }
     mkdirSync(join(f.root, "sub"));
-    assert.throws(() => readProjectFile(f.root, "sub"), /regular text files/);
+    assert.throws(() => readProjectFile(f.root, "sub"), /regular files/);
     writeFileSync(path, "text");
     linkSync(path, join(f.root, "hard-link"));
     assert.throws(() => saveProjectFile(f.root, "file.ts", "changed", readProjectFile(f.root, "file.ts").revision), /hard links/);
@@ -209,5 +209,27 @@ test("project browser paginates large folders without dropping entries", async (
     assert.equal(second.nextOffset, null);
     assert.equal(new Set([...first.entries, ...second.entries].map((entry) => entry.path)).size, 221);
     await assert.rejects(listProjectDirectory(f.root, "", -1), /offset/);
+  } finally { f.cleanup(); }
+});
+
+
+test("image reads preserve bytes and enforce project boundaries and size limits", () => {
+  const f = fixture();
+  try {
+    const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=", "base64");
+    writeFileSync(join(f.root, "pixel.PNG"), png);
+    const image = readProjectImage(f.root, "pixel.PNG");
+    assert.equal(image.path, "pixel.PNG");
+    assert.equal(image.size, png.length);
+    assert.equal(image.dataUrl, `data:image/png;base64,${png.toString("base64")}`);
+    writeFileSync(join(f.directory, "outside.png"), png);
+    symlinkSync(join(f.directory, "outside.png"), join(f.root, "escape.png"));
+    assert.throws(() => readProjectImage(f.root, "escape.png"), /inside this project/);
+    assert.throws(() => readProjectImage(f.root, "../outside.png"), /inside this project/);
+    assert.throws(() => readProjectImage(f.root, "file.ts"), /format is not supported/);
+    mkdirSync(join(f.root, "folder.png"));
+    assert.throws(() => readProjectImage(f.root, "folder.png"), /regular files/);
+    writeFileSync(join(f.root, "large.png"), Buffer.alloc(MAX_IMAGE_BYTES + 1));
+    assert.throws(() => readProjectImage(f.root, "large.png"), /20 MiB/);
   } finally { f.cleanup(); }
 });

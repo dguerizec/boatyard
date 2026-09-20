@@ -1,3 +1,4 @@
+import { imageMimeType, type ImageSnapshot } from "./imageTypes";
 import { constants, accessSync, closeSync, existsSync, fstatSync, fchmodSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, fsyncSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
@@ -16,14 +17,13 @@ export function resolveProjectFile(root: string, file: string): string {
   return target;
 }
 
-export function readProjectFile(root: string, file: string): FileSnapshot {
-  const target = resolveProjectFile(root, file);
+function readFileBytes(target: string, limit: number): Buffer {
   const descriptor = openSync(target, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
     const stats = fstatSync(descriptor);
-    if (!stats.isFile()) throw new Error("Only regular text files can be opened.");
-    if (stats.size > MAX_FILE_BYTES) throw new Error("Files larger than 2 MiB are not supported.");
-    const buffer = Buffer.alloc(MAX_FILE_BYTES + 1);
+    if (!stats.isFile()) throw new Error("Only regular files can be opened.");
+    if (stats.size > limit) throw new Error(`Files larger than ${limit / 1024 / 1024} MiB are not supported.`);
+    const buffer = Buffer.alloc(limit + 1);
     let length = 0;
     while (length < buffer.length) {
       const count = readSync(descriptor, buffer, length, buffer.length - length, null);
@@ -31,18 +31,33 @@ export function readProjectFile(root: string, file: string): FileSnapshot {
       length += count;
     }
     const bytes = buffer.subarray(0, length);
-    if (bytes.length > MAX_FILE_BYTES) throw new Error("Files larger than 2 MiB are not supported.");
-    if (bytes.includes(0)) throw new Error("Binary files are not supported.");
-    let text: string;
-    try {
-      text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
-    } catch {
-      throw new Error("Only UTF-8 text files are supported.");
-    }
-    return { path: relative(realpathSync(root), target), text, revision: createHash("sha256").update(bytes).digest("hex") };
+    if (bytes.length > limit) throw new Error(`Files larger than ${limit / 1024 / 1024} MiB are not supported.`);
+    return bytes;
   } finally {
     closeSync(descriptor);
   }
+}
+
+export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+export function readProjectImage(root: string, file: string): ImageSnapshot {
+  const target = resolveProjectFile(root, file);
+  const mime = imageMimeType(target);
+  if (!mime) throw new Error("This image format is not supported.");
+  const bytes = readFileBytes(target, MAX_IMAGE_BYTES);
+  return { path: relative(realpathSync(root), target), dataUrl: `data:${mime};base64,${bytes.toString("base64")}`, size: bytes.length };
+}
+
+export function readProjectFile(root: string, file: string): FileSnapshot {
+  const target = resolveProjectFile(root, file);
+  const bytes = readFileBytes(target, MAX_FILE_BYTES);
+  if (bytes.includes(0)) throw new Error("Binary files are not supported.");
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    throw new Error("Only UTF-8 text files are supported.");
+  }
+  return { path: relative(realpathSync(root), target), text, revision: createHash("sha256").update(bytes).digest("hex") };
 }
 
 export function saveProjectFile(root: string, file: string, text: string, revision: string): FileSnapshot {

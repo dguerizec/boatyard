@@ -125,3 +125,16 @@
 .file-editor-linked-highlight > .webapp-pane-header {
   background: color-mix(in srgb, var(--accent) 20%, var(--panel));
 }
+
+.file-editor-image {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.file-editor-image[hidden] { display: none; }
+.file-editor-image img { max-width: 100%; max-height: 100%; object-fit: contain; }

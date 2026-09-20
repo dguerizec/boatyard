@@ -1,3 +1,4 @@
+import { imageMimeType, type ImageSnapshot } from "./imageTypes";
 import { EditorPaneLinks } from "./paneLinks";
 import { basicSetup } from "codemirror";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -48,6 +49,7 @@ function syncPaneControl(control: PaneControl) {
   control.button.disabled = !control.enabled || !control.toggle;
   control.button.classList.toggle("active", control.open);
   control.button.setAttribute("aria-pressed", String(control.open));
+  if (control.label === "image preview") { control.button.title = "Image preview · Drag to another pane"; return; }
   if (control.label === "linked files") { control.button.title = "Unlink file navigation"; return; }
   control.button.title = `${control.open ? "Hide" : "Show"} ${control.label}${control.drag ? " · Drag to another pane" : ""}`;
 }
@@ -190,7 +192,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   pathInput.placeholder = "Project-relative file path";
   pathInput.setAttribute("aria-label", "Project-relative file path");
   pathInput.spellcheck = false;
-  const status = element("div", "file-editor-status", "Open a UTF-8 text file from this project (up to 2 MiB).");
+  const status = element("div", "file-editor-status", "Open a text file or image from this project.");
   status.setAttribute("role", "status");
   const notices = element("div", "file-editor-notices");
   const editorHost = element("div", "file-editor-body");
@@ -214,6 +216,18 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   let previewScrollTop = 0;
   let previewPath = "";
   let loadedPreviewPath = "";
+  let openedImage: ImageSnapshot | undefined;
+  const currentPath = () => openedImage?.path || doc?.base.path;
+  const imageHost = element("div", "file-editor-image");
+  imageHost.hidden = true;
+  const imageElement = element("img");
+  imageHost.append(imageElement);
+  imageElement.addEventListener("load", () => {
+    if (openedImage) status.textContent = `${openedImage.path} · ${imageElement.naturalWidth} × ${imageElement.naturalHeight} · ${Math.ceil(openedImage.size / 1024)} KiB`;
+  });
+  imageElement.addEventListener("error", () => {
+    if (openedImage) status.textContent = `${openedImage.path} · This image could not be decoded.`;
+  });
   let doc: EditorDocument | undefined;
   let view: EditorView | undefined;
   let unsubscribe: (() => void) | undefined;
@@ -344,6 +358,10 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   window.addEventListener("pagehide", flushPosition);
 
   function persist() {
+    if (openedImage) {
+      try { localStorage.setItem(paneKey, openedImage.path); } catch { /* Images have no unsaved edits. */ }
+      return;
+    }
     if (!doc) return;
     try {
       const draft = doc.draft();
@@ -468,6 +486,38 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     opening = true;
     openButton.disabled = true;
     try {
+      if (imageMimeType(path)) {
+        const image = await invoke<ImageSnapshot>("readImage", project.id, { path });
+        if (disposed || (linkedVersion !== undefined && linkedVersion !== linkVersion)) return;
+        rememberPosition();
+        unsubscribe?.(); unsubscribe = undefined;
+        doc = undefined;
+        view?.destroy(); view = undefined;
+        editorHost.replaceChildren();
+        openedImage = image;
+        previewVersion++;
+        clearTimeout(previewTimer);
+        previewPendingSource = "";
+        previewFrame.hidden = true;
+        editorHost.hidden = true;
+        imageHost.hidden = false;
+        imageElement.alt = image.path;
+        status.textContent = `${image.path} · Loading image…`;
+        imageElement.src = image.dataUrl;
+        pathInput.value = image.path;
+        fileBrowser.setSelected(image.path);
+        setNotices(); compare.hidden = true;
+        saveButton.disabled = true; findButton.disabled = true;
+        findButton.setAttribute("aria-pressed", "false");
+        previewControl.label = "image preview";
+        previewControl.enabled = true;
+        previewControl.open = true;
+        syncPaneControl(previewControl);
+        persistenceError = "";
+        persist();
+        if (!pendingLinkedPath || pendingLinkedPath === image.path) paneLinks.opened(paneId, image.path);
+        return;
+      }
       let snapshot: FileSnapshot | null;
       try {
         snapshot = await invoke("read", project.id, { path });
@@ -489,6 +539,10 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       }
       rememberPosition();
       unsubscribe?.();
+      previewControl.label = "preview";
+      openedImage = undefined;
+      imageHost.hidden = true;
+      imageElement.removeAttribute("src");
       doc = next;
       pathInput.value = snapshot.path;
       fileBrowser.setSelected(snapshot.path);
@@ -504,7 +558,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       openButton.disabled = false;
       const pending = pendingLinkedPath;
       pendingLinkedPath = undefined;
-      if (pending && pending !== doc?.base.path && !disposed) void openFile(pending, linkVersion);
+      if (pending && pending !== currentPath() && !disposed) void openFile(pending, linkVersion);
     }
   }
 
@@ -553,7 +607,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   });
   browserLayout.panel.append(fileBrowser.element);
   browserLayout.viewport.classList.add("file-editor-main");
-  browserLayout.viewport.append(notices, compare, editorHost, previewFrame);
+  browserLayout.viewport.append(notices, compare, editorHost, previewFrame, imageHost);
   const browserControl = getPaneControl(container, "browse");
   browserControl.open = browserState.open;
   browserControl.enabled = true;
@@ -564,10 +618,10 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     browserLayout.sync();
     if (browserState.open) fileBrowser.show();
   };
-  const togglePreview = () => setPreview(!previewVisible);
+  const togglePreview = () => { if (!openedImage) setPreview(!previewVisible); };
   previewControl.drag = typeof props.startPaneDrag === "function" ? (event) => {
-    if (!doc || !supportsPreview(doc.base.path)) { event.preventDefault(); return; }
-    const path = doc.base.path;
+    const path = currentPath();
+    if (!path || (!openedImage && !supportsPreview(path))) { event.preventDefault(); return; }
     const start = props.startPaneDrag as (event: DragEvent, webAppId: string, prepare: (paneId: string) => void) => void;
     start(event, "boatyard.fileEditor.editor", (targetId) => {
       localStorage.setItem(`${prefix}pane:${targetId}:preview-file`, path);
@@ -606,7 +660,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     syncPaneControl(linkControl);
     if (!linksReady) { initialLinkedPath = path; return; }
     if (!linked) { pendingLinkedPath = undefined; return; }
-    if (path && path !== doc?.base.path) {
+    if (path && path !== currentPath()) {
       if (opening) pendingLinkedPath = path;
       else void openFile(path, linkVersion);
     }
