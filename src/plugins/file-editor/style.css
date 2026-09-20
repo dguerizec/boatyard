@@ -188,7 +188,7 @@
 .file-editor-tab.active { background: rgba(var(--accent-rgb), .14); border-color: rgba(var(--accent-rgb), .65); }
 .file-editor-tab-close { display: flex; flex: 0 0 auto; align-items: center; }
 .file-editor-tab-close svg { width: 14px; height: 14px; }
-.file-editor-file-actions { display: flex; flex: 0 0 auto; gap: 6px; }
+.file-editor-file-actions { flex: 0 0 auto; border-bottom: 1px solid var(--line); }
 .file-editor-filebar:has(.file-editor-tabs:empty) .file-editor-tabs { min-height: 30px; }
 
 .file-editor .file-editor-hex-row input.selected {

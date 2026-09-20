@@ -1171,15 +1171,17 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     } finally { closingTab = false; }
   }
 
-  const fileActions = element("div", "file-editor-file-actions");
+  const fileActions = element("div", "file-editor-toolbar file-editor-file-actions");
   for (const [action, icon, label] of [[findButton, "search", "Find"], [saveButton, "save", "Save"]] as const) {
     action.classList.add("webapp-tool-button");
     action.setAttribute("aria-label", label);
     action.replaceChildren(createToolIcon(icon));
   }
   findButton.title = "Find (Ctrl/Cmd+F)";
-  fileActions.append(findButton, saveButton);
-  toolbar.append(fileTabs.element, fileActions);
+  fileActions.setAttribute("role", "toolbar");
+  fileActions.setAttribute("aria-label", "Editor actions");
+  fileActions.append(saveButton, findButton);
+  toolbar.append(fileTabs.element);
   const workspace = element("div", "file-editor-workspace");
   const browserKey = `${paneKey}:browser`;
   const browserState = { open: false, width: 240 };
@@ -1209,7 +1211,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const content = element("div", "file-editor-content");
   content.append(editorHost, hexHost, previewFrame, imageHost, blockNavigation.rail);
   blockNavigation.update(undefined, false, false);
-  browserLayout.viewport.append(notices, compare, blockNavigation.toolbar, diffHost, content);
+  browserLayout.viewport.append(fileActions, notices, compare, blockNavigation.toolbar, diffHost, content);
   const browserControl = getPaneControl(container, "browse");
   browserControl.open = browserState.open;
   browserControl.enabled = true;
