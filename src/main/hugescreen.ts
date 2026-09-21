@@ -21,6 +21,11 @@ function panLimits(bounds: Rectangle, area: Rectangle, frame: WindowFrameInsets)
   };
 }
 
+/** Electron's native integer conversion rejects JavaScript's negative zero. */
+export function roundHugescreenPosition(point: Point): Point {
+  return { x: Math.round(point.x) + 0, y: Math.round(point.y) + 0 };
+}
+
 export function clampHugescreenPosition(
   bounds: Rectangle, area: Rectangle, point: Point, frame = NO_FRAME_INSETS
 ): Point {
@@ -32,7 +37,7 @@ export function clampHugescreenPosition(
 }
 
 function panAxis(position: number, minimum: number, maximum: number, from: number, to: number,
-  screenStart: number, screenLength: number): number {
+  screenStart: number, screenLength: number, sensitivity: number): number {
   const delta = to - from;
   if (!delta) return position;
   const direction = Math.sign(delta);
@@ -43,18 +48,23 @@ function panAxis(position: number, minimum: number, maximum: number, from: numbe
   // Between edges, quadratic proximity and remaining travel amplify each movement.
   const proximity = 1 - Math.min(1, distanceToEdge / Math.max(1, screenLength));
   const distance = Math.abs(delta);
+  const amplified = distance + remaining * (distance / Math.max(1, distanceToEdge)) * proximity ** 2;
   const travel = distance >= distanceToEdge ? remaining : Math.min(remaining,
-    distance + remaining * (distance / Math.max(1, distanceToEdge)) * proximity ** 2);
-  return Math.round(Math.min(maximum, Math.max(minimum, position - direction * travel)));
+    distance * 0.25 * (1 - sensitivity) + amplified * sensitivity);
+  return Math.min(maximum, Math.max(minimum, position - direction * travel));
 }
 
 export function calculateHugescreenPan(
-  bounds: Rectangle, area: Rectangle, from: Point, to: Point, frame = NO_FRAME_INSETS
+  bounds: Rectangle, area: Rectangle, from: Point, to: Point, frame = NO_FRAME_INSETS, elapsedMs = 16
 ): Point {
   const limits = panLimits(bounds, area, frame);
+  // Logical pixels per second: precise local motion blends smoothly into full gain.
+  const speed = Math.hypot(to.x - from.x, to.y - from.y) * 1000 / Math.max(1, elapsedMs);
+  const blend = Math.max(0, Math.min(1, (speed - 120) / (900 - 120)));
+  const sensitivity = blend * blend * (3 - 2 * blend);
   return {
-    x: panAxis(bounds.x, limits.minX, limits.maxX, from.x, to.x, area.x, area.width),
-    y: panAxis(bounds.y, limits.minY, limits.maxY, from.y, to.y, area.y, area.height)
+    x: panAxis(bounds.x, limits.minX, limits.maxX, from.x, to.x, area.x, area.width, sensitivity),
+    y: panAxis(bounds.y, limits.minY, limits.maxY, from.y, to.y, area.y, area.height, sensitivity)
   };
 }
 
@@ -63,6 +73,8 @@ export class Hugescreen {
   private enabled = false;
   private area: Rectangle | null = null;
   private lastCursor: Point | null = null;
+  private lastSampleAt = 0;
+  private remainder: Point = { x: 0, y: 0 };
   private timer: ReturnType<typeof setInterval> | null = null;
   private controlDownAt: number | null = null;
   private lastControlTap: number | null = null;
@@ -100,7 +112,11 @@ export class Hugescreen {
     this.timer = setInterval(() => this.pan(), 16);
   }
 
-  resetPointer(): void { this.lastCursor = this.options.getCursor(); }
+  resetPointer(): void {
+    this.lastCursor = this.options.getCursor();
+    this.lastSampleAt = performance.now();
+    this.remainder = { x: 0, y: 0 };
+  }
 
   dispose(): void {
     this.suspend();
@@ -155,12 +171,24 @@ export class Hugescreen {
     if (!window.isFocused()) { this.suspend(); return; }
     const cursor = this.options.getCursor();
     const previous = this.lastCursor;
+    const now = performance.now();
+    const elapsed = now - this.lastSampleAt;
+    this.lastSampleAt = now;
     this.lastCursor = cursor;
     if (!previous || !this.area || window.isMaximized() || window.isFullScreen() ||
-      Date.now() < this.scrollPauseUntil) return;
+      Date.now() < this.scrollPauseUntil) {
+      this.remainder = { x: 0, y: 0 };
+      return;
+    }
+    if (cursor.x === previous.x && cursor.y === previous.y) return;
     // Global coordinates ignore synthetic motion caused by moving the window itself.
     const bounds = window.getBounds();
-    const point = calculateHugescreenPan(bounds, this.area, previous, cursor, this.options.getFrameInsets?.());
+    const precise = calculateHugescreenPan({ ...bounds,
+      x: bounds.x + this.remainder.x, y: bounds.y + this.remainder.y
+    }, this.area, previous, cursor, this.options.getFrameInsets?.(), elapsed);
+    const point = roundHugescreenPosition(precise);
+    // Carry subpixel travel into the next movement, never into stationary samples.
+    this.remainder = { x: precise.x - point.x, y: precise.y - point.y };
     if (bounds.x !== point.x || bounds.y !== point.y) window.setPosition(point.x, point.y);
   }
 }

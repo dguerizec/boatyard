@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { BrowserWindow, Input } from "electron";
-import { Hugescreen, calculateHugescreenPan, clampHugescreenPosition } from "../src/main/hugescreen.js";
+import { Hugescreen, calculateHugescreenPan, clampHugescreenPosition, roundHugescreenPosition } from "../src/main/hugescreen.js";
 
 const key = (type: "keyDown" | "keyUp", name = "Control", extra = {}): Input => ({
   type, key: name, code: name, isAutoRepeat: false, control: type === "keyDown", shift: false,
@@ -20,7 +20,10 @@ function fixture() {
     isFullScreen() { return this.fullscreen; },
     isDestroyed() { return this.destroyed; },
     isFocused() { return this.focused; },
-    setPosition(x: number, y: number) { this.bounds = { ...this.bounds, x, y }; this.moves++; }
+    setPosition(x: number, y: number) {
+      assert.equal(Object.is(x, -0) || Object.is(y, -0), false, "Electron rejects negative zero");
+      this.bounds = { ...this.bounds, x, y }; this.moves++;
+    }
   };
   const changes: boolean[] = [];
   const mode = new Hugescreen({
@@ -207,4 +210,54 @@ test("pan can be enabled during a held mouse button", async () => {
     await tick();
     assert.ok(window.moves > 0);
   } finally { mode.dispose(); }
+});
+
+
+test("slow local movement is attenuated and speed progressively restores amplification", () => {
+  const bounds = { x: -3000, y: -2000, width: 10000, height: 7000 };
+  const from = { x: 500, y: 400 };
+  const to = { x: 510, y: 400 };
+  const slow = calculateHugescreenPan(bounds, area, from, to, undefined, 100);
+  const medium = calculateHugescreenPan(bounds, area, from, to, undefined, 20);
+  const fast = calculateHugescreenPan(bounds, area, from, to, undefined, 10);
+  assert.equal(bounds.x - slow.x, 2.5);
+  assert.ok(slow.x > medium.x && medium.x > fast.x);
+  assert.equal(slow.y, bounds.y);
+  const reverse = calculateHugescreenPan(bounds, area, from, { x: 490, y: 400 }, undefined, 100);
+  assert.equal(reverse.x - bounds.x, 2.5);
+  const tiny = calculateHugescreenPan(bounds, area, from, { x: 501, y: 400 }, undefined, 16);
+  assert.equal(bounds.x - tiny.x, 0.25, "retain subpixel precision for subsequent movement");
+  assert.deepEqual(calculateHugescreenPan(bounds, area, from, from, undefined, 16),
+    { x: bounds.x, y: bounds.y }, "no inertia after stopping");
+  assert.equal(calculateHugescreenPan(bounds, area, from, { x: 999, y: 400 }, undefined, 10000).x,
+    area.x + area.width - bounds.width, "slow movement still reaches the far edge");
+});
+
+test("successive slow one-pixel movements accumulate without stationary drift", async () => {
+  const { mode, window, move } = fixture();
+  try {
+    doubleTap(mode);
+    const original = window.getBounds();
+    for (let step = 1; step <= 4; step++) {
+      await tick();
+      move(500 + step, 400);
+      await tick();
+    }
+    assert.equal(window.bounds.x, original.x - 1);
+    const stopped = window.getBounds();
+    await tick();
+    assert.deepEqual(window.getBounds(), stopped);
+  } finally { mode.dispose(); }
+});
+
+
+test("native coordinates normalize negative zero from subpixel movement", () => {
+  for (const value of [-0, -0.1, -0.25, -0.5, 0, 0.25]) {
+    assert.deepEqual(roundHugescreenPosition({ x: value, y: value }), { x: 0, y: 0 });
+  }
+  assert.deepEqual(roundHugescreenPosition({ x: -0.75, y: -10.25 }), { x: -1, y: -10 });
+  const point = calculateHugescreenPan({ x: 0, y: 0, width: 10000, height: 7000 },
+    area, { x: 500, y: 400 }, { x: 501, y: 404 }, undefined, 100);
+  assert.deepEqual(roundHugescreenPosition(point), { x: 0, y: -1 },
+    "moving the other axis must not pass negative zero to setPosition");
 });

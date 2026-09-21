@@ -13,6 +13,9 @@ Only the user changes the window size, using their window manager's controls.
   direction. Motion is amplified as the pointer approaches the screen edge and
   as more window content remains off screen in that direction. Reaching the screen
   edge reaches the corresponding window edge in one sweep, even for a large window.
+- Slow local movements use quarter-speed travel for precision. Sensitivity blends
+  progressively into full edge amplification between 120 and 900 logical pixels
+  per second. Reaching the screen edge still reaches the window edge.
 - A stationary pointer never scrolls the window. Clicks, wheel events, and ordinary
   keyboard shortcuts still reach the page. Panning stays active while holding a
   mouse button, so dragging can reach targets initially outside the screen.
