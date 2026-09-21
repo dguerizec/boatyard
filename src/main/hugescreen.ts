@@ -88,8 +88,8 @@ export function getHugescreenResizeBounds(
   bounds: Rectangle, area: Rectangle, widthMultiplier: number, heightMultiplier: number, frame = NO_FRAME_INSETS
 ): Rectangle {
   if (![widthMultiplier, heightMultiplier].every(value =>
-    typeof value === "number" && Number.isFinite(value) && value >= 0.5 && value <= 4)) {
-    throw new Error("Width and height must be between 0.5 and 4 times the screen size.");
+    typeof value === "number" && Number.isFinite(value) && value >= 1 && value <= 5)) {
+    throw new Error("Width and height must be between 1 and 5 times the screen size.");
   }
   const size = {
     ...bounds,
@@ -128,6 +128,10 @@ export class Hugescreen {
     return {
       active: this.active,
       available: this.canActivate(),
+      screenWidth: area.width,
+      screenHeight: area.height,
+      minimumWidth: 640 + frame.left + frame.right,
+      minimumHeight: 480 + frame.top + frame.bottom,
       widthMultiplier: (bounds.width + frame.left + frame.right) / area.width,
       heightMultiplier: (bounds.height + frame.top + frame.bottom) / area.height
     };

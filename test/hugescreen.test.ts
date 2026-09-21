@@ -473,15 +473,16 @@ test("screen multipliers resize outer dimensions and keep native decorations rea
     { x: 4, y: 58, width: 990, height: 664 });
   assert.deepEqual(getHugescreenResizeBounds(bounds, area, 2, 1.5, frame),
     { x: -996, y: -292, width: 1990, height: 1014 });
+  assert.equal(getHugescreenResizeBounds(bounds, area, 5, 5, frame).width, 4990);
   assert.deepEqual(bounds, original);
-  const small = getHugescreenResizeBounds(bounds, area, 0.5, 0.5, frame);
+  const small = getHugescreenResizeBounds(bounds, { x: 0, y: 0, width: 500, height: 400 }, 1, 1, frame);
   assert.equal(small.width, 640);
   assert.equal(small.height, 480);
 });
 
 test("invalid screen multipliers are rejected before resizing", () => {
   const bounds = { x: 0, y: 0, width: 1000, height: 700 };
-  for (const value of [NaN, Infinity, -1, 0, 0.49, 4.01, '2', null] as unknown[]) {
+  for (const value of [NaN, Infinity, -1, 0, 0.99, 5.01, '2', null] as unknown[]) {
     assert.throws(() => getHugescreenResizeBounds(bounds, area, value as number, 1));
     assert.throws(() => getHugescreenResizeBounds(bounds, area, 1, value as number));
   }

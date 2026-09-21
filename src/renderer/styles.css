@@ -4802,7 +4802,20 @@ textarea.form-control {
 }
 
 .hugescreen-popup::backdrop { background: transparent; }
-.hugescreen-size-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.hugescreen-size-fields { display: grid; gap: 16px; }
 .hugescreen-size-hint { margin: 0; color: var(--muted); font-size: 12px; }
 .hugescreen-error { margin: 0; color: var(--danger-text); font-size: 12px; }
 .hugescreen-popup .form-actions { justify-content: flex-end; }
+
+.hugescreen-popup .hugescreen-slider-label,
+.hugescreen-popup .hugescreen-slider-scale { display: flex; justify-content: space-between; }
+.hugescreen-slider-label output { color: var(--text); font-variant-numeric: tabular-nums; }
+.hugescreen-popup .field input[type="range"] {
+  min-height: 24px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  accent-color: var(--accent);
+  cursor: pointer;
+}

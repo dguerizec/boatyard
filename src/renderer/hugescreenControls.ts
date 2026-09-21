@@ -35,8 +35,8 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         </label>
         <p class="hugescreen-size-hint">Window size relative to the screen</p>
         <div class="hugescreen-size-fields">
-          <label class="field"><span>Width ×</span><input name="width" type="number" min="0.5" max="4" step="0.01" required disabled></label>
-          <label class="field"><span>Height ×</span><input name="height" type="number" min="0.5" max="4" step="0.01" required disabled></label>
+          <label class="field"><span class="hugescreen-slider-label">Width<output for="hugescreen-width" data-value="width">×1.00</output></span><input id="hugescreen-width" name="width" type="range" min="1" max="5" step="0.01" value="1" disabled><span class="hugescreen-slider-scale" aria-hidden="true"><span>×1</span><span>×5</span></span></label>
+          <label class="field"><span class="hugescreen-slider-label">Height<output for="hugescreen-height" data-value="height">×1.00</output></span><input id="hugescreen-height" name="height" type="range" min="1" max="5" step="0.01" value="1" disabled><span class="hugescreen-slider-scale" aria-hidden="true"><span>×1</span><span>×5</span></span></label>
         </div>
         <p class="hugescreen-size-hint" data-availability hidden>Enlarge the window to enable pan.</p>
         <p class="hugescreen-error" role="alert" hidden></p>
@@ -55,6 +55,19 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
     const cancel = form.querySelector<HTMLButtonElement>("[data-cancel]")!;
     const error = form.querySelector<HTMLElement>("[role=alert]")!;
     const availability = form.querySelector<HTMLElement>("[data-availability]")!;
+    let screenSize = { width: 0, height: 0 };
+    let minimumSize = { width: 0, height: 0 };
+    const updateValues = () => {
+      for (const input of [width, height]) {
+        const value = input.valueAsNumber.toFixed(2);
+        const axis = input.name as "width" | "height";
+        const pixels = Math.max(minimumSize[axis], Math.round(input.valueAsNumber * screenSize[axis]));
+        form.querySelector<HTMLOutputElement>(`[data-value=${input.name}]`)!.value = `×${value} · ${pixels} px`;
+        input.setAttribute("aria-valuetext", `${value} times screen ${input.name}`);
+      }
+    };
+    width.addEventListener("input", updateValues);
+    height.addEventListener("input", updateValues);
     let pending = false;
     let request = 0;
     const showError = (reason: unknown) => {
@@ -69,9 +82,12 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         update(settings.active);
         pan.disabled = pending || !settings.available;
         availability.hidden = settings.available;
+        screenSize = { width: settings.screenWidth, height: settings.screenHeight };
+        minimumSize = { width: settings.minimumWidth, height: settings.minimumHeight };
         if (initialize) {
           width.value = settings.widthMultiplier.toFixed(2);
           height.value = settings.heightMultiplier.toFixed(2);
+          updateValues();
           width.disabled = height.disabled = apply.disabled = false;
           (settings.available ? pan : width).focus();
         }

@@ -17,8 +17,8 @@ manager's controls.
 - The **Hugescreen** button keeps a fixed label and highlights while pan is active.
   Clicking it opens a popup underneath. Its **Pan** switch toggles immediately,
   like double Ctrl or **Ctrl+Shift+H**.
-- The popup offers independent **Width ×** and **Height ×** multipliers of the
-  screen work area, from 0.5 to 4. **Apply** resizes the outer window, including
+- The popup offers independent **Width** and **Height** sliders of the
+  screen work area, from 1× to 5×, with the multiplier and outer-window dimension in pixels shown live. **Apply** resizes the outer window, including
   decorations, and recalculates pan eligibility. **Cancel** discards size edits;
   it does not undo an immediate Pan switch change. Native minimum dimensions apply.
   Set both values to 1 to fit the screen. Unmaximize or leave fullscreen first.

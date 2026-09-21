@@ -225,6 +225,10 @@ export type ProjectSettingsViewsInstance = RendererModuleInstance & {
 export type HugescreenSettings = {
   active: boolean;
   available: boolean;
+  screenWidth: number;
+  screenHeight: number;
+  minimumWidth: number;
+  minimumHeight: number;
   widthMultiplier: number;
   heightMultiplier: number;
 };
