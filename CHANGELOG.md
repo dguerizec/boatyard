@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.16.1] - 2026-09-21
+
+### Summary
+
+- **v0.16.1: Beyond the Block** — Search across large files, jump directly to lines with Vim, and paste hexadecimal data across loaded sections.
+
+### Added
+
+- **Whole-file literal search** — Find text throughout large files, including unsaved edits and sections outside the current view.
+- **Vim line jumps** — Jump to a line anywhere in a large file using Vim commands.
+- **Log and JSONL highlighting** — Read logs and JSON Lines files with line-oriented syntax highlighting.
+
+### Changed
+
+- **Large-file edits** — Edits can exceed the loading block size, and growing documents can transition to section-based editing.
+- **Hexadecimal pasting** — Overwrite bytes across section boundaries in one operation, with a single undo step.
+
+### Documentation
+
+- **Large-file controls and limits** — Clarifies whole-file search, Vim line jumps, hexadecimal pasting, and remaining limits on text navigation and search.
+
 ## [0.16.0] - 2026-09-21
 
 ### Summary

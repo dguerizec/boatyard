@@ -1,6 +1,37 @@
 {
-  "generatedForVersion": "0.16.0",
+  "generatedForVersion": "0.16.1",
   "releases": [
+    {
+      "version": "0.16.1",
+      "date": "2026-09-21",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Whole-file literal search",
+          "body": "Find text throughout large files, including unsaved edits and sections outside the current view."
+        },
+        {
+          "category": "Added",
+          "title": "Vim line jumps",
+          "body": "Jump to a line anywhere in a large file using Vim commands."
+        },
+        {
+          "category": "Added",
+          "title": "Log and JSONL highlighting",
+          "body": "Read logs and JSON Lines files with line-oriented syntax highlighting."
+        },
+        {
+          "category": "Changed",
+          "title": "Large-file edits",
+          "body": "Edits can exceed the loading block size, and growing documents can transition to section-based editing."
+        },
+        {
+          "category": "Changed",
+          "title": "Hexadecimal pasting",
+          "body": "Overwrite bytes across section boundaries in one operation, with a single undo step."
+        }
+      ]
+    },
     {
       "version": "0.16.0",
       "date": "2026-09-21",
