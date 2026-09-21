@@ -1,6 +1,62 @@
 {
-  "generatedForVersion": "0.15.0",
+  "generatedForVersion": "0.16.0",
   "releases": [
+    {
+      "version": "0.16.0",
+      "date": "2026-09-21",
+      "features": [
+        {
+          "category": "Added",
+          "title": "File Editor pane",
+          "body": "Open project or external files with syntax highlighting, search, persistent tabs, and restored cursor and scroll positions."
+        },
+        {
+          "category": "Added",
+          "title": "Draft recovery and safe saves",
+          "body": "Recover unsaved edits after reloads, detect conflicting disk changes before saving, and choose whether to save or discard edits when closing tabs."
+        },
+        {
+          "category": "Added",
+          "title": "Project and worktree browsing",
+          "body": "Browse files in a resizable sidebar and switch between existing Git worktrees, with separate tabs and drafts for each root."
+        },
+        {
+          "category": "Added",
+          "title": "Live previews and images",
+          "body": "Preview Markdown, HTML, and Mermaid drafts, and view images with their dimensions and file size."
+        },
+        {
+          "category": "Added",
+          "title": "Linked editor panes",
+          "body": "Drag Preview, Hex, or Git diff controls onto another pane to share drafts and tab navigation while keeping separate views. Linked text and Hex panes also synchronize selections."
+        },
+        {
+          "category": "Added",
+          "title": "Editable Git diffs",
+          "body": "See file status and compare unsaved edits against HEAD using inline or side-by-side layouts, with change navigation, expandable deleted lines, and text-level highlights."
+        },
+        {
+          "category": "Added",
+          "title": "Hexadecimal editing",
+          "body": "Inspect and edit bytes alongside ASCII, select ranges in either column, and navigate large files with continuous scrolling."
+        },
+        {
+          "category": "Added",
+          "title": "Large-file editing",
+          "body": "Navigate and edit large text and binary files while retaining changes across sections, shared undo history, and recoverable drafts."
+        },
+        {
+          "category": "Added",
+          "title": "Vim and line wrapping",
+          "body": "Toggle Vim keybindings and line wrapping per pane or set their defaults in File Editor settings, with support for Vim save and quit commands."
+        },
+        {
+          "category": "Fixed",
+          "title": "Codex connections",
+          "body": "Boatyard now uses Codex’s own connection commands to manage MCP access, preserving unrelated settings and recovering safely from failed connection changes."
+        }
+      ]
+    },
     {
       "version": "0.15.0",
       "date": "2026-09-18",

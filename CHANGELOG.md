@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.16.0] - 2026-09-21
+
+### Summary
+
+- **v0.16.0: Files at Your Fingertips** — Edit files directly in Boatyard with persistent tabs, live previews, Git diffs, linked panes, and hexadecimal editing.
+
+### Added
+
+- **File Editor pane** — Open project or external files with syntax highlighting, search, persistent tabs, and restored cursor and scroll positions.
+- **Draft recovery and safe saves** — Recover unsaved edits after reloads, detect conflicting disk changes before saving, and choose whether to save or discard edits when closing tabs.
+- **Project and worktree browsing** — Browse files in a resizable sidebar and switch between existing Git worktrees, with separate tabs and drafts for each root.
+- **Live previews and images** — Preview Markdown, HTML, and Mermaid drafts, and view images with their dimensions and file size.
+- **Linked editor panes** — Drag Preview, Hex, or Git diff controls onto another pane to share drafts and tab navigation while keeping separate views. Linked text and Hex panes also synchronize selections.
+- **Editable Git diffs** — See file status and compare unsaved edits against HEAD using inline or side-by-side layouts, with change navigation, expandable deleted lines, and text-level highlights.
+- **Hexadecimal editing** — Inspect and edit bytes alongside ASCII, select ranges in either column, and navigate large files with continuous scrolling.
+- **Large-file editing** — Navigate and edit large text and binary files while retaining changes across sections, shared undo history, and recoverable drafts.
+- **Vim and line wrapping** — Toggle Vim keybindings and line wrapping per pane or set their defaults in File Editor settings, with support for Vim save and quit commands.
+
+### Fixed
+
+- **Codex connections** — Boatyard now uses Codex’s own connection commands to manage MCP access, preserving unrelated settings and recovering safely from failed connection changes.
+
+### Documentation
+
+- **File Editor guide** — Documents editing, previews, Git comparisons, linked panes, worktree browsing, keyboard controls, and supported file limits.
+
 ## [0.15.0] - 2026-09-18
 
 ### Summary
