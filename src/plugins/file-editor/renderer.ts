@@ -176,7 +176,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const paneId = String(props.paneId || "default");
   const vimControl = getPaneControl(container, "vim");
   const vimCompartment = new Compartment();
-  const globalConfig = (props.globalPluginConfig || {}) as { vimByDefault?: string };
+  const globalConfig = (props.globalPluginConfig || {}) as { vimByDefault?: string; wrapLinesByDefault?: string };
   let vimEnabled = globalConfig.vimByDefault === "enabled";
   try {
     const saved = localStorage.getItem(`${paneKey}:vim`);
@@ -464,8 +464,11 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const readOnly = new Compartment();
   const numbering = new Compartment();
   const wrapping = new Compartment();
-  let wrapLines = false;
-  try { wrapLines = localStorage.getItem(`${paneKey}:wrap-lines`) === "true"; } catch { /* Optional view preference. */ }
+  let wrapLines = globalConfig.wrapLinesByDefault === "enabled";
+  try {
+    const saved = localStorage.getItem(`${paneKey}:wrap-lines`);
+    if (saved === "true" || saved === "false") wrapLines = saved === "true";
+  } catch { /* Use the plugin default when pane preferences are unavailable. */ }
   const wrappingExtension = () => wrapLines ? EditorView.lineWrapping : [];
   let viewLocked = false;
   let viewFirstLine = 1;
@@ -1468,6 +1471,14 @@ registry?.register({
         defaultValue: "disabled",
         options: [{ value: "disabled", label: "Disabled" }, { value: "enabled", label: "Enabled" }],
         description: "Use Vim when opening an editor pane without a saved Vi preference. A choice made with the pane's Vi button takes precedence."
+      }, {
+        key: "wrapLinesByDefault",
+        label: "Wrap lines by default",
+        type: "select",
+        valueType: "text",
+        defaultValue: "disabled",
+        options: [{ value: "disabled", label: "Disabled" }, { value: "enabled", label: "Enabled" }],
+        description: "Wrap lines when opening an editor pane without a saved wrapping preference. A choice made with the file toolbar's Wrap lines button takes precedence."
       }]
     });
     ctx.status.set({ state: "ready", summary: "Project file editing is available" });

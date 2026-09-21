@@ -13,9 +13,10 @@ const waitFor = async (condition, message) => {
   for (let i = 0; i < 150; i++) { if (condition()) return; await new Promise(r => setTimeout(r, 20)); }
   throw new Error(message);
 };
-let pane;
+let pane, settingsSection;
+let globalPluginConfig = {};
 window.BoatyardPluginRegistry = { register(_manifest, plugin) {
-  plugin.activate({ settings: { registerGlobalSection() {} }, status: { set() {} }, panes: { register(value) { pane = value; } } });
+  plugin.activate({ settings: { registerGlobalSection(section) { settingsSection = section; } }, status: { set() {} }, panes: { register(value) { pane = value; } } });
 } };
 const originalLines = Array.from({ length: 120 }, (_, i) => `key${i} = ${i}`);
 originalLines[30] = 'long_key = "' + 'long value '.repeat(40) + '"';
@@ -43,7 +44,7 @@ const host = document.createElement('div'), header = document.createElement('div
 host.style.cssText = 'position:fixed;left:0;top:40px;width:780px;height:480px';
 document.body.append(header, host);
 const mount = () => {
-  const cleanup = pane.render(host, { project, paneId: 'test' });
+  const cleanup = pane.render(host, { project, paneId: 'test', globalPluginConfig });
   const cleanHeader = pane.renderHeaderActions(header, { host });
   return () => { cleanHeader(); cleanup(); header.replaceChildren(); };
 };
@@ -130,5 +131,25 @@ await new Promise(r => setTimeout(r, 2100));
 window.dispatchEvent(new Event('focus'));
 await waitFor(() => original().state.doc.toString().startsWith('# new HEAD'), 'HEAD refresh updates left column');
 check(current() === rightBeforeRefresh && current().state.doc.toString() === textBeforeRefresh, 'HEAD refresh preserves current editor');
+cleanup();
+check(settingsSection.fields.find(field => field.key === 'wrapLinesByDefault').defaultValue === 'disabled', 'Wrapping default is opt-in');
+localStorage.removeItem(`${key}:wrap-lines`);
+globalPluginConfig = { wrapLinesByDefault: 'enabled' };
+cleanup = mount();
+await waitFor(() => host.querySelector('.cm-mergeView') && current().lineWrapping && original().lineWrapping, 'Plugin default enables wrapping in both columns');
+check(localStorage.getItem(`${key}:wrap-lines`) === null, 'Using default does not create an override');
+wrap().click(); cleanup();
+cleanup = mount();
+await waitFor(() => host.querySelector('.cm-mergeView'), 'Remount with override');
+check(wrap().getAttribute('aria-pressed') === 'false', 'Explicit disabled wrapping overrides enabled default');
+wrap().click(); cleanup();
+globalPluginConfig = { wrapLinesByDefault: 'disabled' };
+cleanup = mount();
+await waitFor(() => host.querySelector('.cm-mergeView') && current().lineWrapping, 'Explicit enabled wrapping overrides disabled default');
+cleanup();
+localStorage.removeItem(`${key}:wrap-lines`);
+cleanup = mount();
+await waitFor(() => host.querySelector('.cm-mergeView'), 'Remount follows changed default');
+check(wrap().getAttribute('aria-pressed') === 'false', 'Pane without override follows disabled default');
 cleanup();
 window.browserTestResult = 'passed';

@@ -136,3 +136,7 @@ editor polling cycle and window focus; requests are shared between panes.
 The **Wrap lines** button beside Find toggles visual line wrapping without changing
 the file contents. The choice is remembered per pane and applies to both columns
 in side-by-side diff mode. It is available in the text editor.
+In **Settings → Plugins → File Editor**, **Wrap lines by default** starts panes
+with wrapping enabled when set to **Enabled**. The default is **Disabled**.
+An explicit choice with the toolbar button takes precedence; changes to the
+default apply when a pane is opened or recreated without a saved preference.
