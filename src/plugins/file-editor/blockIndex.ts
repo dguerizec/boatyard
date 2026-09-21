@@ -1,21 +1,22 @@
+import { DEFAULT_BLOCK_BYTES, resolveBlockBytes, type FileLoadingOptions } from "./config";
 import { readChangesDraft, type FilePatch } from "./changes";
 import { constants } from "node:fs";
 import { access, open, stat, mkdir, readFile, writeFile, rename, unlink } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { byteContent, bytesToHex, contentBytes, type ByteEncoding } from "./bytes";
-import { MAX_FILE_BYTES, resolveEditorFile, editorFilePath, type FileSnapshot } from "./service";
+import { resolveEditorFile, editorFilePath, type FileSnapshot } from "./service";
 
-export const BLOCK_BYTES = MAX_FILE_BYTES;
+export const BLOCK_BYTES = DEFAULT_BLOCK_BYTES;
 export type BlockPosition = {
   offset: number; length: number; line: number; continuation: boolean;
   characterOffset: number; characters: number; utf16Offset: number; utf16Units: number; lineBreaks: number;
 };
 type Entry = BlockPosition & { hash: string };
-type Index = { version: 2; signature: string; size: number; revision: string; binary: boolean; blocks: Entry[] };
+type Index = { version: 3; blockBytes: number; signature: string; size: number; revision: string; binary: boolean; blocks: Entry[] };
 export type FileBlock = BlockPosition & {
   index: number; count: number; size: number; totalCharacters: number; totalUtf16Units: number; totalLines: number;
-  positions: BlockPosition[];
+  positions: BlockPosition[]; blockBytes?: number;
 };
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const signature = (value: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bigint }) =>
@@ -25,7 +26,8 @@ const signature = (value: { dev: bigint; ino: bigint; size: bigint; mtimeNs: big
 export class ProjectFileIndex {
   private indexes = new Map<string, Index>();
   private pending = new Map<string, Promise<Index>>();
-  constructor(private cacheDirectory?: string) {}
+  readonly blockBytes: number;
+  constructor(private cacheDirectory?: string, options: FileLoadingOptions = {}) { this.blockBytes = resolveBlockBytes(options); }
   private cachePath(path: string) { return this.cacheDirectory && join(this.cacheDirectory, `${digest(Buffer.from(path))}.json`); }
   private remember(path: string, index: Index) {
     this.indexes.delete(path);
@@ -33,11 +35,11 @@ export class ProjectFileIndex {
     while (this.indexes.size > 64) this.indexes.delete(this.indexes.keys().next().value!);
   }
   private valid(value: Index, expected: string): boolean {
-    if (!value || value.version !== 2 || value.signature !== expected || !Number.isSafeInteger(value.size) || value.size < 0
+    if (!value || value.version !== 3 || value.blockBytes !== this.blockBytes || value.signature !== expected || !Number.isSafeInteger(value.size) || value.size < 0
       || typeof value.binary !== "boolean" || !/^[a-f0-9]{64}$/.test(value.revision) || !Array.isArray(value.blocks) || !value.blocks.length) return false;
     let end = 0, characters = 0, units = 0, line = 1;
     for (const block of value.blocks) {
-      if (block.offset !== end || !Number.isSafeInteger(block.length) || block.length < 0 || block.length > BLOCK_BYTES
+      if (block.offset !== end || !Number.isSafeInteger(block.length) || block.length < 0 || block.length > this.blockBytes
         || (block.length === 0 && value.size !== 0) || !Number.isSafeInteger(block.line) || block.line < 1
         || block.characterOffset !== characters || block.utf16Offset !== units || block.line !== line
         || ![block.characters, block.utf16Units, block.lineBreaks].every((count) => Number.isSafeInteger(count) && count >= 0)
@@ -69,7 +71,7 @@ export class ProjectFileIndex {
         const before = await file.stat({ bigint: true });
         if (!before.isFile() || signature(before) !== expected) throw new Error("The file changed while indexing. Open it again.");
         const size = Number(before.size);
-        const buffer = Buffer.alloc(BLOCK_BYTES + 4);
+        const buffer = Buffer.alloc(this.blockBytes + 4);
         const hash = createHash("sha256");
         const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
         const blocks: Entry[] = [];
@@ -82,7 +84,7 @@ export class ProjectFileIndex {
             if (!bytesRead) throw new Error("The file changed while indexing. Open it again.");
             received += bytesRead;
           }
-          let length = Math.min(BLOCK_BYTES, received);
+          let length = Math.min(this.blockBytes, received);
           if (offset + length < size) {
             // Avoid splitting UTF-8 code points or CRLF, including very long lines.
             let boundary = length;
@@ -120,7 +122,7 @@ export class ProjectFileIndex {
         if (signature(await file.stat({ bigint: true })) !== expected || signature(await stat(path, { bigint: true })) !== expected) {
           throw new Error("The file changed while indexing. Open it again.");
         }
-        const index: Index = { version: 2, signature: expected, size, revision: hash.digest("hex"), binary, blocks };
+        const index: Index = { version: 3, blockBytes: this.blockBytes, signature: expected, size, revision: hash.digest("hex"), binary, blocks };
         this.remember(path, index);
         if (cachePath) {
           const temporary = `${cachePath}.${randomUUID()}.tmp`;
@@ -173,16 +175,15 @@ export class ProjectFileIndex {
         totalCharacters: index.blocks.reduce((sum, entry) => sum + entry.characters, 0),
         totalUtf16Units: index.blocks.reduce((sum, entry) => sum + entry.utf16Units, 0),
         totalLines: 1 + index.blocks.reduce((sum, entry) => sum + entry.lineBreaks, 0),
-        positions
+        positions, blockBytes: this.blockBytes
       } } : {})
     };
   }
 
   async save(root: string, path: string, blockIndex: number, revision: string, text: string, encoding?: ByteEncoding): Promise<FileSnapshot> {
-    if (!Number.isSafeInteger(blockIndex) || blockIndex < 0 || typeof text !== "string" || text.length > BLOCK_BYTES * 4
+    if (!Number.isSafeInteger(blockIndex) || blockIndex < 0 || typeof text !== "string"
       || (encoding !== undefined && encoding !== "hex")) throw new Error("Invalid block edit.");
     const replacement = contentBytes({ text, encoding });
-    if (replacement.length > BLOCK_BYTES * 2) throw new Error("An edited block can contain at most 4 MiB. Save before adding more text.");
     const target = resolveEditorFile(root, path);
     const index = await this.get(target);
     const block = index.blocks[blockIndex];
@@ -236,7 +237,7 @@ export class ProjectFileIndex {
       try {
         await output.chmod(Number(before.mode & 0o777n));
         const hash = createHash("sha256");
-        const buffer = Buffer.alloc(BLOCK_BYTES);
+        const buffer = Buffer.alloc(this.blockBytes);
         async function writeAll(bytes: Uint8Array) {
           let written = 0;
           while (written < bytes.length) {

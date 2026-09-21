@@ -228,3 +228,6 @@
 .file-browser-root-label { position: absolute; inset: 0 20px 0 0; display: block; align-content: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; pointer-events: none; }
 .file-browser-root-control::after { content: "▾"; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text); }
 .file-browser-root option { background: var(--panel); color: var(--text); }
+.file-editor-paged-search[hidden] { display: none; }
+.file-editor-paged-search label { display: inline-flex; align-items: center; gap: 5px; }
+.file-editor-paged-search input[type="checkbox"] { flex: none; min-width: 0; }

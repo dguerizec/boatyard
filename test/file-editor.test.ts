@@ -60,7 +60,7 @@ test("editor rejects binary, invalid UTF-8, oversized, directory and hard-linked
   const f = fixture();
   try {
     const path = join(f.root, "file.ts");
-    for (const [data, error] of [[Buffer.from([0]), /Binary/], [Buffer.from([255]), /UTF-8/], [Buffer.alloc(MAX_FILE_BYTES + 1, 65), /2 MiB/]] as const) {
+    for (const [data, error] of [[Buffer.from([0]), /Binary/], [Buffer.from([255]), /UTF-8/], [Buffer.alloc(MAX_FILE_BYTES + 1, 65), new RegExp(`${MAX_FILE_BYTES / 1024 / 1024} MiB`)]] as const) {
       writeFileSync(path, data);
       assert.throws(() => readProjectFile(f.root, "file.ts"), error);
     }

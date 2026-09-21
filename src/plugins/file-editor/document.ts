@@ -22,7 +22,7 @@ export class EditorDocument {
   private refreshPending: Promise<void> | null = null;
   readonly listeners = new Set<() => void>();
 
-  constructor(snapshot: FileSnapshot, private access: FileAccess, draft?: EditorDraft, readonly changes?: FileChanges) {
+  constructor(snapshot: FileSnapshot, private access: FileAccess, draft?: EditorDraft, public changes?: FileChanges) {
     this.disk = snapshot;
     this.base = draft ? { block: draft.block, path: snapshot.path, text: draft.baseText, encoding: draft.baseEncoding, revision: draft.revision } : snapshot;
     this.text = draft?.text ?? snapshot.text;
@@ -99,6 +99,7 @@ export class EditorDocument {
         this.encoding = snapshot.encoding;
       }
       this.disk = snapshot;
+      if (snapshot.block && !this.changes && !this.dirty) { this.changes = new FileChanges(snapshot); this.connectChanges(); }
       this.error = "";
       this.applyChanges();
     } catch (error) {
@@ -126,13 +127,14 @@ export class EditorDocument {
       const snapshot = this.changes && this.access.saveChanges
         ? await this.access.saveChanges(this.base.path, this.changes.revision, this.changes.edits)
         : await this.access.save(this.base.path, text, this.base.revision, encoding);
-      if (this.base.block) {
+      if (snapshot.block) {
         // Reindexing may pull adjacent bytes into this block after a size change.
         this.text = snapshot.text;
         this.encoding = snapshot.encoding;
       }
       this.base = snapshot;
       this.disk = snapshot;
+      if (snapshot.block && !this.changes) { this.changes = new FileChanges(snapshot); this.connectChanges(); }
       this.changes?.reset(snapshot);
       // Keep edits made while the save was in flight.
     } catch (error) {

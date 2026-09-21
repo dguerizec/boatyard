@@ -1,3 +1,4 @@
+import { MAX_FILE_BYTES } from "../src/plugins/file-editor/service";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { mkdtemp, writeFile, rm, mkdir, rename } from "node:fs/promises";
@@ -48,7 +49,7 @@ test("Git handles unborn repositories, subdirectory projects, external files, an
     assert.equal((await editorGitBaseline(f.root, "nested/new.txt")).text, "");
     assert.deepEqual((await editorGitStatus(join(f.root, "nested"))).changes.map((entry) => entry.path), ["new.txt"]);
     await writeFile(join(f.root, "binary"), Buffer.from([0, 255]));
-    await writeFile(join(f.root, "large"), Buffer.alloc(2 * 1024 * 1024 + 1, 97));
+    await writeFile(join(f.root, "large"), Buffer.alloc(MAX_FILE_BYTES + 1, 97));
     f.git("add", "nested/new.txt", "binary", "large"); f.git("commit", "-m", "test: create fixture", "-m", "Create baseline limits.");
     assert.equal((await editorGitBaseline(join(f.root, "nested"), join(f.root, "binary"))).available, false);
     assert.match((await editorGitBaseline(f.root, "large")).reason!, /larger than/);

@@ -1,3 +1,7 @@
+import { createPagedSearch } from "./pagedSearch";
+import { editorLineSeparator, editorText, findInFile, lineInFile, type PagedTextSource, type TextMatch, type TextPoint } from "./pagedText";
+import { pasteFileBytes } from "./hexPaste";
+import { DEFAULT_BLOCK_BYTES, LEGACY_BLOCK_BYTES } from "./config";
 import { TextBytePositions, type ByteSelection } from "./selection";
 import { FileTabs, createFileTabs } from "./tabs";
 import type { EditorRoot } from "./roots";
@@ -6,7 +10,7 @@ import { createGitView } from "./gitView";
 import { cachedGit } from "./gitCache";
 import type { GitBaseline, EditorGitStatus } from "./git";
 import { FileChanges, readChangesDraft } from "./changes";
-import { contentBytes } from "./bytes";
+import { byteContent, contentBytes } from "./bytes";
 import { createBlockNavigation } from "./blockNavigation";
 import { createHexView } from "./hexView";
 import { imageMimeType, type ImageSnapshot } from "./imageTypes";
@@ -207,8 +211,21 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   const previewControl = getPaneControl(container, "preview");
   previewControl.enabled = false;
   const project = (props.project || {}) as { id: string; sourcePath: string };
-  const invoke = <T = FileSnapshot | null>(action: string, projectId: string, payload: Record<string, unknown> = {}) =>
-    invokeAction<T>(action, projectId, { ...payload, root: project.sourcePath });
+  const invoke = <T = FileSnapshot | null>(action: string, projectId: string, payload: Record<string, unknown> = {}) => {
+    let blockBytes: number | undefined;
+    const fileKey = changesKey(String(payload.path || ""));
+    const changes = changesets.get(fileKey);
+    if (changes) blockBytes = changes.blockBytes;
+    else try {
+      const saved = readChangesDraft(JSON.parse(localStorage.getItem(fileKey) || "null"));
+      if (saved) blockBytes = saved.blockBytes ?? LEGACY_BLOCK_BYTES;
+      else for (const key of Object.keys(localStorage).filter((key) => key.startsWith(`${prefix}block-draft:`))) {
+        const legacy = readDraft(key);
+        if (legacy && legacy.path === payload.path && legacy.block) { blockBytes = legacy.block.blockBytes ?? LEGACY_BLOCK_BYTES; break; }
+      }
+    } catch { /* Invalid drafts are handled when opening the file. */ }
+    return invokeAction<T>(action, projectId, { blockBytes, ...payload, root: project.sourcePath });
+  };
   const prefix = `boatyard:file-editor:${JSON.stringify([project.id, project.sourcePath])}:`;
   const paneKey = `${prefix}pane:${String(props.paneId || "default")}`;
   const paneId = String(props.paneId || "default");
@@ -228,6 +245,11 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       if (path) queueMicrotask(() => { void closeTab(path, mode).catch(showError); });
     },
     history: doc?.changes ? (forward) => { void historyChanges(forward); } : undefined,
+    jump: doc?.base.block ? (line, relative) => { queueMicrotask(() => { void jumpToLine(line, relative); }); } : undefined,
+    search: doc?.base.block ? (backward, repeat) => {
+      if (!repeat) { vimSearchActive = true; vimSearchBackward = backward; pagedSearch.open(); syncFindButton(); }
+      else void findPaged(backward ? !vimSearchBackward : vimSearchBackward);
+    } : undefined,
     error: showError
   }) : [];
   const toggleVim = () => {
@@ -465,6 +487,9 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       revision: `${revision}:${current.changes?.version ?? sizeDelta}`, initialOffset,
       history: current.changes ? (forward) => historyChanges(forward) : undefined,
       canUndo: current.changes?.canUndo, canRedo: current.changes?.canRedo,
+      paste: current.changes ? (offset, replacement) => pasteFileBytes(current.changes!, current.base, offset, replacement,
+        async (index) => (await invoke("read", project.id, { path, block: index }))!,
+        () => !disposed && doc === current && !opening && !previewVisible && !current.locked) : undefined,
       scrolled: (offset) => {
         try { localStorage.setItem(`${paneKey}:hex-position:${path}`, String(offset)); } catch { /* Editing remains available. */ }
       },
@@ -509,6 +534,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   } catch { /* Use the plugin default when pane preferences are unavailable. */ }
   const wrappingExtension = () => wrapLines ? EditorView.lineWrapping : [];
   let viewLocked = false;
+  let viewPaged = false;
   let viewFirstLine = 1;
   const editorTheme = () => document.documentElement.dataset.theme === "light" ? [] : oneDark;
   const editorAppearance = EditorView.theme({ "&": { height: "100%", backgroundColor: "var(--panel)" }, ".cm-scroller": { overflow: "auto", fontFamily: "monospace" } });
@@ -696,9 +722,10 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     hexControl.open = hexMode && !previewVisible;
     syncPaneControl(hexControl);
     findButton.disabled = !view || previewVisible;
+    if (previewVisible || hexMode || !doc?.base.block) pagedSearch.close();
     wrapButton.disabled = !view || previewVisible || hexMode;
     if (view) view.dispatch({ effects: [
-      readOnly.reconfigure(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath) || Boolean(doc?.locked && doc.base.block))),
+      readOnly.reconfigure(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath) || Boolean(doc?.locked))),
       editable.reconfigure(EditorView.editable.of(!previewVisible && !deletedGitPath && !doc?.locked))
     ] });
     if (hexMode && doc) updateHexView();
@@ -844,13 +871,87 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   const saveButton = button("Save", () => { if (doc) void doc.save(); });
   saveButton.title = "Save (Ctrl/Cmd+S)";
   saveButton.disabled = true;
+  let textOperation = 0;
+  let vimSearchBackward = false;
+  let vimSearchActive = false;
+  const pagedSearch = createPagedSearch((backward) => { void findPaged(backward ?? vimSearchBackward); },
+    () => { textOperation++; }, () => { syncFindButton(); view?.focus(); });
+  function syncFindButton() { findButton.setAttribute("aria-pressed", String(pagedSearch.visible || Boolean(view && searchPanelOpen(view.state)))); }
+  function openFind() {
+    if (!view) return false;
+    if (doc?.base.block && !hexMode) { vimSearchActive = false; vimSearchBackward = false; pagedSearch.open(); syncFindButton(); return true; }
+    openSearchPanel(view); return true;
+  }
   const findButton = button("Find", () => {
     if (!view) return;
+    if (doc?.base.block && !hexMode) {
+      if (pagedSearch.visible) pagedSearch.close(); else openFind();
+      return;
+    }
     if (searchPanelOpen(view.state)) closeSearchPanel(view);
     else openSearchPanel(view);
   });
   findButton.setAttribute("aria-pressed", "false");
   findButton.disabled = true;
+  function textSource(operation: number): PagedTextSource {
+    const current = doc!;
+    const changes = current.changes;
+    const version = changes?.version, revision = current.base.revision, path = current.base.path;
+    const valid = () => !disposed && textOperation === operation && doc === current && doc?.base.path === path &&
+      doc.base.revision === revision && doc.changes === changes && changes?.version === version && !doc.conflict && !doc.locked;
+    return {
+      count: current.base.block!.count, lines: currentBlock()!.positions, valid,
+      read: async (index) => {
+        if (!valid()) throw new Error("The document changed. Try the operation again.");
+        if (index === current.base.block!.index) return editorText(current.text, index);
+        const snapshot = (await invoke("read", project.id, { path, block: index }))!;
+        if (!valid() || snapshot.revision !== revision) throw new Error("The file changed during navigation. Try again.");
+        const content = changes ? byteContent(changes.apply(snapshot)) : snapshot;
+        if (content.encoding === "hex") throw new Error("Text search and line navigation require UTF-8 text.");
+        return editorText(content.text, index);
+      }
+    };
+  }
+  async function revealText(point: TextPoint, operation: number, match?: TextMatch, firstNonblank = false) {
+    const path = doc!.base.path, revision = doc!.base.revision, changes = doc!.changes, version = changes?.version;
+    if (point.block !== doc?.base.block?.index) await openFile(path, undefined, point.block);
+    if (disposed || operation !== textOperation || doc?.base.path !== path || doc.base.block?.index !== point.block || !view || doc.base.revision !== revision || doc.changes !== changes || changes?.version !== version) return;
+    let from = Math.min(point.offset, view.state.doc.length);
+    if (firstNonblank) {
+      const line = view.state.doc.lineAt(from);
+      from = line.from + (line.text.match(/^\s*/)?.[0].length ?? 0);
+    }
+    const to = match ? (match.to.block === point.block ? Math.min(match.to.offset, view.state.doc.length) : view.state.doc.length) : from;
+    view.dispatch({ selection: { anchor: from, head: vimSearchActive ? from : to }, effects: EditorView.scrollIntoView(from, { y: "center" }) });
+    if (!pagedSearch.visible || vimSearchActive) view.focus();
+    else pagedSearch.input.focus();
+  }
+  async function findPaged(backward = false) {
+    if (!doc?.base.block || !view || previewVisible || hexMode || opening || !pagedSearch.input.value) return;
+    const operation = ++textOperation;
+    const origin = { block: doc.base.block.index, offset: backward ? view.state.selection.main.from : view.state.selection.main.to + (vimSearchActive ? 1 : 0) };
+    const source = textSource(operation);
+    pagedSearch.status.textContent = "Searching…";
+    try {
+      const match = await findInFile(source, pagedSearch.input.value, origin, backward, pagedSearch.matchCase.checked);
+      if (!source.valid()) return;
+      if (match) await revealText(match.from, operation, match);
+      if (textOperation === operation) pagedSearch.status.textContent = match
+        ? (match.from.block === match.to.block ? "Match found" : "Match continues in the next text section") : "No matches";
+    } catch (error) { if (textOperation === operation) pagedSearch.status.textContent = error instanceof Error ? error.message : String(error); }
+  }
+  async function jumpToLine(line: number, relative = false) {
+    if (!doc?.base.block || !view || opening || previewVisible || hexMode) return;
+    const operation = ++textOperation;
+    const block = currentBlock()!;
+    const currentLine = block.line + view.state.doc.lineAt(view.state.selection.main.head).number - 1;
+    const target = Math.max(1, Math.min(block.totalLines, relative ? currentLine + line : line));
+    const source = textSource(operation);
+    try {
+      const point = await lineInFile(source, target);
+      if (source.valid()) await revealText(point, operation, undefined, true);
+    } catch (error) { if (textOperation === operation) showError(error); }
+  }
   const wrapButton = button("Wrap lines", () => {
     wrapLines = !wrapLines;
     try { localStorage.setItem(`${paneKey}:wrap-lines`, String(wrapLines)); } catch { /* Optional view preference. */ }
@@ -885,12 +986,16 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
 
   function refreshUi() {
     if (!doc || disposed || deletedGitPath) return;
+    if (doc.changes) changesets.set(changesKey(doc.base.path), doc.changes);
+    if (view && viewPaged !== Boolean(doc.base.block)) {
+      rebuild(false); return;
+    }
     scheduleGitView();
     persist();
     updateTabs();
     editorHost.classList.toggle("file-editor-paged", Boolean(doc.base.block));
     blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !diffMode, opening || doc.saving || Boolean(doc.changes?.saving));
-    const locked = previewVisible || Boolean(doc.locked && doc.base.block);
+    const locked = previewVisible || doc.locked;
     const firstLine = currentBlock()?.line ?? 1;
     if (view && (viewLocked !== locked || viewFirstLine !== firstLine)) {
       viewLocked = locked; viewFirstLine = firstLine;
@@ -915,7 +1020,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       syncing = true;
       const selection = view.state.selection.main;
       const text = doc.text.slice(bom.length);
-      const separator = doc.text.includes("\r\n") ? "\r\n" : "\n";
+      const separator = editorLineSeparator(doc.text);
       const length = text.split(separator).join("\n").length;
       const scrollTop = view.scrollDOM.scrollTop;
       if (view.state.lineBreak !== separator) view.dispatch({ effects: lineSeparator.reconfigure(EditorState.lineSeparator.of(separator)) });
@@ -953,16 +1058,26 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     }
     bom = (!doc.base.block?.offset && doc.text.startsWith("\uFEFF")) ? "\uFEFF" : "";
     viewLocked = false;
+    viewPaged = Boolean(doc.base.block);
     viewFirstLine = currentBlock()?.line ?? 1;
     surface = createEditorSurface(editorHost, {
         doc: doc.text.slice(bom.length),
-        extensions: [vimCompartment.of(vimExtension()), basicSetup, wrapping.of(wrappingExtension()), gitView.extension, theme.of(editorTheme()), doc.base.block ? [] : language(doc.base.path),
+        extensions: [doc.base.block ? Prec.highest(EditorView.domEventHandlers({ keydown(event) {
+          if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "f") {
+            event.preventDefault(); return openFind();
+          }
+          return false;
+        } })) : [], vimCompartment.of(vimExtension()), basicSetup, wrapping.of(wrappingExtension()), gitView.extension, theme.of(editorTheme()), language(doc.base.path, doc.base.block),
           readOnly.of(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath))),
           editable.of(EditorView.editable.of(!deletedGitPath)),
           numbering.of(lineNumbers({ formatNumber: (number) => String(number + viewFirstLine - 1) })),
-          lineSeparator.of(EditorState.lineSeparator.of(doc.text.includes("\r\n") ? "\r\n" : "\n")),
+          lineSeparator.of(EditorState.lineSeparator.of(editorLineSeparator(doc.text))),
           EditorView.contentAttributes.of({ "aria-label": "File contents" }),
           editorAppearance,
+          Prec.highest(keymap.of(doc.base.block ? [
+            { key: "F3", run: () => { void findPaged(); return true; } },
+            { key: "Shift-F3", run: () => { void findPaged(true); return true; } }
+          ] : [])),
           Prec.highest(keymap.of(doc.changes ? [
             { key: "Mod-z", run: () => { void historyChanges(false); return true; } },
             { key: "Mod-Shift-z", run: () => { void historyChanges(true); return true; } },
@@ -975,7 +1090,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
           } }),
           EditorView.updateListener.of((update) => {
             if (update.selectionSet || update.docChanged) schedulePosition();
-            findButton.setAttribute("aria-pressed", String(searchPanelOpen(update.state)));
+            syncFindButton();
             if (update.docChanged && !syncing) doc?.edit(bom + update.state.sliceDoc());
             if ((update.selectionSet || update.docChanged) && !syncing && !hexMode && view?.hasFocus && doc) {
               const positions = positionsFor(doc), selection = update.state.selection.main;
@@ -998,7 +1113,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     previewControl.enabled = true;
     setPreview(previewVisible, focus);
     if (previewVisible) restoringPosition = false;
-    findButton.setAttribute("aria-pressed", String(searchPanelOpen(view.state)));
+    syncFindButton();
     refreshUi();
   }
 
@@ -1008,6 +1123,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     persist();
     if (persistenceError && doc?.dirty) { showError(persistenceError); return; }
     const navigationVersion = linkVersion;
+    if (doc?.base.path !== path) { textOperation++; pagedSearch.close(); }
     opening = true;
     updateTabs();
     status.textContent = "Indexing and opening file…";
@@ -1016,7 +1132,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       if (imageMimeType(path) && (!hexMode || previewVisible) && requestedBlock === undefined) {
         const image = await invoke<ImageSnapshot>("readImage", project.id, { path });
         if (disposed || (navigationVersion !== linkVersion)) return;
-        if (image.size > 2 * 1024 * 1024) {
+        if (image.size > DEFAULT_BLOCK_BYTES) {
           rememberPosition();
           unsubscribe?.(); unsubscribe = undefined;
           doc = undefined;
@@ -1177,6 +1293,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   }
 
   function clearFile() {
+    pagedSearch.close();
     unsubscribe?.(); unsubscribe = undefined; destroyView();
     doc = undefined; openedImage = undefined; deletedGitPath = "";
     previewVersion++; clearTimeout(previewTimer); previewPendingSource = ""; previewSource = "";
@@ -1339,7 +1456,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   const content = element("div", "file-editor-content");
   content.append(editorHost, hexHost, previewFrame, imageHost, blockNavigation.rail);
   blockNavigation.update(undefined, false, false);
-  browserLayout.viewport.append(fileActions, notices, compare, blockNavigation.toolbar, content);
+  browserLayout.viewport.append(fileActions, pagedSearch.dom, notices, compare, blockNavigation.toolbar, content);
   const browserControl = getPaneControl(container, "browse");
   browserControl.open = browserState.open;
   browserControl.enabled = true;

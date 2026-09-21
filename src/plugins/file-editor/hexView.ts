@@ -8,6 +8,7 @@ export type HexSource = {
   revision: string;
   initialOffset?: number;
   history?(forward: boolean): Promise<void>;
+  paste?(offset: number, bytes: Uint8Array): Promise<void>;
   canUndo?: boolean;
   canRedo?: boolean;
   selected?(selection: ByteSelection): void;
@@ -216,10 +217,13 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
           input.addEventListener("paste", (event) => {
             event.preventDefault();
             const value = (event.clipboardData?.getData("text") || "").replace(/\s+/g, "");
-            if (!active(index) || !/^(?:[\da-f]{2})+$/i.test(value) || value.length / 2 > baseOffset + bytes.length - index) {
-              input.setCustomValidity("Paste complete hexadecimal byte pairs that fit inside the loaded edit block."); input.reportValidity(); return;
+            if (disabled || !/^(?:[\da-f]{2})+$/i.test(value) || value.length / 2 > size - index) {
+              input.setCustomValidity("Paste complete hexadecimal byte pairs that fit inside the file."); input.reportValidity(); return;
             }
-            input.setCustomValidity(""); edit(index, Uint8Array.from(value.match(/../g)!, (pair) => parseInt(pair, 16)));
+            input.setCustomValidity("");
+            const replacement = Uint8Array.from(value.match(/../g)!, (pair) => parseInt(pair, 16));
+            if (source?.paste) void source.paste(index, replacement).catch((error) => source?.error(error));
+            else edit(index, replacement);
           });
           input.addEventListener("keydown", (event) => {
             const directions: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -16, ArrowDown: 16, PageUp: -geometry.visible * 16, PageDown: geometry.visible * 16 };

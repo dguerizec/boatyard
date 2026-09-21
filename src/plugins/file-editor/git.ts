@@ -83,7 +83,7 @@ export async function editorGitBaseline(root: string, file: string): Promise<Git
   if (!entry) return { available: true, text: "", revision, deleted, label: "HEAD (new file)" };
   const match = entry.match(/^\d+ blob ([a-f\d]+)\s+(\d+)\t/);
   if (!match) return unavailable("Git diff is available for regular text files only.");
-  if (Number(match[2]) > MAX_FILE_BYTES) return unavailable("The HEAD version is larger than 2 MiB. Git diff currently requires a complete text file.");
+  if (Number(match[2]) > MAX_FILE_BYTES) return unavailable(`The HEAD version is larger than ${MAX_FILE_BYTES / 1024 / 1024} MiB. Git diff currently requires a complete text file.`);
   const content = byteContent(await git(repo, ["cat-file", "blob", match[1]]));
   if (content.encoding === "hex") return unavailable("The HEAD version is binary. Use Hex mode to inspect the current file.");
   return { available: true, text: content.text, revision, deleted, label: originalPath === path ? "HEAD" : `HEAD · ${originalPath}` };

@@ -1,3 +1,4 @@
+import { DEFAULT_BLOCK_BYTES } from "./config";
 import type { FileBlock } from "./blockIndex";
 import { byteContent, contentBytes, type ByteEncoding } from "./bytes";
 import { imageMimeType, type ImageSnapshot } from "./imageTypes";
@@ -5,7 +6,7 @@ import { constants, accessSync, closeSync, existsSync, fstatSync, fchmodSync, op
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 
-export const MAX_FILE_BYTES = 2 * 1024 * 1024;
+export const MAX_FILE_BYTES = DEFAULT_BLOCK_BYTES;
 export type FileSnapshot = { path: string; text: string; revision: string; encoding?: ByteEncoding; block?: FileBlock };
 
 export function resolveProjectFile(root: string, file: string): string {
@@ -74,29 +75,29 @@ export function readProjectFile(root: string, file: string): FileSnapshot {
   return { path: editorFilePath(root, target), text, revision: createHash("sha256").update(bytes).digest("hex") };
 }
 
-export function readProjectEditableFile(root: string, file: string): FileSnapshot {
+export function readProjectEditableFile(root: string, file: string, limit = MAX_FILE_BYTES): FileSnapshot {
   const target = resolveEditorFile(root, file);
-  const bytes = readFileBytes(target, MAX_FILE_BYTES);
+  const bytes = readFileBytes(target, limit);
   return { path: editorFilePath(root, target), ...byteContent(bytes), revision: createHash("sha256").update(bytes).digest("hex") };
 }
 
 export function saveProjectFile(root: string, file: string, text: string, revision: string): FileSnapshot {
   if (typeof text !== "string" || Buffer.byteLength(text, "utf8") > MAX_FILE_BYTES || text.includes("\0")) {
-    throw new Error("Save requires a UTF-8 text file of at most 2 MiB.");
+    throw new Error(`Save requires a UTF-8 text file of at most ${MAX_FILE_BYTES / 1024 / 1024} MiB.`);
   }
   // Preserve the text-only API contract for callers that do not request byte editing.
   readProjectFile(root, file);
   return saveProjectBytes(root, file, text, revision);
 }
 
-export function saveProjectBytes(root: string, file: string, text: string, revision: string, encoding?: ByteEncoding): FileSnapshot {
-  if (typeof text !== "string" || text.length > MAX_FILE_BYTES * 2 || (encoding !== undefined && encoding !== "hex")) {
-    throw new Error("Save requires a file of at most 2 MiB.");
+export function saveProjectBytes(root: string, file: string, text: string, revision: string, encoding?: ByteEncoding, limit = MAX_FILE_BYTES): FileSnapshot {
+  if (typeof text !== "string" || text.length > limit * 2 || (encoding !== undefined && encoding !== "hex")) {
+    throw new Error(`Save requires a file of at most ${limit / 1024 / 1024} MiB.`);
   }
   const bytes = contentBytes({ text, encoding });
-  if (bytes.length > MAX_FILE_BYTES) throw new Error("Files larger than 2 MiB are not supported.");
+  if (bytes.length > limit) throw new Error(`Files larger than ${limit / 1024 / 1024} MiB are not supported.`);
   const target = resolveEditorFile(root, file);
-  const current = readProjectEditableFile(root, file);
+  const current = readProjectEditableFile(root, file, limit);
   if (current.revision !== revision) throw new Error("The file changed on disk. Compare or reload it before saving.");
   const stats = statSync(target);
   if (stats.nlink > 1) throw new Error("Saving files with multiple hard links is not supported.");
@@ -111,11 +112,11 @@ export function saveProjectBytes(root: string, file: string, text: string, revis
     } finally {
       closeSync(descriptor);
     }
-    if (resolveEditorFile(root, file) !== target || readProjectEditableFile(root, file).revision !== revision) {
+    if (resolveEditorFile(root, file) !== target || readProjectEditableFile(root, file, limit).revision !== revision) {
       throw new Error("The file changed on disk. Compare or reload it before saving.");
     }
     renameSync(temporary, target);
-    return readProjectEditableFile(root, file);
+    return readProjectEditableFile(root, file, limit);
   } finally {
     if (existsSync(temporary)) unlinkSync(temporary);
   }

@@ -37,3 +37,18 @@ test("Docker build filenames enable instruction highlighting without treating pa
     assert.deepEqual(tokens(path, doc), {}, path);
   }
 });
+
+test("paged highlighting is line-oriented and skips a continued first fragment", () => {
+  const doc = '"partial string\n{"level":"INFO","count":42}\n';
+  const state = EditorState.create({ doc, extensions: [language("events.jsonl", { continuation: true })] });
+  const ranges: { name: string; from: number; text: string }[] = [];
+  syntaxTree(state).iterate({ enter(node) {
+    if (node.name !== "Document") ranges.push({ name: node.name, from: node.from, text: doc.slice(node.from, node.to) });
+  } });
+  assert.ok(ranges.length > 0);
+  assert.ok(ranges.every(range => range.from >= doc.indexOf("\n") + 1));
+  assert.ok(ranges.some(range => range.text === "42"));
+  assert.deepEqual(language("nested.json", { continuation: false }), []);
+  assert.deepEqual(language("module.ts", { continuation: false }), []);
+  assert.ok(Object.keys(tokens("app.log", "2026-09-21 INFO connected\nERROR failed")).length > 0);
+});

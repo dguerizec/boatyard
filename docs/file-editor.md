@@ -61,14 +61,19 @@ These commands close a file tab, not the pane or application. Closing the last
 file leaves an empty pane. Close commands do not accept ranges or filenames;
 `:wq!` is unsupported and cannot bypass conflict checks.
 
-For paged files, Vim motions and searches operate on the loaded block;
-undo/redo uses the shared file-wide history and saving writes all modified blocks.
+For paged files, `gg`, `G`, `12345G`, and `:12345` address logical lines across the
+whole file, including unsaved edits. Counted Enter moves forward by that many
+logical lines across sections. `/`, `?`, `n`, and `N` use whole-file literal
+search. Contextual motions such as `%`, ordinary navigation, visual selections,
+and editing operators remain local to the loaded section; combining the global
+line jumps with an operator or visual selection is unsupported. Undo/redo uses
+the shared file-wide history and saving writes all modified sections.
 
 ## Saving and disk changes
 
 Visible documents are checked for disk changes every three seconds and when the window regains focus. Clean documents reload automatically. Dirty documents retain the draft and display the disk version for comparison. Choose **Use disk version** to discard the draft after confirmation, or **Keep my version** to accept the compared disk revision before explicitly saving your draft. Every save checks the revision again, including after conflict resolution. A deleted or inaccessible file leaves the draft available; saving requires the file to exist and be writable again.
 
-Existing files inside or outside the project can be edited using text or Hex mode. Files larger than 2 MiB are loaded in indexed blocks. It preserves a UTF-8 BOM, uniform LF/CRLF line endings, and file permission bits. Mixed line endings may be normalized on editing. Relative paths and browser entries stay inside the project; external files selected in the native picker retain their absolute paths. External paths are preserved in drafts, linked panes, and restored views. Symlinks opened through an absolute path resolve to their canonical target; files with multiple hard links cannot be saved. Saves use a temporary sibling and rename, with content checks before replacement; this is optimistic conflict detection, not a filesystem lock against other applications. It does not yet provide file creation or language-server completion.
+Existing files inside or outside the project can be edited using text or Hex mode. Files larger than 5 MiB are loaded in indexed blocks. It preserves a UTF-8 BOM, uniform LF/CRLF line endings, and file permission bits. Mixed line endings may be normalized on editing. Relative paths and browser entries stay inside the project; external files selected in the native picker retain their absolute paths. External paths are preserved in drafts, linked panes, and restored views. Symlinks opened through an absolute path resolve to their canonical target; files with multiple hard links cannot be saved. Saves use a temporary sibling and rename, with content checks before replacement; this is optimistic conflict detection, not a filesystem lock against other applications. It does not yet provide file creation or language-server completion.
 
 ## Preview
 
@@ -92,15 +97,19 @@ Text, Hex, and Preview use the same unsaved document. Hex preserves exact bytes,
 
 ## Large files
 
-The first open scans the complete file using bounded buffers and builds an index of blocks up to 2 MiB. Text boundaries never split a UTF-8 code point or a CRLF pair. Each block records its byte range, Unicode code point count, UTF-16 unit count, line-break count, cumulative offsets, and whether it continues the previous line. The index is cached in memory and in the plugin data directory; the cache contains metadata and hashes, not file contents. A change to the file's identity, size, or modification/change timestamps invalidates it.
+The first open scans the complete file using bounded buffers and builds an index of blocks up to 5 MiB. Text boundaries never split a UTF-8 code point or a CRLF pair. Each block records its byte range, Unicode code point count, UTF-16 unit count, line-break count, cumulative offsets, and whether it continues the previous line. The index is cached in memory and in the plugin data directory; the cache contains metadata and hashes, not file contents. A change to the file's identity, size, modification/change timestamps, or loading block size invalidates it.
 
-**Previous block**, **Next block**, and **Go to block** navigate in text mode; Hex mode hides these controls and scrolls continuously. Text mode also provides a scrollbar for the complete file, weighted by indexed line counts. Long lines that cross a block boundary appear as consecutive fragments with the same logical line number. The current block, cursor, and scroll positions are remembered per pane. Find operates on the loaded block. Undo/Redo follows the file-wide edit history across blocks. Syntax highlighting and document Preview are disabled for paged files.
+**Previous block**, **Next block**, and **Go to block** navigate in text mode; Hex mode hides these controls and scrolls continuously. Text mode also provides a scrollbar for the complete file, weighted by indexed line counts. Long lines that cross a block boundary appear as consecutive fragments with the same logical line number. The current block, cursor, and scroll positions are remembered per pane. **Find** or **Ctrl/Cmd+F** searches the entire text file, including unsaved changes and occurrences spanning sections. Search is literal, with optional case matching, forward/backward navigation, and wraparound. F3 and Shift+F3 repeat it. Only the visible part of a cross-section match is selected. Regex search and replacement remain available for complete documents, not in the paged search panel. Undo/Redo follows the file-wide edit history across blocks.
+
+Paged `.log`, `.jsonl`, and `.ndjson` files retain line-oriented highlighting. A first-line fragment is left uncolored when it continues the preceding section. Other paged formats use plain text because their syntax can depend on unavailable multiline context. Document Preview and Git diff still require a complete document.
 
 Large files use one shared changeset in Text and Hex modes. Edit several blocks without saving between them: modified byte ranges are kept separately from the read cache and reapplied when a block is loaded. Text insertions and deletions use original-file coordinates, so subsequent byte offsets and line counts follow the unsaved changes. Undo/Redo crosses block boundaries and returns to the affected block. The session history keeps up to 100 changes within a bounded history budget; saved drafts retain the changeset, not Undo/Redo history.
 
 **Save** writes every modified range in a single atomic replacement. It streams untouched ranges, checks the complete original revision and the bytes being replaced, then rebuilds the index. Editing pauses across linked panes during that save. A failed save retains the whole changeset. Disk conflicts keep it intact for comparison; **Keep my version** explicitly rebases modified ranges onto the compared revision when the file size and affected block boundaries are unchanged, while **Use disk version** discards the entire file's changeset after confirmation.
 
-Changesets are stored as local drafts per file and shared by linked panes. The original file must remain available to reconstruct untouched content. A storage error blocks navigation that would lose an unpersisted draft. Hex pastes currently must fit inside the active edit block. Memory holds active edit blocks, sparse changed ranges, bounded history, and a bounded Hex read cache.
+Changesets are stored as local drafts per file and shared by linked panes. The original file must remain available to reconstruct untouched content. A storage error blocks navigation that would lose an unpersisted draft. Hex pastes can overwrite across any number of blocks, as long as the bytes fit inside the file. All affected ranges are prepared before committing one undoable change; a failed read or concurrent edit leaves the paste unapplied. Memory holds active edit blocks, sparse changed ranges, bounded history, and a bounded Hex read cache. A paste temporarily holds its affected blocks while preparing the atomic change; its size is not capped at the loading block size.
+
+The default loading size is centralized in `src/plugins/file-editor/config.ts` as `DEFAULT_BLOCK_BYTES`. `ProjectFileIndex` accepts a resolved `blockBytes` option per instance, ready for a future setting or adaptive policy. No user setting is exposed yet. Index metadata records the size, and drafts retain their original layout (including legacy 2 MiB drafts) so changing the default cannot reinterpret their patch coordinates. Loading size is not an edit-size limit: edited content can grow beyond it and is reindexed on save.
 
 ## Git changes
 
@@ -143,7 +152,7 @@ their own enclosing Git working tree. Git failures are shown without replacing
 or discarding drafts. No staging, unstaging, or Git writes occur in this mode.
 
 This first version compares complete UTF-8 text files: paged files, binary files,
-and HEAD versions larger than 2 MiB display an explicit unavailable message.
+and HEAD versions larger than 5 MiB display an explicit unavailable message.
 Line endings are normalized for the visual comparison. Expensive comparisons may
 use a simplified diff, identified in the view. Git metadata refreshes with the
 editor polling cycle and window focus; requests are shared between panes.

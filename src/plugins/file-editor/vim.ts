@@ -5,9 +5,48 @@ type Actions = {
   save: () => void;
   close?: (mode: "quit" | "save" | "discard") => void;
   history?: (forward: boolean) => void;
+  jump?: (line: number, relative: boolean) => void;
+  search?: (backward: boolean, repeat: boolean) => void;
   error: (message: string) => void;
 };
 const actions = new WeakMap<object, Actions>();
+
+// Keep the default motion semantics for complete documents and local operators.
+Vim.defineMotion("moveToLineOrEdgeOfDocument", (cm, head, args, vim, input) => {
+  const owner = actions.get(cm);
+  if (owner?.jump) {
+    if (input.operator || vim.visualMode) {
+      owner.error("Vim selections and operators remain limited to the loaded text section.");
+      return null;
+    }
+    owner.jump(args.repeatIsExplicit ? args.repeat : args.forward ? Infinity : 1, false);
+    return head;
+  }
+  const line = args.repeatIsExplicit ? args.repeat - Number(cm.getOption("firstLineNumber")) : args.forward ? cm.lastLine() : cm.firstLine();
+  return { line, ch: (cm.getLine(line) || "").search(/\S|$/) };
+});
+Vim.defineMotion("boatyardNextLine", (cm, head, args) => {
+  const owner = actions.get(cm);
+  if (owner?.jump) { owner.jump(args.repeat, true); return head; }
+  const line = Math.min(cm.lastLine(), head.line + args.repeat);
+  return { line, ch: (cm.getLine(line) || "").search(/\S|$/) };
+});
+Vim.mapCommand("<CR>", "motion", "boatyardNextLine", { linewise: true }, { context: "normal" });
+
+// Search is asynchronous for paged files. Leave the library's search untouched elsewhere.
+const findKey = Vim.findKey;
+Vim.findKey = (cm, key, origin) => {
+  const owner = actions.get(cm), state = cm.state.vim;
+  if (owner?.search && state && !state.insertMode && !state.visualMode && !state.inputState.operator &&
+      !state.inputState.keyBuffer.length && ["/", "?", "n", "N"].includes(key)) {
+    return () => {
+      state.inputState.prefixRepeat = []; state.inputState.motionRepeat = [];
+      owner.search!(key === "?" || key === "N", key === "n" || key === "N");
+      return true;
+    };
+  }
+  return findKey(cm, key, origin);
+};
 
 // Vim commands are global, but their effects must belong to the invoking pane.
 Vim.defineEx("write", "w", (cm, params) => {
