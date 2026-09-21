@@ -40,7 +40,7 @@ function doubleTap(mode: Hugescreen, at = 1000) {
   }
 }
 
-test("double Ctrl toggles a persistent pan lock; Escape disables it without resizing", async () => {
+test("double Ctrl toggles a persistent pan lock; Escape passes through without changing it", async () => {
   const { mode, window, changes, move } = fixture();
   const original = window.getBounds();
   try {
@@ -64,7 +64,11 @@ test("double Ctrl toggles a persistent pan lock; Escape disables it without resi
     assert.equal(mode.active, false);
     assert.equal(window.moves, moves);
     doubleTap(mode, 3000);
-    assert.equal(mode.handleKey(key("keyDown", "Escape")), true);
+    assert.equal(mode.handleKey(key("keyDown", "Escape")), false, "Escape reaches the editor while panning");
+    assert.equal(mode.handleKey(key("keyUp", "Escape")), false);
+    assert.equal(mode.active, true, "vi mode Escape never disables pan");
+    assert.deepEqual(changes, [true, false, true]);
+    doubleTap(mode, 4000);
     assert.equal(mode.active, false);
     assert.equal(mode.handleKey(key("keyDown", "Escape")), false, "idle Escape reaches the page");
     assert.deepEqual(changes, [true, false, true, false]);

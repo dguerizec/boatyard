@@ -167,10 +167,6 @@ export class Hugescreen {
   }
 
   handleKey(input: Input, now = Date.now()): boolean {
-    if (this.active && input.key === "Escape" && input.type === "keyDown") {
-      this.toggle();
-      return true;
-    }
     if (input.key !== "Control" || input.alt || input.meta || input.shift) {
       this.resetTaps();
       return false;

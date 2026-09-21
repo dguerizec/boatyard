@@ -13,7 +13,8 @@ Only the user changes the window size, using their window manager's controls.
   press within 250 ms and start the second press within 350 ms of the first release.
   No key or mouse button needs to remain held.
 - The **Hugescreen** button and **Ctrl+Shift+H** toggle the same pan lock. Its button
-  shows **Hugescreen on** while enabled. **Escape** disables pan.
+  shows **Hugescreen on** while enabled. **Escape** always reaches the editor or
+  embedded page and never changes the pan lock.
 - Move the mouse toward the target. The native window moves in the opposite
   direction. Motion is amplified as the pointer approaches the screen edge and
   as more window content remains off screen in that direction. Reaching the screen

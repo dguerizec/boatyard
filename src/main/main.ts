@@ -1927,9 +1927,9 @@ if (isPrimaryInstance) {
       if (input.control && input.shift && !input.alt && !input.meta && input.key.toLowerCase() === "h") {
         event.preventDefault();
         if (input.type === "keyDown" && !input.isAutoRepeat) workspace.hugescreen.toggle();
-      } else if (workspace.hugescreen.handleKey(input) && input.key !== "Control") {
-        // Let modifier events reach Chromium so its matching keyUp is delivered.
-        event.preventDefault();
+      } else {
+        // Observe the gesture without consuming editor or embedded-page keys.
+        workspace.hugescreen.handleKey(input);
       }
     });
     contents.on("before-mouse-event", (_event, mouse: MouseInputEvent) => {
