@@ -1,4 +1,4 @@
-import { EditorState, Text } from '@codemirror/state';
+import { Compartment, EditorState, Text } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
 import { inlineDiffState, setInlineDiff, toggleRemovedLines, removedLinesKey } from '../../src/plugins/file-editor/inlineDiff';
 import '../../src/plugins/file-editor/style.css';
@@ -32,6 +32,30 @@ for (const [before, after, content, lines] of [
   check(view.state.doc.toString() === after, 'Deleted lines never enter editable document');
   view.dispatch({ effects: toggleRemovedLines.of(key) });
   check(!host.querySelector('.file-editor-removed-lines'), 'Deleted lines collapse again');
+  view.destroy();
+}
+const tick = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+for (const longLine of ['long value '.repeat(60), 'x'.repeat(600)]) {
+  const wrapping = new Compartment();
+  const original = Text.of(['before ' + longLine]);
+  const current = 'after ' + longLine;
+  const view = new EditorView({ parent: host, state: EditorState.create({ doc: current,
+    extensions: [inlineDiffState, wrapping.of([]), EditorView.theme({ '.cm-content': { lineHeight: '20px', fontFamily: 'monospace' } })]
+  }) });
+  view.dispatch({ effects: setInlineDiff.of({ original, inline: true }) });
+  const key = removedLinesKey(original, view.state.field(inlineDiffState).chunks[0]);
+  view.dispatch({ effects: toggleRemovedLines.of(key) });
+  for (const enabled of [true, false, true]) {
+    view.dispatch({ effects: wrapping.reconfigure(enabled ? EditorView.lineWrapping : []) });
+    await tick();
+    for (const selector of ['.file-editor-removed-lines', '.file-editor-added-line']) {
+      const line = host.querySelector(selector);
+      const height = line.getBoundingClientRect().height;
+      check(enabled ? height > 20 : height === 20, `${selector} respects wrap=${enabled}: height=${height}`);
+    }
+    if (enabled) check(view.scrollDOM.scrollWidth <= view.scrollDOM.clientWidth + 1, 'Expanded changes do not force horizontal overflow when wrapped');
+    check(view.state.doc.toString() === current, 'Wrapping does not modify the document');
+  }
   view.destroy();
 }
 window.browserTestResult = 'passed';
