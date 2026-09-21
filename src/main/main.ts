@@ -539,9 +539,10 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       setTimeout(() => app.quit(), 500);
     }
   });
-  window.on("blur", () => workspaceWindow.hugescreen.stopPan());
+  window.on("blur", () => workspaceWindow.hugescreen.suspend());
+  window.on("focus", () => workspaceWindow.hugescreen.resume());
   window.on("closed", () => {
-    workspaceWindow.hugescreen.stopPan();
+    workspaceWindow.hugescreen.dispose();
     workspaceWindows.delete(getWorkspaceWindowRegistryKey(configuration, workspaceWindow.id));
     if (workspaceWindow.saveStateTimer) {
       clearTimeout(workspaceWindow.saveStateTimer);
@@ -555,7 +556,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
 
   window.on("move", () => scheduleWindowStateSave(workspaceWindow));
   window.on("resize", () => {
-    workspaceWindow.hugescreen.stopPan();
+    workspaceWindow.hugescreen.resetPointer();
     scheduleWindowStateSave(workspaceWindow);
   });
   window.on("maximize", () => saveWindowState(workspaceWindow));
@@ -1917,7 +1918,7 @@ if (isPrimaryInstance) {
     contents.on("before-input-event", (event, input: Input) => {
       const workspace = owner();
       if (!workspace) return;
-      if (workspace.hugescreen.active && input.key === "Control" && input.type === "keyDown" && !input.isAutoRepeat) {
+      if (input.key === "Control" && input.type === "keyDown" && !input.isAutoRepeat) {
         workspace.refreshFrameInsets();
       }
       if (input.control && input.shift && !input.alt && !input.meta && input.key.toLowerCase() === "h") {
@@ -1928,8 +1929,8 @@ if (isPrimaryInstance) {
         event.preventDefault();
       }
     });
-    contents.on("before-mouse-event", (event, mouse: MouseInputEvent) => {
-      if (owner()?.hugescreen.handleMouse(mouse)) event.preventDefault();
+    contents.on("before-mouse-event", (_event, mouse: MouseInputEvent) => {
+      owner()?.hugescreen.handleMouse(mouse);
     });
   });
   app.on("before-quit", (event: Event) => {

@@ -1,5 +1,4 @@
 import type { BrowserWindow, Input, MouseInputEvent, Rectangle } from "electron";
-
 import { NO_FRAME_INSETS, type WindowFrameInsets } from "./windowFrameInsets.js";
 
 type Point = { x: number; y: number };
@@ -11,16 +10,51 @@ type Options = {
   changed(active: boolean): void;
 };
 
-export function clampHugescreenPosition(
-  bounds: Rectangle, area: Rectangle, point: Point, frame = NO_FRAME_INSETS
-): Point {
+function panLimits(bounds: Rectangle, area: Rectangle, frame: WindowFrameInsets) {
   const left = area.x + frame.left;
   const right = area.x + area.width - bounds.width - frame.right;
   const top = area.y + frame.top;
   const bottom = area.y + area.height - bounds.height - frame.bottom;
   return {
-    x: Math.round(Math.min(Math.max(left, right), Math.max(Math.min(left, right), point.x))),
-    y: Math.round(Math.min(Math.max(top, bottom), Math.max(Math.min(top, bottom), point.y)))
+    minX: Math.min(left, right), maxX: Math.max(left, right),
+    minY: Math.min(top, bottom), maxY: Math.max(top, bottom)
+  };
+}
+
+export function clampHugescreenPosition(
+  bounds: Rectangle, area: Rectangle, point: Point, frame = NO_FRAME_INSETS
+): Point {
+  const limits = panLimits(bounds, area, frame);
+  return {
+    x: Math.round(Math.min(limits.maxX, Math.max(limits.minX, point.x))),
+    y: Math.round(Math.min(limits.maxY, Math.max(limits.minY, point.y)))
+  };
+}
+
+function panAxis(position: number, minimum: number, maximum: number, from: number, to: number,
+  screenStart: number, screenLength: number): number {
+  const delta = to - from;
+  if (!delta) return position;
+  const direction = Math.sign(delta);
+  const remaining = Math.max(0, direction > 0 ? position - minimum : maximum - position);
+  const screenEnd = screenStart + screenLength - 1;
+  const distanceToEdge = Math.max(0, direction > 0 ? screenEnd - from : from - screenStart);
+  // Reaching the screen edge reaches the window edge, even for very large windows.
+  // Between edges, quadratic proximity and remaining travel amplify each movement.
+  const proximity = 1 - Math.min(1, distanceToEdge / Math.max(1, screenLength));
+  const distance = Math.abs(delta);
+  const travel = distance >= distanceToEdge ? remaining : Math.min(remaining,
+    distance + remaining * (distance / Math.max(1, distanceToEdge)) * proximity ** 2);
+  return Math.round(Math.min(maximum, Math.max(minimum, position - direction * travel)));
+}
+
+export function calculateHugescreenPan(
+  bounds: Rectangle, area: Rectangle, from: Point, to: Point, frame = NO_FRAME_INSETS
+): Point {
+  const limits = panLimits(bounds, area, frame);
+  return {
+    x: panAxis(bounds.x, limits.minX, limits.maxX, from.x, to.x, area.x, area.width),
+    y: panAxis(bounds.y, limits.minY, limits.maxY, from.y, to.y, area.y, area.height)
   };
 }
 
@@ -28,92 +62,105 @@ export function clampHugescreenPosition(
 export class Hugescreen {
   private enabled = false;
   private area: Rectangle | null = null;
-  private panOrigin: { cursor: Point; bounds: Rectangle } | null = null;
+  private lastCursor: Point | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
   private controlDownAt: number | null = null;
   private lastControlTap: number | null = null;
+  private scrollPauseUntil = 0;
 
   constructor(private readonly options: Options) {}
 
   get active() { return this.enabled; }
 
   toggle(): boolean {
-    this.stopPan();
+    this.stopPolling();
     this.enabled = !this.enabled;
     this.area = this.enabled ? this.options.getWorkArea() : null;
+    if (this.enabled) this.resume();
     this.options.changed(this.enabled);
     return this.enabled;
   }
 
-  stopPan(): void {
+  private stopPolling(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    this.panOrigin = null;
+    this.lastCursor = null;
+    this.resetTaps();
+  }
+
+  /** Losing focus pauses sampling without clearing the user's pan lock. */
+  suspend(): void {
+    this.stopPolling();
+    this.scrollPauseUntil = 0;
+  }
+
+  resume(): void {
+    if (!this.enabled || this.timer || this.options.window.isDestroyed()) return;
+    this.resetPointer();
+    this.timer = setInterval(() => this.pan(), 16);
+  }
+
+  resetPointer(): void { this.lastCursor = this.options.getCursor(); }
+
+  dispose(): void {
+    this.suspend();
+    this.enabled = false;
+  }
+
+  private resetTaps(): void {
     this.controlDownAt = null;
     this.lastControlTap = null;
   }
 
   handleKey(input: Input, now = Date.now()): boolean {
-    if (!this.active) return false;
-    if (input.key === "Escape") {
-      const wasPanning = this.panOrigin !== null;
-      if (input.type === "keyDown") this.stopPan();
-      return wasPanning;
+    if (this.active && input.key === "Escape" && input.type === "keyDown") {
+      this.toggle();
+      return true;
     }
     if (input.key !== "Control" || input.alt || input.meta || input.shift) {
-      this.stopPan();
+      this.resetTaps();
       return false;
     }
-    if (input.isAutoRepeat) return this.panOrigin !== null;
+    if (input.isAutoRepeat) return false;
     if (input.type === "keyDown") {
       this.controlDownAt = now;
-      if (this.lastControlTap !== null && now - this.lastControlTap <= 350) {
-        this.lastControlTap = null;
-        this.startPan();
-        return this.panOrigin !== null;
-      }
-      this.lastControlTap = null;
     } else if (input.type === "keyUp") {
-      const wasPanning = this.panOrigin !== null;
-      const wasTap = this.controlDownAt !== null && now - this.controlDownAt <= 250;
-      this.stopPan();
-      if (!wasPanning && wasTap) this.lastControlTap = now;
-      return wasPanning;
+      const downAt = this.controlDownAt;
+      this.controlDownAt = null;
+      if (downAt === null || now - downAt > 250) {
+        this.resetTaps();
+      } else if (this.lastControlTap !== null && downAt - this.lastControlTap <= 350) {
+        this.toggle();
+      } else {
+        this.lastControlTap = now;
+      }
     }
+    // Modifier events must reach Chromium for their matching keyUp to be delivered.
     return false;
   }
 
-  handleMouse(mouse: MouseInputEvent): boolean {
-    if (!this.active || !this.panOrigin) return false;
-    // before-mouse-event may omit modifiers even while Ctrl is held. Keyboard
-    // keyUp and window blur own cancellation; only use modifiers when supplied.
-    const modifiers = mouse.modifiers;
-    if (modifiers && (!(modifiers.includes("control") || modifiers.includes("ctrl")) ||
-      modifiers.includes("shift") || modifiers.includes("alt") || modifiers.includes("meta"))) {
-      this.stopPan();
-      return false;
+  /** Observe mouse interactions without consuming any page event. */
+  handleMouse(mouse: MouseInputEvent, now = Date.now()): void {
+    if (mouse.type === "mouseDown") {
+      this.resetTaps();
+    } else if (mouse.type === "mouseWheel") {
+      this.scrollPauseUntil = now + 150;
+      this.resetPointer();
     }
-    return true;
-  }
-
-  private startPan(): void {
-    if (this.panOrigin || this.options.window.isMaximized() || this.options.window.isFullScreen()) return;
-    this.panOrigin = { cursor: this.options.getCursor(), bounds: this.options.window.getBounds() };
-    // Screen coordinates avoid a feedback loop when moving the window under a stationary cursor.
-    this.timer = setInterval(() => this.pan(), 16);
   }
 
   private pan(): void {
-    if (!this.panOrigin || !this.area || this.options.window.isDestroyed()) {
-      this.stopPan();
-      return;
-    }
+    const window = this.options.window;
+    if (window.isDestroyed()) { this.dispose(); return; }
+    if (!window.isFocused()) { this.suspend(); return; }
     const cursor = this.options.getCursor();
-    const point = clampHugescreenPosition(this.panOrigin.bounds, this.area, {
-      x: this.panOrigin.bounds.x - (cursor.x - this.panOrigin.cursor.x),
-      y: this.panOrigin.bounds.y - (cursor.y - this.panOrigin.cursor.y)
-    }, this.options.getFrameInsets?.());
-    const [x, y] = this.options.window.getPosition();
-    if (x !== point.x || y !== point.y) this.options.window.setPosition(point.x, point.y);
+    const previous = this.lastCursor;
+    this.lastCursor = cursor;
+    if (!previous || !this.area || window.isMaximized() || window.isFullScreen() ||
+      Date.now() < this.scrollPauseUntil) return;
+    // Global coordinates ignore synthetic motion caused by moving the window itself.
+    const bounds = window.getBounds();
+    const point = calculateHugescreenPan(bounds, this.area, previous, cursor, this.options.getFrameInsets?.());
+    if (bounds.x !== point.x || bounds.y !== point.y) window.setPosition(point.x, point.y);
   }
 }
