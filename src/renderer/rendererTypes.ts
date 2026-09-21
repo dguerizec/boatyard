@@ -222,10 +222,19 @@ export type ProjectSettingsViewsInstance = RendererModuleInstance & {
   createProjectWidgetPanesForm(options: UnknownRecord): HTMLElement;
 };
 
+export type HugescreenSettings = {
+  active: boolean;
+  available: boolean;
+  widthMultiplier: number;
+  heightMultiplier: number;
+};
+
 export type BoatyardBridge = {
   addProject(values: UnknownRecord): Promise<RendererState>;
   applyLayout(payload: UnknownRecord): Promise<{ state: RendererState; undoToken: string }>;
   toggleHugescreen: () => Promise<boolean>;
+  getHugescreenSettings: () => Promise<HugescreenSettings>;
+  resizeHugescreen: (width: number, height: number) => Promise<HugescreenSettings>;
   getHugescreen: () => Promise<boolean>;
   onHugescreenChanged: (callback: (active: boolean) => void) => () => void;
   createWorkspaceWindow?: () => Promise<boolean>;

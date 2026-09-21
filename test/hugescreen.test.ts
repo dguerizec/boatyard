@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { BrowserWindow, Input } from "electron";
-import { Hugescreen, calculateHugescreenPan, clampHugescreenPosition, roundHugescreenPosition } from "../src/main/hugescreen.js";
+import { Hugescreen, calculateHugescreenPan, clampHugescreenPosition, roundHugescreenPosition, getHugescreenResizeBounds } from "../src/main/hugescreen.js";
 
 const key = (type: "keyDown" | "keyUp", name = "Control", extra = {}): Input => ({
   type, key: name, code: name, isAutoRepeat: false, control: type === "keyDown", shift: false,
@@ -462,4 +462,27 @@ test("resizing recalculates pan eligibility in both directions without changing 
     assert.equal(mode.active, true, "resizing larger enables pan again");
     assert.deepEqual(changes, [true, false, true]);
   } finally { mode.dispose(); }
+});
+
+
+test("screen multipliers resize outer dimensions and keep native decorations reachable", () => {
+  const frame = { left: 4, right: 6, top: 28, bottom: 8 };
+  const bounds = { x: -3000, y: -2000, width: 5000, height: 4000 };
+  const original = { ...bounds };
+  assert.deepEqual(getHugescreenResizeBounds(bounds, area, 1, 1, frame),
+    { x: 4, y: 58, width: 990, height: 664 });
+  assert.deepEqual(getHugescreenResizeBounds(bounds, area, 2, 1.5, frame),
+    { x: -996, y: -292, width: 1990, height: 1014 });
+  assert.deepEqual(bounds, original);
+  const small = getHugescreenResizeBounds(bounds, area, 0.5, 0.5, frame);
+  assert.equal(small.width, 640);
+  assert.equal(small.height, 480);
+});
+
+test("invalid screen multipliers are rejected before resizing", () => {
+  const bounds = { x: 0, y: 0, width: 1000, height: 700 };
+  for (const value of [NaN, Infinity, -1, 0, 0.49, 4.01, '2', null] as unknown[]) {
+    assert.throws(() => getHugescreenResizeBounds(bounds, area, value as number, 1));
+    assert.throws(() => getHugescreenResizeBounds(bounds, area, 1, value as number));
+  }
 });

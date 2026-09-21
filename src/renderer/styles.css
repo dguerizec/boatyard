@@ -4792,3 +4792,17 @@ textarea.form-control {
   border: 3px solid var(--accent);
   background: color-mix(in srgb, var(--accent) 22%, var(--panel));
 }
+
+
+.hugescreen-popup {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(340px, calc(100vw - 24px));
+}
+
+.hugescreen-popup::backdrop { background: transparent; }
+.hugescreen-size-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.hugescreen-size-hint { margin: 0; color: var(--muted); font-size: 12px; }
+.hugescreen-error { margin: 0; color: var(--danger-text); font-size: 12px; }
+.hugescreen-popup .form-actions { justify-content: flex-end; }

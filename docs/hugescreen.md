@@ -1,8 +1,10 @@
 # Hugescreen experiment
 
 Hugescreen pans the entire native Boatyard window, including the sidebar and
-embedded web views. It does not zoom, resize, maximize, or restore window geometry.
-Only the user changes the window size, using their window manager's controls.
+embedded web views. Panning itself does not zoom, resize, maximize, or restore
+window geometry.
+Only the user changes the window size, using the Hugescreen popup or their window
+manager's controls.
 
 - Hugescreen enables automatically at startup when the restored window, including
   its native decorations, is wider or taller than the screen work area. Maximized
@@ -12,9 +14,16 @@ Only the user changes the window size, using their window manager's controls.
 - Double-tap **Ctrl** to enable pan; double-tap again to disable it. Release each
   press within 250 ms and start the second press within 350 ms of the first release.
   No key or mouse button needs to remain held.
-- The **Hugescreen** button and **Ctrl+Shift+H** toggle the same pan lock. Its button
-  shows **Hugescreen on** while enabled. **Escape** always reaches the editor or
-  embedded page and never changes the pan lock.
+- The **Hugescreen** button keeps a fixed label and highlights while pan is active.
+  Clicking it opens a popup underneath. Its **Pan** switch toggles immediately,
+  like double Ctrl or **Ctrl+Shift+H**.
+- The popup offers independent **Width ×** and **Height ×** multipliers of the
+  screen work area, from 0.5 to 4. **Apply** resizes the outer window, including
+  decorations, and recalculates pan eligibility. **Cancel** discards size edits;
+  it does not undo an immediate Pan switch change. Native minimum dimensions apply.
+  Set both values to 1 to fit the screen. Unmaximize or leave fullscreen first.
+- **Escape** never changes the pan lock. It closes the popup when open; otherwise
+  it remains available to the editor and embedded pages.
 - Move the mouse toward the target. The native window moves in the opposite
   direction. Motion is amplified as the pointer approaches the screen edge and
   as more window content remains off screen in that direction. Reaching the screen

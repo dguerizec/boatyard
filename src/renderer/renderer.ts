@@ -1,3 +1,4 @@
+import { setupHugescreenControls } from "./hugescreenControls.js";
 import { createGlobalSettingsPageView } from "./globalSettingsPageView.js";
 import { hasActiveSettingsInteraction } from "./settingsFormController.js";
 import { createOnboardingTour } from "./onboardingTour.js";
@@ -1348,15 +1349,7 @@ workspaceLayoutsButton.addEventListener("click", () => {
   void openWorkspaceLayoutLibrary(project);
 });
 
-const updateHugescreenButton = (active: boolean) => {
-  hugescreenButton.setAttribute("aria-pressed", String(active));
-  hugescreenButton.textContent = active ? "Hugescreen on" : "Hugescreen";
-};
-boatyardWindow.boatyard.onHugescreenChanged(updateHugescreenButton);
-void boatyardWindow.boatyard.getHugescreen().then(updateHugescreenButton);
-hugescreenButton.addEventListener("click", () => {
-  void boatyardWindow.boatyard.toggleHugescreen();
-});
+setupHugescreenControls({ button: hugescreenButton, api: boatyardWindow.boatyard, showDialog: showOverlayDialog });
 
 splitScreenButton.addEventListener("click", () => {
   void boatyardWindow.boatyard.createWorkspaceWindow?.();

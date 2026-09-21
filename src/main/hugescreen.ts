@@ -1,6 +1,7 @@
 import type { BrowserWindow, Input, MouseInputEvent, Rectangle } from "electron";
 import { NO_FRAME_INSETS, type WindowFrameInsets } from "./windowFrameInsets.js";
 
+import { needsOversizedRestore, restoreOversizedWindow } from "./windowGeometry.js";
 import { HugescreenMotion } from "./hugescreenMotion.js";
 
 type Point = { x: number; y: number };
@@ -83,6 +84,21 @@ export function calculateHugescreenPan(
   };
 }
 
+export function getHugescreenResizeBounds(
+  bounds: Rectangle, area: Rectangle, widthMultiplier: number, heightMultiplier: number, frame = NO_FRAME_INSETS
+): Rectangle {
+  if (![widthMultiplier, heightMultiplier].every(value =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0.5 && value <= 4)) {
+    throw new Error("Width and height must be between 0.5 and 4 times the screen size.");
+  }
+  const size = {
+    ...bounds,
+    width: Math.max(640, Math.round(area.width * widthMultiplier) - frame.left - frame.right),
+    height: Math.max(480, Math.round(area.height * heightMultiplier) - frame.top - frame.bottom)
+  };
+  return { ...size, ...clampHugescreenPosition(size, area, bounds, frame) };
+}
+
 /** Moves only the native parent. Child view geometry stays unchanged during panning. */
 export class Hugescreen {
   private readonly motion = new HugescreenMotion();
@@ -103,6 +119,30 @@ export class Hugescreen {
   /** Called once after startup geometry and native decorations have been restored. */
   enableForOversizedWindow(): void {
     if (!this.active) this.toggle();
+  }
+
+  getSettings() {
+    const bounds = this.options.window.getBounds();
+    const area = this.options.getWorkArea();
+    const frame = this.options.getFrameInsets?.() || NO_FRAME_INSETS;
+    return {
+      active: this.active,
+      available: this.canActivate(),
+      widthMultiplier: (bounds.width + frame.left + frame.right) / area.width,
+      heightMultiplier: (bounds.height + frame.top + frame.bottom) / area.height
+    };
+  }
+
+  async resizeWindow(widthMultiplier: number, heightMultiplier: number): Promise<void> {
+    const window = this.options.window;
+    if (window.isMaximized() || window.isFullScreen()) {
+      throw new Error("Unmaximize the window or leave fullscreen before resizing it.");
+    }
+    const area = this.options.getWorkArea();
+    const bounds = getHugescreenResizeBounds(window.getBounds(), area, widthMultiplier, heightMultiplier,
+      this.options.getFrameInsets?.());
+    if (needsOversizedRestore(bounds, area, {})) await restoreOversizedWindow(window, bounds);
+    else window.setBounds(bounds);
   }
 
   private canActivate(): boolean {

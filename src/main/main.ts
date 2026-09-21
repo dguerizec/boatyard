@@ -142,7 +142,7 @@ type WorkspaceWindowRecord = {
   id: string;
   runtime: WorkspaceWindowRuntime;
   hugescreen: Hugescreen;
-  refreshFrameInsets(): void;
+  refreshFrameInsets(): Promise<void>;
   restoringGeometry: boolean;
   saveStateTimer: ReturnType<typeof setTimeout> | null;
   syncGroupId: string;
@@ -1488,6 +1488,34 @@ function registerIpcHandlers() {
   ipcMain.handle("hugescreen:toggle", (event: IpcMainInvokeEvent) => {
     const workspace = getWorkspaceWindowForWebContents(event.sender);
     return workspace?.hugescreen.toggle() || false;
+  });
+  ipcMain.handle("hugescreen:settings", async (event: IpcMainInvokeEvent) => {
+    const workspace = getWorkspaceWindowForWebContents(event.sender);
+    if (!workspace) throw new Error("Workspace window is not available.");
+    await workspace.refreshFrameInsets();
+    return workspace.hugescreen.getSettings();
+  });
+  ipcMain.handle("hugescreen:resize", async (event: IpcMainInvokeEvent, width: number, height: number) => {
+    const workspace = getWorkspaceWindowForWebContents(event.sender);
+    if (!workspace) throw new Error("Workspace window is not available.");
+    if (workspace.restoringGeometry) throw new Error("Window resizing is already in progress.");
+    workspace.restoringGeometry = true;
+    workspace.hugescreen.suspend();
+    let applied = false;
+    try {
+      await workspace.refreshFrameInsets();
+      await workspace.hugescreen.resizeWindow(width, height);
+      applied = true;
+    } finally {
+      workspace.restoringGeometry = false;
+      if (!workspace.window.isDestroyed()) {
+        if (applied) workspace.hugescreen.onGeometryChanged();
+        else workspace.hugescreen.resetPointer();
+        workspace.hugescreen.resume();
+        saveWindowState(workspace);
+      }
+    }
+    return workspace.hugescreen.getSettings();
   });
   ipcMain.handle("hugescreen:get", (event: IpcMainInvokeEvent) => (
     getWorkspaceWindowForWebContents(event.sender)?.hugescreen.active || false
