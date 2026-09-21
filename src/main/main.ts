@@ -1,8 +1,12 @@
+import { getOversizedBootstrapBounds, needsOversizedRestore, restoreOversizedWindow } from "./windowGeometry.js";
+import { Hugescreen } from "./hugescreen.js";
 import { selectEditorFiles } from "./filePicker.js";
 import { applyWebAppViewport } from "./webAppViewport.js";
 import type {
   BrowserWindow as ElectronBrowserWindow,
   ContextMenuParams,
+  Input,
+  MouseInputEvent,
   HandlerDetails,
   IpcMainInvokeEvent,
   IpcMainEvent,
@@ -136,6 +140,8 @@ type WorkspaceWindowRecord = {
   configuration: ConfigurationContext;
   id: string;
   runtime: WorkspaceWindowRuntime;
+  hugescreen: Hugescreen;
+  restoringGeometry: boolean;
   saveStateTimer: ReturnType<typeof setTimeout> | null;
   syncGroupId: string;
   window: ElectronBrowserWindow;
@@ -430,8 +436,12 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   };
   const windowState = persistedWorkspaceWindow.window;
 
+  const restoredBounds = getRestoredWindowBounds(windowState.bounds);
+  const restoreArea = screen.getDisplayMatching(restoredBounds).workArea as Rectangle;
+  const restoreOversized = needsOversizedRestore(restoredBounds, restoreArea, windowState);
   const window = new BrowserWindow({
-    ...getRestoredWindowBounds(windowState.bounds),
+    ...(restoreOversized ? getOversizedBootstrapBounds(restoredBounds, restoreArea) : restoredBounds),
+    ...(restoreOversized ? { show: false, opacity: 0 } : {}),
     minWidth: WORKSPACE_MIN_WIDTH,
     minHeight: WORKSPACE_MIN_HEIGHT,
     title: "Boatyard",
@@ -458,6 +468,15 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       theme: appThemeManager.getTheme(),
       openExternalUrl
     }),
+    hugescreen: new Hugescreen({
+      window,
+      getWorkArea: () => screen.getDisplayMatching(window.getBounds()).workArea,
+      getCursor: () => screen.getCursorScreenPoint(),
+      changed: (active) => {
+        if (!window.isDestroyed()) window.webContents.send("hugescreen:changed", active);
+      }
+    }),
+    restoringGeometry: restoreOversized,
     saveStateTimer: null
   };
   workspaceWindows.set(getWorkspaceWindowRegistryKey(configuration, workspaceWindow.id), workspaceWindow);
@@ -479,8 +498,18 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       console.error(`[capture renderer gone] ${details.reason}`);
     });
   }
-  window.once("ready-to-show", () => {
+  window.once("ready-to-show", async () => {
     window.show();
+    if (restoreOversized) {
+      try {
+        await restoreOversizedWindow(window, restoredBounds);
+      } catch (error) {
+        console.warn(`Could not restore oversized window geometry: ${(error as Error).message}`);
+      } finally {
+        workspaceWindow.restoringGeometry = false;
+      }
+      if (window.isDestroyed()) return;
+    }
 
     if (captureRunner.isCaptureMode()) {
       captureRunner.runCaptureRequest().catch((error: Error) => {
@@ -494,7 +523,9 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       setTimeout(() => app.quit(), 500);
     }
   });
+  window.on("blur", () => workspaceWindow.hugescreen.stopPan());
   window.on("closed", () => {
+    workspaceWindow.hugescreen.stopPan();
     workspaceWindows.delete(getWorkspaceWindowRegistryKey(configuration, workspaceWindow.id));
     if (workspaceWindow.saveStateTimer) {
       clearTimeout(workspaceWindow.saveStateTimer);
@@ -507,7 +538,10 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   });
 
   window.on("move", () => scheduleWindowStateSave(workspaceWindow));
-  window.on("resize", () => scheduleWindowStateSave(workspaceWindow));
+  window.on("resize", () => {
+    workspaceWindow.hugescreen.stopPan();
+    scheduleWindowStateSave(workspaceWindow);
+  });
   window.on("maximize", () => saveWindowState(workspaceWindow));
   window.on("unmaximize", () => saveWindowState(workspaceWindow));
   window.on("enter-full-screen", () => saveWindowState(workspaceWindow));
@@ -550,7 +584,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
 }
 
 function saveWindowState(workspaceWindow: WorkspaceWindowRecord) {
-  if (workspaceWindow.window.isMinimized()) {
+  if (workspaceWindow.restoringGeometry || workspaceWindow.window.isMinimized()) {
     return;
   }
 
@@ -562,6 +596,7 @@ function saveWindowState(workspaceWindow: WorkspaceWindowRecord) {
 }
 
 function scheduleWindowStateSave(workspaceWindow: WorkspaceWindowRecord) {
+  if (workspaceWindow.restoringGeometry) return;
   if (workspaceWindow.saveStateTimer) {
     clearTimeout(workspaceWindow.saveStateTimer);
   }
@@ -1430,6 +1465,14 @@ function registerIpcHandlers() {
     return getConfigurationForEvent(event).store.updateOnboarding(onboarding);
   });
 
+  ipcMain.handle("hugescreen:toggle", (event: IpcMainInvokeEvent) => {
+    const workspace = getWorkspaceWindowForWebContents(event.sender);
+    return workspace?.hugescreen.toggle() || false;
+  });
+  ipcMain.handle("hugescreen:get", (event: IpcMainInvokeEvent) => (
+    getWorkspaceWindowForWebContents(event.sender)?.hugescreen.active || false
+  ));
+
   ipcMain.handle("workspace:create-window", async (event: IpcMainInvokeEvent) => {
     const sourceWorkspaceWindow = getWorkspaceWindowForWebContents(event.sender);
     if (!sourceWorkspaceWindow) {
@@ -1852,6 +1895,24 @@ function registerIpcHandlers() {
 }
 
 if (isPrimaryInstance) {
+  // Main-process interception also covers embedded web apps and their frames.
+  app.on("web-contents-created", (_event: Event, contents: ElectronWebContents) => {
+    const owner = () => getWorkspaceWindowForWebContents(contents) || getWorkspaceWindowForWebAppContents(contents);
+    contents.on("before-input-event", (event, input: Input) => {
+      const workspace = owner();
+      if (!workspace) return;
+      if (input.control && input.shift && !input.alt && !input.meta && input.key.toLowerCase() === "h") {
+        event.preventDefault();
+        if (input.type === "keyDown" && !input.isAutoRepeat) workspace.hugescreen.toggle();
+      } else if (workspace.hugescreen.handleKey(input) && input.key !== "Control") {
+        // Let modifier events reach Chromium so its matching keyUp is delivered.
+        event.preventDefault();
+      }
+    });
+    contents.on("before-mouse-event", (event, mouse: MouseInputEvent) => {
+      if (owner()?.hugescreen.handleMouse(mouse)) event.preventDefault();
+    });
+  });
   app.on("before-quit", (event: Event) => {
     isQuitting = true;
     mcpRendererBroker.close();

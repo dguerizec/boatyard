@@ -168,6 +168,12 @@ test("normalizeWindowBounds preserves position and enforces app minimum size", (
   });
 });
 
+test("normalizeWindowBounds retains negative desktop coordinates", () => {
+  assert.deepEqual(normalizeWindowBounds({ x: -1200, y: -350, width: 3000, height: 1800 }), {
+    x: -1200, y: -350, width: 3000, height: 1800
+  });
+});
+
 test("normalizeWindowState keeps maximized state", () => {
   assert.deepEqual(normalizeWindowState({
     bounds: {

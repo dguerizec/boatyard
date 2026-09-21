@@ -225,6 +225,9 @@ export type ProjectSettingsViewsInstance = RendererModuleInstance & {
 export type BoatyardBridge = {
   addProject(values: UnknownRecord): Promise<RendererState>;
   applyLayout(payload: UnknownRecord): Promise<{ state: RendererState; undoToken: string }>;
+  toggleHugescreen: () => Promise<boolean>;
+  getHugescreen: () => Promise<boolean>;
+  onHugescreenChanged: (callback: (active: boolean) => void) => () => void;
   createWorkspaceWindow?: () => Promise<boolean>;
   dispatchWebAppEvent(...payload: unknown[]): Promise<unknown>;
   dismissChangelog?: () => Promise<unknown>;

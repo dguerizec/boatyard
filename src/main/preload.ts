@@ -9,6 +9,13 @@ type Unsubscribe = () => void;
 
 contextBridge.exposeInMainWorld("boatyard", {
   getState: () => ipcRenderer.invoke("state:get"),
+  toggleHugescreen: () => ipcRenderer.invoke("hugescreen:toggle"),
+  getHugescreen: () => ipcRenderer.invoke("hugescreen:get"),
+  onHugescreenChanged: (callback: (active: boolean) => void): Unsubscribe => {
+    const listener = (_event: IpcRendererEvent, active: boolean) => callback(active);
+    ipcRenderer.on("hugescreen:changed", listener);
+    return () => ipcRenderer.removeListener("hugescreen:changed", listener);
+  },
   createWorkspaceWindow: () => ipcRenderer.invoke("workspace:create-window"),
   setTheme: (theme: unknown) => ipcRenderer.invoke("theme:set", theme),
   updateSettings: (patch: unknown) => ipcRenderer.invoke("settings:update", patch),

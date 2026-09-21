@@ -1275,4 +1275,19 @@ test("ProjectStore protects built-in layouts and removes custom layouts", () => 
   assert.equal(store.removeLayout("boatyard.single-pane"), false);
 });
 
+test("workspace window restart preserves oversized bounds and negative position", () => {
+  const { filePath, store } = createTempStore();
+  store.load();
+  store.ensureWorkspaceWindow("large-window", "group");
+  const saved = {
+    bounds: { x: -700, y: -250, width: 5700, height: 1800 },
+    isMaximized: false,
+    isFullScreen: false
+  };
+  store.updateWorkspaceWindowState("large-window", saved);
+  const reloaded = new ProjectStore(filePath);
+  reloaded.load();
+  assert.deepEqual(reloaded.getWorkspaceWindowStates()[0].window, saved);
+});
+
 export {};

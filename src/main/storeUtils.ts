@@ -152,9 +152,13 @@ export function normalizeBounds(
 
 export function normalizeWindowBounds(bounds: unknown, fallback: Bounds = DEFAULT_WINDOW_BOUNDS): Bounds {
   const normalized = normalizeBounds(bounds, fallback);
+  const source = toRecord(bounds);
 
   return {
     ...normalized,
+    // Native windows may extend beyond a display or live on a negative-origin monitor.
+    x: Math.round(Number.isFinite(Number(source.x)) ? Number(source.x) : fallback.x),
+    y: Math.round(Number.isFinite(Number(source.y)) ? Number(source.y) : fallback.y),
     width: Math.max(920, normalized.width),
     height: Math.max(620, normalized.height)
   };

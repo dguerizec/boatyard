@@ -66,7 +66,7 @@ registerPluginSettingsFields(window);
 
 const {
   addProjectButton, appShell, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, manualTourButton, pinnedProjects,
-  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, splitScreenButton, themeToggleButton, workspace, workspaceKicker, workspaceLayoutsButton, workspaceSummary, workspaceTitle
+  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, hugescreenButton, splitScreenButton, themeToggleButton, workspace, workspaceKicker, workspaceLayoutsButton, workspaceSummary, workspaceTitle
 } = rendererDomElements;
 
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
@@ -1346,6 +1346,16 @@ workspaceLayoutsButton.addEventListener("click", () => {
     slug: "global"
   } as RendererProject);
   void openWorkspaceLayoutLibrary(project);
+});
+
+const updateHugescreenButton = (active: boolean) => {
+  hugescreenButton.setAttribute("aria-pressed", String(active));
+  hugescreenButton.textContent = active ? "Hugescreen on" : "Hugescreen";
+};
+boatyardWindow.boatyard.onHugescreenChanged(updateHugescreenButton);
+void boatyardWindow.boatyard.getHugescreen().then(updateHugescreenButton);
+hugescreenButton.addEventListener("click", () => {
+  void boatyardWindow.boatyard.toggleHugescreen();
 });
 
 splitScreenButton.addEventListener("click", () => {
