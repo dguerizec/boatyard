@@ -12,10 +12,18 @@ Only the user changes the window size, using their window manager's controls.
 - Move the mouse toward the target. The native window moves in the opposite
   direction. Motion is amplified as the pointer approaches the screen edge and
   as more window content remains off screen in that direction. Reaching the screen
-  edge reaches the corresponding window edge in one sweep, even for a large window.
+  edge can reach a distant window edge in one sweep, even for a large window,
+  subject to the dead zone and edge proximity rules below.
 - Slow local movements use quarter-speed travel for precision. Sensitivity blends
   progressively into full edge amplification between 120 and 900 logical pixels
-  per second. Reaching the screen edge still reaches the window edge.
+  per second.
+- After 160 ms without movement or a mouse click, a 30-pixel dead zone anchors
+  around the pointer. Leaving it pans only by the excess movement, without a jump.
+  Direction reversals require 6 pixels of travel to avoid small oscillations.
+- Once a native window edge aligns with the screen edge, panning away from that
+  alignment is blocked while the pointer stays within 15% of the screen's width
+  or height of that edge. Arrival at alignment remains allowed, including native
+  decorations. The other axis remains independent.
 - A stationary pointer never scrolls the window. Clicks, wheel events, and ordinary
   keyboard shortcuts still reach the page. Panning stays active while holding a
   mouse button, so dragging can reach targets initially outside the screen.

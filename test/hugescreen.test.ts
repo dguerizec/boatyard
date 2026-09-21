@@ -261,3 +261,41 @@ test("native coordinates normalize negative zero from subpixel movement", () => 
   assert.deepEqual(roundHugescreenPosition(point), { x: 0, y: -1 },
     "moving the other axis must not pass negative zero to setPosition");
 });
+
+test("nearby off-screen edges can reach screen alignment on every side", () => {
+  const topLeft = { x: -50, y: -10, width: 2000, height: 1400 };
+  assert.deepEqual(calculateHugescreenPan(topLeft, area, { x: 100, y: 100 }, { x: 0, y: 30 }),
+    { x: 0, y: 30 });
+  const bottomRight = { x: -950, y: -620, width: 2000, height: 1400 };
+  assert.deepEqual(calculateHugescreenPan(bottomRight, area, { x: 900, y: 650 }, { x: 999, y: 729 }),
+    { x: -1000, y: -670 });
+});
+
+test("edge protection blocks departure only while the pointer is near an aligned edge", () => {
+  const topLeft = { x: 0, y: 30, width: 2000, height: 1400 };
+  assert.deepEqual(calculateHugescreenPan(topLeft, area, { x: 50, y: 80 }, { x: 60, y: 90 }),
+    { x: 0, y: 30 });
+  const outside = calculateHugescreenPan(topLeft, area, { x: 200, y: 200 }, { x: 210, y: 210 });
+  assert.ok(outside.x < topLeft.x && outside.y < topLeft.y);
+  const independent = calculateHugescreenPan(topLeft, area, { x: 50, y: 200 }, { x: 60, y: 210 });
+  assert.equal(independent.x, topLeft.x);
+  assert.ok(independent.y < topLeft.y);
+  const bottomRight = { x: -1000, y: -670, width: 2000, height: 1400 };
+  assert.deepEqual(calculateHugescreenPan(bottomRight, area, { x: 950, y: 680 }, { x: 940, y: 670 }),
+    { x: -1000, y: -670 });
+  const reverse = calculateHugescreenPan(bottomRight, area, { x: 700, y: 500 }, { x: 690, y: 490 });
+  assert.ok(reverse.x > bottomRight.x && reverse.y > bottomRight.y);
+});
+
+test("alignment protection includes decorations and negative screen origins", () => {
+  const display = { x: -1000, y: -700, width: 1000, height: 700 };
+  const frame = { left: 4, right: 6, top: 80, bottom: 8 };
+  const aligned = { x: -996, y: -620, width: 2000, height: 1400 };
+  const from = { x: -950, y: -650 };
+  const to = { x: -940, y: -640 };
+  assert.deepEqual(calculateHugescreenPan(aligned, display, from, to, frame),
+    { x: aligned.x, y: aligned.y });
+  const approaching = { ...aligned, x: aligned.x - 10, y: aligned.y - 10 };
+  assert.deepEqual(calculateHugescreenPan(approaching, display, from, { x: -1000, y: -700 }, frame),
+    { x: aligned.x, y: aligned.y });
+});

@@ -1,6 +1,8 @@
 import type { BrowserWindow, Input, MouseInputEvent, Rectangle } from "electron";
 import { NO_FRAME_INSETS, type WindowFrameInsets } from "./windowFrameInsets.js";
 
+import { HugescreenMotion } from "./hugescreenMotion.js";
+
 type Point = { x: number; y: number };
 type Options = {
   window: BrowserWindow;
@@ -37,9 +39,15 @@ export function clampHugescreenPosition(
 }
 
 function panAxis(position: number, minimum: number, maximum: number, from: number, to: number,
-  screenStart: number, screenLength: number, sensitivity: number): number {
+  screenStart: number, screenLength: number, sensitivity: number, windowStart: number, windowEnd: number): number {
   const delta = to - from;
   if (!delta) return position;
+  // Protect departure from an aligned edge, never arrival at an off-screen edge.
+  const leavingStart = delta > 0 && Math.round(windowStart) === screenStart &&
+    to - windowStart < screenLength * 0.15;
+  const leavingEnd = delta < 0 && Math.round(windowEnd) === screenStart + screenLength &&
+    windowEnd - to < screenLength * 0.15;
+  if (leavingStart || leavingEnd) return position;
   const direction = Math.sign(delta);
   const remaining = Math.max(0, direction > 0 ? position - minimum : maximum - position);
   const screenEnd = screenStart + screenLength - 1;
@@ -63,13 +71,16 @@ export function calculateHugescreenPan(
   const blend = Math.max(0, Math.min(1, (speed - 120) / (900 - 120)));
   const sensitivity = blend * blend * (3 - 2 * blend);
   return {
-    x: panAxis(bounds.x, limits.minX, limits.maxX, from.x, to.x, area.x, area.width, sensitivity),
-    y: panAxis(bounds.y, limits.minY, limits.maxY, from.y, to.y, area.y, area.height, sensitivity)
+    x: panAxis(bounds.x, limits.minX, limits.maxX, from.x, to.x, area.x, area.width, sensitivity,
+      bounds.x - frame.left, bounds.x + bounds.width + frame.right),
+    y: panAxis(bounds.y, limits.minY, limits.maxY, from.y, to.y, area.y, area.height, sensitivity,
+      bounds.y - frame.top, bounds.y + bounds.height + frame.bottom)
   };
 }
 
 /** Moves only the native parent. Child view geometry stays unchanged during panning. */
 export class Hugescreen {
+  private readonly motion = new HugescreenMotion();
   private enabled = false;
   private area: Rectangle | null = null;
   private lastCursor: Point | null = null;
@@ -112,9 +123,10 @@ export class Hugescreen {
     this.timer = setInterval(() => this.pan(), 16);
   }
 
-  resetPointer(): void {
+  resetPointer(deadZone = false): void {
     this.lastCursor = this.options.getCursor();
     this.lastSampleAt = performance.now();
+    this.motion.reset(this.lastCursor, this.lastSampleAt, deadZone);
     this.remainder = { x: 0, y: 0 };
   }
 
@@ -159,6 +171,9 @@ export class Hugescreen {
   handleMouse(mouse: MouseInputEvent, now = Date.now()): void {
     if (mouse.type === "mouseDown") {
       this.resetTaps();
+      this.resetPointer(true);
+    } else if (mouse.type === "mouseUp") {
+      this.resetPointer(true);
     } else if (mouse.type === "mouseWheel") {
       this.scrollPauseUntil = now + 150;
       this.resetPointer();
@@ -178,14 +193,16 @@ export class Hugescreen {
     if (!previous || !this.area || window.isMaximized() || window.isFullScreen() ||
       Date.now() < this.scrollPauseUntil) {
       this.remainder = { x: 0, y: 0 };
+      this.motion.reset(cursor, now);
       return;
     }
-    if (cursor.x === previous.x && cursor.y === previous.y) return;
+    const delta = this.motion.filter(previous, cursor, now);
+    if (!delta.x && !delta.y) return;
     // Global coordinates ignore synthetic motion caused by moving the window itself.
     const bounds = window.getBounds();
     const precise = calculateHugescreenPan({ ...bounds,
       x: bounds.x + this.remainder.x, y: bounds.y + this.remainder.y
-    }, this.area, previous, cursor, this.options.getFrameInsets?.(), elapsed);
+    }, this.area, { x: cursor.x - delta.x, y: cursor.y - delta.y }, cursor, this.options.getFrameInsets?.(), elapsed);
     const point = roundHugescreenPosition(precise);
     // Carry subpixel travel into the next movement, never into stationary samples.
     this.remainder = { x: precise.x - point.x, y: precise.y - point.y };
