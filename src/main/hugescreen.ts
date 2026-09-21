@@ -103,8 +103,8 @@ export class Hugescreen {
     }
     const cursor = this.options.getCursor();
     const point = clampHugescreenPosition(this.panOrigin.bounds, this.area, {
-      x: this.panOrigin.bounds.x + cursor.x - this.panOrigin.cursor.x,
-      y: this.panOrigin.bounds.y + cursor.y - this.panOrigin.cursor.y
+      x: this.panOrigin.bounds.x - (cursor.x - this.panOrigin.cursor.x),
+      y: this.panOrigin.bounds.y - (cursor.y - this.panOrigin.cursor.y)
     });
     const [x, y] = this.options.window.getPosition();
     if (x !== point.x || y !== point.y) this.options.window.setPosition(point.x, point.y);

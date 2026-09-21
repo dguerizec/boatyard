@@ -69,9 +69,12 @@ test("double-tap and hold Ctrl pans; release and Escape stop without resizing", 
     assert.equal(mode.handleKey(key("keyDown"), 1200), true);
     assert.equal(mode.handleMouse({ type: "mouseMove", x: 20, y: 20 }), true,
       "real Electron mouse events omit modifiers while Ctrl is held");
-    move(250, 150);
+    move(650, 550);
     await tick();
-    assert.deepEqual(window.getPosition(), [-200, -170]);
+    assert.deepEqual(window.getPosition(), [-200, -170], "moving right/down brings content left/up toward the pointer");
+    move(550, 450);
+    await tick();
+    assert.deepEqual(window.getPosition(), [-100, -70], "reversing the pointer reverses the window movement");
     assert.equal(mode.handleMouse({ type: "mouseMove", x: 20, y: 20, modifiers: ["control"] }), true);
     const moves = window.moves;
     await tick();
