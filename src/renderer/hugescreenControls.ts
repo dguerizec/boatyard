@@ -35,9 +35,12 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         </label>
         <p class="hugescreen-size-hint">Window size relative to the screen</p>
         <div class="hugescreen-size-fields">
-          <label class="field"><span class="hugescreen-slider-label">Width<output for="hugescreen-width" data-value="width">×1.00</output></span><input id="hugescreen-width" name="width" type="range" min="1" max="5" step="0.01" value="1" disabled><span class="hugescreen-slider-scale" aria-hidden="true"><span>×1</span><span>×5</span></span></label>
-          <label class="field"><span class="hugescreen-slider-label">Height<output for="hugescreen-height" data-value="height">×1.00</output></span><input id="hugescreen-height" name="height" type="range" min="1" max="5" step="0.01" value="1" disabled><span class="hugescreen-slider-scale" aria-hidden="true"><span>×1</span><span>×5</span></span></label>
+          <label class="field"><span class="hugescreen-slider-label">Width<output for="hugescreen-width" data-value="width">×1.00</output></span><input id="hugescreen-width" name="width" type="range" list="hugescreen-size-stops" min="1" max="5" step="0.01" value="1" disabled><span class="hugescreen-slider-scale" aria-hidden="true"><span>×1</span><span>×5</span></span></label>
+          <label class="field"><span class="hugescreen-slider-label">Height<output for="hugescreen-height" data-value="height">×1.00</output></span><input id="hugescreen-height" name="height" type="range" list="hugescreen-size-stops" min="1" max="5" step="0.01" value="1" disabled><span class="hugescreen-slider-scale" aria-hidden="true"><span>×1</span><span>×5</span></span></label>
         </div>
+        <datalist id="hugescreen-size-stops">
+          ${Array.from({ length: 9 }, (_, index) => `<option value="${1 + index * 0.5}"></option>`).join("")}
+        </datalist>
         <figure class="hugescreen-preview" hidden>
           <svg role="img" aria-label="Boatyard window and centered screen at the same scale" viewBox="0 0 1 1">
             <rect class="hugescreen-preview-window" width="100%" height="100%" />

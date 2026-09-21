@@ -19,7 +19,8 @@ manager's controls.
   like double Ctrl or **Ctrl+Shift+H**.
 - The popup offers independent **Width** and **Height** sliders of the
   screen work area, from 1× to 5×, with the multiplier and outer-window dimension in pixels shown live. **Apply** resizes the outer window, including
-  decorations, and recalculates pan eligibility. **Cancel** discards size edits;
+  decorations, and recalculates pan eligibility. Sliders snap to 0.5× increments
+  while retaining 0.01× precision between these stops. **Cancel** discards size edits;
   it does not undo an immediate Pan switch change. Native minimum dimensions apply.
   A live diagram uses the popup width to show the proposed window at its actual
   aspect ratio, with the screen centered inside at the same scale.
