@@ -23,7 +23,8 @@ export function runBrowserTest(t: TestContext, fixture: string) {
       const { app, BrowserWindow } = require("electron");
       app.setPath('userData', ${JSON.stringify(join(directory, "profile"))});
       app.whenReady().then(async () => {
-        const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
+        // Hidden test windows still need animation frames for editor layout measurements.
+        const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, backgroundThrottling: false } });
         win.webContents.on('console-message', (event) => { console.log(event.message); if (event.level === 'error') app.exit(1); });
         await win.loadFile(${JSON.stringify(join(directory, "index.html"))});
         const timer = setInterval(async () => {
