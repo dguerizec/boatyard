@@ -58,4 +58,26 @@ for (const longLine of ['long value '.repeat(60), 'x'.repeat(600)]) {
   }
   view.destroy();
 }
+for (const [before, after, removed, added] of [
+  ['Keep the old value here.', 'Keep the new value here.', 'old', 'new'],
+  ['Keep the value here.', 'Keep the TEST value here.', '', 'TEST '],
+  ['Keep the TEST value here.', 'Keep the value here.', 'TEST ', ''],
+  ['unchanged\nKeep <old> here.', 'unchanged\nKeep <new> here.', 'old', 'new']
+]) {
+  const original = Text.of(before.split('\n'));
+  const view = new EditorView({ parent: host, doc: after, extensions: [inlineDiffState, EditorView.lineWrapping] });
+  view.dispatch({ effects: setInlineDiff.of({ original, inline: true }) });
+  const key = removedLinesKey(original, view.state.field(inlineDiffState).chunks[0]);
+  view.dispatch({ effects: toggleRemovedLines.of(key) });
+  const highlighted = selector => [...host.querySelectorAll(selector)].map(node => node.textContent).join('');
+  check(highlighted('.file-editor-removed-text') === removed, 'Only removed characters are emphasized');
+  check(highlighted('.file-editor-added-text') === added, 'Only added characters are emphasized');
+  check(view.state.doc.toString() === after, 'Highlights preserve editable text');
+  if (removed === 'old' && !before.includes('\n')) {
+    const from = after.indexOf('new');
+    view.dispatch({ changes: { from, to: from + 3, insert: 'old value' } });
+    check(highlighted('.file-editor-removed-text') === '', 'Original highlights refresh when the same expanded block becomes insertion-only');
+  }
+  view.destroy();
+}
 window.browserTestResult = 'passed';

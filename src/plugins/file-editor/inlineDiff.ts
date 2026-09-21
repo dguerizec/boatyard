@@ -15,13 +15,25 @@ export type InlineDiffState = {
 };
 
 export class RemovedLines extends WidgetType {
-  constructor(readonly content: string, readonly key: string) { super(); }
-  eq(other: RemovedLines) { return other.key === this.key; }
+  constructor(readonly content: string, readonly key: string, readonly changes: readonly { from: number; to: number }[] = []) { super(); }
+  eq(other: RemovedLines) {
+    return other.key === this.key && other.changes.length === this.changes.length &&
+      this.changes.every((change, index) => change.from === other.changes[index].from && change.to === other.changes[index].to);
+  }
   toDOM() {
     const before = document.createElement("pre");
     before.className = "file-editor-removed-lines";
     before.contentEditable = "false";
-    before.textContent = this.content;
+    let offset = 0;
+    for (const change of this.changes) {
+      before.append(this.content.slice(offset, change.from));
+      const highlight = document.createElement("span");
+      highlight.className = "file-editor-removed-text";
+      highlight.textContent = this.content.slice(change.from, change.to);
+      before.append(highlight);
+      offset = change.to;
+    }
+    before.append(this.content.slice(offset));
     before.setAttribute("aria-label", "Original lines from HEAD, read-only");
     return before;
   }
@@ -36,14 +48,20 @@ function decorate(value: InlineDiffState, doc: Text): DecorationSet {
     if (chunk.fromA < chunk.toA) {
       const content = value.original.sliceString(chunk.fromA, chunk.endA);
       const key = removedLinesKey(value.original, chunk);
+      const changes = chunk.changes.map((change) => ({ from: Math.min(content.length, change.fromA), to: Math.min(content.length, change.toA) }))
+        .filter((change) => change.from < change.to);
       if (value.expanded.has(key)) decorations.push(Decoration.widget({ block: true, side: -1,
-        widget: new RemovedLines(content, key) }).range(position));
+        widget: new RemovedLines(content, key, changes) }).range(position));
     }
     if (chunk.fromB < chunk.toB) {
       for (let number = doc.lineAt(position).number; number <= doc.lines; number++) {
         const line = doc.line(number);
         if (line.from >= chunk.toB) break;
         decorations.push(Decoration.line({ class: "file-editor-added-line" }).range(line.from));
+      }
+      for (const change of chunk.changes) {
+        const from = Math.min(doc.length, chunk.fromB + change.fromB), to = Math.min(doc.length, chunk.fromB + change.toB);
+        if (from < to) decorations.push(Decoration.mark({ class: "file-editor-added-text" }).range(from, to));
       }
     }
   }

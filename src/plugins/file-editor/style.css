@@ -192,6 +192,8 @@
 .file-editor .cm-line.file-editor-added-line { background: rgba(100, 180, 128, .16); }
 .file-editor .file-editor-removed-lines { margin: 0; padding: 0 4px; background: rgba(229, 107, 111, .16); border-left: 3px solid rgba(229, 107, 111, .65); color: var(--text); font: inherit; white-space: pre; user-select: text; }
 .file-editor .cm-lineWrapping .file-editor-removed-lines { white-space: pre-wrap; overflow-wrap: anywhere; }
+.file-editor .file-editor-removed-text { background: rgba(229, 107, 111, .4); }
+.file-editor .file-editor-added-text { background: rgba(100, 180, 128, .4); }
 /* Preserve empty and trailing blank rows without changing the original text. */
 .file-editor .file-editor-removed-lines::after { content: "\200b"; }
 .file-editor .file-editor-git-marker { border: 0; border-radius: 0; background: transparent; padding: 0 3px; font: inherit; line-height: inherit; color: var(--accent); }
