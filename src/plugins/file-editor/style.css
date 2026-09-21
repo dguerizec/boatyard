@@ -49,6 +49,12 @@
 .file-editor-compare summary { cursor: pointer; }
 .file-editor-compare pre { margin: 8px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .file-editor .cm-editor { font-size: 13px; }
+.file-editor { --editor-selection-background: #315c85; }
+:root[data-theme="light"] .file-editor { --editor-selection-background: #add6ff; }
+.file-editor .cm-editor .cm-selectionBackground,
+.file-editor .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
+  background-color: var(--editor-selection-background);
+}
 /* Override CodeMirror's compact percentage-based search controls. */
 .file-editor .cm-editor .cm-panel.cm-search {
   display: flex;
