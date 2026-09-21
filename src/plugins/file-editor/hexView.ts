@@ -29,6 +29,14 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
   let focusRequest = 0;
   let selection: ByteSelection = { anchor: 0, head: 0 };
   let pivot = 0, focusing = false, dragging = false;
+  function bindSelection(cell: HTMLElement, index: number) {
+    cell.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault(); dragging = true;
+      void focusByte(index, event.shiftKey);
+    });
+    cell.addEventListener("pointerenter", (event) => { if (dragging && event.buttons === 1) void focusByte(index, true); });
+  }
   function selectByte(index: number, extend = false) {
     if (!extend) pivot = index;
     selection = extend ? (index >= pivot ? { anchor: pivot, head: index + 1 } : { anchor: pivot + 1, head: index }) : { anchor: index, head: index };
@@ -155,20 +163,19 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
     focusing = false;
   }
   function renderValues() {
+    const from = Math.min(selection.anchor, selection.head), to = Math.max(selection.anchor, selection.head);
+    const isSelected = (index: number) => from === to ? index === Math.min(size - 1, from) : index >= from && index < to;
     for (const input of layer.querySelectorAll<HTMLInputElement>("input[data-offset]")) {
       const index = Number(input.dataset.offset), value = valueAt(index);
       if (document.activeElement !== input || input.readOnly || input.value.length === 2) input.value = value === undefined ? "··" : hex(value);
-      const from = Math.min(selection.anchor, selection.head), to = Math.max(selection.anchor, selection.head);
-      input.classList.toggle("selected", from === to ? index === Math.min(size - 1, from) : index >= from && index < to);
+      input.classList.toggle("selected", isSelected(index));
       input.readOnly = !active(index);
       input.disabled = disabled;
     }
     for (const ascii of layer.querySelectorAll<HTMLElement>("[data-ascii]")) {
-      const start = Number(ascii.dataset.ascii);
-      ascii.textContent = Array.from({ length: Math.min(16, size - start) }, (_, i) => {
-        const value = valueAt(start + i);
-        return value === undefined ? " " : value >= 32 && value <= 126 ? String.fromCharCode(value) : ".";
-      }).join("");
+      const index = Number(ascii.dataset.ascii), value = valueAt(index);
+      ascii.textContent = value === undefined ? " " : value >= 32 && value <= 126 ? String.fromCharCode(value) : ".";
+      ascii.classList.toggle("selected", isSelected(index));
     }
     undoButton.disabled = disabled || !(source?.history ? source.canUndo : undo.length);
     redoButton.disabled = disabled || !(source?.history ? source.canRedo : redo.length);
@@ -199,12 +206,7 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
           const input = document.createElement("input");
           input.dataset.offset = String(index); input.maxLength = 2; input.spellcheck = false;
           input.setAttribute("aria-label", `Byte 0x${index.toString(16).toUpperCase()}`);
-          input.addEventListener("pointerdown", (event) => {
-            if (event.button !== 0) return;
-            event.preventDefault(); dragging = true;
-            void focusByte(index, event.shiftKey);
-          });
-          input.addEventListener("pointerenter", (event) => { if (dragging && event.buttons === 1) void focusByte(index, true); });
+          bindSelection(input, index);
           input.addEventListener("focus", () => { if (focusing) return; if (!active(index)) void focusByte(index); else { selectByte(index); input.select(); } });
           input.addEventListener("input", () => {
             input.setCustomValidity("");
@@ -228,7 +230,14 @@ export function createHexView(host: HTMLElement, onEdit: (bytes: Uint8Array) => 
           });
           line.append(input);
         }
-        const ascii = document.createElement("span"); ascii.dataset.ascii = String(row); line.append(ascii); layer.append(line);
+        const ascii = document.createElement("span");
+        for (let index = row; index < Math.min(row + 16, size); index++) {
+          const character = document.createElement("span");
+          character.dataset.ascii = String(index);
+          bindSelection(character, index);
+          ascii.append(character);
+        }
+        line.append(ascii); layer.append(line);
       }
     }
     renderValues();

@@ -207,10 +207,13 @@
 .file-editor-file-actions { flex: 0 0 auto; border-bottom: 1px solid var(--line); }
 .file-editor-filebar:has(.file-editor-tabs:empty) .file-editor-tabs { min-height: 30px; }
 
-.file-editor .file-editor-hex-row input.selected {
+.file-editor .file-editor-hex-row input.selected,
+.file-editor .file-editor-hex-row [data-ascii].selected {
   background: rgba(var(--accent-rgb), .25);
   border-color: var(--accent);
 }
+.file-editor-hex-row [data-ascii] { display: inline-block; cursor: text; user-select: none; }
+.file-editor-hex-row [data-ascii].selected { color: var(--text); }
 .file-browser-root-control { position: relative; min-width: 0; flex: 1; width: 0; }
 .file-browser-root { width: 100%; border: 0; background: transparent; color: transparent; font: inherit; font-weight: 600; cursor: pointer; }
 .file-browser-root-label { position: absolute; inset: 0 20px 0 0; display: block; align-content: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; pointer-events: none; }
