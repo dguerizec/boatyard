@@ -1,5 +1,6 @@
 import { TextBytePositions, type ByteSelection } from "./selection";
 import { FileTabs, createFileTabs } from "./tabs";
+import { createEditorSurface } from "./editorSurface";
 import { createGitView } from "./gitView";
 import { cachedGit } from "./gitCache";
 import type { GitBaseline, EditorGitStatus } from "./git";
@@ -233,6 +234,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   };
   const diffControl = getPaneControl(container, "diff");
   let diffMode = false;
+  let sideBySide = false;
+  try { sideBySide = localStorage.getItem(`${paneKey}:diff-layout`) === "side-by-side"; } catch { /* Default to inline diff. */ }
   let requestedDiffPath: string | null = null;
   try { requestedDiffPath = localStorage.getItem(`${paneKey}:diff-file`); diffMode = Boolean(requestedDiffPath) || localStorage.getItem(`${paneKey}:diff`) === "true"; } catch { /* Optional preference. */ }
   function persistDiffMode() { try { localStorage.setItem(`${paneKey}:diff`, String(diffMode)); } catch { /* Optional preference. */ } }
@@ -333,6 +336,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   });
   let doc: EditorDocument | undefined;
   let view: EditorView | undefined;
+  let surface: ReturnType<typeof createEditorSurface> | undefined;
+  function destroyView() { surface?.destroy(); surface = undefined; view = undefined; }
   const diffHost = element("div", "file-editor-diff");
   diffHost.hidden = true;
   const hexHost = element("div", "file-editor-hex");
@@ -461,18 +466,32 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   let viewLocked = false;
   let viewFirstLine = 1;
   const editorTheme = () => document.documentElement.dataset.theme === "light" ? [] : oneDark;
-  const gitView = createGitView(diffHost, () => setDiff(true));
+  const editorAppearance = EditorView.theme({ "&": { height: "100%", backgroundColor: "var(--panel)" }, ".cm-scroller": { overflow: "auto", fontFamily: "monospace" } });
+  const gitView = createGitView(diffHost, () => setDiff(true), {
+    selected: () => sideBySide,
+    toggle: () => {
+      sideBySide = !sideBySide;
+      try { localStorage.setItem(`${paneKey}:diff-layout`, sideBySide ? "side-by-side" : "inline"); } catch { /* Optional layout preference. */ }
+      updateGitView(); view?.focus();
+    }
+  });
   let gitBaseline: GitBaseline | undefined;
   let gitPath = "", gitError = "", gitVersion = 0;
   let gitPending = false;
   let gitUpdateTimer: ReturnType<typeof setTimeout> | undefined;
+  function useSideBySide() {
+    return Boolean(diffMode && sideBySide && !hexMode && !previewVisible && doc && !doc.base.block
+      && doc.encoding !== "hex" && !openedImage && gitPath === doc.base.path && gitBaseline?.available);
+  }
   function updateGitView() {
     if (disposed) return;
     const path = doc?.base.path || "";
     const supported = Boolean(doc && !doc.base.block && doc.encoding !== "hex" && !openedImage);
+    if (view && useSideBySide() !== Boolean(surface?.originalView)) rebuild(view.hasFocus, true);
+    if (useSideBySide() && gitBaseline) surface?.updateOriginal(gitBaseline.text, gitBaseline.label);
     const reason = doc?.base.block ? "Git diff currently requires a complete text file; paged files are not supported." : "Git diff is available for text files only.";
     gitView.update(path, supported && gitPath === path ? gitBaseline : undefined,
-      supported ? gitError : reason, supported ? view : undefined);
+      supported ? gitError : reason, supported ? view : undefined, Boolean(surface?.originalView));
     diffControl.enabled = Boolean(doc && !openedImage);
     diffControl.open = diffMode;
     syncPaneControl(diffControl);
@@ -519,7 +538,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
   function showDeletedDiff(path: string) {
     persist(); if (persistenceError && doc?.dirty) return;
-    unsubscribe?.(); view?.destroy(); view = undefined; editorHost.replaceChildren();
+    unsubscribe?.(); destroyView(); editorHost.replaceChildren();
     openedImage = undefined; deletedGitPath = path;
     const retainedDraft = readDraft(draftKey(path));
     doc = new EditorDocument({ path, text: retainedDraft?.text || "", encoding: retainedDraft?.encoding, revision: "deleted" }, {
@@ -541,6 +560,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
   const themeObserver = new MutationObserver(() => {
     view?.dispatch({ effects: theme.reconfigure(editorTheme()) });
+    surface?.originalView?.dispatch({ effects: theme.reconfigure(editorTheme()) });
     schedulePreview();
   });
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
@@ -851,11 +871,12 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     }
   }
 
-  function rebuild(focus = true) {
+  function rebuild(focus = true, preserveState = false) {
     if (!doc) return;
+    if (preserveState) rememberPosition();
+    const previousState = preserveState ? view?.state : undefined;
     restoringPosition = true;
-    view?.destroy();
-    view = undefined;
+    destroyView();
     editorHost.replaceChildren();
     hexControl.enabled = true;
     if (!doc.base.block && imageMimeType(doc.base.path) && (!hexMode || previewVisible)) {
@@ -876,9 +897,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     bom = (!doc.base.block?.offset && doc.text.startsWith("\uFEFF")) ? "\uFEFF" : "";
     viewLocked = false;
     viewFirstLine = currentBlock()?.line ?? 1;
-    view = new EditorView({
-      parent: editorHost,
-      state: EditorState.create({
+    surface = createEditorSurface(editorHost, {
         doc: doc.text.slice(bom.length),
         extensions: [vimCompartment.of(vimExtension()), basicSetup, gitView.extension, theme.of(editorTheme()), doc.base.block ? [] : language(doc.base.path),
           readOnly.of(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath))),
@@ -886,7 +905,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
           numbering.of(lineNumbers({ formatNumber: (number) => String(number + viewFirstLine - 1) })),
           lineSeparator.of(EditorState.lineSeparator.of(doc.text.includes("\r\n") ? "\r\n" : "\n")),
           EditorView.contentAttributes.of({ "aria-label": "File contents" }),
-          EditorView.theme({ "&": { height: "100%", backgroundColor: "var(--panel)" }, ".cm-scroller": { overflow: "auto", fontFamily: "monospace" } }),
+          editorAppearance,
           Prec.highest(keymap.of(doc.changes ? [
             { key: "Mod-z", run: () => { void historyChanges(false); return true; } },
             { key: "Mod-Shift-z", run: () => { void historyChanges(true); return true; } },
@@ -907,10 +926,18 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
               publishSelection({ anchor: start + positions.byte(selection.anchor), head: start + positions.byte(selection.head) });
             }
           })]
-      })
-    });
+    }, previousState, useSideBySide() && gitBaseline ? {
+      label: gitBaseline.label,
+      config: {
+        doc: gitBaseline.text.replace(/^\uFEFF/, "").replace(/\r\n|\r/g, "\n"),
+        extensions: [basicSetup, theme.of(editorTheme()), language(doc.base.path), editorAppearance,
+          EditorState.readOnly.of(true), EditorView.editable.of(false),
+          EditorView.contentAttributes.of({ "aria-label": "Git baseline file contents, read-only" })]
+      }
+    } : undefined);
+    view = surface.view;
     const position = positionFor(doc.base.path);
-    view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length), head: Math.min(position.head, view.state.doc.length) } });
+    if (!previousState) view.dispatch({ selection: { anchor: Math.min(position.anchor, view.state.doc.length), head: Math.min(position.head, view.state.doc.length) } });
     previewControl.enabled = true;
     setPreview(previewVisible, focus);
     if (previewVisible) restoringPosition = false;
@@ -937,7 +964,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
           unsubscribe?.(); unsubscribe = undefined;
           doc = undefined;
           blockNavigation.update(undefined, false, false);
-          view?.destroy(); view = undefined;
+          destroyView();
           editorHost.replaceChildren();
           openedImage = image;
           deletedGitPath = ""; gitVersion++; gitView.show(false); diffControl.enabled = false; diffControl.open = false; syncPaneControl(diffControl);
@@ -1093,7 +1120,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
 
   function clearFile() {
-    unsubscribe?.(); unsubscribe = undefined; view?.destroy(); view = undefined;
+    unsubscribe?.(); unsubscribe = undefined; destroyView();
     doc = undefined; openedImage = undefined; deletedGitPath = "";
     previewVersion++; clearTimeout(previewTimer); previewPendingSource = ""; previewSource = "";
     gitVersion++; gitBaseline = undefined; gitPath = "";
@@ -1244,7 +1271,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   };
   const togglePreview = () => {
     if (deletedGitPath) return;
-    if (diffMode) { diffMode = false; persistDiffMode(); gitView.show(false); diffControl.open = false; syncPaneControl(diffControl); }
+    if (diffMode) setDiff(false);
     if (openedImage) {
       previewVisible = !previewVisible;
       try { localStorage.setItem(previewKey, String(previewVisible)); } catch { /* Optional view preference. */ }
@@ -1261,7 +1288,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   };
   const toggleHex = () => {
     if (deletedGitPath || opening || doc?.saving || doc?.changes?.saving) return;
-    if (diffMode) { diffMode = false; persistDiffMode(); gitView.show(false); diffControl.open = false; syncPaneControl(diffControl); }
+    if (diffMode) setDiff(false);
     if (hexMode && doc?.base.block && imageMimeType(doc.base.path)) {
       if (doc.dirty) { showError("Save this block before opening the complete image preview."); return; }
       hexMode = false; persistHexMode();
@@ -1405,7 +1432,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     openControl.toggle = null; openControl.enabled = false; syncPaneControl(openControl);
     disposed = true;
     unsubscribe?.();
-    view?.destroy();
+    destroyView();
   };
 }
 

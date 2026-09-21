@@ -15,7 +15,7 @@ export function runBrowserTest(t: TestContext, fixture: string) {
   const directory = mkdtempSync(join(tmpdir(), "boatyard-browser-test-"));
   try {
     buildSync({ entryPoints: [resolve(fixture)], bundle: true,
-      format: "esm", outfile: join(directory, "browser.js"), logLevel: "silent" });
+      format: "esm", loader: { ".png": "dataurl" }, outfile: join(directory, "browser.js"), logLevel: "silent" });
     const stylesheet = existsSync(join(directory, "browser.css")) ? '<link rel="stylesheet" href="browser.css">' : '';
     writeFileSync(join(directory, "index.html"), `<!doctype html>${stylesheet}<script type="module" src="browser.js"></script>`);
     const electron = require("electron") as string;

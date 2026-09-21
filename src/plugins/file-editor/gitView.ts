@@ -19,7 +19,7 @@ class ChangeMarker extends GutterMarker {
 }
 
 /** Adds inline changes to the original editor without replacing its document or history. */
-export function createGitView(host: HTMLElement, open: () => void) {
+export function createGitView(host: HTMLElement, open: () => void, layout?: { selected(): boolean; toggle(): void }) {
   host.setAttribute("role", "group");
   host.setAttribute("aria-label", "Git diff controls");
   const description = document.createElement("span");
@@ -35,9 +35,15 @@ export function createGitView(host: HTMLElement, open: () => void) {
   }
   const previous = button("Previous change", "arrowLeft", () => navigate(-1));
   const next = button("Next change", "arrowRight", () => navigate(1));
+  previous.disabled = next.disabled = true;
   host.append(description, previous, next);
+  const layoutButton = button("Side-by-side diff", "columns", () => layout?.toggle());
+  layoutButton.disabled = true;
+  layoutButton.classList.add("file-editor-diff-layout");
+  layoutButton.setAttribute("aria-pressed", "false");
+  if (layout) host.append(layoutButton);
   let editor: EditorView | undefined;
-  let original: Text | null = null, identity = "", visible = false, selected = -1;
+  let original: Text | null = null, identity = "", visible = false, selected = -1, sideBySide = false;
   function navigate(direction: number) {
     const chunks = editor?.state.field(inlineDiffState).chunks || [];
     if (!chunks.length) return;
@@ -56,8 +62,9 @@ export function createGitView(host: HTMLElement, open: () => void) {
   function configure() {
     if (!editor) return;
     const current = editor.state.field(inlineDiffState);
-    if (current.inline === visible && (current.original === original || Boolean(current.original && original && current.original.eq(original)))) return;
-    editor.dispatch({ effects: setInlineDiff.of({ original, inline: visible }) });
+    const inline = visible && !sideBySide;
+    if (current.inline === inline && (current.original === original || Boolean(current.original && original && current.original.eq(original)))) return;
+    editor.dispatch({ effects: setInlineDiff.of({ original, inline }) });
   }
   const markers = gutter({ class: "file-editor-git-gutter",
     lineMarker: (view, line) => {
@@ -84,8 +91,9 @@ export function createGitView(host: HTMLElement, open: () => void) {
   });
   return {
     extension: [inlineDiffState, markers],
-    update(path: string, baseline: GitBaseline | undefined, message: string, target?: EditorView) {
+    update(path: string, baseline: GitBaseline | undefined, message: string, target?: EditorView, split = false) {
       editor = target;
+      sideBySide = split;
       if (identity !== path) selected = -1;
       identity = path;
       original = baseline?.available ? Text.of(baseline.text.replace(/^\uFEFF/, "").split(/\r\n|\r|\n/)) : null;
@@ -97,6 +105,9 @@ export function createGitView(host: HTMLElement, open: () => void) {
       description.title = status;
       description.textContent = status;
       previous.disabled = next.disabled = !chunks.length;
+      layoutButton.disabled = !baseline?.available || !editor;
+      layoutButton.setAttribute("aria-pressed", String(Boolean(layout?.selected())));
+      layoutButton.title = layout?.selected() ? "Switch to inline diff" : "Switch to side-by-side diff";
     },
     show(value: boolean) { visible = value; host.hidden = !value; configure(); },
     cleanup() { editor = undefined; }

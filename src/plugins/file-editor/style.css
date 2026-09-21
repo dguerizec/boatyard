@@ -173,6 +173,16 @@
 .file-editor-diff[hidden] { display: none; }
 .file-editor .file-editor-diff .webapp-tool-button { padding: 0; }
 .file-editor-diff-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-editor .file-editor-side-by-side { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.file-editor-side-by-side .cm-mergeViewEditors { flex: 1; min-height: 0; }
+.file-editor-side-by-side .cm-mergeViewEditor { min-width: 0; }
+.file-editor-side-by-side .cm-mergeViewEditor + .cm-mergeViewEditor { border-left: 1px solid var(--line); }
+.file-editor .file-editor-side-by-side .cm-editor { height: 100% !important; overflow: hidden !important; }
+.file-editor .file-editor-side-by-side .cm-editor .cm-scroller { height: auto !important; overflow: auto !important; flex: 1; min-height: 0; }
+.file-editor .file-editor-side-by-side .cm-merge-a .cm-changedLine { background: rgba(229, 107, 111, .16); }
+.file-editor .file-editor-side-by-side .cm-merge-b .cm-changedLine { background: rgba(100, 180, 128, .16); }
+.file-editor-diff-labels { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+.file-editor-diff-labels span { padding: 5px 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-editor .cm-line.file-editor-added-line { background: rgba(100, 180, 128, .16); }
 .file-editor .file-editor-removed-lines { margin: 0; padding: 0 4px; background: rgba(229, 107, 111, .16); border-left: 3px solid rgba(229, 107, 111, .65); color: var(--text); font: inherit; white-space: pre; user-select: text; }
 /* Preserve empty and trailing blank rows without changing the original text. */

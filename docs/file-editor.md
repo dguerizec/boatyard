@@ -111,6 +111,15 @@ the Diff icon to another pane to create a linked inline editor, using the same
 link/unlink controls as Preview. Both panes share the current draft. The Diff
 mode is remembered per pane; original lines start folded when reopening a file.
 
+The **Side-by-side diff** two-column button at the far right of the file toolbar
+switches between inline and side-by-side layouts. In side-by-side mode, the Git
+baseline appears on the left in a read-only editor and **Current** stays editable
+on the right. Changed lines are aligned and vertical scrolling is synchronized.
+The layout choice is remembered per pane. Switching layouts preserves the draft,
+cursor, undo/redo history, folded code, and search query/panel. Save, Find, Vim,
+and change navigation continue to target Current; HEAD refreshes independently.
+The button is disabled when a supported text file and Git baseline are unavailable.
+
 Untracked files use an empty baseline. Repositories without a first commit also
 use an empty baseline. Staged renames compare against the original HEAD path.
 Deleted files open as read-only diffs from the Changes list; existing text drafts
