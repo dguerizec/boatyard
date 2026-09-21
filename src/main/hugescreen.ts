@@ -100,6 +100,17 @@ export class Hugescreen {
 
   get active() { return this.enabled; }
 
+  /** Called once after startup geometry and native decorations have been restored. */
+  enableForOversizedWindow(): void {
+    const window = this.options.window;
+    if (this.active || window.isDestroyed() || window.isMaximized() || window.isFullScreen()) return;
+    const bounds = window.getBounds();
+    const area = this.options.getWorkArea();
+    const frame = this.options.getFrameInsets?.() || NO_FRAME_INSETS;
+    if (bounds.width + frame.left + frame.right > area.width ||
+      bounds.height + frame.top + frame.bottom > area.height) this.toggle();
+  }
+
   toggle(): boolean {
     this.stopPolling();
     this.enabled = !this.enabled;

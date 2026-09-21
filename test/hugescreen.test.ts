@@ -377,3 +377,49 @@ test("a stationary pointer at the screen edge does not complete pan on activatio
     assert.deepEqual(window.getBounds(), original);
   } finally { mode.dispose(); }
 });
+
+
+test("startup enables pan for either oversized axis without changing geometry", () => {
+  for (const size of [{ width: 1001, height: 600 }, { width: 900, height: 701 }]) {
+    const { mode, window, changes } = fixture();
+    try {
+      window.bounds = { ...window.bounds, ...size };
+      const original = window.getBounds();
+      mode.enableForOversizedWindow();
+      assert.equal(mode.active, true);
+      assert.deepEqual(window.getBounds(), original);
+      mode.enableForOversizedWindow();
+      assert.deepEqual(changes, [true], "startup initialization never toggles an active lock off");
+      doubleTap(mode);
+      assert.equal(mode.active, false, "the user can disable automatic panning normally");
+    } finally { mode.dispose(); }
+  }
+});
+
+test("startup leaves fitting, maximized and fullscreen windows inactive", () => {
+  for (const state of ["fits", "maximized", "fullscreen"] as const) {
+    const { mode, window } = fixture();
+    try {
+      if (state === "fits") window.bounds = { x: -100, y: -100, width: 1000, height: 700 };
+      else window[state] = true;
+      mode.enableForOversizedWindow();
+      assert.equal(mode.active, false);
+    } finally { mode.dispose(); }
+  }
+});
+
+test("startup includes native decorations when detecting oversized geometry", () => {
+  const { window } = fixture();
+  window.bounds = { x: 0, y: 28, width: 1000, height: 680 };
+  const mode = new Hugescreen({
+    window: window as unknown as BrowserWindow,
+    getWorkArea: () => area,
+    getCursor: () => ({ x: 500, y: 400 }),
+    getFrameInsets: () => ({ left: 0, right: 0, top: 28, bottom: 0 }),
+    changed: () => {}
+  });
+  try {
+    mode.enableForOversizedWindow();
+    assert.equal(mode.active, true);
+  } finally { mode.dispose(); }
+});

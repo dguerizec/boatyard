@@ -458,13 +458,12 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   });
   let frameInsets = NO_FRAME_INSETS;
   let frameInsetsRequest = 0;
-  const refreshFrameInsets = () => {
+  const refreshFrameInsets = async () => {
     if (window.isDestroyed()) return;
     const request = ++frameInsetsRequest;
     const scaleFactor = screen.getDisplayMatching(window.getBounds()).scaleFactor;
-    void readWindowFrameInsets(window, scaleFactor).then((insets) => {
-      if (insets && request === frameInsetsRequest) frameInsets = insets;
-    });
+    const insets = await readWindowFrameInsets(window, scaleFactor);
+    if (insets && request === frameInsetsRequest) frameInsets = insets;
   };
   window.on("focus", refreshFrameInsets);
   const rendererWebContentsId = window.webContents.id;
@@ -515,7 +514,6 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   }
   window.once("ready-to-show", async () => {
     window.show();
-    refreshFrameInsets();
     if (restoreOversized) {
       try {
         await restoreOversizedWindow(window, restoredBounds);
@@ -526,6 +524,10 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       }
       if (window.isDestroyed()) return;
     }
+
+    await refreshFrameInsets();
+    if (window.isDestroyed()) return;
+    workspaceWindow.hugescreen.enableForOversizedWindow();
 
     if (captureRunner.isCaptureMode()) {
       captureRunner.runCaptureRequest().catch((error: Error) => {

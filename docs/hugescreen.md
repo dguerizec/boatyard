@@ -4,6 +4,9 @@ Hugescreen pans the entire native Boatyard window, including the sidebar and
 embedded web views. It does not zoom, resize, maximize, or restore window geometry.
 Only the user changes the window size, using their window manager's controls.
 
+- Hugescreen enables automatically at startup when the restored window, including
+  its native decorations, is wider or taller than the screen work area. Maximized
+  and fullscreen windows are excluded.
 - Double-tap **Ctrl** to enable pan; double-tap again to disable it. Release each
   press within 250 ms and start the second press within 350 ms of the first release.
   No key or mouse button needs to remain held.
