@@ -12,6 +12,21 @@ Each pane keeps its opened files in a horizontally scrollable tab strip. Click a
 - JavaScript, TypeScript, JSX/TSX, JSON, CSS, HTML, Markdown, Python, and TOML (`.toml`) have syntax highlighting. Docker build files are recognized as `Dockerfile`, `Containerfile`, variants such as `Dockerfile.dev`, and files ending in `.dockerfile` or `.containerfile`. Other UTF-8 files can be edited as plain text.
 - The editor follows Boatyard's light or dark theme.
 
+## Worktree roots
+
+Click **Project files** at the top of the browser to select the project directory
+or an existing Git worktree. The toolbar shows only the selected worktree name;
+the dropdown and tooltip include its name and path. Unavailable worktrees are disabled. The list refreshes when the browser opens, the selector
+receives focus, or **Refresh project files** is clicked.
+
+The selected root is remembered per pane. Switching roots restores that root's
+tabs, selection, and local drafts; files with the same relative path in different
+worktrees stay separate. File reads, saves, Git changes, and diffs all use the
+selected root. Linked panes created by dragging Preview, Diff, or Hex inherit it.
+Switching is unavailable while file operations are running and requires the
+current draft to be stored successfully. If a saved worktree is missing on reopening, the editor
+returns to the project directory with an explanation.
+
 ## Vim mode
 
 Click **Vi** in the pane toolbar to toggle Vim keybindings. The highlighted button

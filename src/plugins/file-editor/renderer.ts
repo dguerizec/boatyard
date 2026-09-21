@@ -1,5 +1,6 @@
 import { TextBytePositions, type ByteSelection } from "./selection";
 import { FileTabs, createFileTabs } from "./tabs";
+import type { EditorRoot } from "./roots";
 import { createEditorSurface } from "./editorSurface";
 import { createGitView } from "./gitView";
 import { cachedGit } from "./gitCache";
@@ -139,7 +140,7 @@ function subscribe(doc: EditorDocument, listener: () => void) {
   };
 }
 
-async function invoke<T = FileSnapshot | null>(action: string, projectId: string, payload: Record<string, unknown> = {}) {
+async function invokeAction<T = FileSnapshot | null>(action: string, projectId: string, payload: Record<string, unknown> = {}) {
   if (!scope.boatyard?.invokePlugin) throw new Error("File access is unavailable.");
   return await scope.boatyard.invokePlugin(pluginId, action, { ...payload, projectId }) as T;
 }
@@ -168,9 +169,46 @@ function readDraft(key: string): EditorDraft | undefined {
 }
 
 function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
+  const project = (props.project || {}) as { id: string; sourcePath: string };
+  const rootKey = `boatyard:file-editor:${JSON.stringify([project.id, project.sourcePath])}:pane:${String(props.paneId || "default")}:root`;
+  let disposed = false;
+  let cleanup: (() => void) | undefined;
+  const mount = (sourcePath: string) => {
+    cleanup?.();
+    cleanup = renderEditor(container, { ...props, project: { ...project, sourcePath } }, {
+      projectRoot: project.sourcePath,
+      select(path) {
+        try { localStorage.setItem(rootKey, path); } catch { /* Keep the selected root in memory. */ }
+        mount(path);
+      }
+    });
+  };
+  let saved: string | null = null;
+  try { saved = localStorage.getItem(rootKey); } catch { /* Use the project directory. */ }
+  if (saved && saved !== project.sourcePath) {
+    container.replaceChildren(element("div", "file-browser-message", "Loading worktree…"));
+    void invokeAction<string>("resolveRoot", project.id, { root: saved }).then(path => {
+      if (!disposed) mount(path);
+    }).catch(error => {
+      if (disposed) return;
+      try { localStorage.removeItem(rootKey); } catch { /* Continue with the project directory. */ }
+      mount(project.sourcePath);
+      const message = element("div", "file-browser-message", `${error instanceof Error ? error.message : String(error)} Using the project directory.`);
+      message.setAttribute("role", "status");
+      container.prepend(message);
+    });
+  } else mount(project.sourcePath);
+  return () => { disposed = true; cleanup?.(); };
+}
+
+function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots: {
+  projectRoot: string; select(path: string): void;
+}) {
   const previewControl = getPaneControl(container, "preview");
   previewControl.enabled = false;
   const project = (props.project || {}) as { id: string; sourcePath: string };
+  const invoke = <T = FileSnapshot | null>(action: string, projectId: string, payload: Record<string, unknown> = {}) =>
+    invokeAction<T>(action, projectId, { ...payload, root: project.sourcePath });
   const prefix = `boatyard:file-editor:${JSON.stringify([project.id, project.sourcePath])}:`;
   const paneKey = `${prefix}pane:${String(props.paneId || "default")}`;
   const paneId = String(props.paneId || "default");
@@ -1270,7 +1308,31 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   });
   const fileBrowser = createProjectFileBrowser({
     list: (path, offset) => invoke<ProjectDirectoryPage>("list", project.id, { path, offset }),
-    openFile, openDiff
+    openFile, openDiff,
+    roots: {
+      current: project.sourcePath,
+      list: () => invokeAction<EditorRoot[]>("roots", project.id),
+      async select(path) {
+        const validated = await invokeAction<string>("resolveRoot", project.id, { root: path });
+        if (disposed) return;
+        if (opening || pickerPending || closingTab || doc?.busy || doc?.changes?.saving) {
+          throw new Error("Wait for the current file operation before changing worktrees.");
+        }
+        persist(); rememberPosition();
+        if (persistenceError && doc?.dirty) throw new Error(persistenceError);
+        const selected = path === roots.projectRoot ? roots.projectRoot : validated;
+        const targetKey = `boatyard:file-editor:${JSON.stringify([project.id, selected])}:pane:${paneId}`;
+        for (const preference of ["browser", "vim", "wrap-lines", "diff", "diff-layout"]) {
+          try {
+            const value = localStorage.getItem(`${paneKey}:${preference}`);
+            if (value !== null && localStorage.getItem(`${targetKey}:${preference}`) === null) {
+              localStorage.setItem(`${targetKey}:${preference}`, value);
+            }
+          } catch { /* Root switching remains available without optional preferences. */ }
+        }
+        roots.select(selected);
+      }
+    }
   });
   browserLayout.panel.append(fileBrowser.element);
   browserLayout.viewport.classList.add("file-editor-main");
@@ -1335,6 +1397,8 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       const start = props.startPaneDrag as (event: DragEvent, webAppId: string, prepare: (paneId: string) => void) => void;
       start(event, "boatyard.fileEditor.editor", (targetId) => {
         const targetKey = `${prefix}pane:${targetId}`;
+        const targetRootKey = `boatyard:file-editor:${JSON.stringify([project.id, roots.projectRoot])}:pane:${targetId}:root`;
+        localStorage.setItem(targetRootKey, project.sourcePath);
         for (const viewMode of ["diff", "hex", "preview"]) {
           localStorage.removeItem(`${targetKey}:${viewMode}-file`);
           localStorage.setItem(`${targetKey}:${viewMode}`, String(viewMode === mode));

@@ -211,3 +211,8 @@
   background: rgba(var(--accent-rgb), .25);
   border-color: var(--accent);
 }
+.file-browser-root-control { position: relative; min-width: 0; flex: 1; width: 0; }
+.file-browser-root { width: 100%; border: 0; background: transparent; color: transparent; font: inherit; font-weight: 600; cursor: pointer; }
+.file-browser-root-label { position: absolute; inset: 0 20px 0 0; display: block; align-content: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; pointer-events: none; }
+.file-browser-root-control::after { content: "▾"; position: absolute; right: 4px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--text); }
+.file-browser-root option { background: var(--panel); color: var(--text); }

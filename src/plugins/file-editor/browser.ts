@@ -1,10 +1,12 @@
+import type { EditorRoot } from "./roots";
 import type { EditorGitStatus } from "./git";
 import { createToolIcon } from "../../renderer/toolIcons";
 import type { ProjectDirectoryPage } from "./service";
 
 type DirectoryNode = { path: string; list: HTMLUListElement; loaded: boolean; busy: boolean; offset: number | null; more?: HTMLLIElement };
 
-export function createProjectFileBrowser({ list, openFile, openDiff }: {
+export function createProjectFileBrowser({ list, openFile, openDiff, roots }: {
+  roots?: { current: string; list(): Promise<EditorRoot[]>; select(path: string): Promise<void> };
   list(path: string, offset: number): Promise<ProjectDirectoryPage>;
   openFile(path: string): Promise<void>;
   openDiff(path: string, deleted: boolean): Promise<void>;
@@ -14,8 +16,59 @@ export function createProjectFileBrowser({ list, openFile, openDiff }: {
   element.setAttribute("aria-label", "Project files");
   const header = document.createElement("div");
   header.className = "file-browser-header";
-  const title = document.createElement("strong");
-  title.textContent = "Project files";
+  const title = document.createElement("select");
+  title.className = "file-browser-root";
+  title.setAttribute("aria-label", "Project files root");
+  const rootControl = document.createElement("div");
+  rootControl.className = "file-browser-root-control";
+  const rootLabel = document.createElement("span");
+  rootLabel.className = "file-browser-root-label";
+  rootLabel.setAttribute("aria-hidden", "true");
+  rootLabel.textContent = "Project files";
+  rootControl.append(title, rootLabel);
+  title.title = roots ? `Project files — ${roots.current}` : "Project files";
+  title.add(new Option("Project files", roots?.current || ""));
+  title.disabled = !roots;
+  const rootMessage = document.createElement("div");
+  rootMessage.className = "file-browser-message";
+  rootMessage.setAttribute("role", "status");
+  rootMessage.hidden = true;
+  let rootsPending = false;
+  async function refreshRoots() {
+    if (!roots || rootsPending || disposed) return;
+    rootsPending = true;
+    try {
+      const entries = await roots.list();
+      if (disposed) return;
+      title.replaceChildren(...entries.map(entry => {
+        const option = new Option(`${entry.label} — ${entry.path}`, entry.path, false, entry.path === roots.current);
+        option.disabled = !entry.usable;
+        option.title = `${entry.label} — ${entry.path}`;
+        return option;
+      }));
+      if (!entries.some(entry => entry.path === roots.current)) title.add(new Option("Unavailable worktree", roots.current, true, true));
+      title.value = roots.current;
+      const selected = entries.find(entry => entry.path === roots.current);
+      rootLabel.textContent = selected?.label || "Unavailable worktree";
+      title.title = `${rootLabel.textContent} — ${roots.current}`;
+      rootMessage.hidden = true;
+    } catch (error) {
+      if (!disposed) { rootMessage.textContent = String(error instanceof Error ? error.message : error); rootMessage.hidden = false; }
+    } finally { rootsPending = false; }
+  }
+  title.addEventListener("focus", () => void refreshRoots());
+  title.addEventListener("change", async () => {
+    if (!roots || title.value === roots.current) return;
+    title.disabled = true;
+    try { await roots.select(title.value); }
+    catch (error) {
+      if (!disposed) {
+        title.value = roots.current;
+        rootMessage.textContent = error instanceof Error ? error.message : String(error);
+        rootMessage.hidden = false;
+      }
+    } finally { if (!disposed) title.disabled = false; }
+  });
   const refreshButton = document.createElement("button");
   refreshButton.type = "button";
   refreshButton.className = "webapp-tool-button";
@@ -35,8 +88,8 @@ export function createProjectFileBrowser({ list, openFile, openDiff }: {
   actions.className = "file-browser-actions";
   actions.append(changesButton, refreshButton);
   const gitMessage = document.createElement("div"); gitMessage.className = "file-browser-message"; gitMessage.hidden = true;
-  header.append(title, actions);
-  element.append(header, gitMessage, tree);
+  header.append(rootControl, actions);
+  element.append(header, rootMessage, gitMessage, tree);
   const expanded = new Set<string>();
   const directories = new Map<string, { node: DirectoryNode; toggle: HTMLButtonElement }>();
   const files = new Map<string, HTMLButtonElement[]>();
@@ -201,11 +254,11 @@ export function createProjectFileBrowser({ list, openFile, openDiff }: {
     root = { path: "", list: tree, loaded: false, busy: false, offset: 0 };
     void load(root);
   }
-  refreshButton.addEventListener("click", refresh);
+  refreshButton.addEventListener("click", () => { refresh(); void refreshRoots(); });
   changesButton.addEventListener("click", () => { onlyChanges = !onlyChanges; changesButton.setAttribute("aria-pressed", String(onlyChanges)); refresh(); });
   return {
     element,
-    show() { if (onlyChanges) renderChanges(); else if (!root.loaded && !root.busy) void load(root); },
+    show() { void refreshRoots(); if (onlyChanges) renderChanges(); else if (!root.loaded && !root.busy) void load(root); },
     setGitStatus(status: EditorGitStatus | undefined, error = "") {
       const changed = Boolean(status) && JSON.stringify(gitStatus) !== JSON.stringify(status);
       if (status) gitStatus = status;
