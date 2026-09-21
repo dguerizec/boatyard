@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.17.0] - 2026-09-21
+
+### Summary
+
+- **v0.17.0: Room to Roam** — Expand Boatyard beyond your screen and navigate oversized windows with precise pointer panning and visual sizing controls.
+
+### Added
+
+- **Hugescreen panning** — Pan oversized windows without changing their size or zoom, including while dragging items across workspace and embedded web content.
+- **Quick pan controls** — Toggle panning with a double Ctrl tap, Ctrl+Shift+H, or the toolbar’s Pan switch, with a highlighted indicator when active. Panning enables automatically for oversized windows on startup and after resizing.
+- **Visual window sizing** — Adjust width and height independently from 1× to 5× the screen size, with half-step snapping, live pixel dimensions, and a proportional preview before applying.
+- **Precise pointer movement** — Slow movements provide finer control, while approaching screen edges increases travel to reach distant content. Motion filtering reduces accidental panning, and native title bars and borders remain reachable.
+
+### Documentation
+
+- **Hugescreen guide** — Explains sizing controls, panning shortcuts, pointer behavior, and platform limitations.
+
 ## [0.16.1] - 2026-09-21
 
 ### Summary

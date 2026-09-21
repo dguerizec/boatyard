@@ -1,6 +1,32 @@
 {
-  "generatedForVersion": "0.16.1",
+  "generatedForVersion": "0.17.0",
   "releases": [
+    {
+      "version": "0.17.0",
+      "date": "2026-09-21",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Hugescreen panning",
+          "body": "Pan oversized windows without changing their size or zoom, including while dragging items across workspace and embedded web content."
+        },
+        {
+          "category": "Added",
+          "title": "Quick pan controls",
+          "body": "Toggle panning with a double Ctrl tap, Ctrl+Shift+H, or the toolbar’s Pan switch, with a highlighted indicator when active. Panning enables automatically for oversized windows on startup and after resizing."
+        },
+        {
+          "category": "Added",
+          "title": "Visual window sizing",
+          "body": "Adjust width and height independently from 1× to 5× the screen size, with half-step snapping, live pixel dimensions, and a proportional preview before applying."
+        },
+        {
+          "category": "Added",
+          "title": "Precise pointer movement",
+          "body": "Slow movements provide finer control, while approaching screen edges increases travel to reach distant content. Motion filtering reduces accidental panning, and native title bars and borders remain reachable."
+        }
+      ]
+    },
     {
       "version": "0.16.1",
       "date": "2026-09-21",
