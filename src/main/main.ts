@@ -558,7 +558,8 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
 
   window.on("move", () => scheduleWindowStateSave(workspaceWindow));
   window.on("resize", () => {
-    workspaceWindow.hugescreen.resetPointer();
+    if (workspaceWindow.restoringGeometry) workspaceWindow.hugescreen.resetPointer();
+    else workspaceWindow.hugescreen.onGeometryChanged();
     scheduleWindowStateSave(workspaceWindow);
   });
   window.on("maximize", () => saveWindowState(workspaceWindow));

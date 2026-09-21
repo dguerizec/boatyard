@@ -102,17 +102,22 @@ export class Hugescreen {
 
   /** Called once after startup geometry and native decorations have been restored. */
   enableForOversizedWindow(): void {
+    if (!this.active) this.toggle();
+  }
+
+  private canActivate(): boolean {
     const window = this.options.window;
-    if (this.active || window.isDestroyed() || window.isMaximized() || window.isFullScreen()) return;
+    if (window.isDestroyed() || window.isMaximized() || window.isFullScreen()) return false;
     const bounds = window.getBounds();
     const area = this.options.getWorkArea();
     const frame = this.options.getFrameInsets?.() || NO_FRAME_INSETS;
-    if (bounds.width + frame.left + frame.right > area.width ||
-      bounds.height + frame.top + frame.bottom > area.height) this.toggle();
+    return bounds.width + frame.left + frame.right > area.width ||
+      bounds.height + frame.top + frame.bottom > area.height;
   }
 
   toggle(): boolean {
     this.stopPolling();
+    if (!this.enabled && !this.canActivate()) return false;
     this.enabled = !this.enabled;
     this.area = this.enabled ? this.options.getWorkArea() : null;
     if (this.enabled) this.resume();
@@ -137,6 +142,11 @@ export class Hugescreen {
     if (!this.enabled || this.timer || this.options.window.isDestroyed()) return;
     this.resetPointer();
     this.timer = setInterval(() => this.pan(), 16);
+  }
+
+  onGeometryChanged(): void {
+    if (this.active !== this.canActivate()) this.toggle();
+    else this.resetPointer();
   }
 
   resetPointer(deadZone = false): void {

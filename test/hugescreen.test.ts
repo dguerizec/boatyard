@@ -423,3 +423,39 @@ test("startup includes native decorations when detecting oversized geometry", ()
     assert.equal(mode.active, true);
   } finally { mode.dispose(); }
 });
+
+
+test("manual toggles and double Ctrl cannot enable pan for a fitting window", () => {
+  const { mode, window, changes } = fixture();
+  try {
+    window.bounds = { x: -10, y: -10, width: area.width, height: area.height };
+    assert.equal(mode.toggle(), false);
+    doubleTap(mode);
+    assert.equal(mode.active, false);
+    assert.deepEqual(changes, []);
+    window.bounds.width++;
+    doubleTap(mode, 2000);
+    assert.equal(mode.active, true, "the gesture works again once a dimension exceeds the screen");
+  } finally { mode.dispose(); }
+});
+
+test("resizing recalculates pan eligibility in both directions without changing geometry", () => {
+  const { mode, window, changes } = fixture();
+  try {
+    doubleTap(mode);
+    window.bounds.width = area.width + 1;
+    window.bounds.height = area.height;
+    mode.onGeometryChanged();
+    assert.equal(mode.active, true, "one oversized axis is sufficient");
+    window.bounds.width = area.width;
+    const resized = window.getBounds();
+    mode.onGeometryChanged();
+    assert.equal(mode.active, false);
+    assert.deepEqual(window.getBounds(), resized);
+    assert.deepEqual(changes, [true, false]);
+    window.bounds.width++;
+    mode.onGeometryChanged();
+    assert.equal(mode.active, true, "resizing larger enables pan again");
+    assert.deepEqual(changes, [true, false, true]);
+  } finally { mode.dispose(); }
+});

@@ -6,7 +6,9 @@ Only the user changes the window size, using their window manager's controls.
 
 - Hugescreen enables automatically at startup when the restored window, including
   its native decorations, is wider or taller than the screen work area. Maximized
-  and fullscreen windows are excluded.
+  and fullscreen windows are excluded. Manual activation uses the same size rule;
+  a window that fits the screen cannot enable Hugescreen. Every resize recalculates
+  the mode: oversized enables it, fitting disables it.
 - Double-tap **Ctrl** to enable pan; double-tap again to disable it. Release each
   press within 250 ms and start the second press within 350 ms of the first release.
   No key or mouse button needs to remain held.
@@ -39,8 +41,8 @@ Only the user changes the window size, using their window manager's controls.
 Panning is bounded to the screen work area selected when enabling the mode. A
 window larger than that area continues covering it; a smaller window stays within
 it. Maximized and fullscreen windows are left untouched: unmaximize or leave
-fullscreen yourself before panning. Resizing rebases the pointer without dropping
-the pan lock.
+fullscreen yourself before panning. Resizing rebases the pointer and recalculates
+the pan lock from the new dimensions.
 On X11, the limits include the actual native decoration sizes reported by
 `_NET_FRAME_EXTENTS` (read using `xprop`), converted to logical pixels for the
 screen's scale. The measurement refreshes on focus and Ctrl presses, so changing
