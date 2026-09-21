@@ -43,7 +43,20 @@ jobs:
         run: npm test
 
       - name: Build Linux artifact
-        run: npm run dist:linux
+        # Packaging downloads external tools; reuse their cache after transient failures.
+        run: |
+          for attempt in 1 2 3; do
+            if npm run dist:linux; then
+              exit 0
+            else
+              status=$?
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit "$status"
+            fi
+            echo "::warning::AppImage build attempt $attempt failed; retrying in 15 seconds."
+            sleep 15
+          done
 
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v7
