@@ -132,3 +132,7 @@ and HEAD versions larger than 2 MiB display an explicit unavailable message.
 Line endings are normalized for the visual comparison. Expensive comparisons may
 use a simplified diff, identified in the view. Git metadata refreshes with the
 editor polling cycle and window focus; requests are shared between panes.
+
+The **Wrap lines** button beside Find toggles visual line wrapping without changing
+the file contents. The choice is remembered per pane and applies to both columns
+in side-by-side diff mode. It is available in the text editor.

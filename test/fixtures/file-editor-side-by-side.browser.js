@@ -18,6 +18,7 @@ window.BoatyardPluginRegistry = { register(_manifest, plugin) {
   plugin.activate({ settings: { registerGlobalSection() {} }, status: { set() {} }, panes: { register(value) { pane = value; } } });
 } };
 const originalLines = Array.from({ length: 120 }, (_, i) => `key${i} = ${i}`);
+originalLines[30] = 'long_key = "' + 'long value '.repeat(40) + '"';
 const currentLines = [...originalLines]; currentLines.splice(5, 2); currentLines[60] = 'key62 = 900';
 let diskText = '\uFEFF' + currentLines.join('\r\n');
 let revision = 'one';
@@ -49,10 +50,13 @@ const mount = () => {
 const current = () => EditorView.findFromDOM(host.querySelector('.cm-merge-b .cm-content') || host.querySelector('.cm-content'));
 const original = () => EditorView.findFromDOM(host.querySelector('.cm-merge-a .cm-content'));
 const layout = () => host.querySelector('.file-editor-diff-layout');
+const wrap = () => host.querySelector('[aria-label="Wrap lines"]');
 let cleanup = mount();
 await waitFor(() => layout() && !layout().disabled, 'Git baseline loads');
 check(!host.querySelector('.cm-mergeView'), 'Inline remains default');
 check(layout().parentElement.lastElementChild === layout() && layout().closest('.file-editor-file-actions'), 'Layout button is last in file toolbar');
+check(host.querySelector('[aria-label="Find"]').nextElementSibling === wrap(), 'Wrap follows Find');
+check(!current().lineWrapping && !wrap().disabled, 'Wrapping is initially off and available');
 const initial = current().state.doc.toString();
 current().dispatch({ changes: { from: 0, insert: Text.of(['# draft', '']) }, selection: { anchor: 8 }, userEvent: 'input' });
 const draft = current().state.doc.toString();
@@ -72,6 +76,15 @@ await waitFor(() => {
   const posA = a.state.doc.toString().indexOf('key10 ='), posB = b.state.doc.toString().indexOf('key10 =');
   return Math.abs(a.documentTop + a.lineBlockAt(posA).top - b.documentTop - b.lineBlockAt(posB).top) < 2;
 }, 'Unchanged lines align across deleted and inserted rows');
+const beforeWrap = current();
+wrap().click();
+check(current() === beforeWrap && current().state.doc.toString() === draft, 'Wrapping preserves editor and draft');
+await waitFor(() => current().lineWrapping && original().lineWrapping, 'Wrapping applies to both columns');
+await waitFor(() => {
+  const editor = current(), position = editor.state.doc.toString().indexOf('long_key');
+  return editor.lineBlockAt(position).height > editor.defaultLineHeight * 2;
+}, 'Long lines visibly wrap');
+check(wrap().getAttribute('aria-pressed') === 'true', 'Wrap button shows selected state');
 check(getCM(current()), 'Vim remains available in Current');
 undo(current()); check(current().state.doc.toString() === initial, 'Undo crosses switch to side-by-side');
 redo(current()); check(current().state.doc.toString() === draft, 'Redo crosses switch to side-by-side');
@@ -86,6 +99,7 @@ current().dispatch({ changes: { from: 0, insert: Text.of(['# split edit', '']) }
 const splitDraft = current().state.doc.toString();
 layout().click();
 check(!host.querySelector('.cm-mergeView') && current().state.doc.toString() === splitDraft, 'Returning inline keeps side-by-side edits');
+await waitFor(() => current().lineWrapping, 'Wrapping survives layout changes');
 undo(current()); check(current().state.doc.toString() === draft, 'Undo crosses switch back to inline');
 redo(current()); check(current().state.doc.toString() === splitDraft, 'Redo crosses switch back to inline');
 layout().click();
@@ -100,6 +114,9 @@ header.querySelector('.file-editor-diff-button').click();
 check(host.querySelector('.cm-mergeView'), 'Reopening diff restores chosen layout');
 cleanup(); cleanup = mount();
 await waitFor(() => host.querySelector('.cm-mergeView'), 'Remount restores layout');
+await waitFor(() => current().lineWrapping && original().lineWrapping, 'Remount restores wrapping');
+wrap().click();
+await waitFor(() => !current().lineWrapping && !original().lineWrapping, 'Wrapping can be disabled on both columns');
 const selectTab = name => [...host.querySelectorAll('[role=tab]')].find(tab => tab.textContent.includes(name)).click();
 selectTab('plain.txt');
 await waitFor(() => layout().disabled && host.querySelector('.file-editor-diff-status').textContent.includes('No Git'), 'Unavailable baseline is explained');

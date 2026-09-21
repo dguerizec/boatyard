@@ -463,6 +463,10 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const editable = new Compartment();
   const readOnly = new Compartment();
   const numbering = new Compartment();
+  const wrapping = new Compartment();
+  let wrapLines = false;
+  try { wrapLines = localStorage.getItem(`${paneKey}:wrap-lines`) === "true"; } catch { /* Optional view preference. */ }
+  const wrappingExtension = () => wrapLines ? EditorView.lineWrapping : [];
   let viewLocked = false;
   let viewFirstLine = 1;
   const editorTheme = () => document.documentElement.dataset.theme === "light" ? [] : oneDark;
@@ -651,6 +655,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     hexControl.open = hexMode && !previewVisible;
     syncPaneControl(hexControl);
     findButton.disabled = !view || previewVisible;
+    wrapButton.disabled = !view || previewVisible || hexMode;
     if (view) view.dispatch({ effects: [
       readOnly.reconfigure(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath) || Boolean(doc?.locked && doc.base.block))),
       editable.reconfigure(EditorView.editable.of(!previewVisible && !deletedGitPath && !doc?.locked))
@@ -805,6 +810,17 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   });
   findButton.setAttribute("aria-pressed", "false");
   findButton.disabled = true;
+  const wrapButton = button("Wrap lines", () => {
+    wrapLines = !wrapLines;
+    try { localStorage.setItem(`${paneKey}:wrap-lines`, String(wrapLines)); } catch { /* Optional view preference. */ }
+    wrapButton.setAttribute("aria-pressed", String(wrapLines));
+    view?.dispatch({ effects: wrapping.reconfigure(wrappingExtension()) });
+    surface?.originalView?.dispatch({ effects: wrapping.reconfigure(wrappingExtension()) });
+    view?.focus();
+  });
+  wrapButton.title = "Wrap lines";
+  wrapButton.setAttribute("aria-pressed", String(wrapLines));
+  wrapButton.disabled = true;
   const compare = element("details", "file-editor-compare");
   compare.hidden = true;
   const compareText = element("pre");
@@ -899,7 +915,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     viewFirstLine = currentBlock()?.line ?? 1;
     surface = createEditorSurface(editorHost, {
         doc: doc.text.slice(bom.length),
-        extensions: [vimCompartment.of(vimExtension()), basicSetup, gitView.extension, theme.of(editorTheme()), doc.base.block ? [] : language(doc.base.path),
+        extensions: [vimCompartment.of(vimExtension()), basicSetup, wrapping.of(wrappingExtension()), gitView.extension, theme.of(editorTheme()), doc.base.block ? [] : language(doc.base.path),
           readOnly.of(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath))),
           editable.of(EditorView.editable.of(!deletedGitPath)),
           numbering.of(lineNumbers({ formatNumber: (number) => String(number + viewFirstLine - 1) })),
@@ -930,7 +946,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
       label: gitBaseline.label,
       config: {
         doc: gitBaseline.text.replace(/^\uFEFF/, "").replace(/\r\n|\r/g, "\n"),
-        extensions: [basicSetup, theme.of(editorTheme()), language(doc.base.path), editorAppearance,
+        extensions: [basicSetup, wrapping.of(wrappingExtension()), theme.of(editorTheme()), language(doc.base.path), editorAppearance,
           EditorState.readOnly.of(true), EditorView.editable.of(false),
           EditorView.contentAttributes.of({ "aria-label": "Git baseline file contents, read-only" })]
       }
@@ -984,7 +1000,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
           openedTab(image.path);
           fileBrowser.setSelected(image.path);
           setNotices(); compare.hidden = true;
-          saveButton.disabled = true; findButton.disabled = true;
+          saveButton.disabled = true; findButton.disabled = wrapButton.disabled = true;
           findButton.setAttribute("aria-pressed", "false");
           previewControl.label = "image preview";
           previewControl.enabled = true;
@@ -1131,7 +1147,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
     blockNavigation.update(undefined, false, false);
     gitView.update("", undefined, "", undefined); gitView.show(false);
     for (const control of [previewControl, hexControl, diffControl]) { control.enabled = false; control.open = false; syncPaneControl(control); }
-    saveButton.disabled = findButton.disabled = true;
+    saveButton.disabled = findButton.disabled = wrapButton.disabled = true;
     findButton.setAttribute("aria-pressed", "false");
     status.textContent = "Open files from the pane toolbar or browse project files.";
     try { localStorage.removeItem(paneKey); } catch { /* Optional navigation preference. */ }
@@ -1219,7 +1235,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   }
 
   const fileActions = element("div", "file-editor-toolbar file-editor-file-actions");
-  for (const [action, icon, label] of [[findButton, "search", "Find"], [saveButton, "save", "Save"]] as const) {
+  for (const [action, icon, label] of [[findButton, "search", "Find"], [wrapButton, "wrapText", "Wrap lines"], [saveButton, "save", "Save"]] as const) {
     action.classList.add("webapp-tool-button");
     action.setAttribute("aria-label", label);
     action.replaceChildren(createToolIcon(icon));
@@ -1227,7 +1243,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   findButton.title = "Find (Ctrl/Cmd+F)";
   fileActions.setAttribute("role", "toolbar");
   fileActions.setAttribute("aria-label", "Editor actions");
-  fileActions.append(saveButton, findButton, diffHost);
+  fileActions.append(saveButton, findButton, wrapButton, diffHost);
   toolbar.append(fileTabs.element);
   const workspace = element("div", "file-editor-workspace");
   const browserKey = `${paneKey}:browser`;
