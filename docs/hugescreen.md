@@ -16,10 +16,13 @@ Only the user changes the window size, using their window manager's controls.
   subject to the dead zone and edge proximity rules below.
 - Slow local movements use quarter-speed travel for precision. Sensitivity blends
   progressively into full edge amplification between 120 and 900 logical pixels
-  per second.
+  per second. Within the final 30% of the screen toward an edge, amplification
+  also returns progressively regardless of speed, avoiding a catch-up jump on arrival.
 - After 160 ms without movement or a mouse click, a 30-pixel dead zone anchors
   around the pointer. Leaving it pans only by the excess movement, without a jump.
   Direction reversals require 6 pixels of travel to avoid small oscillations.
+  A new movement reaching the screen boundary completes alignment even inside
+  these thresholds; leaving the pointer stationary never triggers a correction.
 - Once a native window edge aligns with the screen edge, panning away from that
   alignment is blocked while the pointer stays within 15% of the screen's width
   or height of that edge. Arrival at alignment remains allowed, including native

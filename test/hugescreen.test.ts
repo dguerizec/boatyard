@@ -299,3 +299,81 @@ test("alignment protection includes decorations and negative screen origins", ()
   assert.deepEqual(calculateHugescreenPan(approaching, display, from, { x: -1000, y: -700 }, frame),
     { x: aligned.x, y: aligned.y });
 });
+
+
+test("slow movement progressively regains amplification near the screen edge", () => {
+  const bounds = { x: -3000, y: -2000, width: 10000, height: 7000 };
+  const travel = (x: number) => bounds.x - calculateHugescreenPan(bounds, area,
+    { x, y: 400 }, { x: x + 1, y: 400 }, undefined, 100).x;
+  assert.equal(travel(500), 0.25);
+  assert.ok(travel(800) > travel(700));
+  assert.ok(travel(900) > travel(800));
+  assert.ok(travel(950) > travel(900));
+});
+
+test("slow one-pixel sweeps reach all four edges without a final catch-up jump", () => {
+  const frame = { left: 4, right: 6, top: 80, bottom: 8 };
+  for (const axis of ["x", "y"] as const) {
+    for (const direction of [-1, 1]) {
+      let bounds = { x: -3000, y: -2000, width: 10000, height: 7000 };
+      let cursor = { x: 500, y: 400 };
+      const edge = axis === "x" ? (direction > 0 ? 999 : 0) : (direction > 0 ? 729 : 30);
+      const steps: number[] = [];
+      while (cursor[axis] !== edge) {
+        const next = { ...cursor, [axis]: cursor[axis] + direction };
+        const point = calculateHugescreenPan(bounds, area, cursor, next, frame, 100);
+        steps.push(Math.abs(point[axis] - bounds[axis]));
+        bounds = { ...bounds, ...point };
+        cursor = next;
+      }
+      const expected = axis === "x" ? (direction > 0 ? -9006 : 4) : (direction > 0 ? -6278 : 110);
+      assert.equal(bounds[axis], expected);
+      assert.ok(steps.at(-1)! <= steps.at(-2)! * 1.05 + 1,
+        "arrival should continue the existing travel rate, not catch up abruptly");
+      assert.ok(Math.max(...steps) < 150, "travel is distributed across the approach");
+      assert.deepEqual(calculateHugescreenPan(bounds, area, cursor, cursor, frame, 100),
+        { x: bounds.x, y: bounds.y }, "no motion after stopping");
+    }
+  }
+});
+
+
+test("reaching screen boundaries completes the last pixels despite a click dead zone", async () => {
+  for (const axis of ["x", "y"] as const) {
+    for (const direction of [-1, 1]) {
+      const { mode, window, move } = fixture();
+      try {
+        const start = axis === "x" ? area.x : area.y;
+        const end = start + (axis === "x" ? area.width : area.height) - 1;
+        const edge = direction > 0 ? end : start;
+        const target = direction > 0 ? start + (axis === "x" ? area.width - window.bounds.width :
+          area.height - window.bounds.height) : start;
+        window.bounds[axis] = target + direction * 5;
+        const cursor = { x: 500, y: 400, [axis]: edge - direction * 5 };
+        move(cursor.x, cursor.y);
+        doubleTap(mode);
+        mode.handleMouse({ type: "mouseDown", button: "left", x: 0, y: 0 });
+        mode.handleMouse({ type: "mouseUp", button: "left", x: 0, y: 0 });
+        cursor[axis] = edge;
+        move(cursor.x, cursor.y);
+        await tick();
+        assert.equal(window.bounds[axis], target, "the final five pixels reach alignment");
+        const stopped = window.getBounds();
+        await tick();
+        assert.deepEqual(window.getBounds(), stopped, "no repeated movement at the boundary");
+      } finally { mode.dispose(); }
+    }
+  }
+});
+
+test("a stationary pointer at the screen edge does not complete pan on activation", async () => {
+  const { mode, window, move } = fixture();
+  try {
+    window.bounds.x = -8995;
+    move(999, 400);
+    doubleTap(mode);
+    const original = window.getBounds();
+    await tick();
+    assert.deepEqual(window.getBounds(), original);
+  } finally { mode.dispose(); }
+});

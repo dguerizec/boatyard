@@ -55,10 +55,15 @@ function panAxis(position: number, minimum: number, maximum: number, from: numbe
   // Reaching the screen edge reaches the window edge, even for very large windows.
   // Between edges, quadratic proximity and remaining travel amplify each movement.
   const proximity = 1 - Math.min(1, distanceToEdge / Math.max(1, screenLength));
+  // Restore gain progressively over the last 30% of the screen even at low speed.
+  // Otherwise quarter-speed travel leaves a large catch-up step at the screen edge.
+  const edgeBlend = Math.max(0, 1 - distanceToEdge / Math.max(1, screenLength * 0.3));
+  const edgeSensitivity = edgeBlend * edgeBlend * (3 - 2 * edgeBlend);
+  const effectiveSensitivity = sensitivity + (1 - sensitivity) * edgeSensitivity;
   const distance = Math.abs(delta);
   const amplified = distance + remaining * (distance / Math.max(1, distanceToEdge)) * proximity ** 2;
   const travel = distance >= distanceToEdge ? remaining : Math.min(remaining,
-    distance * 0.25 * (1 - sensitivity) + amplified * sensitivity);
+    distance * 0.25 * (1 - effectiveSensitivity) + amplified * effectiveSensitivity);
   return Math.min(maximum, Math.max(minimum, position - direction * travel));
 }
 
@@ -197,6 +202,16 @@ export class Hugescreen {
       return;
     }
     const delta = this.motion.filter(previous, cursor, now);
+    // A dead zone or reversal threshold must not trap the final pixels at a
+    // physical boundary. Only a new movement into that boundary can complete pan.
+    for (const axis of ["x", "y"] as const) {
+      const start = this.area[axis];
+      const end = start + (axis === "x" ? this.area.width : this.area.height) - 1;
+      if ((cursor[axis] <= start && previous[axis] > start) ||
+        (cursor[axis] >= end && previous[axis] < end)) {
+        delta[axis] = cursor[axis] - previous[axis];
+      }
+    }
     if (!delta.x && !delta.y) return;
     // Global coordinates ignore synthetic motion caused by moving the window itself.
     const bounds = window.getBounds();
