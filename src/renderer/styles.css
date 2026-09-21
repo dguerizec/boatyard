@@ -4819,3 +4819,28 @@ textarea.form-control {
   accent-color: var(--accent);
   cursor: pointer;
 }
+
+
+.hugescreen-preview { margin: 0 -18px; width: calc(100% + 36px); }
+.hugescreen-preview[hidden] { display: none; }
+.hugescreen-preview svg { display: block; width: 100%; height: auto; }
+.hugescreen-preview-window {
+  fill: var(--panel-strong);
+  stroke: var(--muted);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+.hugescreen-preview-screen {
+  fill: rgba(var(--accent-rgb), 0.2);
+  stroke: var(--accent);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+.hugescreen-preview figcaption {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 18px 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+.hugescreen-preview figcaption span:last-child { color: var(--accent); }

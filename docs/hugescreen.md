@@ -21,6 +21,8 @@ manager's controls.
   screen work area, from 1× to 5×, with the multiplier and outer-window dimension in pixels shown live. **Apply** resizes the outer window, including
   decorations, and recalculates pan eligibility. **Cancel** discards size edits;
   it does not undo an immediate Pan switch change. Native minimum dimensions apply.
+  A live diagram uses the popup width to show the proposed window at its actual
+  aspect ratio, with the screen centered inside at the same scale.
   Set both values to 1 to fit the screen. Unmaximize or leave fullscreen first.
 - **Escape** never changes the pan lock. It closes the popup when open; otherwise
   it remains available to the editor and embedded pages.

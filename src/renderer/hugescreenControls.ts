@@ -4,7 +4,7 @@ type Options = {
   button: HTMLButtonElement;
   api: Pick<BoatyardBridge, "getHugescreen" | "onHugescreenChanged" | "toggleHugescreen" |
     "getHugescreenSettings" | "resizeHugescreen">;
-  showDialog(dialog: HTMLDialogElement, options: { removeOnClose: boolean; onClose(): void }): Promise<unknown>;
+  showDialog(dialog: HTMLDialogElement, options: { removeOnClose: boolean; freeze: "all"; onClose(): void }): Promise<unknown>;
 };
 
 export function setupHugescreenControls({ button, api, showDialog }: Options): void {
@@ -38,6 +38,13 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
           <label class="field"><span class="hugescreen-slider-label">Width<output for="hugescreen-width" data-value="width">×1.00</output></span><input id="hugescreen-width" name="width" type="range" min="1" max="5" step="0.01" value="1" disabled><span class="hugescreen-slider-scale" aria-hidden="true"><span>×1</span><span>×5</span></span></label>
           <label class="field"><span class="hugescreen-slider-label">Height<output for="hugescreen-height" data-value="height">×1.00</output></span><input id="hugescreen-height" name="height" type="range" min="1" max="5" step="0.01" value="1" disabled><span class="hugescreen-slider-scale" aria-hidden="true"><span>×1</span><span>×5</span></span></label>
         </div>
+        <figure class="hugescreen-preview" hidden>
+          <svg role="img" aria-label="Boatyard window and centered screen at the same scale" viewBox="0 0 1 1">
+            <rect class="hugescreen-preview-window" width="100%" height="100%" />
+            <rect class="hugescreen-preview-screen" />
+          </svg>
+          <figcaption><span>Boatyard window</span><span>Screen</span></figcaption>
+        </figure>
         <p class="hugescreen-size-hint" data-availability hidden>Enlarge the window to enable pan.</p>
         <p class="hugescreen-error" role="alert" hidden></p>
         <div class="form-actions">
@@ -55,6 +62,9 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
     const cancel = form.querySelector<HTMLButtonElement>("[data-cancel]")!;
     const error = form.querySelector<HTMLElement>("[role=alert]")!;
     const availability = form.querySelector<HTMLElement>("[data-availability]")!;
+    const preview = form.querySelector<HTMLElement>(".hugescreen-preview")!;
+    const diagram = preview.querySelector("svg")!;
+    const screenRect = preview.querySelector(".hugescreen-preview-screen")!;
     let screenSize = { width: 0, height: 0 };
     let minimumSize = { width: 0, height: 0 };
     const updateValues = () => {
@@ -64,6 +74,18 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         const pixels = Math.max(minimumSize[axis], Math.round(input.valueAsNumber * screenSize[axis]));
         form.querySelector<HTMLOutputElement>(`[data-value=${input.name}]`)!.value = `×${value} · ${pixels} px`;
         input.setAttribute("aria-valuetext", `${value} times screen ${input.name}`);
+      }
+      if (screenSize.width && screenSize.height) {
+        const windowWidth = Math.max(minimumSize.width, Math.round(width.valueAsNumber * screenSize.width));
+        const windowHeight = Math.max(minimumSize.height, Math.round(height.valueAsNumber * screenSize.height));
+        diagram.setAttribute("viewBox", `0 0 ${windowWidth} ${windowHeight}`);
+        screenRect.setAttribute("x", String((windowWidth - screenSize.width) / 2));
+        screenRect.setAttribute("y", String((windowHeight - screenSize.height) / 2));
+        screenRect.setAttribute("width", String(screenSize.width));
+        screenRect.setAttribute("height", String(screenSize.height));
+        diagram.setAttribute("aria-label", `Boatyard window ${windowWidth} by ${windowHeight} pixels; centered screen ${screenSize.width} by ${screenSize.height} pixels`);
+        preview.hidden = false;
+        reposition();
       }
     };
     width.addEventListener("input", updateValues);
@@ -87,16 +109,18 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         if (initialize) {
           width.value = settings.widthMultiplier.toFixed(2);
           height.value = settings.heightMultiplier.toFixed(2);
-          updateValues();
           width.disabled = height.disabled = apply.disabled = false;
           (settings.available ? pan : width).focus();
         }
+        updateValues();
       } catch (reason) { if (popup === dialog) showError(reason); }
     };
     const reposition = () => {
       const anchor = button.getBoundingClientRect();
       dialog.style.left = `${Math.max(12, anchor.right - Math.min(340, window.innerWidth - 24))}px`;
       dialog.style.top = `${anchor.bottom + 8}px`;
+      const visibleHeight = Math.min(window.innerHeight, screenSize.height || window.innerHeight);
+      dialog.style.maxHeight = `${Math.max(120, visibleHeight - anchor.bottom - 20)}px`;
     };
     const onResize = () => { reposition(); if (!pending) void refresh(); };
     window.addEventListener("resize", onResize);
@@ -136,6 +160,7 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
     reposition();
     void showDialog(dialog, {
       removeOnClose: true,
+      freeze: "all",
       onClose: () => {
         popup = null;
         window.removeEventListener("resize", onResize);
