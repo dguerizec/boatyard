@@ -1,4 +1,5 @@
 import { getOversizedBootstrapBounds, needsOversizedRestore, restoreOversizedWindow } from "./windowGeometry.js";
+import { NO_FRAME_INSETS, readWindowFrameInsets } from "./windowFrameInsets.js";
 import { Hugescreen } from "./hugescreen.js";
 import { selectEditorFiles } from "./filePicker.js";
 import { applyWebAppViewport } from "./webAppViewport.js";
@@ -141,6 +142,7 @@ type WorkspaceWindowRecord = {
   id: string;
   runtime: WorkspaceWindowRuntime;
   hugescreen: Hugescreen;
+  refreshFrameInsets(): void;
   restoringGeometry: boolean;
   saveStateTimer: ReturnType<typeof setTimeout> | null;
   syncGroupId: string;
@@ -454,6 +456,17 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       sandbox: false
     }
   });
+  let frameInsets = NO_FRAME_INSETS;
+  let frameInsetsRequest = 0;
+  const refreshFrameInsets = () => {
+    if (window.isDestroyed()) return;
+    const request = ++frameInsetsRequest;
+    const scaleFactor = screen.getDisplayMatching(window.getBounds()).scaleFactor;
+    void readWindowFrameInsets(window, scaleFactor).then((insets) => {
+      if (insets && request === frameInsetsRequest) frameInsets = insets;
+    });
+  };
+  window.on("focus", refreshFrameInsets);
   const rendererWebContentsId = window.webContents.id;
   mainWindow = window;
   const workspaceWindow: WorkspaceWindowRecord = {
@@ -472,10 +485,12 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       window,
       getWorkArea: () => screen.getDisplayMatching(window.getBounds()).workArea,
       getCursor: () => screen.getCursorScreenPoint(),
+      getFrameInsets: () => frameInsets,
       changed: (active) => {
         if (!window.isDestroyed()) window.webContents.send("hugescreen:changed", active);
       }
     }),
+    refreshFrameInsets,
     restoringGeometry: restoreOversized,
     saveStateTimer: null
   };
@@ -500,6 +515,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   }
   window.once("ready-to-show", async () => {
     window.show();
+    refreshFrameInsets();
     if (restoreOversized) {
       try {
         await restoreOversizedWindow(window, restoredBounds);
@@ -1901,6 +1917,9 @@ if (isPrimaryInstance) {
     contents.on("before-input-event", (event, input: Input) => {
       const workspace = owner();
       if (!workspace) return;
+      if (workspace.hugescreen.active && input.key === "Control" && input.type === "keyDown" && !input.isAutoRepeat) {
+        workspace.refreshFrameInsets();
+      }
       if (input.control && input.shift && !input.alt && !input.meta && input.key.toLowerCase() === "h") {
         event.preventDefault();
         if (input.type === "keyDown" && !input.isAutoRepeat) workspace.hugescreen.toggle();

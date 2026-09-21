@@ -18,6 +18,10 @@ Panning is bounded to the screen work area selected when enabling the mode. A
 window larger than that area continues covering it; a smaller window stays within
 it. Maximized and fullscreen windows are left untouched: unmaximize or leave
 fullscreen yourself before panning. Resizing cancels an ongoing pan.
+On X11, the limits include the actual native decoration sizes reported by
+`_NET_FRAME_EXTENTS` (read using `xprop`), converted to logical pixels for the
+screen's scale. The measurement refreshes on focus and Ctrl presses, so changing
+caption size or theme does not rely on a fixed-height allowance.
 
 Mouse and keyboard interception happens in Electron's main process for both the
 workspace renderer and its embedded web contents. During a pan only the native

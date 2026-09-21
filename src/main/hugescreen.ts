@@ -1,19 +1,26 @@
 import type { BrowserWindow, Input, MouseInputEvent, Rectangle } from "electron";
 
+import { NO_FRAME_INSETS, type WindowFrameInsets } from "./windowFrameInsets.js";
+
 type Point = { x: number; y: number };
 type Options = {
   window: BrowserWindow;
   getWorkArea(): Rectangle;
+  getFrameInsets?(): WindowFrameInsets;
   getCursor(): Point;
   changed(active: boolean): void;
 };
 
-export function clampHugescreenPosition(bounds: Rectangle, area: Rectangle, point: Point): Point {
+export function clampHugescreenPosition(
+  bounds: Rectangle, area: Rectangle, point: Point, frame = NO_FRAME_INSETS
+): Point {
+  const left = area.x + frame.left;
+  const right = area.x + area.width - bounds.width - frame.right;
+  const top = area.y + frame.top;
+  const bottom = area.y + area.height - bounds.height - frame.bottom;
   return {
-    x: Math.round(Math.min(Math.max(area.x, area.x + area.width - bounds.width),
-      Math.max(Math.min(area.x, area.x + area.width - bounds.width), point.x))),
-    y: Math.round(Math.min(Math.max(area.y, area.y + area.height - bounds.height),
-      Math.max(Math.min(area.y, area.y + area.height - bounds.height), point.y)))
+    x: Math.round(Math.min(Math.max(left, right), Math.max(Math.min(left, right), point.x))),
+    y: Math.round(Math.min(Math.max(top, bottom), Math.max(Math.min(top, bottom), point.y)))
   };
 }
 
@@ -105,7 +112,7 @@ export class Hugescreen {
     const point = clampHugescreenPosition(this.panOrigin.bounds, this.area, {
       x: this.panOrigin.bounds.x - (cursor.x - this.panOrigin.cursor.x),
       y: this.panOrigin.bounds.y - (cursor.y - this.panOrigin.cursor.y)
-    });
+    }, this.options.getFrameInsets?.());
     const [x, y] = this.options.window.getPosition();
     if (x !== point.x || y !== point.y) this.options.window.setPosition(point.x, point.y);
   }

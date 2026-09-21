@@ -137,3 +137,16 @@ test("smaller windows stay within the work area", () => {
     { x: -900, y: 1000 }
   ), { x: 0, y: 330 });
 });
+
+
+test("pan limits include the native title bar and borders", () => {
+  const area = { x: -1000, y: 30, width: 1000, height: 700 };
+  const bounds = { x: -1500, y: -200, width: 2000, height: 1400 };
+  const frame = { left: 4, right: 6, top: 28, bottom: 8 };
+  const topLeft = clampHugescreenPosition(bounds, area, { x: 9999, y: 9999 }, frame);
+  assert.deepEqual(topLeft, { x: -996, y: 58 });
+  assert.equal(topLeft.y - frame.top, area.y, "the title bar is fully on screen at the upper limit");
+  assert.deepEqual(clampHugescreenPosition(bounds, area, { x: -9999, y: -9999 }, frame), {
+    x: -2006, y: -678
+  });
+});
