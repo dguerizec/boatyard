@@ -1200,7 +1200,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   findButton.title = "Find (Ctrl/Cmd+F)";
   fileActions.setAttribute("role", "toolbar");
   fileActions.setAttribute("aria-label", "Editor actions");
-  fileActions.append(saveButton, findButton);
+  fileActions.append(saveButton, findButton, diffHost);
   toolbar.append(fileTabs.element);
   const workspace = element("div", "file-editor-workspace");
   const browserKey = `${paneKey}:browser`;
@@ -1231,7 +1231,7 @@ function render(container: HTMLElement, props: PluginRegistryRecord = {}) {
   const content = element("div", "file-editor-content");
   content.append(editorHost, hexHost, previewFrame, imageHost, blockNavigation.rail);
   blockNavigation.update(undefined, false, false);
-  browserLayout.viewport.append(fileActions, notices, compare, blockNavigation.toolbar, diffHost, content);
+  browserLayout.viewport.append(fileActions, notices, compare, blockNavigation.toolbar, content);
   const browserControl = getPaneControl(container, "browse");
   browserControl.open = browserState.open;
   browserControl.enabled = true;

@@ -169,8 +169,10 @@
 .file-editor-file-scroll > div { width: 1px; }
 .file-editor-paged .cm-scroller::-webkit-scrollbar:vertical { width: 0; }
 
-.file-editor-diff { flex: 0 0 auto; min-width: 0; }
+.file-editor-diff { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 100%; margin-left: auto; }
 .file-editor-diff[hidden] { display: none; }
+.file-editor .file-editor-diff .webapp-tool-button { padding: 0; }
+.file-editor-diff-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-editor .cm-line.file-editor-added-line { background: rgba(100, 180, 128, .16); }
 .file-editor .file-editor-removed-lines { margin: 0; padding: 0 4px; background: rgba(229, 107, 111, .16); border-left: 3px solid rgba(229, 107, 111, .65); color: var(--text); font: inherit; white-space: pre; user-select: text; }
 /* Preserve empty and trailing blank rows without changing the original text. */

@@ -2,6 +2,7 @@ import { Text } from "@codemirror/state";
 import { EditorView, GutterMarker, gutter } from "@codemirror/view";
 import type { GitBaseline } from "./git";
 import { inlineDiffState, setInlineDiff, toggleRemovedLines, removedLinesKey, RemovedLines } from "./inlineDiff";
+import { createToolIcon } from "../../renderer/toolIcons";
 
 class ChangeMarker extends GutterMarker {
   constructor(readonly kind: string, readonly open: () => void, readonly expanded?: boolean) { super(); }
@@ -19,18 +20,22 @@ class ChangeMarker extends GutterMarker {
 
 /** Adds inline changes to the original editor without replacing its document or history. */
 export function createGitView(host: HTMLElement, open: () => void) {
-  const toolbar = document.createElement("div");
-  toolbar.className = "file-editor-toolbar";
+  host.setAttribute("role", "group");
+  host.setAttribute("aria-label", "Git diff controls");
   const description = document.createElement("span");
+  description.className = "file-editor-diff-status";
   description.setAttribute("role", "status");
-  function button(label: string, action: () => void) {
-    const button = document.createElement("button"); button.type = "button"; button.textContent = label;
+  function button(label: string, icon: string, action: () => void) {
+    const button = document.createElement("button"); button.type = "button";
+    button.className = "webapp-tool-button";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    button.append(createToolIcon(icon));
     button.addEventListener("click", action); return button;
   }
-  const previous = button("Previous change", () => navigate(-1));
-  const next = button("Next change", () => navigate(1));
-  toolbar.append(previous, next, description);
-  host.append(toolbar);
+  const previous = button("Previous change", "arrowLeft", () => navigate(-1));
+  const next = button("Next change", "arrowRight", () => navigate(1));
+  host.append(description, previous, next);
   let editor: EditorView | undefined;
   let original: Text | null = null, identity = "", visible = false, selected = -1;
   function navigate(direction: number) {
@@ -86,9 +91,11 @@ export function createGitView(host: HTMLElement, open: () => void) {
       original = baseline?.available ? Text.of(baseline.text.replace(/^\uFEFF/, "").split(/\r\n|\r|\n/)) : null;
       configure();
       const chunks = editor?.state.field(inlineDiffState).chunks || [];
-      description.textContent = baseline?.available && editor
-        ? `${baseline.label} → Current · ${chunks.length ? `${chunks.length} changed regions` : "No changes"}${chunks.some((chunk) => !chunk.precise) ? " · Simplified diff" : ""}`
+      const status = baseline?.available && editor
+        ? `${baseline.label} → Current · ${chunks.length ? `${chunks.length} changed region${chunks.length === 1 ? "" : "s"}` : "No changes"}${chunks.some((chunk) => !chunk.precise) ? " · Simplified diff" : ""}`
         : message || baseline?.reason || "Loading Git baseline…";
+      description.title = status;
+      description.textContent = status;
       previous.disabled = next.disabled = !chunks.length;
     },
     show(value: boolean) { visible = value; host.hidden = !value; configure(); },

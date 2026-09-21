@@ -104,7 +104,9 @@ widgets and never enter the saved document, clipboard selections of the current
 text, or Undo/Redo history. The original editor, cursor, search, and editing
 history remain available when toggling Diff.
 
-**Previous change** and **Next change** navigate between changed regions. Drag
+The **Previous change** and **Next change** arrow icons on the right of the file toolbar
+navigate between changed regions. The status text to their left shows the
+comparison baseline, change count, and any diff limitation. Drag
 the Diff icon to another pane to create a linked inline editor, using the same
 link/unlink controls as Preview. Both panes share the current draft. The Diff
 mode is remembered per pane; original lines start folded when reopening a file.
