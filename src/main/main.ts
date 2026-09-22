@@ -485,6 +485,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       getWorkArea: () => screen.getDisplayMatching(window.getBounds()).workArea,
       getCursor: () => screen.getCursorScreenPoint(),
       getFrameInsets: () => frameInsets,
+      refreshFrameInsets,
       changed: (active) => {
         if (!window.isDestroyed()) window.webContents.send("hugescreen:changed", active);
       }
@@ -1503,7 +1504,6 @@ function registerIpcHandlers() {
     workspace.hugescreen.suspend();
     let applied = false;
     try {
-      await workspace.refreshFrameInsets();
       await workspace.hugescreen.resizeWindow(width, height);
       applied = true;
     } finally {

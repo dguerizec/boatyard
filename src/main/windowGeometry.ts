@@ -1,5 +1,32 @@
 import type { BrowserWindow, Rectangle } from "electron";
 
+/** Native state changes can be asynchronous, especially fullscreen on macOS. */
+export async function restoreWindowedMode(window: BrowserWindow): Promise<void> {
+  const transition = (event: "leave-full-screen" | "unmaximize", change: () => void) =>
+    new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        clearTimeout(timeout);
+        if (event === "leave-full-screen") window.removeListener("leave-full-screen", completed);
+        else window.removeListener("unmaximize", completed);
+        window.removeListener("closed", closed);
+        if (error) reject(error);
+        else resolve();
+      };
+      const completed = () => finish();
+      const closed = () => finish(new Error("Window closed before resizing completed."));
+      const timeout = setTimeout(() => finish(new Error("Timed out restoring the window before resizing.")), 5000);
+      if (event === "leave-full-screen") window.once("leave-full-screen", completed);
+      else window.once("unmaximize", completed);
+      window.once("closed", closed);
+      try { change(); } catch (error) { finish(error as Error); }
+    });
+  if (window.isDestroyed()) throw new Error("Window is no longer available.");
+  if (window.isFullScreen()) await transition("leave-full-screen", () => window.setFullScreen(false));
+  if (window.isDestroyed()) throw new Error("Window is no longer available.");
+  if (window.isMaximized()) await transition("unmaximize", () => window.unmaximize());
+  if (window.isDestroyed()) throw new Error("Window is no longer available.");
+}
+
 /** Large initial X11 windows can be clamped to the screen and auto-maximized. */
 export function needsOversizedRestore(bounds: Rectangle, area: Rectangle, state: {
   isMaximized?: boolean; isFullScreen?: boolean;

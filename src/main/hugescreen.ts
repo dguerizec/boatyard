@@ -1,7 +1,7 @@
 import type { BrowserWindow, Input, MouseInputEvent, Rectangle } from "electron";
 import { NO_FRAME_INSETS, type WindowFrameInsets } from "./windowFrameInsets.js";
 
-import { needsOversizedRestore, restoreOversizedWindow } from "./windowGeometry.js";
+import { needsOversizedRestore, restoreOversizedWindow, restoreWindowedMode } from "./windowGeometry.js";
 import { HugescreenMotion } from "./hugescreenMotion.js";
 
 type Point = { x: number; y: number };
@@ -9,6 +9,7 @@ type Options = {
   window: BrowserWindow;
   getWorkArea(): Rectangle;
   getFrameInsets?(): WindowFrameInsets;
+  refreshFrameInsets?(): Promise<void>;
   getCursor(): Point;
   changed(active: boolean): void;
 };
@@ -139,10 +140,12 @@ export class Hugescreen {
 
   async resizeWindow(widthMultiplier: number, heightMultiplier: number): Promise<void> {
     const window = this.options.window;
-    if (window.isMaximized() || window.isFullScreen()) {
-      throw new Error("Unmaximize the window or leave fullscreen before resizing it.");
-    }
+    // Validate before changing native window state; keep the originally selected screen.
     const area = this.options.getWorkArea();
+    getHugescreenResizeBounds(window.getBounds(), area, widthMultiplier, heightMultiplier);
+    await restoreWindowedMode(window);
+    await this.options.refreshFrameInsets?.();
+    if (window.isDestroyed()) throw new Error("Window is no longer available.");
     const bounds = getHugescreenResizeBounds(window.getBounds(), area, widthMultiplier, heightMultiplier,
       this.options.getFrameInsets?.());
     if (needsOversizedRestore(bounds, area, {})) await restoreOversizedWindow(window, bounds);
