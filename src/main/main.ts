@@ -1,5 +1,6 @@
 import { getOversizedBootstrapBounds, needsOversizedRestore, restoreOversizedWindow } from "./windowGeometry.js";
 import { NO_FRAME_INSETS, readWindowFrameInsets } from "./windowFrameInsets.js";
+import { createHugescreenEdgeDriver } from "./hugescreenX11.js";
 import { Hugescreen } from "./hugescreen.js";
 import { selectEditorFiles } from "./filePicker.js";
 import { applyWebAppViewport } from "./webAppViewport.js";
@@ -434,7 +435,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   const workspaceWindowId = options.id || crypto.randomUUID();
   const syncGroupId = options.syncGroupId || crypto.randomUUID();
   const persistedWorkspaceWindow = configuration.store.ensureWorkspaceWindow(workspaceWindowId, syncGroupId, options.sourceWindowId) as {
-    window: { bounds: Partial<Rectangle>; isFullScreen?: boolean; isMaximized?: boolean };
+    window: { bounds: Partial<Rectangle>; isFullScreen?: boolean; isMaximized?: boolean; hugescreenPanMode?: "continuous" | "edge" };
   };
   const windowState = persistedWorkspaceWindow.window;
 
@@ -481,6 +482,8 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       openExternalUrl
     }),
     hugescreen: new Hugescreen({
+      panMode: windowState.hugescreenPanMode,
+      edgeDriver: createHugescreenEdgeDriver(window),
       window,
       getWorkArea: () => screen.getDisplayMatching(window.getBounds()).workArea,
       getCursor: () => screen.getCursorScreenPoint(),
@@ -528,6 +531,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
 
     await refreshFrameInsets();
     if (window.isDestroyed()) return;
+    await workspaceWindow.hugescreen.refreshEdgeSupport();
     workspaceWindow.hugescreen.enableForOversizedWindow();
 
     if (captureRunner.isCaptureMode()) {
@@ -612,7 +616,8 @@ function saveWindowState(workspaceWindow: WorkspaceWindowRecord) {
   workspaceWindow.configuration.store.updateWorkspaceWindowState(workspaceWindow.id, {
     bounds: workspaceWindow.window.getNormalBounds(),
     isMaximized: workspaceWindow.window.isMaximized(),
-    isFullScreen: workspaceWindow.window.isFullScreen()
+    isFullScreen: workspaceWindow.window.isFullScreen(),
+    hugescreenPanMode: workspaceWindow.hugescreen.mode
   });
 }
 
@@ -1493,18 +1498,26 @@ function registerIpcHandlers() {
   ipcMain.handle("hugescreen:settings", async (event: IpcMainInvokeEvent) => {
     const workspace = getWorkspaceWindowForWebContents(event.sender);
     if (!workspace) throw new Error("Workspace window is not available.");
-    await workspace.refreshFrameInsets();
+    await Promise.all([workspace.refreshFrameInsets(), workspace.hugescreen.refreshEdgeSupport()]);
     return workspace.hugescreen.getSettings();
   });
-  ipcMain.handle("hugescreen:resize", async (event: IpcMainInvokeEvent, width: number, height: number) => {
+  ipcMain.handle("hugescreen:resize", async (event: IpcMainInvokeEvent, width: number, height: number, mode?: unknown) => {
     const workspace = getWorkspaceWindowForWebContents(event.sender);
     if (!workspace) throw new Error("Workspace window is not available.");
     if (workspace.restoringGeometry) throw new Error("Window resizing is already in progress.");
+    if (mode !== undefined && mode !== "continuous" && mode !== "edge") throw new Error("Unknown pan mode.");
+    if (mode === "edge") {
+      await workspace.hugescreen.refreshEdgeSupport();
+      const reason = workspace.hugescreen.getSettings().edgeUnavailableReason;
+      if (reason) throw new Error(reason);
+      if (workspace.restoringGeometry) throw new Error("Window resizing is already in progress.");
+    }
     workspace.restoringGeometry = true;
     workspace.hugescreen.suspend();
     let applied = false;
     try {
       await workspace.hugescreen.resizeWindow(width, height);
+      if (mode !== undefined) workspace.hugescreen.setMode(mode);
       applied = true;
     } finally {
       workspace.restoringGeometry = false;

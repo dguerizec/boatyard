@@ -1,6 +1,7 @@
 import type { Bounds } from "./storeUtils";
 
 export type WindowState = {
+  hugescreenPanMode?: "continuous" | "edge";
   bounds: Bounds;
   isFullScreen: boolean;
   isMaximized: boolean;

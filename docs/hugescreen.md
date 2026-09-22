@@ -24,10 +24,11 @@ manager's controls.
   it does not undo an immediate Pan switch change. Native minimum dimensions apply.
   A live diagram uses the popup width to show the proposed window at its actual
   aspect ratio, with the screen centered inside at the same scale.
-  Set both values to 1 to fit the screen. Unmaximize or leave fullscreen first.
+  Set both values to 1 to fit the screen. Apply automatically leaves maximized or
+  fullscreen mode before resizing.
 - **Escape** never changes the pan lock. It closes the popup when open; otherwise
   it remains available to the editor and embedded pages.
-- Move the mouse toward the target. The native window moves in the opposite
+- In **Continuous** mode (the default), move the mouse toward the target. The native window moves in the opposite
   direction. Motion is amplified as the pointer approaches the screen edge and
   as more window content remains off screen in that direction. Reaching the screen
   edge can reach a distant window edge in one sweep, even for a large window,
@@ -45,11 +46,37 @@ manager's controls.
   alignment is blocked while the pointer stays within 15% of the screen's width
   or height of that edge. Arrival at alignment remains allowed, including native
   decorations. The other axis remains independent.
-- A stationary pointer never scrolls the window. Clicks, wheel events, and ordinary
+- In Continuous mode, a stationary pointer never scrolls the window. Clicks, wheel events, and ordinary
   keyboard shortcuts still reach the page. Panning stays active while holding a
   mouse button, so dragging can reach targets initially outside the screen.
 - Switching to another window pauses panning; returning resumes the existing lock
   without jumping. Enabling or disabling pan does not change window geometry.
+
+## Edge steps
+
+Choose **Edge steps · ½ screen** in the popup and press **Apply**. The choice is
+saved separately for each window. Cancel discards mode and size edits.
+
+The window stays still while the pointer moves inside the screen. Hold the pointer
+within 3 logical pixels of an edge for 180 ms to animate a half-screen step over
+280 ms. Half of the previous view remains visible. At corners, both oversized axes
+move together. The last step is shortened to align the window edge with the screen.
+A dimension that fits the screen does not move.
+
+The pointer follows the window throughout the animation, staying over the same
+content. It ends inside the screen, ready for another deliberate trip to an edge.
+Activation or focus changes while the pointer is already at an edge do not trigger
+a step: first move back inside. Clicking, scrolling, changing window size, disabling
+pan, or leaving the window interrupts the animation.
+
+Edge steps currently require Linux, `xdotool`, and an X11 window. This includes
+XWayland when Boatyard starts with `--ozone-platform=x11`. The popup explains when
+this mode is unavailable. Continuous pan remains available independently. Native
+pointer coordinates are used so the pointer and window share the same coordinate
+system on scaled displays. Pointer-control failures stop panning; reopen the popup
+to check availability and re-enable it.
+
+## Shared behavior
 
 Panning is bounded to the screen work area selected when enabling the mode. A
 window larger than that area continues covering it; a smaller window stays within
@@ -92,3 +119,10 @@ sweep, panning during drags, and focus changes. Child-view bounds and zoom stay 
 A separate isolated instance on the desktop verified restoring a 5650×1840 window
 at (-300, -200), without fullscreen or maximization, and returning the minimum size
 to 640×480 afterward. These are functional checks, not a smoothness benchmark.
+
+
+Isolated Electron runs with KWin on X11 and XWayland also verify Edge steps:
+half-screen overlap, a shortened final step, reverse navigation, and pointer
+alignment at each intermediate animation frame. Popup checks cover Apply, Cancel,
+reopening the selected mode, and unavailable pointer support. These checks do not
+establish behavior on other compositors or native Wayland.

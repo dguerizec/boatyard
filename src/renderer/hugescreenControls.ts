@@ -33,6 +33,14 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
           <input name="pan" type="checkbox" role="switch" disabled>
           <span class="switch-track" aria-hidden="true"></span>
         </label>
+        <label class="field"><span>Pan mode</span>
+          <select name="mode" aria-describedby="hugescreen-mode-hint hugescreen-mode-availability" disabled>
+            <option value="continuous">Continuous</option>
+            <option value="edge">Edge steps · ½ screen</option>
+          </select>
+        </label>
+        <p id="hugescreen-mode-hint" class="hugescreen-size-hint"></p>
+        <p id="hugescreen-mode-availability" class="hugescreen-size-hint" hidden></p>
         <p class="hugescreen-size-hint">Window size relative to the screen</p>
         <div class="hugescreen-size-fields">
           <label class="field"><span class="hugescreen-slider-label">Width<output for="hugescreen-width" data-value="width">×1.00</output></span><input id="hugescreen-width" name="width" type="range" list="hugescreen-size-stops" min="1" max="5" step="0.01" value="1" disabled><span class="hugescreen-slider-scale" aria-hidden="true"><span>×1</span><span>×5</span></span></label>
@@ -58,6 +66,16 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
     popup = dialog;
     button.setAttribute("aria-expanded", "true");
     const form = dialog.querySelector("form")!;
+    const mode = form.elements.namedItem("mode") as HTMLSelectElement;
+    const modeHint = form.querySelector<HTMLElement>("#hugescreen-mode-hint")!;
+    const modeAvailability = form.querySelector<HTMLElement>("#hugescreen-mode-availability")!;
+    const describeMode = () => {
+      modeHint.textContent = mode.value === "edge"
+        ? "Pause at an edge to move half a screen. The pointer follows the window throughout the animation."
+        : "The window follows your mouse movements.";
+      reposition();
+    };
+    mode.addEventListener("change", describeMode);
     const pan = form.elements.namedItem("pan") as HTMLInputElement;
     const width = form.elements.namedItem("width") as HTMLInputElement;
     const height = form.elements.namedItem("height") as HTMLInputElement;
@@ -106,15 +124,21 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         if (popup !== dialog || token !== request) return;
         update(settings.active);
         pan.disabled = pending || !settings.available;
-        availability.hidden = settings.available;
+        availability.hidden = settings.available || (settings.panMode === "edge" && !!settings.edgeUnavailableReason);
+        mode.querySelector<HTMLOptionElement>("[value=edge]")!.disabled = !!settings.edgeUnavailableReason;
+        modeAvailability.hidden = !settings.edgeUnavailableReason;
+        modeAvailability.textContent = settings.edgeUnavailableReason;
         screenSize = { width: settings.screenWidth, height: settings.screenHeight };
         minimumSize = { width: settings.minimumWidth, height: settings.minimumHeight };
         if (initialize) {
+          mode.value = settings.panMode;
+          mode.disabled = false;
           width.value = settings.widthMultiplier.toFixed(2);
           height.value = settings.heightMultiplier.toFixed(2);
           width.disabled = height.disabled = apply.disabled = false;
           (settings.available ? pan : width).focus();
         }
+        describeMode();
         updateValues();
       } catch (reason) { if (popup === dialog) showError(reason); }
     };
@@ -146,16 +170,16 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
       if (pending || !form.reportValidity()) return;
       pending = true;
       error.hidden = true;
-      apply.disabled = cancel.disabled = pan.disabled = width.disabled = height.disabled = true;
+      apply.disabled = cancel.disabled = pan.disabled = width.disabled = height.disabled = mode.disabled = true;
       try {
-        update((await api.resizeHugescreen(width.valueAsNumber, height.valueAsNumber)).active);
+        update((await api.resizeHugescreen(width.valueAsNumber, height.valueAsNumber, mode.value as "continuous" | "edge")).active);
         dialog.close();
       } catch (reason) {
         showError(reason);
       } finally {
         pending = false;
         if (popup === dialog) {
-          apply.disabled = cancel.disabled = width.disabled = height.disabled = false;
+          apply.disabled = cancel.disabled = width.disabled = height.disabled = mode.disabled = false;
           await refresh();
         }
       }

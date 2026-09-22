@@ -1,5 +1,7 @@
 "use strict";
 
+import type { WorkspaceWindowState } from "../src/main/storeTypes.js";
+
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -1290,4 +1292,17 @@ test("workspace window restart preserves oversized bounds and negative position"
   assert.deepEqual(reloaded.getWorkspaceWindowStates()[0].window, saved);
 });
 
-export {};
+test("workspace pan mode persists independently and resets to continuous", () => {
+  const { filePath, store } = createTempStore();
+  store.load();
+  store.ensureWorkspaceWindow("edge-window", "edge-group");
+  store.ensureWorkspaceWindow("continuous-window", "continuous-group");
+  store.updateWorkspaceWindowState("edge-window", { hugescreenPanMode: "edge" });
+  const reloaded = new ProjectStore(filePath);
+  reloaded.load();
+  const states = reloaded.getWorkspaceWindowStates();
+  assert.equal(states.find((window: WorkspaceWindowState) => window.id === "edge-window")?.window.hugescreenPanMode, "edge");
+  assert.equal(states.find((window: WorkspaceWindowState) => window.id === "continuous-window")?.window.hugescreenPanMode, undefined);
+  reloaded.updateWorkspaceWindowState("edge-window", { hugescreenPanMode: "continuous" });
+  assert.equal(reloaded.getWorkspaceWindowStates().find((window: WorkspaceWindowState) => window.id === "edge-window")?.window.hugescreenPanMode, undefined);
+});

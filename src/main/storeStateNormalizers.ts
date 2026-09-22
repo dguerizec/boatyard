@@ -90,6 +90,7 @@ export function normalizeWindowState(windowState: unknown = {}): WindowState {
   const source = toRecord(windowState);
 
   return {
+    ...(source.hugescreenPanMode === "edge" ? { hugescreenPanMode: "edge" as const } : {}),
     bounds: normalizeWindowBounds(source.bounds),
     isFullScreen: source.isFullScreen === true,
     isMaximized: source.isMaximized === true

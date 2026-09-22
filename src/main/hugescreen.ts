@@ -4,9 +4,16 @@ import { NO_FRAME_INSETS, type WindowFrameInsets } from "./windowFrameInsets.js"
 import { needsOversizedRestore, restoreOversizedWindow, restoreWindowedMode } from "./windowGeometry.js";
 import { HugescreenMotion } from "./hugescreenMotion.js";
 
+import { HugescreenEdge, edgeAnimationPosition, EDGE_ANIMATION_MS } from "./hugescreenEdge.js";
+import type { HugescreenEdgeDriver } from "./hugescreenX11.js";
+
+export type HugescreenPanMode = "continuous" | "edge";
+
 type Point = { x: number; y: number };
 type Options = {
   window: BrowserWindow;
+  panMode?: HugescreenPanMode;
+  edgeDriver?: HugescreenEdgeDriver;
   getWorkArea(): Rectangle;
   getFrameInsets?(): WindowFrameInsets;
   refreshFrameInsets?(): Promise<void>;
@@ -104,6 +111,12 @@ export function getHugescreenResizeBounds(
 export class Hugescreen {
   private readonly motion = new HugescreenMotion();
   private enabled = false;
+  private readonly edge = new HugescreenEdge();
+  private panMode: HugescreenPanMode;
+  private edgeUnavailableReason = "Edge steps are not available on this system.";
+  private animation: AbortController | null = null;
+  private edgeBusy = false;
+  private animationBounds: Rectangle | null = null;
   private area: Rectangle | null = null;
   private lastCursor: Point | null = null;
   private lastSampleAt = 0;
@@ -113,7 +126,23 @@ export class Hugescreen {
   private lastControlTap: number | null = null;
   private scrollPauseUntil = 0;
 
-  constructor(private readonly options: Options) {}
+  constructor(private readonly options: Options) {
+    this.panMode = options.panMode || "continuous";
+  }
+
+  get mode() { return this.panMode; }
+
+  async refreshEdgeSupport(): Promise<void> {
+    this.edgeUnavailableReason = await this.options.edgeDriver?.unavailableReason() ||
+      (this.options.edgeDriver ? "" : "Edge steps are not available on this system.");
+  }
+
+  setMode(mode: unknown): void {
+    if (mode !== "continuous" && mode !== "edge") throw new Error("Unknown pan mode.");
+    if (mode === "edge" && this.edgeUnavailableReason) throw new Error(this.edgeUnavailableReason);
+    this.resetPointer();
+    this.panMode = mode;
+  }
 
   get active() { return this.enabled; }
 
@@ -128,6 +157,8 @@ export class Hugescreen {
     const frame = this.options.getFrameInsets?.() || NO_FRAME_INSETS;
     return {
       active: this.active,
+      panMode: this.mode,
+      edgeUnavailableReason: this.edgeUnavailableReason,
       available: this.canActivate(),
       screenWidth: area.width,
       screenHeight: area.height,
@@ -154,6 +185,7 @@ export class Hugescreen {
 
   private canActivate(): boolean {
     const window = this.options.window;
+    if (this.mode === "edge" && this.edgeUnavailableReason) return false;
     if (window.isDestroyed() || window.isMaximized() || window.isFullScreen()) return false;
     const bounds = window.getBounds();
     const area = this.options.getWorkArea();
@@ -173,6 +205,7 @@ export class Hugescreen {
   }
 
   private stopPolling(): void {
+    this.cancelEdge();
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.lastCursor = null;
@@ -192,11 +225,19 @@ export class Hugescreen {
   }
 
   onGeometryChanged(): void {
+    if (this.edgeBusy && this.animationBounds && this.canActivate()) {
+      const bounds = this.options.window.getBounds();
+      // A native move can change Electron's rounded DIP size by one pixel even
+      // though the X11 window did not resize. Do not interrupt that animation.
+      if (Math.abs(bounds.width - this.animationBounds.width) <= 1 &&
+        Math.abs(bounds.height - this.animationBounds.height) <= 1) return;
+    }
     if (this.active !== this.canActivate()) this.toggle();
     else this.resetPointer();
   }
 
   resetPointer(deadZone = false): void {
+    this.cancelEdge();
     this.lastCursor = this.options.getCursor();
     this.lastSampleAt = performance.now();
     this.motion.reset(this.lastCursor, this.lastSampleAt, deadZone);
@@ -249,6 +290,47 @@ export class Hugescreen {
     }
   }
 
+  private cancelEdge(): void {
+    this.animation?.abort();
+    this.animation = null;
+    this.edge.reset();
+  }
+
+  private async animateEdge(target: Point): Promise<void> {
+    const window = this.options.window;
+    const controller = new AbortController();
+    this.animation = controller;
+    this.edgeBusy = true;
+    this.animationBounds = window.getBounds();
+    const valid = () => !controller.signal.aborted && this.enabled && !window.isDestroyed() &&
+      window.isFocused() && !window.isMaximized() && !window.isFullScreen();
+    try {
+      const moveFrame = await this.options.edgeDriver!.anchor(controller.signal);
+      if (!valid()) return;
+      const from = window.getBounds();
+      const started = performance.now();
+      while (valid()) {
+        const sampledAt = performance.now();
+        const elapsed = sampledAt - started;
+        const point = edgeAnimationPosition(from, target, elapsed);
+        await moveFrame(point);
+        if (elapsed >= EDGE_ANIMATION_MS) break;
+        await new Promise(resolve => setTimeout(resolve, Math.max(0, 16 - (performance.now() - sampledAt))));
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        this.edgeUnavailableReason = "Pointer movement failed. Check X11/XWayland and xdotool, then reopen settings.";
+        console.error("Hugescreen edge pan failed:", error);
+        if (this.enabled) this.toggle();
+      }
+    } finally {
+      if (this.animation === controller) this.animation = null;
+      this.edgeBusy = false;
+      this.animationBounds = null;
+      this.edge.reset();
+    }
+  }
+
   private pan(): void {
     const window = this.options.window;
     if (window.isDestroyed()) { this.dispose(); return; }
@@ -263,6 +345,13 @@ export class Hugescreen {
       Date.now() < this.scrollPauseUntil) {
       this.remainder = { x: 0, y: 0 };
       this.motion.reset(cursor, now);
+      return;
+    }
+    if (this.mode === "edge") {
+      if (!this.edgeBusy) {
+        const target = this.edge.sample(cursor, window.getBounds(), this.area, now, this.options.getFrameInsets?.());
+        if (target) void this.animateEdge(target);
+      }
       return;
     }
     const delta = this.motion.filter(previous, cursor, now);
