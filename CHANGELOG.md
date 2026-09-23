@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.17.1] - 2026-09-23
+
+### Summary
+
+- **v0.17.1: Step into View** — Navigate oversized windows with animated edge steps and adjustable trigger zones, with smoother resizing and dropdown interactions.
+
+### Added
+
+- **Edge steps panning** — Pause the pointer at a screen edge to pan by half a screen with overlap, keeping the pointer anchored to the same content during the animation. Available on supported X11 and XWayland setups, with the mode saved per window.
+- **Adjustable edge zones** — Configure each edge’s trigger width in the sizing preview, with settings saved per window.
+
+### Fixed
+
+- **Resizing maximized and fullscreen windows** — Applying a screen-relative size now automatically restores windowed mode before resizing.
+- **Dropdown interactions** — Panning pauses while native dropdowns are open in workspace and embedded pages, then resumes without a sudden jump.
+
+### Documentation
+
+- **Expanded Hugescreen guide** — Covers edge steps, configurable trigger zones, dropdown behavior, and platform requirements.
+
 ## [0.17.0] - 2026-09-21
 
 ### Summary
