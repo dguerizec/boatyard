@@ -1297,10 +1297,13 @@ test("workspace pan mode persists independently and resets to continuous", () =>
   store.load();
   store.ensureWorkspaceWindow("edge-window", "edge-group");
   store.ensureWorkspaceWindow("continuous-window", "continuous-group");
-  store.updateWorkspaceWindowState("edge-window", { hugescreenPanMode: "edge" });
+  store.updateWorkspaceWindowState("edge-window", { hugescreenPanMode: "edge",
+    hugescreenEdgeZones: { top: 12, right: 30, bottom: 80, left: 3 } });
   const reloaded = new ProjectStore(filePath);
   reloaded.load();
   const states = reloaded.getWorkspaceWindowStates();
+  assert.deepEqual(states.find((window: WorkspaceWindowState) => window.id === "edge-window")?.window.hugescreenEdgeZones,
+    { top: 12, right: 30, bottom: 80, left: 3 });
   assert.equal(states.find((window: WorkspaceWindowState) => window.id === "edge-window")?.window.hugescreenPanMode, "edge");
   assert.equal(states.find((window: WorkspaceWindowState) => window.id === "continuous-window")?.window.hugescreenPanMode, undefined);
   reloaded.updateWorkspaceWindowState("edge-window", { hugescreenPanMode: "continuous" });

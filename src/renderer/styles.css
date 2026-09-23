@@ -4844,3 +4844,23 @@ textarea.form-control {
   font-size: 11px;
 }
 .hugescreen-preview figcaption span:last-child { color: var(--accent); }
+
+
+.hugescreen-edge-zone { fill: rgba(var(--accent-rgb), 0.25); pointer-events: none; }
+.hugescreen-edge-zone.selected { fill: rgba(var(--accent-rgb), 0.65); }
+.hugescreen-edge-hit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 18px;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+  cursor: pointer;
+}
+.hugescreen-edge-hit:hover, .hugescreen-edge-hit:focus-visible {
+  stroke: rgba(var(--accent-rgb), 0.3);
+  outline: none;
+}
+.hugescreen-edge-editor { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 10px; }
+.hugescreen-edge-editor[hidden] { display: none; }
+
+.hugescreen-preview.editing-edges svg { max-height: 220px; }

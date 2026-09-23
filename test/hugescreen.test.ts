@@ -487,3 +487,25 @@ test("invalid screen multipliers are rejected before resizing", () => {
     assert.throws(() => getHugescreenResizeBounds(bounds, area, 1, value as number));
   }
 });
+
+test("select interaction pauses tracking without changing its lock and resumes without a jump", async () => {
+  const { mode, window, changes, move } = fixture();
+  try {
+    mode.toggle();
+    const initial = window.getBounds();
+    mode.setInteractionPaused(1, true);
+    mode.setInteractionPaused(2, true);
+    move(750, 650); await tick();
+    assert.deepEqual(window.getBounds(), initial);
+    assert.equal(mode.active, true);
+    mode.setInteractionPaused(1, false);
+    move(800, 650); await tick();
+    assert.deepEqual(window.getBounds(), initial, "another view still owns a pause");
+    mode.setInteractionPaused(2, false);
+    await tick();
+    assert.deepEqual(window.getBounds(), initial, "closing never replays paused movement");
+    move(900, 650); await tick();
+    assert.notDeepEqual(window.getBounds(), initial);
+    assert.deepEqual(changes, [true], "the user's pan lock is preserved");
+  } finally { mode.dispose(); }
+});

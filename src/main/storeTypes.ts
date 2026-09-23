@@ -1,6 +1,8 @@
+import type { HugescreenZones } from "../renderer/hugescreenZones.js";
 import type { Bounds } from "./storeUtils";
 
 export type WindowState = {
+  hugescreenEdgeZones?: HugescreenZones;
   hugescreenPanMode?: "continuous" | "edge";
   bounds: Bounds;
   isFullScreen: boolean;

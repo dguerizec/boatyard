@@ -97,6 +97,15 @@ run("npx", ["tsc", "-p", "tsconfig.renderer.json"]);
 copyStaticAssets(sourceRoot);
 copyBrowserScripts(join(sourceRoot, "renderer"));
 copyPluginRendererScripts();
+// Sandboxed preloads cannot require local modules at runtime.
+buildSync({
+  entryPoints: ["src/main/webappPreload.ts"],
+  outfile: "build/main/webappPreload.js",
+  bundle: true,
+  format: "cjs",
+  platform: "node",
+  external: ["electron"]
+});
 // Bundle the editor and its language packages for Electron's isolated renderer.
 buildSync({
   entryPoints: ["src/plugins/file-editor/renderer.ts"],

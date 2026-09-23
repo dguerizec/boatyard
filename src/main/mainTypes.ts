@@ -1,3 +1,4 @@
+import type { HugescreenZones } from "../renderer/hugescreenZones.js";
 import type {
   Rectangle,
   WebContentsView as ElectronWebContentsView
@@ -71,7 +72,7 @@ export type ProjectStoreInstance = {
   updateWorkspaceTerminalTabOrder(windowId: string, projectId: string, terminalWindowIds: unknown): unknown;
   updateWorkspaceWebAppState(windowId: string, key: string, state: UnknownRecord): unknown;
   updateWorkspaceWidgetLayout(windowId: string, projectId: string | null | undefined, layout: unknown): unknown;
-  updateWorkspaceWindowState(windowId: string, state: { bounds: Rectangle; isFullScreen?: boolean; isMaximized: boolean; hugescreenPanMode?: "continuous" | "edge" }): unknown;
+  updateWorkspaceWindowState(windowId: string, state: { bounds: Rectangle; isFullScreen?: boolean; isMaximized: boolean; hugescreenPanMode?: "continuous" | "edge"; hugescreenEdgeZones?: HugescreenZones }): unknown;
 };
 
 export type TerminalServiceInstance = {

@@ -7,12 +7,15 @@ import { HugescreenMotion } from "./hugescreenMotion.js";
 import { HugescreenEdge, edgeAnimationPosition, EDGE_ANIMATION_MS } from "./hugescreenEdge.js";
 import type { HugescreenEdgeDriver } from "./hugescreenX11.js";
 
+import { normalizeHugescreenZones, parseHugescreenZones, type HugescreenZones } from "../renderer/hugescreenZones.js";
+
 export type HugescreenPanMode = "continuous" | "edge";
 
 type Point = { x: number; y: number };
 type Options = {
   window: BrowserWindow;
   panMode?: HugescreenPanMode;
+  zones?: HugescreenZones;
   edgeDriver?: HugescreenEdgeDriver;
   getWorkArea(): Rectangle;
   getFrameInsets?(): WindowFrameInsets;
@@ -111,8 +114,10 @@ export function getHugescreenResizeBounds(
 export class Hugescreen {
   private readonly motion = new HugescreenMotion();
   private enabled = false;
+  private readonly interactionPauses = new Set<number>();
   private readonly edge = new HugescreenEdge();
   private panMode: HugescreenPanMode;
+  private zones: HugescreenZones;
   private edgeUnavailableReason = "Edge steps are not available on this system.";
   private animation: AbortController | null = null;
   private edgeBusy = false;
@@ -128,9 +133,17 @@ export class Hugescreen {
 
   constructor(private readonly options: Options) {
     this.panMode = options.panMode || "continuous";
+    this.zones = normalizeHugescreenZones(options.zones);
   }
 
   get mode() { return this.panMode; }
+  get edgeZones() { return { ...this.zones }; }
+
+  setZones(value: unknown): void {
+    const zones = parseHugescreenZones(value);
+    this.resetPointer();
+    this.zones = zones;
+  }
 
   async refreshEdgeSupport(): Promise<void> {
     this.edgeUnavailableReason = await this.options.edgeDriver?.unavailableReason() ||
@@ -146,6 +159,13 @@ export class Hugescreen {
 
   get active() { return this.enabled; }
 
+  setInteractionPaused(source: number, paused: boolean): void {
+    if (this.interactionPauses.has(source) === paused) return;
+    if (paused) this.interactionPauses.add(source);
+    else this.interactionPauses.delete(source);
+    this.resetPointer();
+  }
+
   /** Called once after startup geometry and native decorations have been restored. */
   enableForOversizedWindow(): void {
     if (!this.active) this.toggle();
@@ -158,6 +178,7 @@ export class Hugescreen {
     return {
       active: this.active,
       panMode: this.mode,
+      edgeZones: this.edgeZones,
       edgeUnavailableReason: this.edgeUnavailableReason,
       available: this.canActivate(),
       screenWidth: area.width,
@@ -247,6 +268,7 @@ export class Hugescreen {
   dispose(): void {
     this.suspend();
     this.enabled = false;
+    this.interactionPauses.clear();
   }
 
   private resetTaps(): void {
@@ -341,7 +363,7 @@ export class Hugescreen {
     const elapsed = now - this.lastSampleAt;
     this.lastSampleAt = now;
     this.lastCursor = cursor;
-    if (!previous || !this.area || window.isMaximized() || window.isFullScreen() ||
+    if (this.interactionPauses.size || !previous || !this.area || window.isMaximized() || window.isFullScreen() ||
       Date.now() < this.scrollPauseUntil) {
       this.remainder = { x: 0, y: 0 };
       this.motion.reset(cursor, now);
@@ -349,7 +371,7 @@ export class Hugescreen {
     }
     if (this.mode === "edge") {
       if (!this.edgeBusy) {
-        const target = this.edge.sample(cursor, window.getBounds(), this.area, now, this.options.getFrameInsets?.());
+        const target = this.edge.sample(cursor, window.getBounds(), this.area, now, this.options.getFrameInsets?.(), this.zones);
         if (target) void this.animateEdge(target);
       }
       return;

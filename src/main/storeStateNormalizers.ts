@@ -1,3 +1,4 @@
+import { normalizeHugescreenZones } from "../renderer/hugescreenZones.js";
 import {
   DEFAULT_WINDOW_BOUNDS,
   normalizeMultilineText,
@@ -90,6 +91,7 @@ export function normalizeWindowState(windowState: unknown = {}): WindowState {
   const source = toRecord(windowState);
 
   return {
+    ...(source.hugescreenEdgeZones ? { hugescreenEdgeZones: normalizeHugescreenZones(source.hugescreenEdgeZones) } : {}),
     ...(source.hugescreenPanMode === "edge" ? { hugescreenPanMode: "edge" as const } : {}),
     bounds: normalizeWindowBounds(source.bounds),
     isFullScreen: source.isFullScreen === true,

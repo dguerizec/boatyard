@@ -1,3 +1,4 @@
+import type { HugescreenZones } from "./hugescreenZones.js";
 import type { UnknownRecord } from "./rendererRecords";
 import type { PaneLayoutNode, PaneNode } from "./paneLayoutState.js";
 
@@ -223,6 +224,7 @@ export type ProjectSettingsViewsInstance = RendererModuleInstance & {
 };
 
 export type HugescreenSettings = {
+  edgeZones: HugescreenZones;
   panMode: "continuous" | "edge";
   edgeUnavailableReason: string;
   active: boolean;
@@ -240,7 +242,7 @@ export type BoatyardBridge = {
   applyLayout(payload: UnknownRecord): Promise<{ state: RendererState; undoToken: string }>;
   toggleHugescreen: () => Promise<boolean>;
   getHugescreenSettings: () => Promise<HugescreenSettings>;
-  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge") => Promise<HugescreenSettings>;
+  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge", zones?: HugescreenZones) => Promise<HugescreenSettings>;
   getHugescreen: () => Promise<boolean>;
   onHugescreenChanged: (callback: (active: boolean) => void) => () => void;
   createWorkspaceWindow?: () => Promise<boolean>;

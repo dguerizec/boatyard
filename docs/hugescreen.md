@@ -49,6 +49,9 @@ manager's controls.
 - In Continuous mode, a stationary pointer never scrolls the window. Clicks, wheel events, and ordinary
   keyboard shortcuts still reach the page. Panning stays active while holding a
   mouse button, so dragging can reach targets initially outside the screen.
+- Native select dropdowns temporarily pause both pan modes while open, including
+  those in settings and embedded web pages. Closing the list resumes tracking
+  without replaying pointer movement made while selecting an item.
 - Switching to another window pauses panning; returning resumes the existing lock
   without jumping. Enabling or disabling pan does not change window geometry.
 
@@ -58,10 +61,20 @@ Choose **Edge steps · ½ screen** in the popup and press **Apply**. The choice 
 saved separately for each window. Cancel discards mode and size edits.
 
 The window stays still while the pointer moves inside the screen. Hold the pointer
-within 3 logical pixels of an edge for 180 ms to animate a half-screen step over
+inside an edge trigger zone for 180 ms to animate a half-screen step over
 280 ms. Half of the previous view remains visible. At corners, both oversized axes
 move together. The last step is shortened to align the window edge with the screen.
 A dimension that fits the screen does not move.
+
+Click a screen edge in the popup preview to select its trigger zone, then adjust
+its width with the slider. Each edge has an independent width from 1 to 200 logical
+pixels (3 by default), measured inward from the usable screen edge. Wider zones
+let you trigger a step before reaching a desktop taskbar or toolbar. The preview
+shows the zones at the same scale as the screen; its clickable borders remain
+wide enough to select even a narrow zone. Apply saves all four widths per window;
+Cancel discards edits. The same controls work with Tab and Enter or Space.
+On small displays, each zone is limited to one quarter of its screen dimension to
+preserve a neutral interior and avoid repeated steps after moving the pointer.
 
 The pointer follows the window throughout the animation, staying over the same
 content. It ends inside the screen, ready for another deliberate trip to an edge.

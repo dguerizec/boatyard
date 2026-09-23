@@ -1,3 +1,4 @@
+import { parseHugescreenZones, type HugescreenZones } from "../renderer/hugescreenZones.js";
 import { getOversizedBootstrapBounds, needsOversizedRestore, restoreOversizedWindow } from "./windowGeometry.js";
 import { NO_FRAME_INSETS, readWindowFrameInsets } from "./windowFrameInsets.js";
 import { createHugescreenEdgeDriver } from "./hugescreenX11.js";
@@ -435,7 +436,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   const workspaceWindowId = options.id || crypto.randomUUID();
   const syncGroupId = options.syncGroupId || crypto.randomUUID();
   const persistedWorkspaceWindow = configuration.store.ensureWorkspaceWindow(workspaceWindowId, syncGroupId, options.sourceWindowId) as {
-    window: { bounds: Partial<Rectangle>; isFullScreen?: boolean; isMaximized?: boolean; hugescreenPanMode?: "continuous" | "edge" };
+    window: { bounds: Partial<Rectangle>; isFullScreen?: boolean; isMaximized?: boolean; hugescreenPanMode?: "continuous" | "edge"; hugescreenEdgeZones?: HugescreenZones };
   };
   const windowState = persistedWorkspaceWindow.window;
 
@@ -483,6 +484,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     }),
     hugescreen: new Hugescreen({
       panMode: windowState.hugescreenPanMode,
+      zones: windowState.hugescreenEdgeZones,
       edgeDriver: createHugescreenEdgeDriver(window),
       window,
       getWorkArea: () => screen.getDisplayMatching(window.getBounds()).workArea,
@@ -617,7 +619,8 @@ function saveWindowState(workspaceWindow: WorkspaceWindowRecord) {
     bounds: workspaceWindow.window.getNormalBounds(),
     isMaximized: workspaceWindow.window.isMaximized(),
     isFullScreen: workspaceWindow.window.isFullScreen(),
-    hugescreenPanMode: workspaceWindow.hugescreen.mode
+    hugescreenPanMode: workspaceWindow.hugescreen.mode,
+    hugescreenEdgeZones: workspaceWindow.hugescreen.edgeZones
   });
 }
 
@@ -1501,10 +1504,11 @@ function registerIpcHandlers() {
     await Promise.all([workspace.refreshFrameInsets(), workspace.hugescreen.refreshEdgeSupport()]);
     return workspace.hugescreen.getSettings();
   });
-  ipcMain.handle("hugescreen:resize", async (event: IpcMainInvokeEvent, width: number, height: number, mode?: unknown) => {
+  ipcMain.handle("hugescreen:resize", async (event: IpcMainInvokeEvent, width: number, height: number, mode?: unknown, zones?: unknown) => {
     const workspace = getWorkspaceWindowForWebContents(event.sender);
     if (!workspace) throw new Error("Workspace window is not available.");
     if (workspace.restoringGeometry) throw new Error("Window resizing is already in progress.");
+    const parsedZones = zones === undefined ? undefined : parseHugescreenZones(zones);
     if (mode !== undefined && mode !== "continuous" && mode !== "edge") throw new Error("Unknown pan mode.");
     if (mode === "edge") {
       await workspace.hugescreen.refreshEdgeSupport();
@@ -1518,6 +1522,7 @@ function registerIpcHandlers() {
     try {
       await workspace.hugescreen.resizeWindow(width, height);
       if (mode !== undefined) workspace.hugescreen.setMode(mode);
+      if (parsedZones) workspace.hugescreen.setZones(parsedZones);
       applied = true;
     } finally {
       workspace.restoringGeometry = false;
@@ -1959,6 +1964,23 @@ if (isPrimaryInstance) {
   // Main-process interception also covers embedded web apps and their frames.
   app.on("web-contents-created", (_event: Event, contents: ElectronWebContents) => {
     const owner = () => getWorkspaceWindowForWebContents(contents) || getWorkspaceWindowForWebAppContents(contents);
+    let selectPauseOwner: WorkspaceWindowRecord | undefined;
+    const releaseSelectPause = () => {
+      selectPauseOwner?.hugescreen.setInteractionPaused(contents.id, false);
+      selectPauseOwner = undefined;
+    };
+    contents.ipc.on("hugescreen:select-open", (_event, paused: unknown) => {
+      const workspace = owner();
+      if (selectPauseOwner !== workspace || paused !== true) releaseSelectPause();
+      if (paused === true && workspace) {
+        selectPauseOwner = workspace;
+        workspace.hugescreen.setInteractionPaused(contents.id, true);
+      }
+    });
+    contents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+      if (isMainFrame && !isInPlace) releaseSelectPause();
+    });
+    contents.on("destroyed", releaseSelectPause);
     contents.on("before-input-event", (event, input: Input) => {
       const workspace = owner();
       if (!workspace) return;

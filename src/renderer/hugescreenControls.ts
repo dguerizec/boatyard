@@ -1,3 +1,4 @@
+import { setupHugescreenEdgeControls } from "./hugescreenEdgeControls.js";
 import type { BoatyardBridge } from "./rendererTypes.js";
 
 type Options = {
@@ -73,6 +74,7 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
       modeHint.textContent = mode.value === "edge"
         ? "Pause at an edge to move half a screen. The pointer follows the window throughout the animation."
         : "The window follows your mouse movements.";
+      updateValues();
       reposition();
     };
     mode.addEventListener("change", describeMode);
@@ -84,6 +86,7 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
     const error = form.querySelector<HTMLElement>("[role=alert]")!;
     const availability = form.querySelector<HTMLElement>("[data-availability]")!;
     const preview = form.querySelector<HTMLElement>(".hugescreen-preview")!;
+    const edgeControls = setupHugescreenEdgeControls(preview);
     const diagram = preview.querySelector("svg")!;
     const screenRect = preview.querySelector(".hugescreen-preview-screen")!;
     let screenSize = { width: 0, height: 0 };
@@ -105,6 +108,8 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         screenRect.setAttribute("width", String(screenSize.width));
         screenRect.setAttribute("height", String(screenSize.height));
         diagram.setAttribute("aria-label", `Boatyard window ${windowWidth} by ${windowHeight} pixels; centered screen ${screenSize.width} by ${screenSize.height} pixels`);
+        edgeControls.update({ x: (windowWidth - screenSize.width) / 2, y: (windowHeight - screenSize.height) / 2,
+          width: screenSize.width, height: screenSize.height }, mode.value === "edge");
         preview.hidden = false;
         reposition();
       }
@@ -131,6 +136,8 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         screenSize = { width: settings.screenWidth, height: settings.screenHeight };
         minimumSize = { width: settings.minimumWidth, height: settings.minimumHeight };
         if (initialize) {
+          edgeControls.setZones(settings.edgeZones);
+          edgeControls.setDisabled(false);
           mode.value = settings.panMode;
           mode.disabled = false;
           width.value = settings.widthMultiplier.toFixed(2);
@@ -169,16 +176,18 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
       event.preventDefault();
       if (pending || !form.reportValidity()) return;
       pending = true;
+      edgeControls.setDisabled(true);
       error.hidden = true;
       apply.disabled = cancel.disabled = pan.disabled = width.disabled = height.disabled = mode.disabled = true;
       try {
-        update((await api.resizeHugescreen(width.valueAsNumber, height.valueAsNumber, mode.value as "continuous" | "edge")).active);
+        update((await api.resizeHugescreen(width.valueAsNumber, height.valueAsNumber, mode.value as "continuous" | "edge", edgeControls.zones)).active);
         dialog.close();
       } catch (reason) {
         showError(reason);
       } finally {
         pending = false;
         if (popup === dialog) {
+          edgeControls.setDisabled(false);
           apply.disabled = cancel.disabled = width.disabled = height.disabled = mode.disabled = false;
           await refresh();
         }

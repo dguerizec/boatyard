@@ -1,6 +1,8 @@
 import type { Rectangle } from "electron";
 import { NO_FRAME_INSETS, type WindowFrameInsets } from "./windowFrameInsets.js";
 
+import { DEFAULT_HUGESCREEN_ZONES, effectiveHugescreenZones, type HugescreenZones } from "../renderer/hugescreenZones.js";
+
 type Point = { x: number; y: number };
 export const EDGE_DWELL_MS = 180;
 export const EDGE_ANIMATION_MS = 280;
@@ -33,14 +35,15 @@ export class HugescreenEdge {
   reset(): void { this.armed = false; this.edge = ""; }
 
   sample(cursor: Point, bounds: Rectangle, area: Rectangle, now: number,
-    frame: WindowFrameInsets = NO_FRAME_INSETS): Point | null {
+    frame: WindowFrameInsets = NO_FRAME_INSETS, zones: HugescreenZones = DEFAULT_HUGESCREEN_ZONES): Point | null {
     if (cursor.x < area.x || cursor.y < area.y || cursor.x >= area.x + area.width || cursor.y >= area.y + area.height) {
       this.reset();
       return null;
     }
+    const widths = effectiveHugescreenZones(zones, area.width, area.height);
     const direction = {
-      x: cursor.x < area.x + 3 ? -1 : cursor.x >= area.x + area.width - 3 ? 1 : 0,
-      y: cursor.y < area.y + 3 ? -1 : cursor.y >= area.y + area.height - 3 ? 1 : 0
+      x: cursor.x < area.x + widths.left ? -1 : cursor.x >= area.x + area.width - widths.right ? 1 : 0,
+      y: cursor.y < area.y + widths.top ? -1 : cursor.y >= area.y + area.height - widths.bottom ? 1 : 0
     };
     const possible = edgePanTarget(bounds, area, direction, frame);
     if (possible.x === bounds.x) direction.x = 0;

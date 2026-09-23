@@ -1,8 +1,11 @@
+import { installHugescreenSelectGuard } from "./hugescreenSelectGuard.js";
 "use strict";
 
 import type { IpcRendererEvent } from "electron";
 
 const { ipcRenderer } = require("electron");
+
+installHugescreenSelectGuard(document, paused => ipcRenderer.send("hugescreen:select-open", paused));
 
 const PASSWORD_SELECTOR = 'input[type="password"]';
 const USERNAME_TYPES = new Set(["email", "text", "tel", "url"]);
