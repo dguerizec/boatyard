@@ -152,6 +152,9 @@ export function instantiateWorkspaceLayout(
   );
 }
 
-export function resolveWorkspaceLayoutAspectRatio(metrics: WorkspaceLayoutPreviewMetrics) {
+export function resolveWorkspaceLayoutAspectRatio(metrics: WorkspaceLayoutPreviewMetrics, layout?: WorkspaceLayout) {
+  if (layout?.hugescreen && metrics.screenAspectRatio) {
+    return Math.max(0.1, metrics.screenAspectRatio * layout.hugescreen.widthMultiplier / layout.hugescreen.heightMultiplier);
+  }
   return Math.max(0.1, Number(metrics.windowAspectRatio) || 1);
 }

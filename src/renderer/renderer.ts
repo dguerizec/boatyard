@@ -434,7 +434,7 @@ async function openWorkspaceLayoutLibrary(project: RendererProject) {
   const picker = createWorkspaceLayoutPicker({
     getLayouts: () => boatyardWindow.boatyard.listLayouts(projectScopeAvailable ? projectId : null),
     getPaneTypeLabel: (paneTypeId) => getPaneMasterTypeLabel(project, paneTypeId),
-    getAspectRatio: () => resolveWorkspaceLayoutAspectRatio(previewMetrics),
+    getAspectRatio: (layout) => resolveWorkspaceLayoutAspectRatio(previewMetrics, layout),
     isPaneTypeAvailable: (paneTypeId) => isPaneMasterTypeAvailable(project, paneTypeId),
     onConfirm: (layout) => applyWorkspaceLayout(project, layout),
     onDelete: async (layout) => {
@@ -478,7 +478,7 @@ async function chooseInitialWorkspaceLayout(project: RendererProject): Promise<W
     description: "Preview the initial workspace before creating the project.",
     getLayouts: () => boatyardWindow.boatyard.listLayouts(),
     getPaneTypeLabel: (paneTypeId) => getPaneMasterTypeLabel(project, paneTypeId),
-    getAspectRatio: () => resolveWorkspaceLayoutAspectRatio(previewMetrics),
+    getAspectRatio: (layout) => resolveWorkspaceLayoutAspectRatio(previewMetrics, layout),
     isPaneTypeAvailable: (paneTypeId) => isPaneMasterTypeAvailable(project, paneTypeId),
     onConfirm: (layout) => {
       selected = layout;

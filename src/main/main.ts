@@ -1759,7 +1759,8 @@ function registerIpcHandlers() {
     const contentBounds = source.window.getContentBounds();
     const getAspectRatio = (bounds: Rectangle) => bounds.width / Math.max(1, bounds.height);
     return {
-      windowAspectRatio: getAspectRatio(contentBounds)
+      windowAspectRatio: getAspectRatio(contentBounds),
+      screenAspectRatio: getAspectRatio(screen.getDisplayMatching(source.window.getBounds()).workArea)
     };
   });
 

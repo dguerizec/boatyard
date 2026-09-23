@@ -121,6 +121,7 @@ export type WorkspaceLayout = {
 };
 
 export type WorkspaceLayoutPreviewMetrics = {
+  screenAspectRatio?: number;
   windowAspectRatio: number;
 };
 

@@ -121,6 +121,8 @@ pan-off choice stays off after restoration and subsequent resize events.
 
 Saving or updating a layout captures the pane arrangement together with those
 Hugescreen settings. Both project layouts and global layouts include the snapshot.
+The layout library shows the saved width and height multipliers, pan mode, and
+on/off status. Its preview uses the saved proportions on the current screen.
 Changing Hugescreen later changes only the project's working state; it does not
 update a saved layout. Loading a layout applies its snapshot to the current project.
 Undo restores both the previous pane arrangement and Hugescreen settings.

@@ -205,6 +205,14 @@ test("workspace layout previews use the current window aspect ratio", () => {
   assert.equal(resolveWorkspaceLayoutAspectRatio({ windowAspectRatio: 0 }), 1);
 });
 
+test("saved Hugescreen previews use screen-relative snapshot dimensions, not the current window", () => {
+  const metrics = { windowAspectRatio: 3.58, screenAspectRatio: 16 / 9 };
+  const hugescreen = { widthMultiplier: 2, heightMultiplier: 1, panMode: "continuous", enabled: false };
+  assert.equal(resolveWorkspaceLayoutAspectRatio(metrics, { hugescreen }), 32 / 9);
+  assert.equal(resolveWorkspaceLayoutAspectRatio(metrics, { hugescreen: { ...hugescreen, widthMultiplier: 1, heightMultiplier: 2 } }), 8 / 9);
+  assert.equal(resolveWorkspaceLayoutAspectRatio(metrics), 3.58);
+});
+
 test("workspace layout saves default to the current project unless Global is enabled", () => {
   assert.equal(resolveWorkspaceLayoutSaveScope(true, false), "project");
   assert.equal(resolveWorkspaceLayoutSaveScope(true, true), "global");

@@ -143,6 +143,31 @@ app.whenReady().then(async () => {
     writeFileSync(process.env.BOATYARD_TEST_SCREENSHOT, screenshot.toPNG());
   }
   process.env.PATH = originalPath;
+  await win.webContents.executeJavaScript(`document.querySelector('.hugescreen-popup').close(); document.querySelector('#workspace-layouts').click();`);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await win.webContents.executeJavaScript(`!!document.querySelector('.workspace-layout-dialog[open] .workspace-layout-list-item')`)) break;
+    await delay(25);
+  }
+  assert.match(await win.webContents.executeJavaScript(`document.querySelector('.workspace-layout-detail').textContent`), /No Hugescreen settings saved/);
+  const detail = await win.webContents.executeJavaScript(`(() => {
+    const entry = [...document.querySelectorAll('.workspace-layout-list-item')].find(item => item.querySelector('strong').textContent === 'Saved');
+    entry.click();
+    const detail = document.querySelector('.workspace-layout-detail');
+    return { text: detail.textContent, ratio: detail.querySelector('.layout-preview-window').style.aspectRatio };
+  })()`);
+  assert.match(detail.text, /Width ×1.50 · Height ×2.00/);
+  assert.match(detail.text, /Pan off · Continuous/);
+  assert.match(detail.text, /Saved window/);
+  near(Number.parseFloat(detail.ratio), 1.125);
+  if (process.env.BOATYARD_TEST_LAYOUT_SCREENSHOT) {
+    await delay(100);
+    const bounds = await win.webContents.executeJavaScript(`(() => {
+      const rect = document.querySelector('.workspace-layout-dialog').getBoundingClientRect();
+      return { x: Math.floor(rect.x), y: Math.floor(rect.y), width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
+    })()`);
+    writeFileSync(process.env.BOATYARD_TEST_LAYOUT_SCREENSHOT, (await win.webContents.capturePage(bounds)).toPNG());
+  }
+
   console.log('HUGESCREEN_PERSISTENCE_PASSED');
   clearTimeout(timeout);
   app.exit(0);

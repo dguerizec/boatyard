@@ -351,6 +351,19 @@ button {
   text-align: left;
 }
 
+.workspace-layout-list-item strong {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-layout-list-item .workspace-layout-hugescreen {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: rgb(var(--accent-rgb));
+}
+
 .workspace-layout-list-item[aria-selected="true"] {
   border-color: rgba(var(--accent-rgb), 0.8);
   background: rgba(var(--accent-rgb), 0.13);

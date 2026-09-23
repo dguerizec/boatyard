@@ -1,3 +1,4 @@
+import { createToolIcon } from "./toolIcons.js";
 import type {
   WorkspaceLayout,
   WorkspaceLayoutPaneNode
@@ -10,7 +11,7 @@ type WorkspaceLayoutPickerOptions = {
   initialLayoutId?: string;
   isPaneTypeAvailable?: (paneTypeId: string) => boolean;
   getPaneTypeLabel?: (paneTypeId: string) => string;
-  getAspectRatio?: () => number;
+  getAspectRatio?: (layout: WorkspaceLayout) => number;
   onConfirm: (layout: WorkspaceLayout) => Promise<void> | void;
   onDelete?: (layout: WorkspaceLayout) => Promise<void>;
   onSaveAs?: (name: string, scope: "global" | "project") => Promise<WorkspaceLayout>;
@@ -68,7 +69,7 @@ export function createWorkspaceLayoutPreview(
   layout: WorkspaceLayout,
   isPaneTypeAvailable: (paneTypeId: string) => boolean = () => true,
   getPaneTypeLabel: (paneTypeId: string) => string = (paneTypeId) => paneTypeId,
-  getAspectRatio: () => number = () => 16 / 10
+  getAspectRatio: (layout: WorkspaceLayout) => number = () => 16 / 10
 ) {
   const preview = document.createElement("div") as HTMLDivElement & { boatyardCleanup?: () => void };
   preview.className = "workspace-layout-preview";
@@ -76,11 +77,11 @@ export function createWorkspaceLayoutPreview(
   slot.className = "layout-preview-window-slot";
   const windowPreview = document.createElement("div");
   windowPreview.className = "layout-preview-window";
-  const aspectRatio = Math.max(0.1, Number(getAspectRatio()) || 1);
+  const aspectRatio = Math.max(0.1, Number(getAspectRatio(layout)) || 1);
   windowPreview.style.aspectRatio = String(aspectRatio);
   const label = document.createElement("span");
   label.className = "layout-preview-window-label";
-  label.textContent = `Current window · ${aspectRatio.toFixed(2)}:1`;
+  label.textContent = `${layout.hugescreen ? "Saved window" : "Current window"} · ${aspectRatio.toFixed(2)}:1`;
   const panes = createPanePreview(layout.paneLayout, isPaneTypeAvailable, getPaneTypeLabel);
   panes.classList.add("layout-preview-window-panes");
   windowPreview.append(label, panes);
@@ -109,7 +110,7 @@ export function createWorkspaceLayoutPreview(
 
 export function createWorkspaceLayoutPicker({
   confirmLabel = "Apply layout",
-  description = "Choose a reusable pane arrangement.",
+  description = "Choose a saved pane arrangement and window size.",
   getAspectRatio = () => 16 / 10,
   getLayouts,
   getPaneTypeLabel = (paneTypeId) => paneTypeId,
@@ -245,7 +246,19 @@ export function createWorkspaceLayoutPicker({
     const summary = document.createElement("p");
     const paneCount = countLayoutPanes(selected.paneLayout);
     summary.textContent = `${paneCount} pane${paneCount === 1 ? "" : "s"}`;
-    detail.append(detailTitle, summary, createWorkspaceLayoutPreview(
+    const metadata = document.createElement("div");
+    const size = document.createElement("p");
+    const hugescreen = selected.hugescreen;
+    size.textContent = hugescreen
+      ? `Hugescreen · Width ×${hugescreen.widthMultiplier.toFixed(2)} · Height ×${hugescreen.heightMultiplier.toFixed(2)}`
+      : "Window size unchanged · No Hugescreen settings saved";
+    metadata.append(summary, size);
+    if (hugescreen) {
+      const pan = document.createElement("p");
+      pan.textContent = `Pan ${hugescreen.enabled ? "on" : "off"} · ${hugescreen.panMode === "edge" ? "Edge steps · ½ screen" : "Continuous"}`;
+      metadata.append(pan);
+    }
+    detail.append(detailTitle, metadata, createWorkspaceLayoutPreview(
       selected,
       isPaneTypeAvailable,
       getPaneTypeLabel,
@@ -263,6 +276,16 @@ export function createWorkspaceLayoutPicker({
       button.setAttribute("aria-selected", String(layout.id === selectedLayoutId));
       const name = document.createElement("strong");
       name.textContent = layout.name;
+      const hugescreen = layout.hugescreen;
+      if (hugescreen && (hugescreen.widthMultiplier > 1 || hugescreen.heightMultiplier > 1)) {
+        const badge = document.createElement("span");
+        badge.className = "workspace-layout-hugescreen";
+        badge.title = `Hugescreen · Width ×${hugescreen.widthMultiplier.toFixed(2)} · Height ×${hugescreen.heightMultiplier.toFixed(2)}`;
+        badge.setAttribute("role", "img");
+        badge.setAttribute("aria-label", badge.title);
+        badge.append(createToolIcon("expandPane"));
+        name.append(badge);
+      }
       const meta = document.createElement("span");
       meta.textContent = layout.builtIn
         ? "Built-in · Global"
