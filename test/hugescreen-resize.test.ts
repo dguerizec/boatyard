@@ -104,3 +104,28 @@ test("synchronous native events are observed", async () => {
   await restoreWindowedMode(native);
   assert.deepEqual(window.eventNames(), []);
 });
+
+test("restoration respects pan off, decoration-aware multipliers and the screen top-left", async () => {
+  const { window, mode } = fixture();
+  Object.assign(window, { setPosition(x: number, y: number) { window.bounds = { ...window.bounds, x, y }; } });
+  await mode.restoreState({ widthMultiplier: 2, heightMultiplier: 1.5, panMode: "continuous", enabled: false });
+  assert.deepEqual(window.bounds, { x: 4, y: 28, width: 1992, height: 1018 });
+  mode.onGeometryChanged();
+  mode.enableForOversizedWindow();
+  assert.equal(mode.active, false, "late geometry events and startup activation cannot override explicit pan off");
+  assert.deepEqual(mode.captureState(), { widthMultiplier: 2, heightMultiplier: 1.5, panMode: "continuous", enabled: false });
+  mode.dispose();
+});
+
+test("an unavailable edge snapshot restores size but visibly disables panning", async () => {
+  const { window, mode } = fixture();
+  Object.assign(window, { setPosition() {} });
+  await mode.restoreState({ widthMultiplier: 2, heightMultiplier: 2, panMode: "edge", enabled: true });
+  assert.equal(mode.mode, "edge");
+  assert.equal(mode.active, false);
+  assert.equal(mode.getSettings().available, false);
+  assert.ok(mode.getSettings().edgeUnavailableReason);
+  mode.onGeometryChanged();
+  assert.equal(mode.active, false);
+  mode.dispose();
+});

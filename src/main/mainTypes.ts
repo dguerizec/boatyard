@@ -1,3 +1,4 @@
+import type { HugescreenState } from "./hugescreenState";
 import type { HugescreenZones } from "../renderer/hugescreenZones.js";
 import type {
   Rectangle,
@@ -31,6 +32,9 @@ export type AppState = UnknownRecord & {
 };
 
 export type ProjectStoreInstance = {
+  getProjectHugescreen(projectId: string): HugescreenState | undefined;
+  updateProjectHugescreen(projectId: string, state: unknown): void;
+  getLegacyHugescreenZones(): HugescreenZones;
   addProject(values: unknown, workspaceWindowId?: string | null): unknown;
   dismissChangelog(version: string): unknown;
   getAppState(): unknown;
@@ -72,7 +76,7 @@ export type ProjectStoreInstance = {
   updateWorkspaceTerminalTabOrder(windowId: string, projectId: string, terminalWindowIds: unknown): unknown;
   updateWorkspaceWebAppState(windowId: string, key: string, state: UnknownRecord): unknown;
   updateWorkspaceWidgetLayout(windowId: string, projectId: string | null | undefined, layout: unknown): unknown;
-  updateWorkspaceWindowState(windowId: string, state: { bounds: Rectangle; isFullScreen?: boolean; isMaximized: boolean; hugescreenPanMode?: "continuous" | "edge"; hugescreenEdgeZones?: HugescreenZones }): unknown;
+  updateWorkspaceWindowState(windowId: string, state: { bounds: Rectangle; isFullScreen?: boolean; isMaximized: boolean; hugescreenDefault?: HugescreenState; hugescreenPanMode?: "continuous" | "edge"; hugescreenEdgeZones?: HugescreenZones }): unknown;
 };
 
 export type TerminalServiceInstance = {

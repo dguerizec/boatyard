@@ -89,6 +89,7 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
     const edgeControls = setupHugescreenEdgeControls(preview);
     const diagram = preview.querySelector("svg")!;
     const screenRect = preview.querySelector(".hugescreen-preview-screen")!;
+    let projectId: string | undefined;
     let screenSize = { width: 0, height: 0 };
     let minimumSize = { width: 0, height: 0 };
     const updateValues = () => {
@@ -136,6 +137,7 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         screenSize = { width: settings.screenWidth, height: settings.screenHeight };
         minimumSize = { width: settings.minimumWidth, height: settings.minimumHeight };
         if (initialize) {
+          projectId = settings.projectId;
           edgeControls.setZones(settings.edgeZones);
           edgeControls.setDisabled(false);
           mode.value = settings.panMode;
@@ -180,7 +182,7 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
       error.hidden = true;
       apply.disabled = cancel.disabled = pan.disabled = width.disabled = height.disabled = mode.disabled = true;
       try {
-        update((await api.resizeHugescreen(width.valueAsNumber, height.valueAsNumber, mode.value as "continuous" | "edge", edgeControls.zones)).active);
+        update((await api.resizeHugescreen(width.valueAsNumber, height.valueAsNumber, mode.value as "continuous" | "edge", edgeControls.zones, projectId)).active);
         dialog.close();
       } catch (reason) {
         showError(reason);

@@ -1,3 +1,4 @@
+import { normalizeHugescreenState } from "./hugescreenState";
 import type {
   LayoutPaneNode,
   WorkspaceLayout
@@ -65,10 +66,12 @@ export function normalizeWorkspaceLayout(value: unknown): WorkspaceLayout | null
     ? toRecord(source.windows[0])
     : {};
   const paneLayout = normalizeLayoutPaneNode(source.paneLayout || legacyWindow.paneLayout);
+  const hugescreen = normalizeHugescreenState(source.hugescreen);
   return paneLayout ? {
     id,
     name,
     paneLayout,
+    ...(hugescreen ? { hugescreen } : {}),
     projectId: normalizeText(source.projectId) || null
   } : null;
 }

@@ -1,7 +1,9 @@
+import type { HugescreenState } from "./hugescreenState";
 import type { HugescreenZones } from "../renderer/hugescreenZones.js";
 import type { Bounds } from "./storeUtils";
 
 export type WindowState = {
+  hugescreenDefault?: HugescreenState;
   hugescreenEdgeZones?: HugescreenZones;
   hugescreenPanMode?: "continuous" | "edge";
   bounds: Bounds;
@@ -45,6 +47,7 @@ export type LayoutPaneNode = {
 };
 
 export type WorkspaceLayout = {
+  hugescreen?: HugescreenState;
   builtIn?: boolean;
   id: string;
   name: string;
@@ -193,6 +196,7 @@ export type StoredProject = {
 };
 
 export type ProjectStoreState = {
+  projectHugescreen: Record<string, HugescreenState>;
   app: AppState;
   globalUrls: ProjectUrl[];
   layouts: WorkspaceLayout[];

@@ -3,14 +3,15 @@
 Hugescreen pans the entire native Boatyard window, including the sidebar and
 embedded web views. Panning itself does not zoom, resize, maximize, or restore
 window geometry.
-Only the user changes the window size, using the Hugescreen popup or their window
-manager's controls.
+The Hugescreen popup and window manager controls change the window size. Switching
+projects or loading a layout also restores the size previously saved for that workspace.
 
 - Hugescreen enables automatically at startup when the restored window, including
   its native decorations, is wider or taller than the screen work area. Maximized
   and fullscreen windows are excluded. Manual activation uses the same size rule;
   a window that fits the screen cannot enable Hugescreen. Every resize recalculates
-  the mode: oversized enables it, fitting disables it.
+  eligibility: fitting disables it, and an explicit pan-off choice stays off.
+  Saved project state takes precedence over automatic startup activation.
 - Double-tap **Ctrl** to enable pan; double-tap again to disable it. Release each
   press within 250 ms and start the second press within 350 ms of the first release.
   No key or mouse button needs to remain held.
@@ -58,7 +59,7 @@ manager's controls.
 ## Edge steps
 
 Choose **Edge steps · ½ screen** in the popup and press **Apply**. The choice is
-saved separately for each window. Cancel discards mode and size edits.
+saved as part of the current project's working state. Cancel discards mode and size edits.
 
 The window stays still while the pointer moves inside the screen. Hold the pointer
 inside an edge trigger zone for 180 ms to animate a half-screen step over
@@ -71,8 +72,8 @@ its width with the slider. Each edge has an independent width from 1 to 200 logi
 pixels (3 by default), measured inward from the usable screen edge. Wider zones
 let you trigger a step before reaching a desktop taskbar or toolbar. The preview
 shows the zones at the same scale as the screen; its clickable borders remain
-wide enough to select even a narrow zone. Apply saves all four widths per window;
-Cancel discards edits. The same controls work with Tab and Enter or Space.
+wide enough to select even a narrow zone. Apply saves all four widths as local
+machine preferences, shared across projects, profiles, and windows; Cancel discards edits. The same controls work with Tab and Enter or Space.
 On small displays, each zone is limited to one quarter of its screen dimension to
 preserve a neutral interior and avoid repeated steps after moving the pointer.
 
@@ -111,6 +112,37 @@ launch with `--ozone-platform=x11` to try XWayland. Window-manager size constrai
 shortcut handling, and rendering smoothness depend on the desktop environment.
 See [Electron's positioning documentation](https://www.electronjs.org/docs/latest/api/browser-window#winsetpositionx-y-animate).
 
+## Projects and saved layouts
+
+Each project remembers its current width and height relative to the usable screen,
+its pan mode, and whether pan is enabled. The global workspace has its own state.
+Switch away and back to restore these settings on the current display. An explicit
+pan-off choice stays off after restoration and subsequent resize events.
+
+Saving or updating a layout captures the pane arrangement together with those
+Hugescreen settings. Both project layouts and global layouts include the snapshot.
+Changing Hugescreen later changes only the project's working state; it does not
+update a saved layout. Loading a layout applies its snapshot to the current project.
+Undo restores both the previous pane arrangement and Hugescreen settings.
+
+Restoration starts at the usable screen's top-left. Pan position is not part of a
+layout snapshot. Size multipliers adapt to the current display and account for
+native decorations and the minimum window size. Existing projects and layouts
+without Hugescreen data retain compatibility: old layouts leave geometry unchanged,
+and unconfigured projects use the window's original size and pan settings rather
+than inheriting the last project's Hugescreen. This fallback is saved across restarts.
+
+If a restored layout requests Edge steps on an unsupported system, the window size
+is restored and pan stays off. The popup retains the selected mode and explains why
+it is unavailable; select Continuous and enable pan to use the other mode.
+
+Edge trigger zones are never included in layouts. They are local machine
+preferences in the Electron user-data directory, shared across configuration
+profiles. On first use, the first opened profile supplies the legacy widths: the
+old root-window value takes precedence, otherwise the first configured workspace
+window in stable ID order is used. Once migrated, other profiles cannot overwrite
+them. Applying new widths updates all open windows.
+
 ## Restart restoration
 
 Window positions retain negative desktop coordinates. On Linux, normal windows
@@ -119,7 +151,8 @@ mapped. Temporary minimum-size hints prevent the window manager from clamping th
 saved dimensions or automatically maximizing the window. These hints are then
 released, so the user can freely resize it. Intermediate startup geometry is not
 persisted. This restores the user's saved size; enabling Hugescreen never resizes
-anything.
+anything. Project Hugescreen state, when present, then restores relative size and
+pan status instead of relying on the old absolute dimensions.
 
 ## Prototype validation
 
@@ -139,3 +172,10 @@ half-screen overlap, a shortened final step, reverse navigation, and pointer
 alignment at each intermediate animation frame. Popup checks cover Apply, Cancel,
 reopening the selected mode, and unavailable pointer support. These checks do not
 establish behavior on other compositors or native Wayland.
+
+Persistence regression tests also run the complete application on an isolated Xvfb
+screen with temporary settings. They exercise layout capture/apply/undo, project
+round-trips, concurrent resizing and navigation, synchronized windows, shared edge
+zones, and explicit pan-off startup. Unit tests cover unavailable edge support and
+legacy data migration. These checks do not establish native Wayland positioning or
+behavior on every desktop compositor.

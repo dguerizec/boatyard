@@ -1,3 +1,5 @@
+import { HugescreenPreferences } from "./hugescreenPreferences.js";
+import { HugescreenOperationQueue, normalizeHugescreenState, type HugescreenState } from "./hugescreenState.js";
 import { parseHugescreenZones, type HugescreenZones } from "../renderer/hugescreenZones.js";
 import { getOversizedBootstrapBounds, needsOversizedRestore, restoreOversizedWindow } from "./windowGeometry.js";
 import { NO_FRAME_INSETS, readWindowFrameInsets } from "./windowFrameInsets.js";
@@ -92,6 +94,8 @@ if (process.env.BOATYARD_USER_DATA_PATH) {
   app.setPath("userData", canonicalizeDirectory(process.env.BOATYARD_USER_DATA_PATH));
 }
 
+const hugescreenPreferences = new HugescreenPreferences(path.join(app.getPath("userData"), "hugescreen.json"));
+
 const configurationRoot = process.env.BOATYARD_CONFIG_ROOT || resolveDefaultConfigurationRoot({
   cwd: process.cwd(),
   home: app.getPath("home"),
@@ -146,6 +150,9 @@ type WorkspaceWindowRecord = {
   hugescreen: Hugescreen;
   refreshFrameInsets(): Promise<void>;
   restoringGeometry: boolean;
+  hugescreenProjectId: string;
+  hugescreenDirty: boolean;
+  hugescreenDefault?: HugescreenState;
   saveStateTimer: ReturnType<typeof setTimeout> | null;
   syncGroupId: string;
   window: ElectronBrowserWindow;
@@ -158,6 +165,8 @@ const appThemeManager = createAppThemeManager({
 });
 const individuallyClosingWindowIds = new Set<string>();
 type WorkspaceLayoutUndoSnapshot = {
+  hugescreen?: HugescreenState;
+  workingHugescreen?: HugescreenState;
   configuration: ConfigurationContext;
   paneLayout: unknown;
   projectId: string;
@@ -436,7 +445,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   const workspaceWindowId = options.id || crypto.randomUUID();
   const syncGroupId = options.syncGroupId || crypto.randomUUID();
   const persistedWorkspaceWindow = configuration.store.ensureWorkspaceWindow(workspaceWindowId, syncGroupId, options.sourceWindowId) as {
-    window: { bounds: Partial<Rectangle>; isFullScreen?: boolean; isMaximized?: boolean; hugescreenPanMode?: "continuous" | "edge"; hugescreenEdgeZones?: HugescreenZones };
+    window: { bounds: Partial<Rectangle>; hugescreenDefault?: HugescreenState; isFullScreen?: boolean; isMaximized?: boolean; hugescreenPanMode?: "continuous" | "edge"; hugescreenEdgeZones?: HugescreenZones };
   };
   const windowState = persistedWorkspaceWindow.window;
 
@@ -484,7 +493,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     }),
     hugescreen: new Hugescreen({
       panMode: windowState.hugescreenPanMode,
-      zones: windowState.hugescreenEdgeZones,
+      zones: hugescreenPreferences.getZones(configuration.store.getLegacyHugescreenZones()),
       edgeDriver: createHugescreenEdgeDriver(window),
       window,
       getWorkArea: () => screen.getDisplayMatching(window.getBounds()).workArea,
@@ -493,10 +502,17 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       refreshFrameInsets,
       changed: (active) => {
         if (!window.isDestroyed()) window.webContents.send("hugescreen:changed", active);
+        if (!workspaceWindow.restoringGeometry) {
+          workspaceWindow.hugescreenDirty = true;
+          saveProjectHugescreen(workspaceWindow);
+        }
       }
     }),
     refreshFrameInsets,
-    restoringGeometry: restoreOversized,
+    restoringGeometry: true,
+    hugescreenProjectId: hugescreenProjectId(configuration.store.getStateForWorkspaceWindow(workspaceWindowId).navigation),
+    hugescreenDirty: false,
+    hugescreenDefault: windowState.hugescreenDefault,
     saveStateTimer: null
   };
   workspaceWindows.set(getWorkspaceWindowRegistryKey(configuration, workspaceWindow.id), workspaceWindow);
@@ -518,15 +534,19 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       console.error(`[capture renderer gone] ${details.reason}`);
     });
   }
-  window.once("ready-to-show", async () => {
+  const ready = new Promise<void>(resolve => {
+    window.once("ready-to-show", resolve);
+    window.once("closed", resolve);
+  });
+  void hugescreenQueue(configuration).run(async () => {
+    await ready;
+    if (window.isDestroyed()) return;
     window.show();
     if (restoreOversized) {
       try {
         await restoreOversizedWindow(window, restoredBounds);
       } catch (error) {
         console.warn(`Could not restore oversized window geometry: ${(error as Error).message}`);
-      } finally {
-        workspaceWindow.restoringGeometry = false;
       }
       if (window.isDestroyed()) return;
     }
@@ -534,7 +554,22 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     await refreshFrameInsets();
     if (window.isDestroyed()) return;
     await workspaceWindow.hugescreen.refreshEdgeSupport();
-    workspaceWindow.hugescreen.enableForOversizedWindow();
+    // Freeze legacy geometry before a project restore or the first user resize.
+    // Persist it separately so unseen projects never inherit another project's size.
+    const savedHugescreen = configuration.store.getProjectHugescreen(workspaceWindow.hugescreenProjectId);
+    if (!workspaceWindow.hugescreenDefault) {
+      const initial = workspaceWindow.hugescreen.captureState();
+      // Older project-aware versions did not save a fallback. Their last native
+      // bounds may already belong to an oversized project; use a fitting fallback.
+      workspaceWindow.hugescreenDefault = savedHugescreen ? {
+        ...initial, widthMultiplier: Math.min(1, initial.widthMultiplier),
+        heightMultiplier: Math.min(1, initial.heightMultiplier), enabled: false
+      } : initial;
+    }
+    if (savedHugescreen) await workspaceWindow.hugescreen.restoreState(savedHugescreen);
+    else workspaceWindow.hugescreen.enableForOversizedWindow();
+    workspaceWindow.restoringGeometry = false;
+    saveWindowState(workspaceWindow);
 
     if (captureRunner.isCaptureMode()) {
       captureRunner.runCaptureRequest().catch((error: Error) => {
@@ -547,6 +582,9 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
     if (process.argv.includes("--smoke")) {
       setTimeout(() => app.quit(), 500);
     }
+  }).catch(error => {
+    workspaceWindow.restoringGeometry = false;
+    console.error("Could not restore Hugescreen:", error);
   });
   window.on("blur", () => workspaceWindow.hugescreen.suspend());
   window.on("focus", () => workspaceWindow.hugescreen.resume());
@@ -566,7 +604,10 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   window.on("move", () => scheduleWindowStateSave(workspaceWindow));
   window.on("resize", () => {
     if (workspaceWindow.restoringGeometry) workspaceWindow.hugescreen.resetPointer();
-    else workspaceWindow.hugescreen.onGeometryChanged();
+    else {
+      workspaceWindow.hugescreen.onGeometryChanged();
+      workspaceWindow.hugescreenDirty = true;
+    }
     scheduleWindowStateSave(workspaceWindow);
   });
   window.on("maximize", () => saveWindowState(workspaceWindow));
@@ -610,17 +651,51 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   return workspaceWindow;
 }
 
+const hugescreenQueues = new WeakMap<ConfigurationContext, HugescreenOperationQueue>();
+function hugescreenQueue(configuration: ConfigurationContext) {
+  let queue = hugescreenQueues.get(configuration);
+  if (!queue) {
+    queue = new HugescreenOperationQueue();
+    hugescreenQueues.set(configuration, queue);
+  }
+  return queue;
+}
+
+function hugescreenProjectId(navigation: unknown): string {
+  const value = navigation as { view?: string; projectId?: string } | undefined;
+  return value?.view?.startsWith("project") && value.projectId ? value.projectId : "__global__";
+}
+
+function saveProjectHugescreen(workspace: WorkspaceWindowRecord) {
+  if (workspace.restoringGeometry || !workspace.hugescreenDirty || workspace.window.isDestroyed()) return;
+  workspace.configuration.store.updateProjectHugescreen(workspace.hugescreenProjectId, workspace.hugescreen.captureState());
+  workspace.hugescreenDirty = false;
+}
+
+async function restoreProjectHugescreen(workspace: WorkspaceWindowRecord, state?: HugescreenState) {
+  if (!state || workspace.window.isDestroyed()) return;
+  workspace.restoringGeometry = true;
+  try {
+    await workspace.hugescreen.restoreState(state);
+  } finally {
+    workspace.restoringGeometry = false;
+    workspace.hugescreenDirty = false;
+    if (!workspace.window.isDestroyed()) saveWindowState(workspace);
+  }
+}
+
 function saveWindowState(workspaceWindow: WorkspaceWindowRecord) {
   if (workspaceWindow.restoringGeometry || workspaceWindow.window.isMinimized()) {
     return;
   }
 
+  saveProjectHugescreen(workspaceWindow);
   workspaceWindow.configuration.store.updateWorkspaceWindowState(workspaceWindow.id, {
     bounds: workspaceWindow.window.getNormalBounds(),
     isMaximized: workspaceWindow.window.isMaximized(),
     isFullScreen: workspaceWindow.window.isFullScreen(),
-    hugescreenPanMode: workspaceWindow.hugescreen.mode,
-    hugescreenEdgeZones: workspaceWindow.hugescreen.edgeZones
+    hugescreenDefault: workspaceWindow.hugescreenDefault,
+    hugescreenPanMode: workspaceWindow.hugescreen.mode
   });
 }
 
@@ -1480,14 +1555,31 @@ function registerIpcHandlers() {
   ipcMain.handle("navigation:update", (event: IpcMainInvokeEvent, navigation: unknown) => {
     const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
     const configuration = getConfigurationForEvent(event);
-    if (!workspaceWindow) {
-      return configuration.store.updateNavigation(navigation);
-    }
-    const updated = configuration.store.updateWorkspaceNavigation(workspaceWindow.id, navigation);
-    for (const [windowId, nextNavigation] of Object.entries(updated)) {
-      sendWorkspaceNavigation(configuration, windowId, nextNavigation);
-    }
-    return updated[workspaceWindow.id] || configuration.store.getStateForWorkspaceWindow(workspaceWindow.id).navigation;
+    return hugescreenQueue(configuration).run(async () => {
+      if (!workspaceWindow) return configuration.store.updateNavigation(navigation);
+      const windows = [...workspaceWindows.values()].filter(entry => entry.configuration === configuration);
+      for (const entry of windows) {
+        saveProjectHugescreen(entry);
+        if (!configuration.store.getProjectHugescreen(entry.hugescreenProjectId)) {
+          configuration.store.updateProjectHugescreen(entry.hugescreenProjectId, entry.hugescreen.captureState());
+        }
+      }
+      const updated = configuration.store.updateWorkspaceNavigation(workspaceWindow.id, navigation);
+      for (const [windowId, nextNavigation] of Object.entries(updated)) {
+        const entry = windows.find(candidate => candidate.id === windowId);
+        const nextId = hugescreenProjectId(nextNavigation);
+        if (entry && nextId !== entry.hugescreenProjectId) {
+          entry.hugescreenProjectId = nextId;
+          const saved = configuration.store.getProjectHugescreen(nextId);
+          const target = saved || entry.hugescreenDefault;
+          if (saved || JSON.stringify(target) !== JSON.stringify(entry.hugescreen.captureState())) {
+            await restoreProjectHugescreen(entry, target);
+          }
+        }
+        sendWorkspaceNavigation(configuration, windowId, nextNavigation);
+      }
+      return updated[workspaceWindow.id] || configuration.store.getStateForWorkspaceWindow(workspaceWindow.id).navigation;
+    });
   });
 
   ipcMain.handle("onboarding:update", (event: IpcMainInvokeEvent, onboarding: unknown) => {
@@ -1496,45 +1588,58 @@ function registerIpcHandlers() {
 
   ipcMain.handle("hugescreen:toggle", (event: IpcMainInvokeEvent) => {
     const workspace = getWorkspaceWindowForWebContents(event.sender);
-    return workspace?.hugescreen.toggle() || false;
+    return workspace && !workspace.restoringGeometry ? workspace.hugescreen.toggle() : workspace?.hugescreen.active || false;
   });
   ipcMain.handle("hugescreen:settings", async (event: IpcMainInvokeEvent) => {
     const workspace = getWorkspaceWindowForWebContents(event.sender);
     if (!workspace) throw new Error("Workspace window is not available.");
-    await Promise.all([workspace.refreshFrameInsets(), workspace.hugescreen.refreshEdgeSupport()]);
-    return workspace.hugescreen.getSettings();
+    return hugescreenQueue(workspace.configuration).run(async () => {
+      await Promise.all([workspace.refreshFrameInsets(), workspace.hugescreen.refreshEdgeSupport()]);
+      return { ...workspace.hugescreen.getSettings(), projectId: workspace.hugescreenProjectId };
+    });
   });
-  ipcMain.handle("hugescreen:resize", async (event: IpcMainInvokeEvent, width: number, height: number, mode?: unknown, zones?: unknown) => {
+  ipcMain.handle("hugescreen:resize", async (event: IpcMainInvokeEvent, width: number, height: number, mode?: unknown, zones?: unknown, expectedProjectId?: string) => {
     const workspace = getWorkspaceWindowForWebContents(event.sender);
     if (!workspace) throw new Error("Workspace window is not available.");
-    if (workspace.restoringGeometry) throw new Error("Window resizing is already in progress.");
-    const parsedZones = zones === undefined ? undefined : parseHugescreenZones(zones);
-    if (mode !== undefined && mode !== "continuous" && mode !== "edge") throw new Error("Unknown pan mode.");
-    if (mode === "edge") {
-      await workspace.hugescreen.refreshEdgeSupport();
-      const reason = workspace.hugescreen.getSettings().edgeUnavailableReason;
-      if (reason) throw new Error(reason);
+    const projectId = expectedProjectId || workspace.hugescreenProjectId;
+    return hugescreenQueue(workspace.configuration).run(async () => {
+      if (workspace.hugescreenProjectId !== projectId) throw new Error("The active project changed. Reopen Hugescreen settings.");
       if (workspace.restoringGeometry) throw new Error("Window resizing is already in progress.");
-    }
-    workspace.restoringGeometry = true;
-    workspace.hugescreen.suspend();
-    let applied = false;
-    try {
-      await workspace.hugescreen.resizeWindow(width, height);
-      if (mode !== undefined) workspace.hugescreen.setMode(mode);
-      if (parsedZones) workspace.hugescreen.setZones(parsedZones);
-      applied = true;
-    } finally {
-      workspace.restoringGeometry = false;
-      if (!workspace.window.isDestroyed()) {
-        if (applied) workspace.hugescreen.onGeometryChanged();
-        else workspace.hugescreen.resetPointer();
-        workspace.hugescreen.resume();
-        saveWindowState(workspace);
+      const parsedZones = zones === undefined ? undefined : parseHugescreenZones(zones);
+      if (mode !== undefined && mode !== "continuous" && mode !== "edge") throw new Error("Unknown pan mode.");
+      if (mode === "edge") {
+        await workspace.hugescreen.refreshEdgeSupport();
+        const reason = workspace.hugescreen.getSettings().edgeUnavailableReason;
+        if (reason) throw new Error(reason);
+        if (workspace.restoringGeometry) throw new Error("Window resizing is already in progress.");
       }
-    }
-    return workspace.hugescreen.getSettings();
+      workspace.restoringGeometry = true;
+      workspace.hugescreen.suspend();
+      let applied = false;
+      try {
+        await workspace.hugescreen.resizeWindow(width, height);
+        if (mode !== undefined) workspace.hugescreen.setMode(mode);
+        if (parsedZones) {
+          hugescreenPreferences.setZones(parsedZones);
+          for (const entry of workspaceWindows.values()) {
+            entry.hugescreen.setZones(parsedZones);
+          }
+        }
+        applied = true;
+      } finally {
+        workspace.restoringGeometry = false;
+        if (!workspace.window.isDestroyed()) {
+          if (applied) workspace.hugescreen.onGeometryChanged();
+          else workspace.hugescreen.resetPointer();
+          workspace.hugescreen.resume();
+          workspace.hugescreenDirty = applied;
+          saveWindowState(workspace);
+        }
+      }
+      return workspace.hugescreen.getSettings();
+    });
   });
+
   ipcMain.handle("hugescreen:get", (event: IpcMainInvokeEvent) => (
     getWorkspaceWindowForWebContents(event.sender)?.hugescreen.active || false
   ));
@@ -1658,8 +1763,14 @@ function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle("layouts:save", (event: IpcMainInvokeEvent, layout: unknown) => {
-    return getConfigurationForEvent(event).store.saveLayout(layout);
+  ipcMain.handle("layouts:save", (event: IpcMainInvokeEvent, layout: unknown, expectedProjectId?: string) => {
+    const source = getWorkspaceWindowForWebContents(event.sender);
+    const configuration = getConfigurationForEvent(event);
+    const projectId = expectedProjectId || source?.hugescreenProjectId;
+    return hugescreenQueue(configuration).run(() => {
+      if (source && source.hugescreenProjectId !== projectId) throw new Error("The active project changed. Reopen the layout library.");
+      return configuration.store.saveLayout({ ...(layout as UnknownRecord), hugescreen: source?.hugescreen.captureState() });
+    });
   });
 
   ipcMain.handle("layouts:remove", (event: IpcMainInvokeEvent, layoutId: string) => {
@@ -1676,39 +1787,50 @@ function registerIpcHandlers() {
     if (!source || !projectId || !paneLayout || typeof paneLayout !== "object" || Array.isArray(paneLayout)) {
       throw new Error("A source window, project, and valid pane layout are required.");
     }
-    const currentState = source.configuration.store.getStateForWorkspaceWindow(source.id) as UnknownRecord;
-    const currentPaneLayouts = currentState.paneLayouts && typeof currentState.paneLayouts === "object"
-      ? currentState.paneLayouts as UnknownRecord
-      : {};
-    const snapshotPaneLayout = currentPaneLayouts[projectId] || null;
-    const undoToken = crypto.randomUUID();
-    for (const [token, previous] of workspaceLayoutUndoSnapshots) {
-      if (previous.configuration === source.configuration && previous.sourceWindowId === source.id) {
-        workspaceLayoutUndoSnapshots.delete(token);
+    return hugescreenQueue(source.configuration).run(async () => {
+      if (projectId !== source.hugescreenProjectId) throw new Error("The active project changed. Reopen the layout library.");
+      const hugescreen = normalizeHugescreenState(value.hugescreen);
+      saveProjectHugescreen(source);
+      const previousHugescreen = source.hugescreen.captureState();
+      const previousWorking = source.configuration.store.getProjectHugescreen(projectId);
+      const currentState = source.configuration.store.getStateForWorkspaceWindow(source.id) as UnknownRecord;
+      const currentPaneLayouts = currentState.paneLayouts && typeof currentState.paneLayouts === "object"
+        ? currentState.paneLayouts as UnknownRecord
+        : {};
+      const snapshotPaneLayout = currentPaneLayouts[projectId] || null;
+      const undoToken = crypto.randomUUID();
+      for (const [token, previous] of workspaceLayoutUndoSnapshots) {
+        if (previous.configuration === source.configuration && previous.sourceWindowId === source.id) {
+          workspaceLayoutUndoSnapshots.delete(token);
+        }
       }
-    }
-    workspaceLayoutUndoSnapshots.set(undoToken, {
-      configuration: source.configuration,
-      paneLayout: structuredClone(snapshotPaneLayout),
-      projectId,
-      sourceWindowId: source.id,
+      workspaceLayoutUndoSnapshots.set(undoToken, {
+        configuration: source.configuration,
+        ...(hugescreen ? { hugescreen: previousHugescreen, workingHugescreen: previousWorking } : {}),
+        paneLayout: structuredClone(snapshotPaneLayout),
+        projectId,
+        sourceWindowId: source.id,
+      });
+
+      try {
+        if (hugescreen) await restoreProjectHugescreen(source, hugescreen);
+        const applied = source.configuration.store.updateWorkspacePaneLayout(source.id, projectId, paneLayout);
+        if (!applied) {
+          throw new Error("The pane layout is invalid.");
+        }
+      } catch (error) {
+        workspaceLayoutUndoSnapshots.delete(undoToken);
+        source.configuration.store.updateWorkspacePaneLayout(source.id, projectId, snapshotPaneLayout);
+        if (hugescreen) await restoreProjectHugescreen(source, previousHugescreen);
+        throw error;
+      }
+
+      if (hugescreen) source.configuration.store.updateProjectHugescreen(projectId, hugescreen);
+      return {
+        state: source.configuration.store.getStateForWorkspaceWindow(source.id),
+        undoToken
+      };
     });
-
-    try {
-      const applied = source.configuration.store.updateWorkspacePaneLayout(source.id, projectId, paneLayout);
-      if (!applied) {
-        throw new Error("The pane layout is invalid.");
-      }
-    } catch (error) {
-      workspaceLayoutUndoSnapshots.delete(undoToken);
-      source.configuration.store.updateWorkspacePaneLayout(source.id, projectId, snapshotPaneLayout);
-      throw error;
-    }
-
-    return {
-      state: source.configuration.store.getStateForWorkspaceWindow(source.id),
-      undoToken
-    };
   });
 
   ipcMain.handle("layouts:undo", (event: IpcMainInvokeEvent, undoToken: string) => {
@@ -1717,13 +1839,18 @@ function registerIpcHandlers() {
     if (!source || !snapshot || snapshot.configuration !== source.configuration || snapshot.sourceWindowId !== source.id) {
       return null;
     }
-    source.configuration.store.updateWorkspacePaneLayout(
-      source.id,
-      snapshot.projectId,
-      snapshot.paneLayout
-    );
-    workspaceLayoutUndoSnapshots.delete(undoToken);
-    return source.configuration.store.getStateForWorkspaceWindow(source.id);
+    return hugescreenQueue(source.configuration).run(async () => {
+      if (workspaceLayoutUndoSnapshots.get(undoToken) !== snapshot || snapshot.projectId !== source.hugescreenProjectId) return null;
+      await restoreProjectHugescreen(source, snapshot.hugescreen);
+      if (snapshot.hugescreen) source.configuration.store.updateProjectHugescreen(snapshot.projectId, snapshot.workingHugescreen);
+      source.configuration.store.updateWorkspacePaneLayout(
+        source.id,
+        snapshot.projectId,
+        snapshot.paneLayout
+      );
+      workspaceLayoutUndoSnapshots.delete(undoToken);
+      return source.configuration.store.getStateForWorkspaceWindow(source.id);
+    });
   });
 
   ipcMain.handle("projects:update", (event: IpcMainInvokeEvent, id: string, patch: unknown) => {
@@ -1989,10 +2116,10 @@ if (isPrimaryInstance) {
       }
       if (input.control && input.shift && !input.alt && !input.meta && input.key.toLowerCase() === "h") {
         event.preventDefault();
-        if (input.type === "keyDown" && !input.isAutoRepeat) workspace.hugescreen.toggle();
+        if (input.type === "keyDown" && !input.isAutoRepeat && !workspace.restoringGeometry) workspace.hugescreen.toggle();
       } else {
         // Observe the gesture without consuming editor or embedded-page keys.
-        workspace.hugescreen.handleKey(input);
+        if (!workspace.restoringGeometry) workspace.hugescreen.handleKey(input);
       }
     });
     contents.on("before-mouse-event", (_event, mouse: MouseInputEvent) => {

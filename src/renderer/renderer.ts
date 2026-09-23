@@ -422,7 +422,7 @@ async function applyWorkspaceLayout(project: RendererProject, layout: WorkspaceL
       resolvePaneMasterType(project, paneTypeId, paneId)
     )
   });
-  const result = await boatyardWindow.boatyard.applyLayout({ projectId, paneLayout });
+  const result = await boatyardWindow.boatyard.applyLayout({ projectId, paneLayout, hugescreen: layout.hugescreen });
   acceptWorkspaceLayoutState(result.state, projectId);
   showWorkspaceLayoutUndo(result.undoToken, projectId);
 }
@@ -449,7 +449,7 @@ async function openWorkspaceLayoutLibrary(project: RendererProject) {
         crypto.randomUUID(),
         scope === "project" ? projectId : null
       );
-      return boatyardWindow.boatyard.saveLayout(layout);
+      return boatyardWindow.boatyard.saveLayout(layout, projectId);
     },
     onUpdate: async (layout) => {
       const updated = await captureCurrentWorkspaceLayout(
@@ -458,7 +458,7 @@ async function openWorkspaceLayoutLibrary(project: RendererProject) {
         layout.id,
         layout.projectId
       );
-      return boatyardWindow.boatyard.saveLayout(updated);
+      return boatyardWindow.boatyard.saveLayout(updated, projectId);
     },
     projectScopeAvailable
   });

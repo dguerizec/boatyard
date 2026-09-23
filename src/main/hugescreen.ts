@@ -1,3 +1,4 @@
+import type { HugescreenState } from "./hugescreenState.js";
 import type { BrowserWindow, Input, MouseInputEvent, Rectangle } from "electron";
 import { NO_FRAME_INSETS, type WindowFrameInsets } from "./windowFrameInsets.js";
 
@@ -114,6 +115,7 @@ export function getHugescreenResizeBounds(
 export class Hugescreen {
   private readonly motion = new HugescreenMotion();
   private enabled = false;
+  private explicitlyDisabled = false;
   private readonly interactionPauses = new Set<number>();
   private readonly edge = new HugescreenEdge();
   private panMode: HugescreenPanMode;
@@ -148,6 +150,7 @@ export class Hugescreen {
   async refreshEdgeSupport(): Promise<void> {
     this.edgeUnavailableReason = await this.options.edgeDriver?.unavailableReason() ||
       (this.options.edgeDriver ? "" : "Edge steps are not available on this system.");
+    if (this.mode === "edge" && this.edgeUnavailableReason && this.enabled) this.setEnabled(false);
   }
 
   setMode(mode: unknown): void {
@@ -168,7 +171,7 @@ export class Hugescreen {
 
   /** Called once after startup geometry and native decorations have been restored. */
   enableForOversizedWindow(): void {
-    if (!this.active) this.toggle();
+    if (!this.active && !this.explicitlyDisabled) this.setEnabled(this.canActivate());
   }
 
   getSettings() {
@@ -190,16 +193,44 @@ export class Hugescreen {
     };
   }
 
-  async resizeWindow(widthMultiplier: number, heightMultiplier: number): Promise<void> {
+  captureState(): HugescreenState {
+    const settings = this.getSettings();
+    return {
+      widthMultiplier: settings.widthMultiplier,
+      heightMultiplier: settings.heightMultiplier,
+      panMode: this.mode,
+      enabled: this.active
+    };
+  }
+
+  async restoreState(state: HugescreenState): Promise<void> {
+    this.suspend();
+    this.explicitlyDisabled = !state.enabled;
+    await this.refreshEdgeSupport();
+    // Retain the requested mode, but visibly turn pan off when its driver is unavailable.
+    this.panMode = state.panMode;
+    const area = this.options.getWorkArea();
+    await this.resizeWindow(state.widthMultiplier, state.heightMultiplier, true);
+    const frame = this.options.getFrameInsets?.() || NO_FRAME_INSETS;
+    this.options.window.setPosition(area.x + frame.left, area.y + frame.top);
+    this.setEnabled(state.enabled && this.canActivate());
+    this.resetPointer();
+  }
+
+  async resizeWindow(widthMultiplier: number, heightMultiplier: number, restoring = false): Promise<void> {
     const window = this.options.window;
     // Validate before changing native window state; keep the originally selected screen.
     const area = this.options.getWorkArea();
-    getHugescreenResizeBounds(window.getBounds(), area, widthMultiplier, heightMultiplier);
+    if (!restoring) getHugescreenResizeBounds(window.getBounds(), area, widthMultiplier, heightMultiplier);
     await restoreWindowedMode(window);
     await this.options.refreshFrameInsets?.();
     if (window.isDestroyed()) throw new Error("Window is no longer available.");
-    const bounds = getHugescreenResizeBounds(window.getBounds(), area, widthMultiplier, heightMultiplier,
-      this.options.getFrameInsets?.());
+    const frame = this.options.getFrameInsets?.() || NO_FRAME_INSETS;
+    const bounds = restoring ? {
+      ...window.getBounds(),
+      width: Math.max(640, Math.round(area.width * widthMultiplier) - frame.left - frame.right),
+      height: Math.max(480, Math.round(area.height * heightMultiplier) - frame.top - frame.bottom)
+    } : getHugescreenResizeBounds(window.getBounds(), area, widthMultiplier, heightMultiplier, frame);
     if (needsOversizedRestore(bounds, area, {})) await restoreOversizedWindow(window, bounds);
     else window.setBounds(bounds);
   }
@@ -216,13 +247,19 @@ export class Hugescreen {
   }
 
   toggle(): boolean {
-    this.stopPolling();
     if (!this.enabled && !this.canActivate()) return false;
-    this.enabled = !this.enabled;
-    this.area = this.enabled ? this.options.getWorkArea() : null;
-    if (this.enabled) this.resume();
-    this.options.changed(this.enabled);
+    const enabled = !this.enabled;
+    this.explicitlyDisabled = !enabled;
+    this.setEnabled(enabled);
     return this.enabled;
+  }
+
+  private setEnabled(enabled: boolean): void {
+    this.stopPolling();
+    this.enabled = enabled;
+    this.area = enabled ? this.options.getWorkArea() : null;
+    if (enabled) this.resume();
+    this.options.changed(enabled);
   }
 
   private stopPolling(): void {
@@ -253,7 +290,8 @@ export class Hugescreen {
       if (Math.abs(bounds.width - this.animationBounds.width) <= 1 &&
         Math.abs(bounds.height - this.animationBounds.height) <= 1) return;
     }
-    if (this.active !== this.canActivate()) this.toggle();
+    const enabled = !this.explicitlyDisabled && this.canActivate();
+    if (this.active !== enabled) this.setEnabled(enabled);
     else this.resetPointer();
   }
 

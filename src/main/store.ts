@@ -1,3 +1,4 @@
+import { normalizeHugescreenState, normalizeProjectHugescreenStates, migrateHugescreenZones, type HugescreenState } from "./hugescreenState";
 const fs = require("node:fs");
 const path = require("node:path");
 
@@ -670,6 +671,7 @@ class ProjectStore {
     });
     this.writeJsonAtomically(this.workspaceSessionFilePath, {
       schemaVersion: this.state.schemaVersion,
+      projectHugescreen: this.state.projectHugescreen,
       window: this.state.window,
       navigation: this.state.navigation,
       webApps: this.state.webApps,
@@ -735,6 +737,7 @@ class ProjectStore {
 
     return {
       schemaVersion: normalizeSchemaVersion(parsed.schemaVersion),
+      projectHugescreen: normalizeProjectHugescreenStates(parsed.projectHugescreen, new Set(normalizedProjects.map(project => project.id))),
       settings: {
         ...normalizedSettings,
         webAppOpenRules: normalizedSettings.webAppOpenRules.filter((rule) => (
@@ -819,6 +822,20 @@ class ProjectStore {
   getState(): ProjectStoreState {
     return structuredClone(this.state);
   }
+
+  getProjectHugescreen(projectId: string): HugescreenState | undefined {
+    return structuredClone(this.state.projectHugescreen[projectId]);
+  }
+
+  updateProjectHugescreen(projectId: string, value: unknown): void {
+    if (projectId !== "__global__" && !this.state.projects.some(project => project.id === projectId)) return;
+    const state = normalizeHugescreenState(value);
+    if (state) this.state.projectHugescreen[projectId] = state;
+    else delete this.state.projectHugescreen[projectId];
+    this.save();
+  }
+
+  getLegacyHugescreenZones() { return migrateHugescreenZones(this.state); }
 
   listLayouts(projectId: unknown = null): WorkspaceLayout[] {
     return listWorkspaceLayouts(this.state.layouts, projectId);
@@ -1556,6 +1573,7 @@ class ProjectStore {
     const projectId = String(id);
     this.state.projects = this.state.projects.filter((project) => project.id !== projectId);
     this.state.layouts = this.state.layouts.filter((layout) => layout.projectId !== projectId);
+    delete this.state.projectHugescreen[projectId];
     delete this.state.paneLayouts[projectId];
     delete this.state.widgetLayouts[projectId];
     delete this.state.terminalSelections[projectId];

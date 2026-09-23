@@ -1,3 +1,4 @@
+import { normalizeHugescreenState } from "./hugescreenState";
 import { normalizeHugescreenZones } from "../renderer/hugescreenZones.js";
 import {
   DEFAULT_WINDOW_BOUNDS,
@@ -30,6 +31,7 @@ const STORE_SCHEMA_VERSION = 1;
 export function createDefaultState(): ProjectStoreState {
   return {
     schemaVersion: STORE_SCHEMA_VERSION,
+    projectHugescreen: {},
     settings: {
       projectsBasePath: "",
       blurWebAppOverlays: false,
@@ -91,6 +93,7 @@ export function normalizeWindowState(windowState: unknown = {}): WindowState {
   const source = toRecord(windowState);
 
   return {
+    ...(normalizeHugescreenState(source.hugescreenDefault) ? { hugescreenDefault: normalizeHugescreenState(source.hugescreenDefault) } : {}),
     ...(source.hugescreenEdgeZones ? { hugescreenEdgeZones: normalizeHugescreenZones(source.hugescreenEdgeZones) } : {}),
     ...(source.hugescreenPanMode === "edge" ? { hugescreenPanMode: "edge" as const } : {}),
     bounds: normalizeWindowBounds(source.bounds),

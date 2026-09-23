@@ -1,3 +1,4 @@
+import type { HugescreenState } from "./hugescreenState.js";
 import type { HugescreenZones } from "./hugescreenZones.js";
 import type { UnknownRecord } from "./rendererRecords";
 import type { PaneLayoutNode, PaneNode } from "./paneLayoutState.js";
@@ -111,6 +112,7 @@ export type WorkspaceLayoutPaneNode = {
 };
 
 export type WorkspaceLayout = {
+  hugescreen?: HugescreenState;
   id: string;
   name: string;
   builtIn?: boolean;
@@ -224,6 +226,7 @@ export type ProjectSettingsViewsInstance = RendererModuleInstance & {
 };
 
 export type HugescreenSettings = {
+  projectId?: string;
   edgeZones: HugescreenZones;
   panMode: "continuous" | "edge";
   edgeUnavailableReason: string;
@@ -242,7 +245,7 @@ export type BoatyardBridge = {
   applyLayout(payload: UnknownRecord): Promise<{ state: RendererState; undoToken: string }>;
   toggleHugescreen: () => Promise<boolean>;
   getHugescreenSettings: () => Promise<HugescreenSettings>;
-  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge", zones?: HugescreenZones) => Promise<HugescreenSettings>;
+  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge", zones?: HugescreenZones, projectId?: string) => Promise<HugescreenSettings>;
   getHugescreen: () => Promise<boolean>;
   onHugescreenChanged: (callback: (active: boolean) => void) => () => void;
   createWorkspaceWindow?: () => Promise<boolean>;
@@ -282,7 +285,7 @@ export type BoatyardBridge = {
   restoreWebApps(token?: unknown): Promise<unknown>;
   restartToUpdate(update: UnknownRecord): Promise<unknown>;
   respondMcpRequest?: (payload: unknown) => void;
-  saveLayout(layout: WorkspaceLayout): Promise<WorkspaceLayout>;
+  saveLayout(layout: WorkspaceLayout, projectId?: string): Promise<WorkspaceLayout>;
   setTheme?: (theme: "dark" | "light") => Promise<unknown>;
   setVisibleWebApps(...payload: unknown[]): Promise<unknown>;
   showWebApp(...payload: unknown[]): Promise<unknown>;

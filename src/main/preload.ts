@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   getState: () => ipcRenderer.invoke("state:get"),
   toggleHugescreen: () => ipcRenderer.invoke("hugescreen:toggle"),
   getHugescreenSettings: () => ipcRenderer.invoke("hugescreen:settings"),
-  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge", zones?: HugescreenZones) => ipcRenderer.invoke("hugescreen:resize", width, height, mode, zones),
+  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge", zones?: HugescreenZones, projectId?: string) => ipcRenderer.invoke("hugescreen:resize", width, height, mode, zones, projectId),
   getHugescreen: () => ipcRenderer.invoke("hugescreen:get"),
   onHugescreenChanged: (callback: (active: boolean) => void): Unsubscribe => {
     const listener = (_event: IpcRendererEvent, active: boolean) => callback(active);
@@ -46,7 +46,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   getLayoutPreviewMetrics: () => ipcRenderer.invoke("layouts:preview-metrics"),
   applyLayout: (payload: unknown) => ipcRenderer.invoke("layouts:apply", payload),
   undoLayout: (undoToken: string) => ipcRenderer.invoke("layouts:undo", undoToken),
-  saveLayout: (layout: unknown) => ipcRenderer.invoke("layouts:save", layout),
+  saveLayout: (layout: unknown, projectId?: string) => ipcRenderer.invoke("layouts:save", layout, projectId),
   removeLayout: (layoutId: string) => ipcRenderer.invoke("layouts:remove", layoutId),
   updateProject: (id: string, patch: unknown) => ipcRenderer.invoke("projects:update", id, patch),
   updateGlobalUrls: (urls: unknown) => ipcRenderer.invoke("global-urls:update", urls),
