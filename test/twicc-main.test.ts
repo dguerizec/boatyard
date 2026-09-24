@@ -104,7 +104,7 @@ test("TwiCC restart readiness blocks non-idle sessions and includes hidden proce
     },
     execFileAsync: async (_command: string, args: string[]) => {
       commands.push(args);
-      return { stdout: JSON.stringify(processes) };
+      return { stdout: JSON.stringify(processes.map((process, index) => ({ id: `session-${index}`, process }))) };
     },
     getState: () => ({}),
     projectInspectors: { register() {} },
@@ -125,12 +125,13 @@ test("TwiCC restart readiness blocks non-idle sessions and includes hidden proce
     }
   });
   assert.deepEqual(commands[0], [
-    "processes",
+    "sessions",
     "--limit",
     "1000",
-    "--offset",
-    "0",
-    "--include-hidden"
+    "--include-archived",
+    "--include-hidden",
+    "--active",
+    "--full"
   ]);
 
   processes = [{ state: "user_turn" }, { state: "user_turn" }];
@@ -153,6 +154,9 @@ test("TwiCC main resolves session navigation from the cached process snapshot", 
     },
     execFileAsync: async (_command: string, args: string[]) => {
       commands.push(args);
+      if (args[0] === "sessions") {
+        throw Object.assign(new Error("No such option: --active"), { code: 2 });
+      }
       if (args[0] === "processes") {
         return {
           stdout: JSON.stringify([{
@@ -205,7 +209,7 @@ test("TwiCC main resolves session navigation from the cached process snapshot", 
     twiccProjectId: "twicc-project",
     url: "http://localhost:3500/project/twicc-project/session/session-1"
   });
-  assert.deepEqual(commands.map((args) => args[0]), ["processes", "projects"]);
+  assert.deepEqual(commands.map((args) => args[0]), ["sessions", "processes", "projects"]);
 });
 
 test("TwiCC main resolves session navigation through the session fallback on a cache miss", async () => {

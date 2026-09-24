@@ -35,6 +35,25 @@ state, `requiresUserAction`, any state lookup warning, and navigation acknowledg
 The pane loads TwiCC's full conversation with its existing browser controls.
 `boatyard.twicc.resolve_session` provides the same lookup without navigating.
 
+## TwiCC version compatibility
+
+Boatyard supports both the legacy CLI/RPC responses and TwiCC's October 1, 2026
+API contract. No TwiCC upgrade or compatibility setting is required for this
+migration. Project and session lists follow pagination; the board retains the
+full session metadata used for activity ordering and lane inference.
+
+Recent TwiCC versions include process state in session responses. Older versions
+continue using the legacy process commands. An explicit unsupported option can
+trigger a retry against the same instance; connection and authentication failures
+never redirect these reads to a different local instance.
+
+TwiCC's new active-session listing can briefly omit a newly started session until
+its session row and first user message are indexed. Status summaries, resource
+attribution and the restart readiness check share that upstream visibility limit;
+a readiness result is a snapshot, not a guarantee that no process is starting.
+Opening a known session reads its individual process state as soon as its row is
+available, including hidden and archived sessions.
+
 ## Errors and recovery
 
 - `INVALID_SESSION_ID`: pass an ID, not a URL or command-line option.

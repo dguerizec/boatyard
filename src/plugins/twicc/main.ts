@@ -65,8 +65,6 @@ type TwiccPluginContext = {
 
 const TWICC_RESTART_OPTIONS = Object.freeze({ timeout: 30_000, windowsHide: true });
 const TWICC_UPGRADE_OPTIONS = Object.freeze({ timeout: 300_000, windowsHide: true });
-const TWICC_PROCESS_LIST_OPTIONS = Object.freeze({ timeout: 5_000, windowsHide: true });
-const TWICC_PROCESS_PAGE_SIZE = 1000;
 
 type TwiccServiceProcess = { state?: unknown };
 type TwiccServiceRestartReadiness = {
@@ -89,25 +87,7 @@ async function upgradeTwiccService(execFileAsync: ExecFileAsync) {
 async function getTwiccServiceRestartReadiness(
   execFileAsync: ExecFileAsync
 ): Promise<TwiccServiceRestartReadiness> {
-  const processes: TwiccServiceProcess[] = [];
-  for (let offset = 0; ; offset += TWICC_PROCESS_PAGE_SIZE) {
-    const result = await execFileAsync("twicc", [
-      "processes",
-      "--limit",
-      String(TWICC_PROCESS_PAGE_SIZE),
-      "--offset",
-      String(offset),
-      "--include-hidden"
-    ], TWICC_PROCESS_LIST_OPTIONS);
-    const page = JSON.parse(String(result.stdout || "[]"));
-    if (!Array.isArray(page)) {
-      throw new Error("TwiCC returned an invalid process list.");
-    }
-    processes.push(...page);
-    if (page.length < TWICC_PROCESS_PAGE_SIZE) {
-      break;
-    }
-  }
+  const processes: TwiccServiceProcess[] = await loadTwiccProcesses({ execFileAsync });
 
   const states = processes.reduce<Record<string, number>>((counts, process) => {
     const state = String(process?.state || "unknown").trim() || "unknown";

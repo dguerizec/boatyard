@@ -223,6 +223,9 @@ test("loadTwiccProcesses returns JSON processes from the CLI", async () => {
   const processes = await loadTwiccProcesses({
     execFileAsync: async (command: string, args: string[]) => {
       assert.equal(command, "twicc");
+      if (args[0] === "sessions") {
+        throw Object.assign(new Error("No such option: --active"), { code: 2 });
+      }
       assert.deepEqual(args, ["processes", "--limit", "1000", "--include-hidden"]);
       return {
         stdout: JSON.stringify([{ project_id: "project", state: "assistant_turn" }])
@@ -240,6 +243,9 @@ test("loadTwiccProcessesFromRpc returns JSON processes from configured Twicc URL
       twiccApiToken: "secret-token"
     },
     fetch: createRpcFetch((url, init) => {
+      if (url.endsWith("/sessions")) {
+        return { exit_code: 2, error: "No such option: --active" };
+      }
       assert.equal(url, "https://twicc.example/rpc/processes");
       assert.deepEqual(JSON.parse(String(init.body)), {
         limit: 1000,
@@ -265,7 +271,8 @@ test("loadTwiccSessions returns project sessions from the CLI", async () => {
         "--project",
         "/workspace/project",
         "--limit",
-        "1000"
+        "1000",
+        "--full"
       ]);
       return {
         stdout: JSON.stringify([{ id: "session-1", title: "Implement feature" }])
@@ -286,7 +293,8 @@ test("loadTwiccSessionsFromRpc returns project sessions from configured Twicc UR
       assert.equal(url, "https://twicc.example/rpc/sessions");
       assert.deepEqual(JSON.parse(String(init.body)), {
         project: "/workspace/project",
-        limit: 1000
+        limit: 1000,
+        full: true
       });
       return {
         exit_code: 0,
@@ -1405,9 +1413,9 @@ test("loadTwiccProjectProcessStatuses returns grouped process statuses", async (
       stdout: JSON.stringify([
         {
           project_id: "project",
-          session_id: "session",
-          session_title: "Done",
-          state: "user_turn"
+          id: "session",
+          title: "Done",
+          process: { state: "user_turn" }
         }
       ])
     })

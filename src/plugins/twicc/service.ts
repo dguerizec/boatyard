@@ -329,6 +329,13 @@ async function rpcCommand(
     signal: AbortSignal.timeout(30000)
   });
   if (!response?.ok) {
+    // Older RPC schemas reject new options before invoking the command.
+    if (response?.status === 400) {
+      const detail = await response.json().catch(() => null);
+      if (isRecord(detail) && typeof detail.error === "string" && detail.error.startsWith("Unknown field(s): ")) {
+        throw Object.assign(new Error(detail.error), { unsupportedFields: detail.error.slice(18).split(", ") });
+      }
+    }
     throw new Error(`TwiCC RPC ${commandPath} failed with HTTP ${response?.status || "error"}.`);
   }
 
@@ -337,7 +344,7 @@ async function rpcCommand(
     throw new Error(`TwiCC RPC ${commandPath} returned an invalid response.`);
   }
   if (payload.exit_code && payload.exit_code !== 0) {
-    throw new Error(String(payload.error || `TwiCC RPC ${commandPath} failed.`));
+    throw Object.assign(new Error(String(payload.error || `TwiCC RPC ${commandPath} failed.`)), { exitCode: payload.exit_code });
   }
   if (payload.error) {
     throw new Error(String(payload.error));
@@ -347,36 +354,11 @@ async function rpcCommand(
 }
 
 async function loadTwiccProjectsFromRpc(options: TwiccCommandOptions = {}): Promise<TwiccProject[]> {
-  const projects = await rpcCommand("projects", {
-    limit: 1000,
-    include_archived: true
-  }, options);
-  return Array.isArray(projects) ? projects.filter(isTwiccProject) : [];
+  return (await readTwiccRows("projects", { includeArchived: true }, options, true)).filter(isTwiccProject);
 }
 
-async function loadTwiccProjects({ execFileAsync, ...options }: TwiccCommandOptions = {}): Promise<TwiccProject[]> {
-  if (shouldUseRpc(options)) {
-    try {
-      return await loadTwiccProjectsFromRpc(options);
-    } catch {
-      // Fall back for older/local setups where only the CLI is available.
-    }
-  }
-
-  if (typeof execFileAsync !== "function") {
-    return [];
-  }
-
-  try {
-    const { stdout } = await execFileAsync("twicc", ["projects", "--limit", "1000", "--include-archived"], {
-      timeout: 5000,
-      windowsHide: true
-    });
-    const projects = JSON.parse(String(stdout || "[]"));
-    return Array.isArray(projects) ? projects.filter(isTwiccProject) : [];
-  } catch {
-    return [];
-  }
+async function loadTwiccProjects(options: TwiccCommandOptions = {}): Promise<TwiccProject[]> {
+  return (await readTwiccRows("projects", { includeArchived: true }, options)).filter(isTwiccProject);
 }
 
 function createTwiccProjectCache({
@@ -417,36 +399,39 @@ function createTwiccProjectCache({
 }
 
 async function loadTwiccProcessesFromRpc(options: TwiccCommandOptions = {}): Promise<TwiccProcess[]> {
-  const processes = await rpcCommand("processes", {
-    limit: 1000,
-    include_hidden: true
-  }, options);
-  return Array.isArray(processes) ? processes.filter(isTwiccProcess) : [];
+  return readTwiccProcesses(options, true);
 }
 
-async function loadTwiccProcesses({ execFileAsync, ...options }: TwiccCommandOptions = {}): Promise<TwiccProcess[]> {
-  if (shouldUseRpc(options)) {
-    try {
-      return await loadTwiccProcessesFromRpc(options);
-    } catch {
-      // Fall back for older/local setups where only the CLI is available.
-    }
-  }
+async function loadTwiccProcesses(options: TwiccCommandOptions = {}): Promise<TwiccProcess[]> {
+  return readTwiccProcesses(options);
+}
 
-  if (typeof execFileAsync !== "function") {
-    return [];
+// Keep one internal process shape for the board, resource monitor and restart checks.
+function sessionProcess(session: Record<string, unknown>): TwiccProcess | null {
+  if (session.process === null) { return null; } // Subagents have no process of their own.
+  if (!isRecord(session.process) || typeof session.process.state !== "string") {
+    throw new Error("TwiCC returned invalid session process metadata.");
   }
+  return {
+    ...session.process,
+    session_id: String(session.id || ""),
+    session_title: String(session.title || ""),
+    project_id: String(session.project_id || ""),
+    provider: String(session.provider || "")
+  };
+}
 
+async function readTwiccProcesses(options: TwiccCommandOptions, rpcOnly = false): Promise<TwiccProcess[]> {
+  let sessions: Record<string, unknown>[];
   try {
-    const { stdout } = await execFileAsync("twicc", ["processes", "--limit", "1000", "--include-hidden"], {
-      timeout: 5000,
-      windowsHide: true
-    });
-    const processes = JSON.parse(String(stdout || "[]"));
-    return Array.isArray(processes) ? processes.filter(isTwiccProcess) : [];
-  } catch {
-    return [];
+    sessions = await readTwiccRows("sessions", {
+      active: true, includeArchived: true, includeHidden: true
+    }, options, rpcOnly);
+  } catch (error) {
+    if (!isUnsupportedTwiccOption(error, ["active", "full"])) { throw error; }
+    return (await readTwiccRows("processes", { includeHidden: true }, options, rpcOnly)).filter(isTwiccProcess);
   }
+  return sessions.map(sessionProcess).filter((process): process is TwiccProcess => process !== null && process.state !== "dead");
 }
 
 async function loadTwiccSessionsFromRpc(
@@ -484,35 +469,13 @@ async function loadTwiccSessionFromRpc(
 
 async function loadTwiccSession(
   sessionId: unknown,
-  { execFileAsync, ...options }: TwiccCommandOptions = {}
+  options: TwiccCommandOptions = {}
 ): Promise<TwiccSession | null> {
   const normalizedSessionId = normalizeText(sessionId);
-  if (!normalizedSessionId) {
-    return null;
-  }
-
-  if (shouldUseRpc(options)) {
-    try {
-      return await loadTwiccSessionFromRpc(normalizedSessionId, options);
-    } catch {
-      // Fall back for older/local setups where only the CLI is available.
-    }
-  }
-
-  if (typeof execFileAsync !== "function") {
-    return null;
-  }
-
-  try {
-    const { stdout } = await execFileAsync("twicc", ["session", normalizedSessionId], {
-      timeout: 5000,
-      windowsHide: true
-    });
-    const session = JSON.parse(String(stdout || "null"));
-    return isTwiccSession(session) ? session : null;
-  } catch {
-    return null;
-  }
+  if (!normalizedSessionId) { return null; }
+  const session = await runTwiccCommand("session", { session_id: normalizedSessionId },
+    ["session", normalizedSessionId], options);
+  return isTwiccSession(session) ? session : null;
 }
 
 function asSessionFlowLane(value: unknown): TwiccSessionFlowLane | "" {
@@ -714,16 +677,30 @@ function getTwiccSessionFlow(
     }) => session);
 }
 
+// Only an explicit option rejection permits a legacy retry. Network, authorization,
+// malformed responses and server failures must remain failures on the same instance.
+function isUnsupportedTwiccOption(error: unknown, names: string[]): boolean {
+  const detail = error as { code?: unknown; exitCode?: unknown; message?: unknown; stderr?: unknown; unsupportedFields?: string[] };
+  if (detail?.unsupportedFields?.length) {
+    return detail.unsupportedFields.every((field) => names.includes(field));
+  }
+  if (detail?.exitCode !== 2 && detail?.code !== 2) { return false; }
+  const message = String(detail.stderr || detail.message || "");
+  const rejected = /(?:no such option|unknown (?:option|argument|parameter)|unsupported (?:option|parameter))\s*:?\s*['"]?(?:--)?([a-z][\w-]*)/i.exec(message);
+  return !!rejected && names.includes(rejected[1]);
+}
+
 // Strict paginated reads are shared by the board, MCP tools and startup migration.
-// An unavailable backend must not look like an empty board.
+// Explicit limits work before and after the API switch; accept both response shapes.
 async function readTwiccRows(
-  command: "sessions" | "processes",
-  filters: { project?: string; includeArchived?: boolean; includeHidden?: boolean },
+  command: "sessions" | "processes" | "projects",
+  filters: { project?: string; includeArchived?: boolean; includeHidden?: boolean; active?: boolean },
   options: TwiccCommandOptions,
   rpcOnly = false
 ): Promise<Record<string, unknown>[]> {
   const rows: Record<string, unknown>[] = [];
-  for (let offset = 0; ; offset += 1000) {
+  let full = command === "sessions";
+  for (let offset = 0; ;) {
     const body: Record<string, unknown> = { limit: 1000 };
     const args: string[] = [command];
     if (filters.project) {
@@ -731,20 +708,38 @@ async function readTwiccRows(
       args.push("--project", filters.project);
     }
     args.push("--limit", "1000");
-    if (offset) {
-      body.offset = offset;
-      args.push("--offset", String(offset));
-    }
+    if (offset) { body.offset = offset; args.push("--offset", String(offset)); }
     if (filters.includeArchived) { body.include_archived = true; args.push("--include-archived"); }
     if (filters.includeHidden) { body.include_hidden = true; args.push("--include-hidden"); }
-    const result = rpcOnly
-      ? await rpcCommand(command, body, options)
-      : await runTwiccCommand(command, body, args, options);
-    if (!Array.isArray(result) || !result.every(isRecord)) {
+    if (filters.active) { body.active = true; args.push("--active"); }
+    if (full) { body.full = true; args.push("--full"); }
+    let result: unknown;
+    try {
+      result = rpcOnly
+        ? await rpcCommand(command, body, options)
+        : await runTwiccCommand(command, body, args, options);
+    } catch (error) {
+      if (full && !filters.active && isUnsupportedTwiccOption(error, ["full"])) {
+        full = false;
+        continue;
+      }
+      throw error;
+    }
+    const page = Array.isArray(result) ? result : isRecord(result) ? result.items : null;
+    if (!Array.isArray(page) || !page.every(isRecord)) {
       throw new Error(`TwiCC returned an invalid ${command} list.`);
     }
-    rows.push(...result);
-    if (result.length < 1000) { return rows; }
+    rows.push(...page);
+    if (!Array.isArray(result)) {
+      const pagination = isRecord(result) && isRecord(result.pagination) ? result.pagination : null;
+      if (!pagination || typeof pagination.has_more !== "boolean" || pagination.offset !== offset
+          || !Number.isInteger(pagination.limit) || Number(pagination.limit) <= 0) {
+        throw new Error(`TwiCC returned invalid ${command} pagination.`);
+      }
+      if (!pagination.has_more) { return rows; }
+      if (!page.length) { throw new Error(`TwiCC returned an empty ${command} page with more results pending.`); }
+    } else if (page.length < 1000) { return rows; }
+    offset += page.length;
   }
 }
 
@@ -785,8 +780,9 @@ export async function resolveTwiccSession(sessionId: unknown, options: TwiccComm
   let processState = "unknown";
   let warning: string | null = null;
   try {
-    const processes = await readTwiccRows("processes", { includeHidden: true }, options);
-    const process = processes.find((row) => row.session_id === id);
+    const process = Object.hasOwn(session, "process")
+      ? sessionProcess(session as Record<string, unknown>)
+      : (await readTwiccRows("processes", { includeHidden: true }, options)).find((row) => row.session_id === id);
     processState = process ? String(process.state || "unknown") : "stopped";
   } catch {
     warning = "Live process state is unavailable; check the conversation in TwiCC.";
@@ -858,10 +854,10 @@ async function loadTwiccSessionFlow(
   options: TwiccCommandOptions = {}
 ): Promise<TwiccSessionFlowItem[]> {
   if (!normalizeText(project)) { throw new Error("TwiCC project reference is required."); }
-  const [sessions, processes] = await Promise.all([
-    loadTwiccSessions(project, options),
-    readTwiccRows("processes", { includeHidden: true }, options)
-  ]);
+  const sessions = await loadTwiccSessions(project, options);
+  const processes = sessions.every((session) => Object.hasOwn(session, "process"))
+    ? sessions.map((session) => sessionProcess(session as Record<string, unknown>)).filter((process) => process !== null)
+    : await readTwiccRows("processes", { includeHidden: true }, options);
   return getTwiccSessionFlow(sessions, processes);
 }
 
