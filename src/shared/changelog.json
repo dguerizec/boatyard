@@ -1,6 +1,17 @@
 {
-  "generatedForVersion": "0.17.1",
+  "generatedForVersion": "0.17.2",
   "releases": [
+    {
+      "version": "0.17.2",
+      "date": "2026-09-24",
+      "features": [
+        {
+          "category": "Fixed",
+          "title": "TwiCC compatibility",
+          "body": "Sessions, metadata, and process status now load correctly across legacy, transitional, and newer TwiCC versions, keeping the board and resource monitor working consistently."
+        }
+      ]
+    },
     {
       "version": "0.17.1",
       "date": "2026-09-23",
