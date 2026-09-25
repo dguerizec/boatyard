@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   getState: () => ipcRenderer.invoke("state:get"),
   toggleHugescreen: () => ipcRenderer.invoke("hugescreen:toggle"),
   getHugescreenSettings: () => ipcRenderer.invoke("hugescreen:settings"),
-  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge", zones?: HugescreenZones, projectId?: string) => ipcRenderer.invoke("hugescreen:resize", width, height, mode, zones, projectId),
+  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge", zones?: HugescreenZones, projectId?: string, scope?: "current" | "all") => ipcRenderer.invoke("hugescreen:resize", width, height, mode, zones, projectId, scope),
   getHugescreen: () => ipcRenderer.invoke("hugescreen:get"),
   onHugescreenChanged: (callback: (active: boolean) => void): Unsubscribe => {
     const listener = (_event: IpcRendererEvent, active: boolean) => callback(active);

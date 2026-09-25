@@ -1598,12 +1598,13 @@ function registerIpcHandlers() {
       return { ...workspace.hugescreen.getSettings(), projectId: workspace.hugescreenProjectId };
     });
   });
-  ipcMain.handle("hugescreen:resize", async (event: IpcMainInvokeEvent, width: number, height: number, mode?: unknown, zones?: unknown, expectedProjectId?: string) => {
+  ipcMain.handle("hugescreen:resize", async (event: IpcMainInvokeEvent, width: number, height: number, mode?: unknown, zones?: unknown, expectedProjectId?: string, scope: unknown = "current") => {
     const workspace = getWorkspaceWindowForWebContents(event.sender);
     if (!workspace) throw new Error("Workspace window is not available.");
     const projectId = expectedProjectId || workspace.hugescreenProjectId;
     return hugescreenQueue(workspace.configuration).run(async () => {
       if (workspace.hugescreenProjectId !== projectId) throw new Error("The active project changed. Reopen Hugescreen settings.");
+      if (scope !== "current" && scope !== "all") throw new Error("Unknown Hugescreen apply scope.");
       if (workspace.restoringGeometry) throw new Error("Window resizing is already in progress.");
       const parsedZones = zones === undefined ? undefined : parseHugescreenZones(zones);
       if (mode !== undefined && mode !== "continuous" && mode !== "edge") throw new Error("Unknown pan mode.");
@@ -1634,6 +1635,17 @@ function registerIpcHandlers() {
           workspace.hugescreen.resume();
           workspace.hugescreenDirty = applied;
           saveWindowState(workspace);
+        }
+      }
+      if (scope === "all") {
+        const state = workspace.hugescreen.captureState();
+        workspace.configuration.store.applyHugescreenToAllProjects(state);
+        const windows = getWorkspaceWindowsForConfiguration(workspace.configuration).filter(entry => entry !== workspace);
+        // Pending geometry saves must not write the old settings back over the bulk update.
+        for (const entry of windows) entry.hugescreenDirty = false;
+        const results = await Promise.allSettled(windows.map(entry => restoreProjectHugescreen(entry, state)));
+        if (results.some(result => result.status === "rejected")) {
+          throw new Error("Settings were saved for all projects, but an open window could not be resized. Apply again to retry.");
         }
       }
       return workspace.hugescreen.getSettings();

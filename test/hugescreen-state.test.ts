@@ -59,6 +59,30 @@ test("project working states and both layout scopes persist independently across
 
 });
 
+test("bulk Hugescreen apply persists independent copies without changing layouts or future projects", t => {
+  const directory = mkdtempSync(join(tmpdir(), "boatyard-hugescreen-bulk-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const file = join(directory, "state.json");
+  writeFileSync(file, JSON.stringify({ projects: [{ id: "a", name: "A" }, { id: "b", name: "B" }] }));
+  const store = new ProjectStore(file);
+  store.load();
+  store.updateProjectHugescreen("a", { ...state, widthMultiplier: 3 });
+  const layout = store.saveLayout({ name: "Saved", paneLayout: { type: "pane", id: "pane" }, hugescreen: state });
+  const paneLayouts = store.getState().paneLayouts;
+  const applied = { ...state, widthMultiplier: 2.5, enabled: true };
+  store.applyHugescreenToAllProjects(applied);
+  assert.throws(() => store.applyHugescreenToAllProjects({}), /Invalid Hugescreen/);
+  const reloaded = new ProjectStore(file);
+  reloaded.load();
+  for (const id of ["a", "b", "__global__"]) assert.deepEqual(reloaded.getProjectHugescreen(id), applied);
+  assert.deepEqual(reloaded.listLayouts().find(entry => entry.id === layout.id)?.hugescreen, state);
+  assert.deepEqual(reloaded.getState().paneLayouts, paneLayouts);
+  reloaded.updateProjectHugescreen("a", state);
+  assert.deepEqual(reloaded.getProjectHugescreen("b"), applied);
+  const added = reloaded.addProject({ name: "New", sourcePath: "/workspace/new" }).projects.at(-1)!;
+  assert.equal(reloaded.getProjectHugescreen(added.id), undefined);
+});
+
 test("native operations stay ordered across asynchronous transitions and recover after errors", async () => {
   const queue = new HugescreenOperationQueue();
   let release!: () => void;

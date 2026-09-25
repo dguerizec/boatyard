@@ -564,7 +564,8 @@ button {
 }
 
 .topbar-widget-popover,
-.topbar-widget-menu {
+.topbar-widget-menu,
+.hugescreen-apply-menu {
   position: fixed;
   z-index: 120;
   border: 1px solid var(--line);
@@ -612,7 +613,8 @@ button {
   font-size: 12px;
 }
 
-.topbar-widget-menu-item {
+.topbar-widget-menu-item,
+.hugescreen-apply-menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -626,7 +628,9 @@ button {
   text-align: left;
 }
 
-.topbar-widget-menu-item:hover {
+.topbar-widget-menu-item:hover,
+.hugescreen-apply-menu-item:hover,
+.hugescreen-apply-menu-item:focus-visible {
   background: rgba(var(--accent-rgb), 0.12);
 }
 
@@ -4825,6 +4829,37 @@ textarea.form-control {
 .hugescreen-size-hint { margin: 0; color: var(--muted); font-size: 12px; }
 .hugescreen-error { margin: 0; color: var(--danger-text); font-size: 12px; }
 .hugescreen-popup .form-actions { justify-content: flex-end; }
+.hugescreen-apply-button { display: inline-flex; }
+.hugescreen-apply-button > [type=submit] { border-radius: 6px 0 0 6px; }
+.hugescreen-apply-scope {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  padding: 0;
+  border-radius: 0 6px 6px 0;
+  border-left: 1px solid rgba(0, 0, 0, 0.2);
+}
+.hugescreen-apply-scope svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--accent-contrast);
+  stroke-width: 2;
+  pointer-events: none;
+}
+.hugescreen-apply-scope[aria-expanded="true"] { background: var(--accent-hover); }
+.hugescreen-apply-menu {
+  inset: auto;
+  margin: 0;
+  width: min(280px, calc(100vw - 24px));
+  padding: 6px;
+}
+.hugescreen-apply-menu-item { min-height: 38px; padding: 9px 10px; }
+.hugescreen-apply-menu-item[aria-checked="true"] { background: rgba(var(--accent-rgb), 0.08); }
+.hugescreen-apply-menu-item:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+.hugescreen-apply-menu-item small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; }
+.hugescreen-apply-check { width: 16px; flex: 0 0 auto; color: var(--accent); visibility: hidden; }
+.hugescreen-apply-menu-item[aria-checked="true"] .hugescreen-apply-check { visibility: visible; }
 
 .hugescreen-popup .hugescreen-slider-label,
 .hugescreen-popup .hugescreen-slider-scale { display: flex; justify-content: space-between; }

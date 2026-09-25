@@ -246,7 +246,7 @@ export type BoatyardBridge = {
   applyLayout(payload: UnknownRecord): Promise<{ state: RendererState; undoToken: string }>;
   toggleHugescreen: () => Promise<boolean>;
   getHugescreenSettings: () => Promise<HugescreenSettings>;
-  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge", zones?: HugescreenZones, projectId?: string) => Promise<HugescreenSettings>;
+  resizeHugescreen: (width: number, height: number, mode?: "continuous" | "edge", zones?: HugescreenZones, projectId?: string, scope?: "current" | "all") => Promise<HugescreenSettings>;
   getHugescreen: () => Promise<boolean>;
   onHugescreenChanged: (callback: (active: boolean) => void) => () => void;
   createWorkspaceWindow?: () => Promise<boolean>;

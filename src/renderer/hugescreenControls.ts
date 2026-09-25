@@ -61,13 +61,81 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         <p class="hugescreen-error" role="alert" hidden></p>
         <div class="form-actions">
           <button type="button" class="secondary-button" data-cancel>Cancel</button>
-          <button type="submit" class="primary-button" disabled>Apply</button>
+          <div class="hugescreen-apply-button">
+            <button type="submit" class="primary-button" disabled>Apply</button>
+            <button type="button" name="scope" value="current" class="primary-button hugescreen-apply-scope" aria-label="Apply scope" aria-haspopup="menu" aria-expanded="false" aria-controls="hugescreen-apply-menu" title="Choose where to apply these settings" disabled>
+              <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+            </button>
+            <div id="hugescreen-apply-menu" class="hugescreen-apply-menu" popover="auto" role="menu" aria-label="Apply scope">
+              <button type="button" class="hugescreen-apply-menu-item" role="menuitemradio" aria-checked="true" data-scope="current" tabindex="-1">
+                <span class="hugescreen-apply-check" aria-hidden="true">✓</span><span data-current-label>Apply to current project</span>
+              </button>
+              <button type="button" class="hugescreen-apply-menu-item" role="menuitemradio" aria-checked="false" data-scope="all" tabindex="-1">
+                <span class="hugescreen-apply-check" aria-hidden="true">✓</span><span>Apply to all projects<small>All existing projects in this profile</small></span>
+              </button>
+            </div>
+          </div>
         </div>
       </form>`;
     popup = dialog;
     button.setAttribute("aria-expanded", "true");
     const form = dialog.querySelector("form")!;
     const mode = form.elements.namedItem("mode") as HTMLSelectElement;
+    const scope = form.elements.namedItem("scope") as HTMLButtonElement;
+    const scopeMenu = form.querySelector<HTMLElement>("#hugescreen-apply-menu")!;
+    const scopeItems = [...scopeMenu.querySelectorAll<HTMLButtonElement>("[data-scope]")];
+    const closeScopeMenu = (restoreFocus = false) => {
+      if (scopeMenu.matches(":popover-open")) scopeMenu.hidePopover();
+      scope.setAttribute("aria-expanded", "false");
+      if (restoreFocus) scope.focus({ preventScroll: true });
+    };
+    const openScopeMenu = () => {
+      if (scope.disabled) return;
+      scopeMenu.showPopover({ source: scope });
+      scope.setAttribute("aria-expanded", "true");
+      const anchor = scope.getBoundingClientRect();
+      scopeMenu.style.left = `${Math.max(12, Math.min(anchor.right - scopeMenu.offsetWidth, window.innerWidth - scopeMenu.offsetWidth - 12))}px`;
+      scopeMenu.style.top = `${Math.max(12, anchor.top - scopeMenu.offsetHeight - 6)}px`;
+      scopeItems.find(item => item.dataset.scope === scope.value)?.focus({ preventScroll: true });
+    };
+    scope.addEventListener("click", () => {
+      if (scopeMenu.matches(":popover-open")) closeScopeMenu();
+      else openScopeMenu();
+    });
+    scope.addEventListener("keydown", event => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        openScopeMenu();
+      }
+    });
+    scopeMenu.addEventListener("toggle", () => {
+      scope.setAttribute("aria-expanded", String(scopeMenu.matches(":popover-open")));
+    });
+    scopeMenu.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        closeScopeMenu(true);
+      } else if (event.key === "Tab") {
+        closeScopeMenu(true);
+      } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+        event.preventDefault();
+        const index = scopeItems.indexOf(document.activeElement as HTMLButtonElement);
+        const next = event.key === "Home" ? 0 : event.key === "End" ? scopeItems.length - 1
+          : (index + (event.key === "ArrowDown" ? 1 : -1) + scopeItems.length) % scopeItems.length;
+        scopeItems[next].focus({ preventScroll: true });
+      }
+    });
+    for (const item of scopeItems) item.addEventListener("click", () => {
+      scope.value = item.dataset.scope!;
+      for (const entry of scopeItems) entry.setAttribute("aria-checked", String(entry === item));
+      apply.textContent = scope.value === "all" ? "Apply to all" : "Apply";
+      apply.title = scope.value === "all"
+        ? "Copy to all existing projects and the global workspace in this profile. Saved layouts are unchanged."
+        : "Apply to the current workspace";
+      closeScopeMenu(true);
+      reposition();
+    });
     const modeHint = form.querySelector<HTMLElement>("#hugescreen-mode-hint")!;
     const modeAvailability = form.querySelector<HTMLElement>("#hugescreen-mode-availability")!;
     const describeMode = () => {
@@ -118,6 +186,7 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
     width.addEventListener("input", updateValues);
     height.addEventListener("input", updateValues);
     let pending = false;
+    let initialized = false;
     let request = 0;
     const showError = (reason: unknown) => {
       error.textContent = reason instanceof Error ? reason.message : String(reason);
@@ -138,13 +207,15 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         minimumSize = { width: settings.minimumWidth, height: settings.minimumHeight };
         if (initialize) {
           projectId = settings.projectId;
+          scopeMenu.querySelector<HTMLElement>("[data-current-label]")!.textContent = projectId === "__global__" ? "Apply to global workspace" : "Apply to current project";
           edgeControls.setZones(settings.edgeZones);
           edgeControls.setDisabled(false);
           mode.value = settings.panMode;
-          mode.disabled = false;
+          mode.disabled = scope.disabled = false;
           width.value = settings.widthMultiplier.toFixed(2);
           height.value = settings.heightMultiplier.toFixed(2);
           width.disabled = height.disabled = apply.disabled = false;
+          initialized = true;
           (settings.available ? pan : width).focus();
         }
         describeMode();
@@ -158,7 +229,8 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
       const visibleHeight = Math.min(window.innerHeight, screenSize.height || window.innerHeight);
       dialog.style.maxHeight = `${Math.max(120, visibleHeight - anchor.bottom - 20)}px`;
     };
-    const onResize = () => { reposition(); if (!pending) void refresh(); };
+    const onResize = () => { closeScopeMenu(); reposition(); if (initialized && !pending) void refresh(); };
+    dialog.addEventListener("scroll", () => closeScopeMenu());
     window.addEventListener("resize", onResize);
     cancel.addEventListener("click", () => dialog.close());
     dialog.addEventListener("cancel", event => { if (pending) event.preventDefault(); });
@@ -178,11 +250,12 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
       event.preventDefault();
       if (pending || !form.reportValidity()) return;
       pending = true;
+      closeScopeMenu();
       edgeControls.setDisabled(true);
       error.hidden = true;
-      apply.disabled = cancel.disabled = pan.disabled = width.disabled = height.disabled = mode.disabled = true;
+      apply.disabled = cancel.disabled = pan.disabled = width.disabled = height.disabled = mode.disabled = scope.disabled = true;
       try {
-        update((await api.resizeHugescreen(width.valueAsNumber, height.valueAsNumber, mode.value as "continuous" | "edge", edgeControls.zones, projectId)).active);
+        update((await api.resizeHugescreen(width.valueAsNumber, height.valueAsNumber, mode.value as "continuous" | "edge", edgeControls.zones, projectId, scope.value as "current" | "all")).active);
         dialog.close();
       } catch (reason) {
         showError(reason);
@@ -190,7 +263,7 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
         pending = false;
         if (popup === dialog) {
           edgeControls.setDisabled(false);
-          apply.disabled = cancel.disabled = width.disabled = height.disabled = mode.disabled = false;
+          apply.disabled = cancel.disabled = width.disabled = height.disabled = mode.disabled = scope.disabled = false;
           await refresh();
         }
       }

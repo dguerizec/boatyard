@@ -34,6 +34,7 @@ export type AppState = UnknownRecord & {
 export type ProjectStoreInstance = {
   getProjectHugescreen(projectId: string): HugescreenState | undefined;
   updateProjectHugescreen(projectId: string, state: unknown): void;
+  applyHugescreenToAllProjects(state: unknown): void;
   getLegacyHugescreenZones(): HugescreenZones;
   addProject(values: unknown, workspaceWindowId?: string | null): unknown;
   dismissChangelog(version: string): unknown;

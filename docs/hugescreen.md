@@ -119,6 +119,15 @@ its pan mode, and whether pan is enabled. The global workspace has its own state
 Switch away and back to restore these settings on the current display. An explicit
 pan-off choice stays off after restoration and subsequent resize events.
 
+To reuse a configuration everywhere, open the arrow on the right of **Apply** in
+the Hugescreen popup, select **Apply to all projects**, then click
+**Apply to all**. This copies
+the applied size, pan mode, and pan on/off state to every existing project and the
+global workspace in that profile. Open windows update immediately. Each project
+remains independently editable afterward; future projects retain their normal
+fallback settings. Saved layouts and pane arrangements are unchanged. The popup
+defaults to applying changes only to the current project or global workspace.
+
 Saving or updating a layout captures the pane arrangement together with those
 Hugescreen settings. Both project layouts and global layouts include the snapshot.
 The layout library shows the saved width and height multipliers, pan mode, and

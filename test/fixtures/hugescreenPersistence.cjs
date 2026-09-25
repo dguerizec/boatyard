@@ -24,9 +24,10 @@ app.whenReady().then(async () => {
   if (process.env.BOATYARD_TEST_RESTART) {
     await invoke(win, 'navigation:update', { view: 'project', projectId: 'd' });
     const restored = await invoke(win, 'hugescreen:settings');
-    near(restored.widthMultiplier, 1000 / 1200);
-    near(restored.heightMultiplier, 700 / 800);
-    assert.equal(restored.active, false, 'unvisited projects use the original fallback after restart');
+    near(restored.widthMultiplier, 2.25);
+    near(restored.heightMultiplier, 1.5);
+    assert.equal(restored.active, false, 'bulk settings persist for unvisited projects after restart');
+    assert.equal(restored.panMode, 'continuous');
     console.log('HUGESCREEN_RESTART_PASSED');
     clearTimeout(timeout);
     app.exit(0);
@@ -167,6 +168,85 @@ app.whenReady().then(async () => {
     })()`);
     writeFileSync(process.env.BOATYARD_TEST_LAYOUT_SCREENSHOT, (await win.webContents.capturePage(bounds)).toPNG());
   }
+
+  await win.webContents.executeJavaScript(`document.querySelector('.workspace-layout-dialog').close()`);
+  const layoutsBeforeBulk = await invoke(win, 'layouts:list');
+  const statesBeforeBulk = readState().projectHugescreen;
+  await assert.rejects(invoke(win, 'hugescreen:resize', 3, 3, 'continuous', undefined, 'b', 'all'), /active project changed/);
+  await assert.rejects(invoke(win, 'hugescreen:resize', 3, 3, 'continuous', undefined, 'a', 'invalid'), /Unknown Hugescreen apply scope/);
+  assert.deepEqual(readState().projectHugescreen, statesBeforeBulk);
+  await win.webContents.executeJavaScript('document.querySelector("#hugescreen").click()');
+  for (let attempt = 0; attempt < 100; attempt++) {
+    if (await win.webContents.executeJavaScript(`!!document.querySelector('.hugescreen-popup[open] [name=scope]:enabled')`)) break;
+    await delay(25);
+  }
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('.hugescreen-popup [name=scope]').value`), 'current');
+  await win.webContents.executeJavaScript(`(() => {
+    const form = document.querySelector('.hugescreen-popup form');
+    form.elements.scope.click();
+    form.querySelector('[data-scope=all]').click();
+    form.elements.mode.value = 'continuous';
+    form.elements.mode.dispatchEvent(new Event('change'));
+    form.elements.width.value = '2.25';
+    form.elements.height.value = '1.5';
+    form.elements.width.dispatchEvent(new Event('input'));
+  })()`);
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('.hugescreen-popup [type=submit]').textContent`), 'Apply to all');
+  win.focus();
+  win.webContents.focus();
+  await delay(150);
+  await win.webContents.executeJavaScript(`document.querySelector('.hugescreen-popup [name=scope]').click()`);
+  assert.equal(await win.webContents.executeJavaScript(`document.activeElement.dataset.scope`), 'all');
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Up' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Up' });
+  await delay(50);
+  assert.equal(await win.webContents.executeJavaScript(`document.activeElement.dataset.scope`), 'current');
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
+  await delay(50);
+  assert.deepEqual(await win.webContents.executeJavaScript(`({
+    popup: document.querySelector('.hugescreen-popup').open,
+    menu: document.querySelector('#hugescreen-apply-menu').matches(':popover-open'),
+    focus: document.activeElement.name
+  })`), { popup: true, menu: false, focus: 'scope' });
+  await win.webContents.executeJavaScript(`document.querySelector('.hugescreen-popup [name=scope]').click()`);
+  assert.equal(await win.webContents.executeJavaScript(`document.querySelector('#hugescreen-apply-menu [aria-checked=true]').dataset.scope`), 'all');
+  if (process.env.BOATYARD_TEST_BULK_SCREENSHOT) {
+    await delay(150);
+    const bounds = await win.webContents.executeJavaScript(`(() => {
+      const rect = document.querySelector('.hugescreen-popup').getBoundingClientRect();
+      return { x: Math.floor(rect.x), y: Math.floor(rect.y), width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
+    })()`);
+    writeFileSync(process.env.BOATYARD_TEST_BULK_SCREENSHOT, (await win.webContents.capturePage(bounds)).toPNG());
+  }
+  await win.webContents.executeJavaScript(`document.querySelector('.hugescreen-popup form').requestSubmit()`);
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (await win.webContents.executeJavaScript(`!document.querySelector('.hugescreen-popup[open]')`)) break;
+    await delay(25);
+  }
+  assert.equal(await win.webContents.executeJavaScript(`!!document.querySelector('.hugescreen-popup[open]')`), false);
+  const bulk = { widthMultiplier: 2.25, heightMultiplier: 1.5, panMode: 'continuous', enabled: true };
+  for (const id of ['a', 'b', 'c', 'd', '__global__']) assert.deepEqual(readState().projectHugescreen[id], bulk);
+  for (const target of [win, second]) {
+    const current = await invoke(target, 'hugescreen:settings');
+    near(current.widthMultiplier, 2.25);
+    near(current.heightMultiplier, 1.5);
+    assert.equal(current.active, true);
+    assert.equal(current.panMode, 'continuous');
+  }
+  assert.deepEqual(await invoke(win, 'layouts:list'), layoutsBeforeBulk);
+  await delay(350);
+  await invoke(win, 'navigation:update', { view: 'project', projectId: 'b' });
+  near((await invoke(win, 'hugescreen:settings')).widthMultiplier, 2.25);
+  await invoke(win, 'hugescreen:resize', 3, 2, 'continuous', undefined, 'b');
+  assert.deepEqual(readState().projectHugescreen.a, bulk, 'later edits remain local');
+  await invoke(win, 'hugescreen:toggle');
+  // Navigation queued after a bulk operation must restore its newly copied state.
+  const bulkResize = invoke(win, 'hugescreen:resize', 2.25, 1.5, 'continuous', undefined, 'b', 'all');
+  const switchC = invoke(win, 'navigation:update', { view: 'project', projectId: 'c' });
+  await Promise.all([bulkResize, switchC]);
+  near((await invoke(win, 'hugescreen:settings')).widthMultiplier, 2.25);
+  assert.equal((await invoke(win, 'hugescreen:settings')).active, false, 'bulk apply also copies explicit pan off');
 
   console.log('HUGESCREEN_PERSISTENCE_PASSED');
   clearTimeout(timeout);

@@ -837,6 +837,15 @@ class ProjectStore {
 
   getLegacyHugescreenZones() { return migrateHugescreenZones(this.state); }
 
+  applyHugescreenToAllProjects(value: unknown): void {
+    const state = normalizeHugescreenState(value);
+    if (!state) throw new Error("Invalid Hugescreen settings.");
+    for (const id of ["__global__", ...this.state.projects.map(project => project.id)]) {
+      this.state.projectHugescreen[id] = { ...state };
+    }
+    this.save();
+  }
+
   listLayouts(projectId: unknown = null): WorkspaceLayout[] {
     return listWorkspaceLayouts(this.state.layouts, projectId);
   }
