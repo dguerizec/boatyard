@@ -19,7 +19,6 @@ import {
   type PaneExpansionRect
 } from "./paneExpansionGeometry.js";
 import {
-  clampPaneSplitRatio,
   DEFAULT_PANE_MIN_SIZE,
   demoteSplitThroughFirstChild,
   demoteSplitThroughSecondChild,
@@ -27,6 +26,7 @@ import {
   normalizePaneMinimumLength,
   normalizePaneSplitRatio,
   resolvePaneMinimumPixels,
+  snapPaneSplitRatio,
   type PaneMinimumAxis
 } from "./paneSplitGeometry.js";
 import {
@@ -1199,10 +1199,38 @@ export function createPaneLayoutView({
         let parentSplitElement = splitElement;
         let rect = parentSplitElement.getBoundingClientRect();
         let didStartDrag = false;
+        let snapTargets: number[] = [];
+
+        function collectSnapTargets() {
+          const crossStart = isVertical ? "top" : "left";
+          const crossEnd = isVertical ? "bottom" : "right";
+          const axisStart = isVertical ? "left" : "top";
+          const axisSize = isVertical ? "width" : "height";
+          const expandedRects = getPaneElements()
+            .filter((pane) => pane.classList.contains("pane-expanded"))
+            .map((pane) => pane.getBoundingClientRect());
+          return [...dashboardGrid.querySelectorAll<HTMLElement>(
+            `.webapp-split-resizer.${splitNode.direction}`
+          )].flatMap((candidate) => {
+            if (parentSplitElement.contains(candidate)) return [];
+            const target = candidate.getBoundingClientRect();
+            if (target.width <= 0 || target.height <= 0 || expandedRects.some((expanded) => (
+              target.left >= expanded.left && target.right <= expanded.right &&
+              target.top >= expanded.top && target.bottom <= expanded.bottom
+            ))) return [];
+            const gap = Math.min(
+              Math.abs(target[crossStart] - rect[crossEnd]),
+              Math.abs(target[crossEnd] - rect[crossStart])
+            );
+            if (gap > webAppSplitResizerSize + 1) return [];
+            return [(target[axisStart] + target[axisSize] / 2 - rect[axisStart]) / rect[axisSize]];
+          });
+        }
 
         function startDrag() {
           didStartDrag = true;
           if (!normalizeSplitForResize(project, splitNode, parentSplitElement)) {
+            snapTargets = collectSnapTargets();
             return true;
           }
 
@@ -1216,6 +1244,7 @@ export function createPaneLayoutView({
 
           parentSplitElement = normalizedSplitElement;
           rect = parentSplitElement.getBoundingClientRect();
+          snapTargets = collectSnapTargets();
           return true;
         }
 
@@ -1237,12 +1266,13 @@ export function createPaneLayoutView({
             : (moveEvent.clientY - rect.top) / rect.height;
           const axis = isVertical ? "width" : "height";
           const containerSize = isVertical ? rect.width : rect.height;
-          splitNode.ratio = clampPaneSplitRatio(
+          splitNode.ratio = snapPaneSplitRatio(
             rawRatio,
             containerSize,
             webAppSplitResizerSize,
             getLayoutMinimumSize(splitNode.first, axis),
-            getLayoutMinimumSize(splitNode.second, axis)
+            getLayoutMinimumSize(splitNode.second, axis),
+            snapTargets
           );
           applySplitRatio(parentSplitElement, splitNode);
           queueWebAppSync();

@@ -133,6 +133,32 @@ function getMinimumSize(
   );
 }
 
+export function snapPaneSplitRatio(
+  ratio: number,
+  containerSize: number,
+  resizerSize: number,
+  firstMinimumSize: number,
+  secondMinimumSize: number,
+  targetRatios: number[],
+  snapDistance = 8
+) {
+  const constrain = (value: number) => clampPaneSplitRatio(
+    value, containerSize, resizerSize, firstMinimumSize, secondMinimumSize
+  );
+  let result = constrain(ratio);
+  let nearestDistance = snapDistance;
+  if (containerSize <= 0) return result;
+  for (const target of targetRatios) {
+    const distance = Math.abs(target - ratio) * containerSize;
+    // A nearby divider is only a target if both panes can actually reach it.
+    if (distance <= nearestDistance + 1e-9 && Math.abs(constrain(target) - target) < 1e-9) {
+      result = target;
+      nearestDistance = distance;
+    }
+  }
+  return result;
+}
+
 export function demoteSplitThroughFirstChild(
   splitNode: PaneSplitGeometryNode,
   options: PaneSplitGeometryOptions

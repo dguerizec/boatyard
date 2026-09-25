@@ -6,8 +6,21 @@ const {
   demoteSplitThroughFirstChild,
   getPaneLayoutMinimumSize,
   normalizePaneMinimumLength,
-  resolvePaneMinimumPixels
+  resolvePaneMinimumPixels,
+  snapPaneSplitRatio
 } = require(`${process.cwd()}/build/renderer-esm/paneSplitGeometry`);
+
+test("split snapping chooses the nearest reachable divider within eight pixels", () => {
+  assert.equal(snapPaneSplitRatio(0.504, 1000, 6, 100, 100, [0.5]), 0.5);
+  assert.equal(snapPaneSplitRatio(0.496, 1000, 6, 100, 100, [0.5]), 0.5);
+  assert.equal(snapPaneSplitRatio(0.511, 1000, 6, 100, 100, [0.5]), 0.511);
+  assert.equal(snapPaneSplitRatio(0.504, 1000, 6, 100, 100, [0.5, 0.506]), 0.506);
+  assert.equal(snapPaneSplitRatio(0.504, 2000, 6, 100, 100, [0.5]), 0.5);
+  assert.equal(snapPaneSplitRatio(0.505, 2000, 6, 100, 100, [0.5]), 0.505);
+  assert.equal(snapPaneSplitRatio(0.203, 1000, 6, 200, 100, [0.2]), 0.203);
+  assert.equal(snapPaneSplitRatio(0.697, 1000, 6, 100, 300, [0.7]), 0.697);
+  assert.equal(snapPaneSplitRatio(0.05, 1000, 6, 200, 100, []), 0.203);
+});
 
 type TestPane = {
   type: "pane";
