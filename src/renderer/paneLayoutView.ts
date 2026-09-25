@@ -1193,7 +1193,7 @@ export function createPaneLayoutView({
 
     function highlightPaneCrossing(gesture: ReturnType<typeof createPaneCrossingResize>) {
       clearPaneCrossingHighlight();
-      if (!gesture?.crossing) return;
+      if (!gesture) return;
       // A separator can extend beyond the selected branch. Paint only the
       // ranges that the same resize gesture will actually move.
       dashboardGrid.querySelectorAll<HTMLElement>(".webapp-split-resizer").forEach(element => {

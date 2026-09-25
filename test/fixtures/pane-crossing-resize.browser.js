@@ -24,7 +24,9 @@ function finish() { document.dispatchEvent(new PointerEvent('pointerup', { point
 async function mount(layout) {
   state.setPaneLayout(project.id, layout);
   view.renderPaneLayoutPreservingPanes(project);
-  await frame(); await frame();
+  // Expansion presentation runs in the next frame; subsequent bounds reads
+  // synchronously resolve layout without waiting for a second hidden frame.
+  await frame();
 }
 const box = id => grid.querySelector(`[data-pane-id="${id}"].webapp-pane`).getBoundingClientRect();
 function separatorAt(x, y) {
@@ -118,6 +120,27 @@ check(painted.includes(`transparent ${highlightEnd}px`) || painted.includes(`rgb
   'Horizontal highlight stops at the next crossing, leaving the unrelated branch unpainted');
 await mount(layout());
 check(highlighted().length === 0, 'Replacing the layout clears crossing highlights');
+state.activatePaneExpansion(project, 'b', ['b', 'd']);
+await mount(state.getProjectPaneLayout(project));
+const expandedBefore = box('b'), upperBefore = box('a'), lowerBefore = box('c');
+const borderX = expandedBefore.left - 3, borderY = upperBefore.top + 80;
+hover(borderX, upperBefore.bottom + 3);
+check(highlighted().length === 3, 'The visible T highlights both boundary handles and its exposed branch');
+const expandedThrough = highlighted().find(element => element.classList.contains('horizontal'));
+const expandedPaintEnd = borderX - expandedThrough.getBoundingClientRect().left;
+check(getComputedStyle(expandedThrough).backgroundImage.includes(`rgba(0, 0, 0, 0) ${expandedPaintEnd}px`),
+  'The visible T highlight stops at the expanded pane instead of following its hidden crossing arm');
+hover(borderX, borderY);
+check(highlighted().length === 2 && highlighted().every(element => element.classList.contains('vertical')),
+  'Hovering an expanded pane boundary highlights its entire visible edge across both handles');
+down(borderX, borderY); moveTo(borderX + 40, borderY); finish(); await frame(); await frame();
+check(Math.abs(box('a').right - upperBefore.right - 40) < 0.05 && Math.abs(box('c').right - lowerBefore.right - 40) < 0.05,
+  'Dragging an expanded boundary moves the whole visible edge');
+check(Math.abs(box('b').left - expandedBefore.left - 40) < 0.05,
+  'Expanded content follows its moved boundary');
+check(grid.querySelector('[data-pane-id="b"].pane-expanded'), 'Boundary dragging preserves the expansion');
+hover(box('b').left - 3, box('a').bottom + 3);
+check(highlighted().length === 2, 'The visible T stays highlighted after its boundary becomes one separator');
 if (window.nativeMenuTest) {
   await mount(layout());
   const bridge = window.nativeMenuTest;

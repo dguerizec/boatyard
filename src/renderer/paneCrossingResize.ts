@@ -107,9 +107,11 @@ export function createPaneCrossingResize(
     point[axis === "x" ? "y" : "x"] >= segment.start - tolerance &&
     point[axis === "x" ? "y" : "x"] <= segment.end + tolerance);
   if (!selected.length) return null;
+  // Use the ordinary split handler only when it covers the whole visible
+  // segment. An expansion may join several independent DOM separators.
   if (!crossing && selected.every(segment => (
-    segment.start <= (axis === "x" ? handle.top : handle.left) + tolerance &&
-    segment.end >= (axis === "x" ? handle.bottom : handle.right) - tolerance
+    Math.abs(segment.start - (axis === "x" ? handle.top : handle.left)) <= half + tolerance &&
+    Math.abs(segment.end - (axis === "x" ? handle.bottom : handle.right)) <= half + tolerance
   ))) return null;
 
   function axisPlan(axis: "x" | "y") {

@@ -106,6 +106,17 @@ test("an expansion hiding a crossing arm preserves the visible T through-edge", 
   assertRect(after.find(rect => rect.id === "c"), { id: "c", left: 0, right: 550, top: 406, bottom: 806 });
 });
 
+test("an expanded pane joins boundary handles across the hidden crossing arm", () => {
+  const layout = fourPanes(true);
+  const drag = createPaneCrossingResize(layout, geometry(layout), { x: 503, y: 200 },
+    { left: 500, right: 506, top: 0, bottom: 400 }, "vertical", 6, () => 60,
+    [{ left: 506, right: 1006, top: 0, bottom: 806 }]);
+  assert.ok(drag && !drag.crossing, "A visible continuous edge must move both underlying handles");
+  const after = geometry(drag.apply({ x: 553, y: 200 }));
+  for (const id of ["a", "c"]) assert.equal(after.find(rect => rect.id === id)!.right, 550);
+  for (const id of ["b", "d"]) assert.equal(after.find(rect => rect.id === id)!.left, 556);
+});
+
 test("crossing and branch gestures preserve mounted panes and snapped alignment in Electron", t => {
   runBrowserTest(t, "test/fixtures/pane-crossing-resize.browser.js");
 });
