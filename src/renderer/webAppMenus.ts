@@ -146,6 +146,7 @@ export function getPaneMenuWebApps(webApps: WebAppDefinition[]) {
     showOverlayDialog: (dialog: HTMLDialogElement, options?: UnknownRecord) => Promise<boolean>;
     normalizePayloadBounds: (bounds: unknown) => WebAppBounds | null;
     freezeWebAppsForOverlay: (options?: unknown) => Promise<unknown>;
+    freezeWebAppsForOverlayRect: (rect: DOMRectReadOnly) => Promise<unknown>;
     restoreWebAppsAfterOverlay: () => void | Promise<unknown>;
     closeTerminalTabMenu: () => void;
     clamp: (value: number, min: number, max: number) => number;
@@ -206,6 +207,7 @@ export function createWebAppMenus({
     showOverlayDialog,
     normalizePayloadBounds,
     freezeWebAppsForOverlay,
+    freezeWebAppsForOverlayRect,
     restoreWebAppsAfterOverlay,
     closeTerminalTabMenu,
     clamp,
@@ -1421,45 +1423,59 @@ export function createWebAppMenus({
       item.focus();
     }
 
-    async function openWebAppRefreshMenu(
+    async function openSingleActionMenu(
       event: MouseEvent,
-      selectedWebApp: MenuWebApp,
-      onAction?: () => void
+      label: string,
+      menuWidth: number,
+      onSelect: () => void
     ) {
       event.preventDefault();
       const sourceButton = event.currentTarget;
       closeWebAppTabMenu();
       closeTerminalTabMenu();
-      await freezeWebAppsForOverlay({
-        keys: selectedWebApp?.key ? [selectedWebApp.key] : []
-      });
 
       const menu = document.createElement("div") as WebAppMenuElement;
       menu.className = "webapp-tab-menu";
       menu.setAttribute("role", "menu");
-
-      const menuWidth = 180;
-      const left = clamp(event.clientX, 12, Math.max(12, window.innerWidth - menuWidth - 12));
-      const top = clamp(event.clientY, 12, Math.max(12, window.innerHeight - 48));
-      menu.style.left = `${Math.round(left)}px`;
-      menu.style.top = `${Math.round(top)}px`;
+      menu.style.visibility = "hidden";
 
       const item = document.createElement("button");
       item.className = "webapp-tab-menu-item";
       item.type = "button";
       item.setAttribute("role", "menuitem");
-      item.textContent = "Hard reload";
+      item.textContent = label;
       item.addEventListener("click", () => {
         closeWebAppTabMenu();
-        onAction?.();
-        invokeWebApp("navigateWebApp", selectedWebApp.key, "hard-refresh").catch((error: unknown) => {
-          console.error("Could not hard reload webapp:", error);
-        });
+        onSelect();
       });
       menu.append(item);
 
       document.body.append(menu);
       openWebAppTabMenu = menu;
+
+      const viewport = { left: 12, top: 12, right: window.innerWidth - 12, bottom: window.innerHeight - 12 };
+      const paneRect = sourceButton instanceof Element
+        ? sourceButton.closest(".webapp-pane")?.getBoundingClientRect()
+        : null;
+      const paneBounds = paneRect ? {
+        left: Math.max(viewport.left, paneRect.left + 8),
+        top: Math.max(viewport.top, paneRect.top + 8),
+        right: Math.min(viewport.right, paneRect.right - 8),
+        bottom: Math.min(viewport.bottom, paneRect.bottom - 8)
+      } : viewport;
+      let bounds = paneBounds.right - paneBounds.left >= Math.min(180, menuWidth)
+        ? paneBounds : viewport;
+      function measureMenu() {
+        menu.style.width = `${Math.max(1, Math.min(menuWidth, bounds.right - bounds.left))}px`;
+        return menu.getBoundingClientRect();
+      }
+      let menuRect = measureMenu();
+      if (menuRect.height > bounds.bottom - bounds.top) {
+        bounds = viewport;
+        menuRect = measureMenu();
+      }
+      menu.style.left = `${clamp(event.clientX, bounds.left, Math.max(bounds.left, bounds.right - menuRect.width))}px`;
+      menu.style.top = `${clamp(event.clientY, bounds.top, Math.max(bounds.top, bounds.bottom - menuRect.height))}px`;
 
       function onPointerDown(pointerEvent: PointerEvent) {
         if (!menu.contains(pointerEvent.target as Node | null) && pointerEvent.target !== sourceButton) {
@@ -1470,20 +1486,39 @@ export function createWebAppMenus({
       function onKeyDown(keyEvent: KeyboardEvent) {
         if (keyEvent.key === "Escape") {
           closeWebAppTabMenu();
+          if (sourceButton instanceof HTMLElement && sourceButton.isConnected) sourceButton.focus();
         }
       }
 
       menu.cleanup = () => {
         document.removeEventListener("pointerdown", onPointerDown);
         document.removeEventListener("keydown", onKeyDown);
+        window.removeEventListener("resize", closeWebAppTabMenu);
+        window.removeEventListener("blur", closeWebAppTabMenu);
       };
 
-      setTimeout(() => {
-        document.addEventListener("pointerdown", onPointerDown);
-        document.addEventListener("keydown", onKeyDown);
-      }, 0);
+      document.addEventListener("pointerdown", onPointerDown);
+      document.addEventListener("keydown", onKeyDown);
+      window.addEventListener("resize", closeWebAppTabMenu);
+      window.addEventListener("blur", closeWebAppTabMenu);
 
+      await freezeWebAppsForOverlayRect(menu.getBoundingClientRect());
+      if (openWebAppTabMenu !== menu) return;
+      menu.style.visibility = "";
       item.focus();
+    }
+
+    function openWebAppRefreshMenu(event: MouseEvent, selectedWebApp: MenuWebApp, onAction?: () => void) {
+      return openSingleActionMenu(event, "Hard reload", 180, () => {
+        onAction?.();
+        invokeWebApp("navigateWebApp", selectedWebApp.key, "hard-refresh").catch((error: unknown) => {
+          console.error("Could not hard reload webapp:", error);
+        });
+      });
+    }
+
+    function openPaneExpansionMenu(event: MouseEvent, onKeep: () => void) {
+      return openSingleActionMenu(event, "Keep size and position (close covered panes)", 360, onKeep);
     }
 
     function findProjectUrlByNormalizedUrl(project: RendererProject, normalizedUrl: string) {
@@ -1735,6 +1770,7 @@ export function createWebAppMenus({
       openWebAppNavigationHistoryMenu,
       openWebAppOpenUrlDialog,
       openWebAppRefreshMenu,
+      openPaneExpansionMenu,
       openWebAppUrlFieldMenu,
       openWebAppTabMenuFromButton,
       isWebAppTabMenuOpen: () => Boolean(openWebAppTabMenu)

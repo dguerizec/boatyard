@@ -44,7 +44,7 @@ test("compact browser controls overlay preserves primary and secondary navigatio
   assert.match(view, /openWebAppNavigationHistoryMenu\([\s\S]*?useCompactBrowserControls \? closeCompactBrowserControls : undefined/);
   assert.match(view, /openWebAppRefreshMenu\([\s\S]*?useCompactBrowserControls \? closeCompactBrowserControls : undefined/);
   assert.match(menus, /closeWebAppTabMenu\(\);\s*onAction\?\.\(\);\s*invokeWebApp\("navigateWebApp", selectedWebApp\.key, "history-index"/);
-  assert.match(menus, /closeWebAppTabMenu\(\);\s*onAction\?\.\(\);\s*invokeWebApp\("navigateWebApp", selectedWebApp\.key, "hard-refresh"/);
+  assert.match(menus, /openSingleActionMenu\(event, "Hard reload", 180, \(\) => \{\s*onAction\?\.\(\);\s*invokeWebApp\("navigateWebApp", selectedWebApp\.key, "hard-refresh"/);
   assert.match(menus, /menu\.className = "webapp-tab-menu webapp-navigation-history-menu"/);
   assert.match(renderer, /webAppMenus\.openWebAppNavigationHistoryMenu\(event, selectedWebApp, direction, onAction\)/);
   assert.match(renderer, /webAppMenus\.openWebAppRefreshMenu\(event, selectedWebApp, onAction\)/);

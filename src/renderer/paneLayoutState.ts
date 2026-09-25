@@ -1,3 +1,5 @@
+import { mergePaneExpansion, type PaneExpansionRect } from "./paneExpansionGeometry.js";
+
 type PaneLayoutProject = {
   id?: string;
 };
@@ -54,6 +56,7 @@ type PaneLayoutStateOptions = {
 type PaneLayoutStateApi = {
   activatePaneExpansion(project: PaneLayoutProject, paneId: string, paneIds: string[]): boolean;
   applyPaneClose(project: PaneLayoutProject, paneId: string): boolean;
+  keepPaneExpansion(project: PaneLayoutProject, paneId: string, rects: PaneExpansionRect[], resizerSize: number): boolean;
   applyPaneSplit(project: PaneLayoutProject, paneId: string, replacement: SplitNode): boolean;
   clearPaneExpansionMemories(project: PaneLayoutProject): void;
   collectPaneNodes(node: PaneLayoutNode | null | undefined, panes?: PaneNode[]): PaneNode[];
@@ -417,6 +420,23 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
       return true;
     }
 
+    function keepPaneExpansion(project: PaneLayoutProject, paneId: string, rects: PaneExpansionRect[], resizerSize: number) {
+      const layout = getProjectPaneLayout(project);
+      const pane = findPaneNode(layout, paneId);
+      if (!pane?.expansion?.active) return false;
+      const paneIds = pane.expansion.paneIds;
+      const merged = mergePaneExpansion(layout, pane, paneIds, rects, resizerSize);
+      if (!merged) return false;
+
+      delete pane.expansion;
+      for (const removedId of paneIds) {
+        if (removedId !== paneId) selectedWebAppByPane.delete(removedId);
+      }
+      sanitizePaneExpansions(merged);
+      paneLayoutsByProject.set(getProjectPaneLayoutKey(project), merged);
+      return true;
+    }
+
     function clearExpandedChildren(node: PaneLayoutNode | null | undefined) {
       if (!node || node.type === "pane") {
         return;
@@ -700,6 +720,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
     return {
       activatePaneExpansion,
       applyPaneClose,
+      keepPaneExpansion,
       applyPaneSplit,
       clearPaneExpansionMemories,
       collectPaneNodes,

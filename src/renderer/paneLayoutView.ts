@@ -73,6 +73,7 @@ type PaneLayoutNode = PaneNode | SplitNode;
 type PaneLayoutStateApi = {
   activatePaneExpansion(project: RendererProject, paneId: string, paneIds: string[]): boolean;
   applyPaneClose(project: RendererProject, paneId: string): boolean;
+  keepPaneExpansion(project: RendererProject, paneId: string, rects: PaneExpansionRect[], resizerSize: number): boolean;
   applyPaneSplit(project: RendererProject, paneId: string, replacement: SplitNode): boolean;
   countPaneNodes(node: unknown): number;
   createSplitNode(
@@ -197,6 +198,7 @@ type PaneLayoutViewOptions = {
   ) => HTMLElement;
   isWebAppTabMenuOpen: () => boolean;
   closeWebAppTabMenu: () => void;
+  openPaneExpansionMenu: (event: MouseEvent, onKeep: () => void) => void;
   openWebAppTabMenuFromButton: (
     button: HTMLButtonElement,
     project: RendererProject,
@@ -288,6 +290,7 @@ export function createPaneLayoutView({
     createWidgetPaneTabs,
     isWebAppTabMenuOpen,
     closeWebAppTabMenu,
+    openPaneExpansionMenu,
     openWebAppTabMenuFromButton,
     openWebAppHomeMenu,
     openWebAppNavigationHistoryMenu,
@@ -1055,6 +1058,7 @@ export function createPaneLayoutView({
       button.title = tooltip;
       button.setAttribute("aria-label", label);
       button.setAttribute("aria-pressed", String(isShrink));
+      button.setAttribute("aria-haspopup", isShrink ? "menu" : "false");
       button.disabled = isShrink ? false : !expansionState.canExpand;
       button.classList.toggle("active", isShrink);
       button.replaceChildren(createToolIcon(isShrink ? "shrinkPane" : "expandPane"));
@@ -2071,6 +2075,18 @@ export function createPaneLayoutView({
           return;
         }
         togglePaneExpansion(project, paneNode.id);
+      });
+      expansionButton.addEventListener("contextmenu", (event) => {
+        if (!paneLayoutState.getPaneExpansionState(project, paneNode.id).canShrink) return;
+        event.preventDefault();
+        event.stopPropagation();
+        openPaneExpansionMenu(event, () => {
+          if (!pane.isConnected || !paneLayoutState.keepPaneExpansion(
+            project, paneNode.id, getPaneExpansionRects(), webAppSplitResizerSize
+          )) return;
+          persistPaneLayout(project);
+          renderPaneLayoutPreservingPanes(project);
+        });
       });
 
       const verticalSplitButton = document.createElement("button");

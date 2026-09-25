@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildSync } from "esbuild";
 
-export function runBrowserTest(t: TestContext, fixture: string) {
+export function runBrowserTest(t: TestContext, fixture: string, native?: { main: string; preload: string }) {
   const xvfb = process.platform === "linux" && spawnSync("which", ["xvfb-run"]).status === 0;
   if (process.platform === "linux" && !xvfb && !process.env.DISPLAY) {
     t.skip("Electron requires DISPLAY or xvfb-run");
@@ -24,7 +24,9 @@ export function runBrowserTest(t: TestContext, fixture: string) {
       app.setPath('userData', ${JSON.stringify(join(directory, "profile"))});
       app.whenReady().then(async () => {
         // Hidden test windows still need animation frames for editor layout measurements.
-        const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, backgroundThrottling: false } });
+        const win = new BrowserWindow({ show: false, webPreferences: { sandbox: true, backgroundThrottling: false,
+          ${native ? `preload: ${JSON.stringify(resolve(native.preload))}` : ""} } });
+        ${native ? `await require(${JSON.stringify(resolve(native.main))})(win);` : ""}
         win.webContents.on('console-message', (event) => { console.log(event.message); if (event.level === 'error') app.exit(1); });
         await win.loadFile(${JSON.stringify(join(directory, "index.html"))});
         const timer = setInterval(async () => {
