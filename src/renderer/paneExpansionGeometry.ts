@@ -1,3 +1,4 @@
+import { rebuildPaneLayoutFromRects } from "./paneRectLayout.js";
 import type { PaneLayoutNode, PaneNode } from "./paneLayoutState.js";
 
 export type PaneExpansionRect = {
@@ -80,11 +81,9 @@ export function mergePaneExpansion(
   resizerSize: number
 ): PaneLayoutNode | null {
   const panes = new Map<string, PaneNode>();
-  const splitIds: string[] = [];
   function collect(node: PaneLayoutNode) {
     if (node.type === "pane") panes.set(node.id, node);
     else {
-      splitIds.push(node.id);
       collect(node.first);
       collect(node.second);
     }
@@ -102,7 +101,6 @@ export function mergePaneExpansion(
     return items.slice(1).reduce(unionBounds, items[0]);
   }
   const merged = { ...bounds(rects.filter((rect) => selected.has(rect.id))), id: source.id };
-  const tolerance = 0.75;
   const remaining = [...rects.filter((rect) => !selected.has(rect.id)).map((rect) => {
     const adjusted = { ...rect };
     // The brush can span slightly staggered dividers when its edge still falls
@@ -118,38 +116,5 @@ export function mergePaneExpansion(
     }
     return adjusted;
   }), merged];
-  let splitIndex = 0;
-  function build(items: PaneExpansionRect[], area: ExpansionBounds): PaneLayoutNode | null {
-    if (items.length === 1) {
-      const rect = items[0];
-      if ((["left", "right", "top", "bottom"] as const)
-        .some((edge) => Math.abs(rect[edge] - area[edge]) > tolerance)) return null;
-      return panes.get(rect.id) || null;
-    }
-    for (const direction of ["vertical", "horizontal"]) {
-      const start = direction === "vertical" ? "left" : "top";
-      const end = direction === "vertical" ? "right" : "bottom";
-      for (const edge of [...new Set(items.map((rect) => rect[end]))].sort((a, b) => a - b)) {
-        const firstItems = items.filter((rect) => rect[end] <= edge + tolerance);
-        const secondItems = items.filter((rect) => rect[end] > edge + tolerance);
-        if (!firstItems.length || !secondItems.length) continue;
-        const nextStart = Math.min(...secondItems.map((rect) => rect[start]));
-        if (Math.abs(nextStart - edge - resizerSize) > tolerance) continue;
-        const center = (edge + nextStart) / 2;
-        const previousSplitIndex = splitIndex;
-        const first = build(firstItems, { ...area, [end]: center - resizerSize / 2 });
-        const second = build(secondItems, { ...area, [start]: center + resizerSize / 2 });
-        if (!first || !second) {
-          splitIndex = previousSplitIndex;
-          continue;
-        }
-        return {
-          type: "split", id: splitIds[splitIndex++], direction,
-          ratio: (center - area[start]) / (area[end] - area[start]), first, second
-        };
-      }
-    }
-    return null;
-  }
-  return build(remaining, bounds(rects));
+  return rebuildPaneLayoutFromRects(layout, remaining, resizerSize);
 }

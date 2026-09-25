@@ -35,6 +35,7 @@ import {
 import { createPaneTranslation } from "./paneTranslation.js";
 import { createResizablePaneSidePanel } from "./resizablePaneSidePanel.js";
 import { attachPanePointerResize } from "./panePointerResize.js";
+import { createPaneCrossingResize } from "./paneCrossingResize.js";
 
 type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
@@ -1187,8 +1188,63 @@ export function createPaneLayoutView({
       resizer.setAttribute("role", "separator");
       resizer.setAttribute("aria-orientation", splitNode.direction === "vertical" ? "vertical" : "horizontal");
 
+      function getCrossingResize(event: PointerEvent) {
+        return createPaneCrossingResize(
+          getProjectPaneLayout(project) as PaneLayoutNode,
+          getPaneExpansionRects(),
+          { x: event.clientX, y: event.clientY },
+          resizer.getBoundingClientRect(),
+          splitNode.direction,
+          webAppSplitResizerSize,
+          getPaneMinimumSize,
+          getPaneElements().filter(pane => pane.classList.contains("pane-expanded"))
+            .map(pane => pane.getBoundingClientRect())
+        );
+      }
+      resizer.addEventListener("pointermove", (event) => {
+        if (!event.buttons) resizer.style.cursor = getCrossingResize(event)?.crossing ? "move" : "";
+      });
+
       resizer.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
         event.preventDefault();
+        const crossingResize = getCrossingResize(event);
+        if (crossingResize) {
+          let moved = false;
+          // The separator is rebuilt when a through-edge becomes two branches.
+          // Capture on the stable dashboard so native views cannot steal the drag.
+          try { dashboardGrid.setPointerCapture(event.pointerId); } catch { /* The pointer may no longer be active. */ }
+          const previousCursor = document.body.style.cursor;
+          document.body.style.cursor = crossingResize.crossing ? "move" : splitNode.direction === "vertical" ? "col-resize" : "row-resize";
+          function onCrossingMove(moveEvent: PointerEvent) {
+            if (moveEvent.pointerId !== event.pointerId) return;
+            if (!moved && Math.max(Math.abs(moveEvent.clientX - event.clientX), Math.abs(moveEvent.clientY - event.clientY)) < 2) return;
+            const layout = crossingResize!.apply({ x: moveEvent.clientX, y: moveEvent.clientY });
+            if (!layout) return;
+            paneLayoutState.setPaneLayout(project.id, layout);
+            renderPaneLayoutPreservingPanes(project);
+            moved = true;
+          }
+          function finishCrossing() {
+            document.removeEventListener("pointermove", onCrossingMove);
+            document.removeEventListener("pointerup", onCrossingUp);
+            document.removeEventListener("pointercancel", onCrossingUp);
+            window.removeEventListener("blur", finishCrossing);
+            window.removeEventListener("resize", finishCrossing);
+            try { dashboardGrid.releasePointerCapture(event.pointerId); } catch { /* Capture may already be released. */ }
+            document.body.style.cursor = previousCursor;
+            if (moved) persistPaneLayout(project);
+          }
+          function onCrossingUp(upEvent: PointerEvent) {
+            if (upEvent.pointerId === event.pointerId) finishCrossing();
+          }
+          document.addEventListener("pointermove", onCrossingMove);
+          document.addEventListener("pointerup", onCrossingUp);
+          document.addEventListener("pointercancel", onCrossingUp);
+          window.addEventListener("blur", finishCrossing);
+          window.addEventListener("resize", finishCrossing);
+          return;
+        }
         const splitElement = resizer.parentElement;
         if (!splitElement) {
           return;
