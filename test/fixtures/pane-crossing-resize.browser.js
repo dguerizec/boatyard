@@ -41,6 +41,12 @@ function down(x, y) {
 function moveTo(x, y) {
   document.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: x, clientY: y }));
 }
+const highlighted = () => [...grid.querySelectorAll('.webapp-split-resizer.crossing-highlight')];
+function hover(x, y) {
+  const element = separatorAt(x, y);
+  element.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, buttons: 0 }));
+  return element;
+}
 const layout = () => split('root', 'horizontal', 0.5,
   split('top', 'vertical', 0.5, pane('a'), pane('b')),
   split('bottom', 'vertical', 0.5, pane('c'), pane('d')));
@@ -62,10 +68,22 @@ down(x + 150, box('b').bottom + 3);
 moveTo(x + 150, y + 4);
 finish(); await frame();
 check(Math.abs(box('a').bottom - box('b').bottom) < 0.05, 'Independent branches still snap back together');
-const cross = separatorAt(x, y);
-cross.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y, buttons: 0 }));
+const cross = hover(x, y);
 check(cross.style.cursor === 'move', 'Crossing center advertises movement in both axes');
+check(highlighted().length === 3, 'Hovering a plus highlights all four branches across its three separators');
+check(highlighted().every(element => getComputedStyle(element).backgroundImage.includes('linear-gradient')),
+  'Connected separator highlights are painted by the stylesheet');
+hover(x + 100, y);
+check(highlighted().length === 0, 'Moving away from the center clears connected highlights');
+hover(x, y);
+cross.dispatchEvent(new PointerEvent('pointerleave'));
+check(highlighted().length === 0, 'Leaving the separator clears connected highlights');
+hover(x, y);
+window.dispatchEvent(new Event('blur'));
+check(highlighted().length === 0, 'Window blur clears connected highlights');
+hover(x, y);
 down(x + 2, y + 2); moveTo(x + 62, y + 32); finish(); await frame();
+check(highlighted().length === 0, 'Starting a drag clears the previous hover geometry');
 check(Math.abs(box('a').right - originalLeft.right - 60) < 0.05, 'Crossing moves the upper vertical branch');
 check(Math.abs(box('c').right - originalLeft.right - 60) < 0.05, 'Crossing moves the lower vertical branch');
 check(Math.abs(box('a').bottom - originalLeft.bottom - 30) < 0.05, 'Crossing moves the left horizontal branch');
@@ -81,8 +99,25 @@ down(top.left + 150, top.bottom + 3); moveTo(top.left + 150, top.bottom + 43); f
 check(Math.abs(box('a').bottom - top.bottom - 40) < 0.05, 'T through-edge moves as a whole');
 check(Math.abs(box('c').top - box('d').top) < 0.05, 'T keeps both lower panes connected');
 const tx = box('c').right + 3, ty = box('a').bottom + 3;
+hover(tx, ty);
+check(highlighted().length === 2, 'Hovering a T highlights the through-edge and its third branch');
 down(tx, ty); moveTo(tx + 30, ty + 20); finish(); await frame();
 check(Math.abs(box('c').right + 3 - tx - 30) < 0.05 && Math.abs(box('a').bottom + 3 - ty - 20) < 0.05, 'T center moves all three branches');
+// The horizontal separator spans two crossings, but the hovered crossing
+// only moves its immediate left and middle branches.
+const row = prefix => split(`${prefix}-row`, 'vertical', 0.5, pane(`${prefix}-left`),
+  split(`${prefix}-right`, 'vertical', 0.5, pane(`${prefix}-middle`), pane(`${prefix}-right`)));
+await mount(split('root', 'horizontal', 0.5, row('top'), row('bottom')));
+const left = box('top-left'), middle = box('top-middle');
+hover(left.right + 3, left.bottom + 3);
+check(highlighted().length === 3, 'The other crossing vertical branches are not highlighted');
+const through = highlighted().find(element => element.classList.contains('horizontal'));
+const painted = getComputedStyle(through).backgroundImage;
+const highlightEnd = middle.right + 3 - through.getBoundingClientRect().left;
+check(painted.includes(`transparent ${highlightEnd}px`) || painted.includes(`rgba(0, 0, 0, 0) ${highlightEnd}px`),
+  'Horizontal highlight stops at the next crossing, leaving the unrelated branch unpainted');
+await mount(layout());
+check(highlighted().length === 0, 'Replacing the layout clears crossing highlights');
 if (window.nativeMenuTest) {
   await mount(layout());
   const bridge = window.nativeMenuTest;

@@ -133,6 +133,7 @@ export function createPaneCrossingResize(
   const plans = { x: axisPlan("x"), y: axisPlan("y") };
   return {
     crossing,
+    segments: selected.map(({ axis, position, start, end }) => ({ axis, position, start, end })),
     apply(nextPoint: Point) {
       const next = rects.map(rect => ({ ...rect }));
       for (const axis of ["x", "y"] as const) {

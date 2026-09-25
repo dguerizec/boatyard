@@ -1182,6 +1182,42 @@ export function createPaneLayoutView({
       currentPaneLayoutElement.replaceWith(paneLayoutElement);
     }
 
+    function clearPaneCrossingHighlight() {
+      dashboardGrid.querySelectorAll<HTMLElement>(".webapp-split-resizer.crossing-highlight").forEach(element => {
+        element.classList.remove("crossing-highlight");
+        element.style.removeProperty("--crossing-highlight");
+      });
+      window.removeEventListener("blur", clearPaneCrossingHighlight);
+      window.removeEventListener("resize", clearPaneCrossingHighlight);
+    }
+
+    function highlightPaneCrossing(gesture: ReturnType<typeof createPaneCrossingResize>) {
+      clearPaneCrossingHighlight();
+      if (!gesture?.crossing) return;
+      // A separator can extend beyond the selected branch. Paint only the
+      // ranges that the same resize gesture will actually move.
+      dashboardGrid.querySelectorAll<HTMLElement>(".webapp-split-resizer").forEach(element => {
+        const rect = element.getBoundingClientRect();
+        const vertical = element.classList.contains("vertical");
+        const axis = vertical ? "x" : "y";
+        const position = vertical ? (rect.left + rect.right) / 2 : (rect.top + rect.bottom) / 2;
+        const start = vertical ? rect.top : rect.left;
+        const end = vertical ? rect.bottom : rect.right;
+        const gradients = gesture.segments.filter(segment => segment.axis === axis &&
+          Math.abs(segment.position - position) <= 0.75 && Math.min(segment.end, end) > Math.max(segment.start, start))
+          .map(segment => {
+            const from = Math.max(segment.start, start) - start;
+            const to = Math.min(segment.end, end) - start;
+            return `linear-gradient(to ${vertical ? "bottom" : "right"}, transparent ${from}px, var(--pane-resizer-highlight) ${from}px ${to}px, transparent ${to}px)`;
+          });
+        if (!gradients.length) return;
+        element.style.setProperty("--crossing-highlight", gradients.join(", "));
+        element.classList.add("crossing-highlight");
+      });
+      window.addEventListener("blur", clearPaneCrossingHighlight);
+      window.addEventListener("resize", clearPaneCrossingHighlight);
+    }
+
     function createSplitResizer(project: RendererProject, splitNode: SplitNode) {
       const resizer = document.createElement("div");
       resizer.className = `webapp-split-resizer ${splitNode.direction}`;
@@ -1202,12 +1238,20 @@ export function createPaneLayoutView({
         );
       }
       resizer.addEventListener("pointermove", (event) => {
-        if (!event.buttons) resizer.style.cursor = getCrossingResize(event)?.crossing ? "move" : "";
+        if (event.buttons) return;
+        const gesture = getCrossingResize(event);
+        resizer.style.cursor = gesture?.crossing ? "move" : "";
+        highlightPaneCrossing(gesture);
+      });
+      resizer.addEventListener("pointerleave", () => {
+        resizer.style.cursor = "";
+        clearPaneCrossingHighlight();
       });
 
       resizer.addEventListener("pointerdown", (event) => {
         if (event.button !== 0) return;
         event.preventDefault();
+        clearPaneCrossingHighlight();
         const crossingResize = getCrossingResize(event);
         if (crossingResize) {
           let moved = false;
@@ -2293,6 +2337,7 @@ export function createPaneLayoutView({
       isNested = false
     ): HTMLElement {
       if (!isNested) {
+        clearPaneCrossingHighlight();
         clearPaneExpansionPreview();
         clearActivePaneExpansionPresentation();
       }

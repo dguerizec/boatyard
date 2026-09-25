@@ -3344,12 +3344,18 @@ body.sidebar-collapsed .workspace {
 }
 
 .webapp-split-resizer {
+  --pane-resizer-highlight: rgba(var(--accent-rgb), 0.9);
   background: rgba(var(--line-rgb), 0.65);
   z-index: 5;
 }
 
 .webapp-split-resizer:hover {
-  background: rgba(var(--accent-rgb), 0.9);
+  background: var(--pane-resizer-highlight);
+}
+
+.webapp-split-resizer.crossing-highlight {
+  background: rgba(var(--line-rgb), 0.65);
+  background-image: var(--crossing-highlight);
 }
 
 .webapp-split-resizer.vertical {
