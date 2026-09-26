@@ -1,6 +1,62 @@
 {
-  "generatedForVersion": "0.17.2",
+  "generatedForVersion": "0.18.0",
   "releases": [
+    {
+      "version": "0.18.0",
+      "date": "2026-09-26",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Keep expanded panes",
+          "body": "Make an expanded pane’s current size and position permanent from its context menu, removing covered panes while keeping its content open."
+        },
+        {
+          "category": "Added",
+          "title": "Smarter divider dragging",
+          "body": "Resize individual branches at four-way crossings, move connected dividers together by dragging an intersection, and snap nearby dividers into alignment."
+        },
+        {
+          "category": "Added",
+          "title": "Hugescreen persistence",
+          "body": "Each project remembers its window size, enabled status, and pan mode; saved layouts capture these settings, and layout undo restores them."
+        },
+        {
+          "category": "Added",
+          "title": "Apply Hugescreen across projects",
+          "body": "Copy size and pan settings to all existing projects and the global workspace in your current profile."
+        },
+        {
+          "category": "Changed",
+          "title": "Clearer resize previews",
+          "body": "Hover highlights show exactly which divider segments will move together."
+        },
+        {
+          "category": "Changed",
+          "title": "Richer layout previews",
+          "body": "Saved layouts display their Hugescreen dimensions, proportions, and pan settings, with oversized layouts marked in the list."
+        },
+        {
+          "category": "Changed",
+          "title": "Shared edge zones",
+          "body": "Hugescreen edge zones are now shared across projects on the same machine and remain independent of saved layouts."
+        },
+        {
+          "category": "Fixed",
+          "title": "Continuous expanded-pane resizing",
+          "body": "Dragging an expanded pane’s boundary now moves its full visible length, even when it spans multiple dividers."
+        },
+        {
+          "category": "Fixed",
+          "title": "Pane context menus",
+          "body": "Menus stay inside their source pane when space allows and remain visible over embedded web content."
+        },
+        {
+          "category": "Fixed",
+          "title": "Consistent app icon",
+          "body": "The renderer favicon now uses the official Boatyard mark."
+        }
+      ]
+    },
     {
       "version": "0.17.2",
       "date": "2026-09-24",

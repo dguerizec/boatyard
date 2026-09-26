@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.18.0] - 2026-09-26
+
+### Summary
+
+- **v0.18.0: Room to Arrange** — Shape your workspace with smarter pane resizing, permanent expansions, and Hugescreen settings that follow your projects and saved layouts.
+
+### Added
+
+- **Keep expanded panes** — Make an expanded pane’s current size and position permanent from its context menu, removing covered panes while keeping its content open.
+- **Smarter divider dragging** — Resize individual branches at four-way crossings, move connected dividers together by dragging an intersection, and snap nearby dividers into alignment.
+- **Hugescreen persistence** — Each project remembers its window size, enabled status, and pan mode; saved layouts capture these settings, and layout undo restores them.
+- **Apply Hugescreen across projects** — Copy size and pan settings to all existing projects and the global workspace in your current profile.
+
+### Changed
+
+- **Clearer resize previews** — Hover highlights show exactly which divider segments will move together.
+- **Richer layout previews** — Saved layouts display their Hugescreen dimensions, proportions, and pan settings, with oversized layouts marked in the list.
+- **Shared edge zones** — Hugescreen edge zones are now shared across projects on the same machine and remain independent of saved layouts.
+
+### Fixed
+
+- **Continuous expanded-pane resizing** — Dragging an expanded pane’s boundary now moves its full visible length, even when it spans multiple dividers.
+- **Pane context menus** — Menus stay inside their source pane when space allows and remain visible over embedded web content.
+- **Consistent app icon** — The renderer favicon now uses the official Boatyard mark.
+
 ## [0.17.2] - 2026-09-24
 
 ### Summary
