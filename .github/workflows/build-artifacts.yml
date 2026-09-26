@@ -36,6 +36,11 @@ jobs:
       - name: Install Electron binary
         run: npm exec --no -- install-electron
 
+      - name: Install native test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth xdotool
+
       - name: Lint
         run: npm run lint
 
