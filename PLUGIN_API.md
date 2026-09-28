@@ -484,6 +484,12 @@ ctx.panes.register({
 Boatyard owns pane layout, selection, splitting, closing, persistence, and
 surface placement. Plugins provide pane content and metadata.
 
+DOM panes can call `props.openPaneWebApp(webAppId, url?)` to select a webapp
+and optionally navigate to a detail URL in their own pane. This uses the same
+selection and persistence behavior as the pane navigation tabs and returns
+`false` if the target webapp is unavailable. `props.openProjectWebApp` can
+instead reuse another pane in the project.
+
 ## Services
 
 Services are plugin-to-plugin APIs. They are meant for in-process integration

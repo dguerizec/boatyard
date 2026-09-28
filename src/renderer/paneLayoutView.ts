@@ -3,7 +3,6 @@ import type {
   RendererPaneNode,
   RendererProject,
   WebAppPaneNavigation,
-  WebAppPaneNavigationItem,
   WebAppPaneSidePanel
 } from "./rendererTypes.js";
 import type { UnknownRecord } from "./rendererRecords.js";
@@ -1729,6 +1728,7 @@ export function createPaneLayoutView({
           paneDragCleanup?.();
           paneDragCleanup = startPaneContentDrag(event, targets, createPaneDragFreezeScope());
         },
+        openPaneWebApp,
         openProjectWebApp(webAppId: string, url = "") {
           return openProjectWebApp(project.id, webAppId, url);
         }
@@ -2085,6 +2085,45 @@ export function createPaneLayoutView({
         }
       }
 
+      let syncPaneNavigation: ((url: string) => void) | undefined;
+
+      function openPaneWebApp(webAppId: string, url = "") {
+        closeCompactBrowserControls();
+        const targetWebAppId = webAppId || selectedWebApp.id;
+        const targetWebApp = webApps.find((candidate) => candidate.id === targetWebAppId);
+        if (!targetWebApp) {
+          return false;
+        }
+
+        const targetUrl = url;
+        if (targetUrl) {
+          setCurrentWebAppUrl(targetWebApp.key || "", targetUrl);
+        }
+
+        if (targetWebApp.id === selectedWebApp.id) {
+          if (targetUrl && targetWebApp.kind !== "dom") {
+            void invokeWebApp("navigateWebApp", targetWebApp.key, "open", targetUrl);
+            syncPaneNavigation?.(targetUrl);
+          }
+          return true;
+        }
+
+        paneLayoutState.setSelectedWebAppForPane(paneNode.id, targetWebApp.id);
+        paneLayoutState.setSelectedWebAppForProject(project.id, targetWebApp.id);
+        paneNode.selectedWebAppId = targetWebApp.id;
+        persistPaneLayout(project);
+        renderPaneLayoutPreservingPanes(project);
+
+        if (targetUrl && targetWebApp.kind !== "dom") {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              void invokeWebApp("navigateWebApp", targetWebApp.key, "open", targetUrl);
+            });
+          });
+        }
+        return true;
+      }
+
       if (paneNavigation?.items.length) {
         const navigationDefinition = paneNavigation;
         const navigation = document.createElement("nav");
@@ -2103,42 +2142,7 @@ export function createPaneLayoutView({
           }
         }
 
-        function activateNavigationItem(item: WebAppPaneNavigationItem) {
-          closeCompactBrowserControls();
-          const targetWebAppId = item.webAppId || selectedWebApp.id;
-          const targetWebApp = webApps.find((candidate) => candidate.id === targetWebAppId);
-          if (!targetWebApp) {
-            return;
-          }
-
-          const targetUrl = item.url || "";
-          if (targetUrl) {
-            setCurrentWebAppUrl(targetWebApp.key || "", targetUrl);
-          }
-
-          if (targetWebApp.id === selectedWebApp.id) {
-            if (targetUrl && targetWebApp.kind !== "dom") {
-              void invokeWebApp("navigateWebApp", targetWebApp.key, "open", targetUrl);
-              syncNavigationItems(targetUrl);
-            }
-            return;
-          }
-
-          paneLayoutState.setSelectedWebAppForPane(paneNode.id, targetWebApp.id);
-          paneLayoutState.setSelectedWebAppForProject(project.id, targetWebApp.id);
-          paneNode.selectedWebAppId = targetWebApp.id;
-          persistPaneLayout(project);
-          renderPaneLayoutPreservingPanes(project);
-
-          if (targetUrl && targetWebApp.kind !== "dom") {
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                void invokeWebApp("navigateWebApp", targetWebApp.key, "open", targetUrl);
-              });
-            });
-          }
-        }
-
+        syncPaneNavigation = syncNavigationItems;
         const currentUrl = getCurrentWebAppUrl(selectedWebApp) || "";
         for (const item of navigationDefinition.items) {
           const button = document.createElement("button");
@@ -2154,7 +2158,7 @@ export function createPaneLayoutView({
           const isActive = isPaneNavigationItemActive(item, selectedWebApp.id, currentUrl);
           button.classList.toggle("active", isActive);
           button.setAttribute("aria-current", isActive ? "page" : "false");
-          button.addEventListener("click", () => activateNavigationItem(item));
+          button.addEventListener("click", () => openPaneWebApp(item.webAppId || selectedWebApp.id, item.url));
           navigation.append(button);
         }
         tabs.append(navigation);

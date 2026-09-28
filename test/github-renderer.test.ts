@@ -1069,6 +1069,7 @@ test("GitHub Actions widget renders active matrix jobs and terminal conclusions"
 });
 
 test("GitHub overview pane reuses the Actions and Pull Requests widget views", async () => {
+  const openedLinks: Array<{ webAppId: string; url: string }> = [];
   const context: RendererContext = {
     clearTimeout: () => {},
     console,
@@ -1084,7 +1085,18 @@ test("GitHub overview pane reuses the Actions and Pull Requests widget views", a
             return {
               ...createSnapshot(),
               activeRunCount: 1,
-              runs: [createWorkflowRun({ id: 41, name: "Overview deployment" })]
+              runs: [
+                {
+                  ...createWorkflowRun({ id: 41, name: "Overview deployment" }),
+                  jobs: [{
+                    id: 1, name: "Build job", status: "in_progress", conclusion: "",
+                    htmlUrl: "https://github.com/octo-org/example/actions/runs/41/job/1",
+                    startedAt: "", completedAt: "", steps: []
+                  }]
+                },
+                createWorkflowRun({ id: 42, name: "Recent deployment", status: "completed", conclusion: "success" }),
+                createWorkflowRun({ id: 43, name: "Hidden deployment" })
+              ]
             };
           }
           if (actionName === "pullRequestsSnapshotForProject") {
@@ -1108,7 +1120,7 @@ test("GitHub overview pane reuses the Actions and Pull Requests widget views", a
           }
           throw new Error(`Unexpected action ${actionName}`);
         },
-        openExternal: () => {}
+        openExternal: () => { assert.fail("Overview links must stay in the pane"); }
       }
     }
   };
@@ -1124,7 +1136,8 @@ test("GitHub overview pane reuses the Actions and Pull Requests widget views", a
       id: "project-id",
       repoUrl: "https://github.com/octo-org/example"
     },
-    projectConfig: {},
+    openPaneWebApp: (webAppId: string, url: string) => { openedLinks.push({ webAppId, url }); },
+    projectConfig: { hiddenWorkflowRunIds: JSON.stringify([43]) },
     projectId: "project-id"
   });
 
@@ -1140,6 +1153,19 @@ test("GitHub overview pane reuses the Actions and Pull Requests widget views", a
   assert.ok(findByText(overview, "Overview pull request"));
   assert.ok(findByText(overview, "All 1"));
   assert.equal(findByClass(overview, "github-hide-run-button")?.title, "Hide this workflow");
+  findByText(overview, "Overview deployment")?.trigger("click");
+  findByText(overview, "Build job")?.trigger("click");
+  findByText(overview, "Recent deployment")?.trigger("click");
+  findByClass(overview, "github-hidden-runs-button")?.trigger("click");
+  findByText(overview, "Hidden deployment")?.trigger("click");
+  findByText(overview, "All 1")?.trigger("click");
+  findByText(overview, "Overview pull request")?.trigger("click");
+  assert.deepEqual(openedLinks, [
+    "actions/runs/41", "actions/runs/41/job/1", "actions/runs/42", "actions/runs/43", "pull/17"
+  ].map((path) => ({
+    webAppId: "boatyard.github.repository",
+    url: `https://github.com/octo-org/example/${path}`
+  })));
 });
 
 test("GitHub Actions hides and restores persisted workflow runs across the widget and project indicator", async () => {

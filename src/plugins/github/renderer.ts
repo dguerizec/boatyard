@@ -116,7 +116,10 @@
     hiddenWorkflowRunIds?: string;
   };
 
+  type GitHubLinkOpener = (url: string) => void;
+
   type GitHubWidgetProps = {
+    openLink?: GitHubLinkOpener;
     pluginConfig?: GitHubConfig;
     projectId?: string;
   };
@@ -1290,7 +1293,16 @@
     return icon;
   }
 
-  function createExternalLink(label: string, url: string, className = "github-link-button"): HTMLButtonElement {
+  function openExternalLink(url: string) {
+    globalScope.boatyard?.openExternal?.(url);
+  }
+
+  function createGitHubLink(
+    label: string,
+    url: string,
+    className = "github-link-button",
+    openLink: GitHubLinkOpener = openExternalLink
+  ): HTMLButtonElement {
     const button = document.createElement("button");
     button.className = className;
     button.type = "button";
@@ -1299,7 +1311,7 @@
     button.disabled = !url;
     button.addEventListener("click", () => {
       if (url) {
-        globalScope.boatyard?.openExternal?.(url);
+        openLink(url);
       }
     });
     return button;
@@ -1387,14 +1399,14 @@
     return progress;
   }
 
-  function createJobRow(job: GitHubWorkflowJob): HTMLElement {
+  function createJobRow(job: GitHubWorkflowJob, openLink?: GitHubLinkOpener): HTMLElement {
     const row = document.createElement("div");
     row.className = "github-job-row";
 
     const status = createStatusIcon(job.status, job.conclusion);
     const content = document.createElement("div");
     content.className = "github-job-content";
-    const link = createExternalLink(job.name, job.htmlUrl, "github-job-link");
+    const link = createGitHubLink(job.name, job.htmlUrl, "github-job-link", openLink);
     const detail = document.createElement("small");
     const currentStep = getCurrentStep(job);
     const progress = getJobProgress(job);
@@ -1415,7 +1427,8 @@
     run: GitHubWorkflowRun,
     onVisibilityChange: (run: GitHubWorkflowRun) => void,
     visibilityChangeDisabled = false,
-    hidden = false
+    hidden = false,
+    openLink?: GitHubLinkOpener
   ): HTMLElement {
     const section = document.createElement("section");
     section.className = hidden ? "github-active-run github-hidden-run" : "github-active-run";
@@ -1423,7 +1436,7 @@
     const header = document.createElement("div");
     header.className = "github-run-header";
     const status = createStatusIcon(run.status, run.conclusion);
-    const title = createExternalLink(getWorkflowRunTitle(run), run.htmlUrl, "github-run-link");
+    const title = createGitHubLink(getWorkflowRunTitle(run), run.htmlUrl, "github-run-link", openLink);
     const duration = document.createElement("small");
     duration.className = "github-run-duration";
     duration.textContent = formatDuration(
@@ -1449,7 +1462,7 @@
     const jobs = document.createElement("div");
     jobs.className = "github-job-list";
     if (run.jobs.length) {
-      jobs.append(...run.jobs.map(createJobRow));
+      jobs.append(...run.jobs.map((job) => createJobRow(job, openLink)));
     } else {
       const waiting = document.createElement("small");
       waiting.className = "github-empty-detail";
@@ -1461,11 +1474,11 @@
     return section;
   }
 
-  function createCompletedRun(run: GitHubWorkflowRun): HTMLElement {
+  function createCompletedRun(run: GitHubWorkflowRun, openLink?: GitHubLinkOpener): HTMLElement {
     const row = document.createElement("div");
     row.className = "github-completed-run";
     const status = createStatusIcon(run.status, run.conclusion);
-    const link = createExternalLink(getWorkflowRunTitle(run), run.htmlUrl, "github-run-link");
+    const link = createGitHubLink(getWorkflowRunTitle(run), run.htmlUrl, "github-run-link", openLink);
     const metadata = document.createElement("small");
     metadata.textContent = [
       run.headBranch || run.headSha.slice(0, 7),
@@ -1482,7 +1495,8 @@
     showHiddenRuns: boolean,
     onHide: (run: GitHubWorkflowRun) => void,
     onShow: (run: GitHubWorkflowRun) => void,
-    visibilityChangeDisabled = false
+    visibilityChangeDisabled = false,
+    openLink?: GitHubLinkOpener
   ): HTMLElement {
     const content = document.createElement("div");
     content.className = "github-widget-content";
@@ -1522,7 +1536,7 @@
       heading.textContent = activeRuns.length === 1 ? "Active run" : "Active runs";
       section.append(
         heading,
-        ...activeRuns.map((run) => createActiveRun(run, onHide, visibilityChangeDisabled))
+        ...activeRuns.map((run) => createActiveRun(run, onHide, visibilityChangeDisabled, false, openLink))
       );
       content.append(section);
     }
@@ -1534,7 +1548,7 @@
       heading.textContent = "Recent";
       const list = document.createElement("div");
       list.className = "github-completed-list";
-      list.append(...completedRuns.map(createCompletedRun));
+      list.append(...completedRuns.map((run) => createCompletedRun(run, openLink)));
       section.append(heading, list);
       content.append(section);
     }
@@ -1550,7 +1564,8 @@
           run,
           onShow,
           visibilityChangeDisabled,
-          true
+          true,
+          openLink
         ))
       );
       content.append(section);
@@ -1637,7 +1652,8 @@
         showHiddenRuns,
         (run) => { void setWorkflowRunHidden(run, true); },
         (run) => { void setWorkflowRunHidden(run, false); },
-        visibilityUpdatePending
+        visibilityUpdatePending,
+        props.openLink
       ));
       subtitle.textContent = [
         visibleSnapshot.activeRunCount
@@ -1832,7 +1848,7 @@
     ];
   }
 
-  function createPullRequestRow(pullRequest: GitHubPullRequest): HTMLElement {
+  function createPullRequestRow(pullRequest: GitHubPullRequest, openLink?: GitHubLinkOpener): HTMLElement {
     const row = document.createElement("div");
     row.className = "github-pr-row";
 
@@ -1843,7 +1859,7 @@
     const number = document.createElement("span");
     number.className = "github-pr-number";
     number.textContent = `#${pullRequest.number}`;
-    const title = createExternalLink(pullRequest.title, pullRequest.url, "github-pr-link");
+    const title = createGitHubLink(pullRequest.title, pullRequest.url, "github-pr-link", openLink);
     titleLine.append(number, title);
 
     const metadata = document.createElement("small");
@@ -1883,7 +1899,8 @@
   function createPullRequestsContent(
     snapshot: GitHubPullRequestsSnapshot,
     selectedFilter: GitHubPullRequestFilter,
-    onSelectFilter: (filter: GitHubPullRequestFilter) => void
+    onSelectFilter: (filter: GitHubPullRequestFilter) => void,
+    openLink?: GitHubLinkOpener
   ): HTMLElement {
     const content = document.createElement("div");
     content.className = "github-widget-content github-pr-content";
@@ -1925,7 +1942,7 @@
     const list = document.createElement("div");
     list.className = "github-pr-list";
     if (pullRequests.length) {
-      list.append(...pullRequests.map(createPullRequestRow));
+      list.append(...pullRequests.map((pullRequest) => createPullRequestRow(pullRequest, openLink)));
     } else {
       const empty = document.createElement("p");
       empty.className = "github-widget-message";
@@ -1938,7 +1955,7 @@
     return content;
   }
 
-  function createPullRequestsWidget(project: GitHubProject): HTMLElement {
+  function createPullRequestsWidget(project: GitHubProject, props: GitHubWidgetProps = {}): HTMLElement {
     const card = document.createElement("article");
     card.className = "widget-card github-widget github-pull-requests-widget";
 
@@ -1982,7 +1999,8 @@
         (filter) => {
           selectedFilter = filter;
           renderSnapshot();
-        }
+        },
+        props.openLink
       ));
     }
 
@@ -2035,14 +2053,19 @@
 
   function renderGitHubOverview(container: HTMLElement, props: PluginRegistryRecord = {}) {
     const project = (props.project || {}) as GitHubProject;
+    const openPaneWebApp = props.openPaneWebApp;
+    const openLink: GitHubLinkOpener | undefined = typeof openPaneWebApp === "function"
+      ? (url) => { openPaneWebApp(GITHUB_REPOSITORY_WEBAPP_ID, url); }
+      : undefined;
     const overview = document.createElement("div");
     overview.className = "github-overview-pane";
     overview.append(
       createActionsWidget(project, {
+        openLink,
         pluginConfig: props.projectConfig as GitHubConfig | undefined,
         projectId: String(props.projectId || project.id || "")
       }),
-      createPullRequestsWidget(project)
+      createPullRequestsWidget(project, { openLink })
     );
     container.replaceChildren(overview);
   }
