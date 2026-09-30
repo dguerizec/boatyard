@@ -1,6 +1,17 @@
 {
-  "generatedForVersion": "0.18.0",
+  "generatedForVersion": "0.18.1",
   "releases": [
+    {
+      "version": "0.18.1",
+      "date": "2026-09-30",
+      "features": [
+        {
+          "category": "Fixed",
+          "title": "GitHub Overview navigation",
+          "body": "Workflow, job, and pull request links open in the corresponding GitHub section of the same pane, keeping other panes unchanged."
+        }
+      ]
+    },
     {
       "version": "0.18.0",
       "date": "2026-09-26",

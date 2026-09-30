@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.18.1] - 2026-09-30
+
+### Summary
+
+- **v0.18.1: GitHub in Place** — GitHub Overview links now open in the matching tab within their originating pane.
+
+### Fixed
+
+- **GitHub Overview navigation** — Workflow, job, and pull request links open in the corresponding GitHub section of the same pane, keeping other panes unchanged.
+
 ## [0.18.0] - 2026-09-26
 
 ### Summary
