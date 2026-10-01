@@ -3,6 +3,7 @@ import {
   getTerminalTabEditName,
   TERMINAL_TAB_RENAME_TOOLTIP
 } from "./terminalTabDom.js";
+import { updateTerminalFooter, clearTerminalFooterMemory } from "./terminalStatusDom.js";
 import { createTerminalTabMenuController } from "./terminalTabMenu.js";
 import { createTerminalLinksAddon } from "./terminalLinks.js";
 import { createTerminalSelectionBridge } from "./terminalSelectionBridge.js";
@@ -42,6 +43,9 @@ export function createTerminalSurfaces({
     });
     const terminalTabSyncTimers = new Map<string, TerminalTabSyncTimer>();
     const terminalTabOrdersByProject = new Map<string, string[]>();
+    const pendingTabRequests = new Map<string, Promise<TerminalTab[]>>();
+    let terminalDetailsRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let refreshingTerminalDetails = false;
     let nextTerminalSurfaceId = 1;
     let pendingTerminalCloseFocus: TerminalCloseFocus | null = null;
     let theme: AppTheme = "dark";
@@ -65,7 +69,6 @@ export function createTerminalSurfaces({
       getTerminalTabButtons,
       getTerminalTabDropPosition,
       getTerminalTabList,
-      updateTerminalTabButtonTitles,
       updateTerminalTabDropMarker,
       updateTerminalTabScrollControls
     } = createTerminalTabDom({
@@ -111,7 +114,9 @@ export function createTerminalSurfaces({
       return {
         id,
         index: Number.isFinite(index) ? index : undefined,
-        name: String(source.name || "").trim() || undefined
+        name: String(source.name || "").trim() || undefined,
+        memoryBytes: typeof source.memoryBytes === "number" && Number.isFinite(source.memoryBytes)
+          && source.memoryBytes >= 0 ? source.memoryBytes : null
       };
     }
 
@@ -132,10 +137,38 @@ export function createTerminalSurfaces({
     }
 
     async function listTerminalTabs(projectId: string): Promise<TerminalTab[]> {
-      const tabs = await boatyard.listTerminalTabs(projectId);
-      return Array.isArray(tabs)
+      const pending = pendingTabRequests.get(projectId);
+      if (pending) return pending;
+      const request = boatyard.listTerminalTabs(projectId).then((tabs) => Array.isArray(tabs)
         ? tabs.map(normalizeTerminalTab).filter((tab): tab is TerminalTab => Boolean(tab))
-        : [];
+        : []);
+      pendingTabRequests.set(projectId, request);
+      try {
+        return await request;
+      } finally {
+        pendingTabRequests.delete(projectId);
+      }
+    }
+
+    function scheduleTerminalDetailsRefresh() {
+      if (terminalDetailsRefreshTimer !== null || refreshingTerminalDetails || !terminalWidgetsBySurface.size) return;
+      terminalDetailsRefreshTimer = setTimeout(async () => {
+        terminalDetailsRefreshTimer = null;
+        refreshingTerminalDetails = true;
+        try {
+          const projectIds = new Set([...terminalWidgetsBySurface.values()]
+            .filter((session) => session.card.isConnected).map((session) => session.projectId));
+          await Promise.allSettled([...projectIds].map(async (projectId) => {
+            const project = getProjectById(projectId);
+            if (project) await refreshProjectTerminalTabLabels(project);
+          }));
+        } catch {
+          // The next sample retries without interrupting terminal input.
+        } finally {
+          refreshingTerminalDetails = false;
+          scheduleTerminalDetailsRefresh();
+        }
+      }, 5000);
     }
 
     async function listTerminalWorktrees(project: RendererProject): Promise<TerminalWorktree[]> {
@@ -179,6 +212,10 @@ export function createTerminalSurfaces({
       clearTimeout(terminalTabSyncTimers.get(surfaceId)?.timer);
       terminalTabSyncTimers.delete(surfaceId);
       terminalWidgetsBySurface.delete(surfaceId);
+      if (!terminalWidgetsBySurface.size && terminalDetailsRefreshTimer !== null) {
+        clearTimeout(terminalDetailsRefreshTimer);
+        terminalDetailsRefreshTimer = null;
+      }
     }
 
     function detachProjectTerminal(projectId: string) {
@@ -211,6 +248,7 @@ export function createTerminalSurfaces({
     function setTerminalStatus(card: TerminalCard, message: string) {
       const status = card.querySelector(".terminal-status");
       if (status) {
+        status.removeAttribute("data-window-id");
         status.replaceChildren(document.createTextNode(message));
       }
     }
@@ -401,11 +439,21 @@ export function createTerminalSurfaces({
       if (!projectId) {
         return;
       }
-      const tabs = getOrderedTerminalTabs(projectId, await listTerminalTabs(projectId));
+      const sessions = [...terminalWidgetsBySurface.values()].filter((session) => session.projectId === projectId);
+      let tabs: TerminalTab[];
+      try {
+        tabs = getOrderedTerminalTabs(projectId, await listTerminalTabs(projectId));
+      } catch (error) {
+        for (const session of sessions) {
+          if (terminalWidgetsBySurface.get(session.surfaceId) !== session || !session.card.isConnected) continue;
+          clearTerminalFooterMemory(session.card);
+        }
+        throw error;
+      }
       const tabsById = new Map(tabs.map((tab) => [tab.id, tab]));
 
-      for (const session of terminalWidgetsBySurface.values()) {
-        if (session.projectId !== projectId || !session.card?.isConnected) {
+      for (const session of sessions) {
+        if (terminalWidgetsBySurface.get(session.surfaceId) !== session || !session.card?.isConnected) {
           continue;
         }
 
@@ -423,7 +471,9 @@ export function createTerminalSurfaces({
           }
           tabButton.classList.toggle("active", tabButton.dataset.windowId === session.activeWindowId);
         }
-        updateTerminalTabButtonTitles(session.card);
+        const activeTab = tabsById.get(session.activeWindowId);
+        if (activeTab) updateTerminalFooter(session.card, activeTab);
+        updateTerminalTabScrollControls(session.card);
       }
     }
 
@@ -951,8 +1001,9 @@ export function createTerminalSurfaces({
         term,
         lastOutputTabSyncAt: 0
       });
+      scheduleTerminalDetailsRefresh();
       terminalAttachmentCoordinator.complete(attachmentAttempt);
-      setTerminalStatus(card, attachResult.tab.name || "attached");
+      updateTerminalFooter(card, attachResult.tab, { attached: true });
 
       for (const tabButton of getTerminalTabButtons(card)) {
         tabButton.classList.toggle("active", tabButton.dataset.windowId === attachResult.tab.id);

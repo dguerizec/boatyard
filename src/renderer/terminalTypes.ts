@@ -2,6 +2,7 @@ export type TerminalTab = {
   id: string;
   index?: number;
   name?: string;
+  memoryBytes?: number | null;
 };
 
 export type TerminalWorktree = {

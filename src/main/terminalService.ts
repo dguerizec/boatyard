@@ -13,6 +13,7 @@ import {
 } from "./terminalSessionNames.js";
 import { runTerminalAttachmentTransaction } from "./terminalAttachmentTransaction.js";
 import { getTerminalClientSessionCreationArgs } from "./terminalClientSessionLifecycle.js";
+import { createTerminalMemoryReader } from "./terminalMemory.js";
 
 type PtyProcess = ReturnType<typeof pty.spawn>;
 type TerminalProject = {
@@ -30,6 +31,7 @@ type TerminalTab = {
   index: number;
   name: string;
   cwd: string;
+  memoryBytes?: number | null;
 };
 type TerminalWorktree = {
   branch: string;
@@ -187,6 +189,7 @@ class TerminalService {
   private suppressResizeWarnings: boolean;
   private terminals: Map<string, TerminalRecord>;
   private pendingSessionDestructions: Set<Promise<void>>;
+  private readTerminalMemory = createTerminalMemoryReader();
 
   constructor({
     getProject,
@@ -268,6 +271,10 @@ class TerminalService {
       "#{window_id}\t#{window_index}\t#{window_name}\t#{pane_current_path}"
     ]);
 
+    const memoryByWindow = await runTmux([
+      "list-panes", "-s", "-t", session, "-F", "#{window_id}\t#{pane_pid}"
+    ]).then((panes) => this.readTerminalMemory(panes)).catch(() => new Map<string, number | null>());
+
     return output
       .split("\n")
       .filter(Boolean)
@@ -277,7 +284,8 @@ class TerminalService {
           id,
           index: Number(index),
           name,
-          cwd
+          cwd,
+          memoryBytes: memoryByWindow.get(id) ?? null
         };
       });
   }

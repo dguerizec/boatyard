@@ -3292,6 +3292,11 @@ body.sidebar-collapsed .workspace {
   white-space: nowrap;
 }
 
+.terminal-status-memory {
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+
 .webapp-pane {
   min-width: 420px;
   min-height: 0;
