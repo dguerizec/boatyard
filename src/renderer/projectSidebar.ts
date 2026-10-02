@@ -1170,6 +1170,8 @@ export function createProjectSidebar({
     }
 
     function bindProjectSidebarEvents() {
+      globalNav.addEventListener("click", closeSidebarOverlay);
+
       projectList.addEventListener("dragover", (event) => {
         if (!draggedProjectId && !draggedProjectGroupName) {
           return;
