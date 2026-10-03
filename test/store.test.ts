@@ -50,6 +50,19 @@ test("ProjectStore persists the store schema version", () => {
   assert.equal(new ProjectStore(filePath).load().schemaVersion, 1);
 });
 
+test("ProjectStore starts new projects at screen size despite an oversized window fallback", () => {
+  const { filePath, store } = createTempStore();
+  store.load();
+  const oversized = { widthMultiplier: 1.5, heightMultiplier: 1.5, panMode: "edge", enabled: true };
+  store.updateWindowState({ hugescreenDefault: oversized });
+  const state = store.addProject({ name: "New project", sourcePath: "/workspace/example" });
+  const projectId = state.projects[0].id;
+  const expected = { widthMultiplier: 1, heightMultiplier: 1, panMode: "continuous", enabled: false };
+  assert.deepEqual(store.getProjectHugescreen(projectId), expected);
+  assert.deepEqual(new ProjectStore(filePath).load().projectHugescreen[projectId], expected);
+  assert.deepEqual(state.window.hugescreenDefault, oversized, "existing window preferences are preserved");
+});
+
 test("ProjectStore migrates a legacy file into the .boatyard configuration directory", () => {
   const { directory, filePath } = createTempStoreFile();
   fs.writeFileSync(filePath, `${JSON.stringify({

@@ -80,7 +80,9 @@ test("bulk Hugescreen apply persists independent copies without changing layouts
   reloaded.updateProjectHugescreen("a", state);
   assert.deepEqual(reloaded.getProjectHugescreen("b"), applied);
   const added = reloaded.addProject({ name: "New", sourcePath: "/workspace/new" }).projects.at(-1)!;
-  assert.equal(reloaded.getProjectHugescreen(added.id), undefined);
+  assert.deepEqual(reloaded.getProjectHugescreen(added.id), {
+    widthMultiplier: 1, heightMultiplier: 1, panMode: "continuous", enabled: false
+  });
 });
 
 test("native operations stay ordered across asynchronous transitions and recover after errors", async () => {

@@ -40,18 +40,20 @@ export function createRendererNavigationController({
 
   function persistNavigation() {
     if (!isRestorableView(currentView)) {
-      return;
+      return Promise.resolve();
     }
 
-    updateNavigation({
+    const persisted = updateNavigation({
       view: currentView,
       projectId: currentProjectId,
       collapsedProjectGroups: [...getCollapsedProjectGroups()],
       pinnedProjectIds: getPinnedProjectIds(),
       sidebarCollapsed: isSidebarCollapsed()
-    }).catch((error) => {
+    });
+    void persisted.catch((error) => {
       console.error("Could not persist navigation:", error);
     });
+    return persisted;
   }
 
   function setCurrentView(view: string, projectId: string | null = null, { persist = true } = {}) {
@@ -63,9 +65,7 @@ export function createRendererNavigationController({
     currentView = view;
     currentProjectId = projectId;
 
-    if (persist) {
-      persistNavigation();
-    }
+    return persist ? persistNavigation() : Promise.resolve();
   }
 
   function restoreNavigation(navigation: NavigationState = {}) {
@@ -100,8 +100,9 @@ export function createRendererNavigationController({
   }
 
   function selectProject(id: string) {
-    setCurrentView("project", id);
+    const persisted = setCurrentView("project", id);
     render();
+    return persisted;
   }
 
   function selectEditProject(id: string) {

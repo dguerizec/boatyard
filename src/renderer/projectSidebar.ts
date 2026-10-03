@@ -1099,7 +1099,24 @@ export function createProjectSidebar({
       return group;
     }
 
+    function updateSidebarViewportHeight() {
+      const sidebar = projectList.closest<HTMLElement>(".sidebar");
+      if (!sidebar) {
+        return;
+      }
+
+      // Hugescreen can extend the workspace below the physical display.
+      // Keep the sidebar's scrollable area within the visible screen height.
+      const frameHeight = Math.max(0, window.outerHeight - window.innerHeight);
+      const screenTop = (window.screen as Screen & { availTop?: number }).availTop || 0;
+      const screenOffset = Math.max(0, window.screenY - screenTop);
+      const screenHeight = window.screen.availHeight - frameHeight - screenOffset;
+      const visibleHeight = Math.min(window.innerHeight, screenHeight);
+      sidebar.style.maxHeight = `${Math.max(0, visibleHeight - sidebar.getBoundingClientRect().top)}px`;
+    }
+
     function renderProjectList() {
+      requestAnimationFrame(updateSidebarViewportHeight);
       renderSidebarUpdateNotice();
       renderPinnedProjects();
       applySidebarCollapsedState();
@@ -1170,6 +1187,7 @@ export function createProjectSidebar({
     }
 
     function bindProjectSidebarEvents() {
+      window.addEventListener("resize", () => requestAnimationFrame(updateSidebarViewportHeight));
       globalNav.addEventListener("click", closeSidebarOverlay);
 
       projectList.addEventListener("dragover", (event) => {

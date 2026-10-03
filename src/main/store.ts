@@ -1535,6 +1535,12 @@ class ProjectStore {
       this.state.projects.length
     );
     this.state.projects.push(normalized);
+    this.state.projectHugescreen[normalized.id] = {
+      widthMultiplier: 1,
+      heightMultiplier: 1,
+      panMode: "continuous",
+      enabled: false
+    };
     this.state.pluginConfig = normalizePluginConfig(this.state.pluginConfig, this.state.projects);
     this.save();
     return this.getMutationState(workspaceWindowId);

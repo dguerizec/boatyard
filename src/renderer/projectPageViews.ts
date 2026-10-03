@@ -22,7 +22,7 @@ type ProjectPageViewsOptions = {
   resetVisibleWebAppHosts: () => void;
   restoreReturnView: () => void;
   selectGlobal: () => void;
-  selectProject: (projectId: string) => void;
+  selectProject: (projectId: string) => Promise<unknown>;
   setState: (state: RendererState) => void;
   updateProject: (projectId: string, values: UnknownRecord) => Promise<RendererState>;
   updateWebAppHomeTabs: (projectId: string, tabs: UnknownRecord[]) => Promise<RendererState>;
@@ -104,14 +104,15 @@ export function createProjectPageViews({
         if (!project?.id) {
           throw new Error("Created project is missing an id.");
         }
+        setState(nextState);
         nextState = await persistProjectPluginConfig(
           project.id,
           values.pluginConfig as UnknownRecord | undefined
         );
         setState(nextState);
         const createdProject = nextState.projects.find((candidate) => candidate.id === project.id) || project;
+        await selectProject(project.id);
         await applyInitialLayout(createdProject, initialLayout);
-        selectProject(project.id);
       }
     }));
   }
