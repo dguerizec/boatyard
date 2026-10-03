@@ -10,6 +10,7 @@ class MockWebContents extends EventEmitter {
   readonly loadedUrls: string[] = [];
   readonly executedScripts: string[] = [];
   readonly emulations: unknown[] = [];
+  readonly messages: Array<{ channel: string; payload: unknown }> = [];
   disableEmulationCount = 0;
   enableDeviceEmulation(parameters: unknown) {
     this.emulations.push(parameters);
@@ -74,7 +75,7 @@ class MockWebContents extends EventEmitter {
     this.destroyed = true;
   }
 
-  send() {}
+  send(channel: string, payload: unknown) { this.messages.push({ channel, payload }); }
 
   setWindowOpenHandler(handler: (details: { disposition: string; features: string; frameName: string; url: string }) => unknown) {
     this.windowOpenHandler = handler;
@@ -236,6 +237,73 @@ function showWebApp(runtime: typeof WorkspaceWindowRuntime) {
     url: "https://twicc.example.test/project"
   });
 }
+
+test("scoped pane autofill uses the existing local toggle with URL and visibility guards", async () => {
+  const { runtime, views, rendererMessages } = createRuntime();
+  showWebApp(runtime);
+  runtime.setVisibleWebApps(["project:twicc"]);
+  const input = { enabled: true, expectedUrl: "https://twicc.example.test/project" };
+  const bounds = async () => ({ x: 0, y: 0, width: 800, height: 600 });
+  const result = await runtime.setPaneAutofill("project:twicc", input, bounds);
+  assert.deepEqual(result, { requested: true, requestedEnabled: true, fieldsFilledVerified: false });
+  assert.deepEqual(views[0].contents.messages.at(-1), {
+    channel: "webapp:autofill-enabled", payload: { enabled: true, expectedUrl: input.expectedUrl }
+  });
+  assert.deepEqual(rendererMessages.at(-1)?.payload, { key: "project:twicc", enabled: true });
+  assert.deepEqual(views[0].contents.executedScripts, []);
+  await assert.rejects(runtime.setPaneAutofill("project:twicc", { ...input, enabled: "yes" }, bounds), { code: "INVALID_REQUEST" });
+  views[0].contents.loadingMainFrame = true;
+  await assert.rejects(runtime.setPaneAutofill("project:twicc", input, bounds), { code: "PANE_NOT_READY" });
+  views[0].contents.loadingMainFrame = false;
+  await assert.rejects(runtime.setPaneAutofill("project:twicc", input, async () => {
+    await views[0].contents.loadURL("https://other.example.test/"); return bounds();
+  }), { code: "PAGE_CHANGED" });
+  await views[0].contents.loadURL(input.expectedUrl);
+  runtime.setVisibleWebApps([]);
+  await assert.rejects(runtime.setPaneAutofill("project:twicc", input, bounds), { code: "PANE_NOT_VISIBLE" });
+});
+
+test("scoped autofill survives DOM readiness without losing its URL guard and expires on navigation", async () => {
+  const { runtime, views } = createRuntime();
+  showWebApp(runtime);
+  runtime.setVisibleWebApps(["project:twicc"]);
+  const expectedUrl = "https://twicc.example.test/project";
+  await runtime.setPaneAutofill("project:twicc", { enabled: true, expectedUrl },
+    async () => ({ x: 0, y: 0, width: 800, height: 600 }));
+  const contents = views[0].contents;
+  contents.emit("dom-ready");
+  assert.deepEqual(contents.messages.at(-1), {
+    channel: "webapp:autofill-enabled", payload: { enabled: true, expectedUrl }
+  });
+  await contents.loadURL("https://other.example.test/");
+  contents.emit("did-navigate", {}, contents.getURL());
+  contents.emit("dom-ready");
+  assert.deepEqual(contents.messages.at(-1), { channel: "webapp:autofill-enabled", payload: false });
+  runtime.updateWebAppAutofill("project:twicc", true);
+  contents.emit("dom-ready");
+  assert.deepEqual(contents.messages.at(-1), { channel: "webapp:autofill-enabled", payload: true });
+});
+
+test("workspace clicks reject loading, navigated and destroyed content before resolving or dispatching input", async () => {
+  const { runtime, views } = createRuntime();
+  showWebApp(runtime);
+  runtime.setVisibleWebApps(["project:twicc"]);
+  const input = { selector: "#save", expectedUrl: "https://twicc.example.test/project" };
+  const resolveBounds = async () => { throw new Error("Rejected clicks must not resolve bounds."); };
+  const contents = views[0].contents;
+  contents.loadingMainFrame = true;
+  const fillInput = { fields: [{ selector: "#save", value: "draft" }], expectedUrl: input.expectedUrl };
+  await assert.rejects(runtime.fillWebApp("project:twicc", fillInput, resolveBounds), { code: "PANE_NOT_READY" });
+  await assert.rejects(runtime.clickWebApp("project:twicc", input, resolveBounds), { code: "PANE_NOT_READY" });
+  contents.loadingMainFrame = false;
+  await contents.loadURL("https://twicc.example.test/other");
+  await assert.rejects(runtime.fillWebApp("project:twicc", fillInput, resolveBounds), { code: "PAGE_CHANGED" });
+  await assert.rejects(runtime.clickWebApp("project:twicc", input, resolveBounds), { code: "PAGE_CHANGED" });
+  contents.markDestroyedSilently();
+  await assert.rejects(runtime.fillWebApp("project:twicc", fillInput, resolveBounds), { code: "PANE_FILL_NOT_AVAILABLE" });
+  await assert.rejects(runtime.clickWebApp("project:twicc", input, resolveBounds), { code: "PANE_CLICK_NOT_AVAILABLE" });
+  assert.deepEqual(contents.executedScripts, []);
+});
 
 test("workspace runtime keeps using stable contents and replaces destroyed web views", () => {
   const { runtime, views } = createRuntime();

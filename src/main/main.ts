@@ -333,13 +333,41 @@ function getMcpWorkspaceWindow(contextId: string, windowId: string): WorkspaceWi
   return workspaceWindow;
 }
 
-function requestMcpPane(
+async function requestMcpPane(
   contextId: string,
   windowId: string,
   operation: string,
   input: Record<string, unknown>
 ) {
   const workspaceWindow = getMcpWorkspaceWindow(contextId, windowId);
+  if (operation === "click_pane" || operation === "fill_pane" || operation === "set_pane_autofill") {
+    if (operation === "set_pane_autofill" && input.enabled === true) {
+      const status = workspaceWindow.configuration.passwordManager.getStatus();
+      if (!status.enabled || !status.encryptionAvailable) {
+        throw new McpRendererError("AUTOFILL_UNAVAILABLE", "Enable the local password manager through the existing settings flow first.");
+      }
+    }
+    const resolveTarget = async () => {
+      const result = await mcpRendererBroker.request(
+        workspaceWindow.window.webContents, operation === "click_pane" ? "get_pane_click_target" : "get_pane_fill_target", input
+      ) as Record<string, unknown>;
+      return { ...parsePaneCaptureTarget(result), key: String(result.key || "") };
+    };
+    const target = await resolveTarget();
+    const resolveBounds = async () => {
+      const current = await resolveTarget();
+      if (current.key !== target.key) {
+        throw new McpRendererError("LAYOUT_CHANGED", "The selected web content changed before the interaction.");
+      }
+      return current.bounds;
+    };
+    const result = operation === "click_pane"
+      ? await workspaceWindow.runtime.clickWebApp(target.key, input, resolveBounds)
+      : operation === "set_pane_autofill"
+        ? await workspaceWindow.runtime.setPaneAutofill(target.key, input, resolveBounds)
+        : await workspaceWindow.runtime.fillWebApp(target.key, input, resolveBounds);
+    return { projectId: target.projectId, paneId: target.paneId, revision: target.revision, ...result };
+  }
   return mcpRendererBroker.request(workspaceWindow.window.webContents, operation, input);
 }
 

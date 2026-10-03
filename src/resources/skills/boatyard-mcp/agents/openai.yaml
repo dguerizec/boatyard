@@ -1,7 +1,7 @@
 interface:
   display_name: "Boatyard MCP"
   short_description: "Control Boatyard panes and TwiCC Kanban sessions"
-  default_prompt: "Use $boatyard-mcp to inspect the active Boatyard layout and perform the requested pane update, web navigation, visual capture, or TwiCC Kanban listing, movement, or prioritization."
+  default_prompt: "Use $boatyard-mcp to inspect the active Boatyard layout and perform the requested pane update, web navigation, web click, form filling, visual capture, or TwiCC Kanban listing, movement, or prioritization."
 dependencies:
   tools:
     - type: "mcp"

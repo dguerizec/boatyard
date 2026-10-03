@@ -41,7 +41,7 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
         mimeType: "image/png"
       }),
       listWindows: () => ({ windows: [] }),
-      requestPane: async () => ({})
+      requestPane: async (contextId, windowId, operation, input) => ({ contextId, windowId, operation, input })
     },
     getSettings: () => ({ ...settings }),
     version: "test"
@@ -99,8 +99,72 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
       "capture_pane",
       "update_pane",
       "navigate_pane",
+      "click_pane",
+      "fill_pane",
+      "set_pane_autofill",
       "open_twicc_session"
     ]);
+
+    const clickTool = tools.find((tool) => tool.name === "click_pane");
+    assert.deepEqual(clickTool?.annotations, { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
+    const clickArguments = { contextId: "context-1", windowId: "window-1", projectId: "project-1", paneId: "pane-1", expectedRevision: "revision-1", expectedUrl: "https://example.test" };
+    const callTool = async (name: string, args: Record<string, unknown>) => {
+      const response = await fetch(status.endpoint, {
+        method: "POST", headers: { Accept: "application/json, text/event-stream", Authorization: `Bearer ${settings.token}`, "Content-Type": "application/json", "MCP-Protocol-Version": "2025-06-18" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 10, method: "tools/call", params: { name, arguments: args } })
+      });
+      return parseMcpResponse(await response.text());
+    };
+    for (const [target, valid] of [
+      [{ selector: "#save" }, true], [{ point: { x: 120, y: 80 } }, true],
+      [{}, false], [{ selector: "#save", point: { x: 120, y: 80 } }, false],
+      [{ point: { x: -1, y: 80 } }, false], [{ point: { x: 1.5, y: 80 } }, false],
+      [{ selector: "#save", expectedRevision: undefined }, false],
+      [{ selector: "#save", expectedUrl: undefined }, false],
+      [{ selector: "#save", source: "arbitrary JavaScript" }, false]
+    ] as const) {
+      const payload = await callTool("click_pane", { ...clickArguments, ...target });
+      const result = payload.result as Record<string, unknown> | undefined;
+      if (valid) {
+        assert.deepEqual(result?.structuredContent, { contextId: "context-1", windowId: "window-1", operation: "click_pane", input: { ...clickArguments, ...target } });
+      } else {
+        assert.ok(payload.error || result?.isError, JSON.stringify(payload));
+      }
+    }
+
+    for (const [fields, valid] of [
+      [[{ selector: "#name", value: "Example", expectedValue: "draft" }, { selector: "#check", value: true }, { selector: "#multi", value: ["a", "b"] }], true],
+      [[], false], [[{ selector: "#name", value: 42 }], false], [[{ selector: "#name", value: "x", script: "arbitrary JavaScript" }], false],
+      [[{ selector: "#name", value: "x", expectedValue: null }], false],
+      [Array.from({ length: 51 }, () => ({ selector: "#name", value: "x" })), false]
+    ] as const) {
+      const payload = await callTool("fill_pane", { ...clickArguments, fields });
+      const result = payload.result as Record<string, unknown> | undefined;
+      if (valid) assert.deepEqual(result?.structuredContent, { contextId: "context-1", windowId: "window-1", operation: "fill_pane", input: { ...clickArguments, fields } });
+      else assert.ok(payload.error || result?.isError, JSON.stringify(payload));
+    }
+    const invalidFill = await callTool("fill_pane", { ...clickArguments, expectedUrl: undefined, fields: [{ selector: "#name", value: "x" }] });
+    assert.ok(invalidFill.error || (invalidFill.result as Record<string, unknown>)?.isError);
+
+    const guardedFill = await callTool("fill_pane", { ...clickArguments, fields: [{ selector: "#ordinary", value: "text", expectedValue: "" }], rejectCredentialFields: true, receiptVersion: 2 });
+    assert.equal((guardedFill.result as Record<string, unknown>)?.isError, undefined);
+    const invalidGuard = await callTool("fill_pane", { ...clickArguments, fields: [{ selector: "#ordinary", value: "text" }], rejectCredentialFields: "true" });
+    assert.ok(invalidGuard.error || (invalidGuard.result as Record<string, unknown>)?.isError);
+
+    const oldReceipt = await callTool("fill_pane", { ...clickArguments, fields: [{ selector: "#ordinary", value: "text" }], receiptVersion: 1 });
+    assert.ok(oldReceipt.error || (oldReceipt.result as Record<string, unknown>)?.isError);
+
+    for (const [input, valid] of [
+      [{ enabled: true }, true], [{ enabled: false }, true],
+      [{ enabled: "true" }, false], [{ enabled: true, expectedUrl: undefined }, false],
+      [{ enabled: true, expectedRevision: undefined }, false],
+      [{ enabled: true, password: "fixture-secret" }, false]
+    ] as const) {
+      const payload = await callTool("set_pane_autofill", { ...clickArguments, ...input });
+      const result = payload.result as Record<string, unknown> | undefined;
+      if (valid) assert.deepEqual(result?.structuredContent, { contextId: "context-1", windowId: "window-1", operation: "set_pane_autofill", input: { ...clickArguments, ...input } });
+      else assert.ok(payload.error || result?.isError);
+    }
 
     const captureResponse = await fetch(status.endpoint, {
       method: "POST",

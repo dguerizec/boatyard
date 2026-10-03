@@ -1,4 +1,5 @@
 import { applyWebAppViewport } from "./webAppViewport.js";
+import { createWebFormFillScript, webFormFieldsSchema, type WebFormFillResult } from "./webFormFill.js";
 import type {
   ContextMenuParams,
   BrowserWindowConstructorOptions,
@@ -42,6 +43,7 @@ type WebAppFreeze = { all: boolean; keys: Set<string>; rect: Rectangle | null };
 type WorkspaceWebAppItem = WebAppItem & {
   attached: boolean;
   detachedForBackgroundLoad: boolean;
+  autofillExpectedUrl: string | null;
   webContents: ElectronWebContents;
 };
 
@@ -519,7 +521,9 @@ export class WorkspaceWindowRuntime {
     webContents.on("dom-ready", () => {
       const item = this.webAppViews.get(key);
       void applyDefaultWebAppScrollbarStyle(webContents);
-      webContents.send("webapp:autofill-enabled", item?.autofillEnabled === true);
+      webContents.send("webapp:autofill-enabled", item?.autofillExpectedUrl
+        ? { enabled: item.autofillEnabled, expectedUrl: item.autofillExpectedUrl }
+        : item?.autofillEnabled === true);
     });
     webContents.once("destroyed", () => {
       const item = this.webAppViews.get(key);
@@ -546,6 +550,7 @@ export class WorkspaceWindowRuntime {
       backgroundColor: null,
       bounds: null,
       autofillEnabled: false,
+      autofillExpectedUrl: null,
       label: "",
       projectId: ""
     };
@@ -571,6 +576,10 @@ export class WorkspaceWindowRuntime {
   }
 
   private persistWebAppUrl(key: string, url: string) {
+    const item = this.webAppViews.get(key);
+    if (item?.autofillExpectedUrl && item.autofillExpectedUrl !== url) {
+      this.updateWebAppAutofill(key, false);
+    }
     try {
       this.store.updateWorkspaceWebAppState(this.id, key, { url });
       this.sendToRenderer("webapp:url-changed", { key: String(key), url });
@@ -778,6 +787,138 @@ export class WorkspaceWindowRuntime {
     }
   }
 
+  async clickWebApp(key: string, input: UnknownRecord, resolvePaneBounds: () => Promise<Rectangle>) {
+    const fail = (code: string, message: string): never => {
+      throw Object.assign(new Error(message), { code });
+    };
+    const selector = typeof input.selector === "string" ? input.selector.trim() : "";
+    const point = input.point as { x?: unknown; y?: unknown } | undefined;
+    const expectedSize = input.expectedPaneSize as { width?: unknown; height?: unknown } | undefined;
+    if (Boolean(selector) === Boolean(point) || selector.length > 512 ||
+        (point && (!Number.isSafeInteger(point.x) || !Number.isSafeInteger(point.y) ||
+          Number(point.x) < 0 || Number(point.y) < 0)) ||
+        (input.expectedPaneSize !== undefined && (!expectedSize || !point ||
+          !Number.isSafeInteger(expectedSize.width) || !Number.isSafeInteger(expectedSize.height) ||
+          Number(expectedSize.width) < 1 || Number(expectedSize.height) < 1)) ||
+        typeof input.expectedUrl !== "string" || !input.expectedUrl) {
+      fail("INVALID_REQUEST", "Provide an expectedUrl and exactly one valid selector or non-negative integer point.");
+    }
+    const initial = this.requireInteractiveWebApp(key, input.expectedUrl, "click");
+    const assertReady = () => this.requireInteractiveWebApp(key, input.expectedUrl, "click", initial.webContents);
+    let ready = assertReady();
+    this.window.focus();
+    ready.webContents.focus();
+    try {
+      // Chromium needs a committed frame for native input hit testing after load/focus.
+      await withTimeout(ready.webContents.executeJavaScript(
+        "new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))"
+      ), 2000, "The web content did not render a frame before clicking.");
+    } catch {
+      fail("PANE_NOT_READY", "The web content could not prepare a frame for native input.");
+    }
+    ready = assertReady();
+    const zoom = ready.webContents.getZoomFactor();
+    let selectorPoint: { x: number; y: number } | undefined;
+    if (selector) {
+      // Resolve only; dispatch native input after revalidating the selected pane.
+      const result = await ready.webContents.executeJavaScript(`(() => {
+        if (location.href !== ${JSON.stringify(input.expectedUrl)}) return { code: "PAGE_CHANGED" };
+        let elements;
+        try { elements = document.querySelectorAll(${JSON.stringify(selector)}); }
+        catch { return { code: "INVALID_SELECTOR" }; }
+        if (!elements.length) return { code: "ELEMENT_NOT_FOUND" };
+        if (elements.length !== 1) return { code: "ELEMENT_AMBIGUOUS" };
+        const element = elements[0];
+        if (!element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) ||
+            element.matches(":disabled") || element.closest('[inert], [aria-disabled="true"]')) {
+          return { code: "ELEMENT_NOT_CLICKABLE" };
+        }
+        const rect = element.getBoundingClientRect();
+        const zoom = ${zoom};
+        const left = Math.max(0, rect.left), top = Math.max(0, rect.top);
+        const right = Math.min(innerWidth, ${ready.bounds.width} / zoom, rect.right);
+        const bottom = Math.min(innerHeight, ${ready.bounds.height} / zoom, rect.bottom);
+        if (right <= left || bottom <= top) return { code: "ELEMENT_NOT_CLICKABLE" };
+        const x = (left + right) / 2, y = (top + bottom) / 2;
+        const hit = document.elementFromPoint(x, y);
+        if (!hit || (hit !== element && !element.contains(hit))) return { code: "ELEMENT_OBSCURED" };
+        return { x: Math.floor(x * zoom), y: Math.floor(y * zoom) };
+      })()`);
+      if (result?.code) {
+        fail(String(result.code), "The selector must identify exactly one visible, enabled, unobstructed element in the main document.");
+      }
+      if (!result || !Number.isSafeInteger(result.x) || !Number.isSafeInteger(result.y)) {
+        fail("PANE_CLICK_FAILED", "Could not resolve the selector's click position.");
+      }
+      selectorPoint = result;
+    }
+    const paneBounds = await resolvePaneBounds();
+    if (expectedSize && (paneBounds.width !== expectedSize.width || paneBounds.height !== expectedSize.height)) {
+      fail("LAYOUT_CHANGED", "The pane size changed after the coordinate capture. Inspect and capture again.");
+    }
+    const current = assertReady();
+    const bounds = current.bounds;
+    if (selectorPoint && (current.webContents.getZoomFactor() !== zoom ||
+        bounds.width !== ready.bounds.width || bounds.height !== ready.bounds.height)) {
+      fail("LAYOUT_CHANGED", "The web view size or zoom changed while resolving the selector. Inspect it again.");
+    }
+    const x = selectorPoint?.x ?? (paneBounds.x + Number(point?.x) - bounds.x);
+    const y = selectorPoint?.y ?? (paneBounds.y + Number(point?.y) - bounds.y);
+    if (x < 0 || y < 0 || x >= bounds.width || y >= bounds.height ||
+        bounds.x + x < paneBounds.x || bounds.y + y < paneBounds.y ||
+        bounds.x + x >= paneBounds.x + paneBounds.width || bounds.y + y >= paneBounds.y + paneBounds.height) {
+      fail("POINT_OUTSIDE_WEB_CONTENT", "The click point is outside the pane's visible web content, including its toolbar and side panel.");
+    }
+    current.webContents.sendInputEvent({ type: "mouseMove", x, y });
+    current.webContents.sendInputEvent({ type: "mouseDown", x, y, button: "left", clickCount: 1 });
+    current.webContents.sendInputEvent({ type: "mouseUp", x, y, button: "left", clickCount: 1 });
+    return {
+      clicked: true,
+      captureSizeVerified: Boolean(expectedSize),
+      method: selector ? "selector" : "point",
+      point: { x: bounds.x + x - paneBounds.x, y: bounds.y + y - paneBounds.y },
+      url: input.expectedUrl
+    };
+  }
+
+  private requireInteractiveWebApp(key: string, expectedUrl: unknown, operation: "click" | "fill", expectedContents?: ElectronWebContents) {
+    const fail = (code: string, message: string): never => { throw Object.assign(new Error(message), { code }); };
+    const webApp = this.webAppViews.get(key);
+    if (!webApp || webApp.webContents.isDestroyed() || (expectedContents && webApp.webContents !== expectedContents)) {
+      return fail(operation === "click" ? "PANE_CLICK_NOT_AVAILABLE" : "PANE_FILL_NOT_AVAILABLE", "The pane's web content is no longer available.");
+    }
+    if (this.window.isDestroyed() || !webApp.bounds || !webApp.attached || !this.visibleWebAppKeys.has(key) ||
+        this.isWebAppKeyFrozen(key) || (this.webAppModalWindow && !this.webAppModalWindow.isDestroyed())) {
+      return fail("PANE_NOT_VISIBLE", "The pane's web content is hidden or covered.");
+    }
+    if (webApp.webContents.getURL() !== expectedUrl) fail("PAGE_CHANGED", "The pane URL changed. Inspect the page again.");
+    if (webApp.webContents.isLoadingMainFrame()) fail("PANE_NOT_READY", "Wait for the page to finish loading.");
+    return { webContents: webApp.webContents, bounds: webApp.bounds };
+  }
+
+  async fillWebApp(key: string, input: UnknownRecord, resolvePaneBounds: () => Promise<Rectangle>) {
+    const parsed = webFormFieldsSchema.safeParse(input.fields);
+    if (!parsed.success || typeof input.expectedUrl !== "string" || !input.expectedUrl ||
+        (input.rejectCredentialFields !== undefined && typeof input.rejectCredentialFields !== "boolean") ||
+        (input.receiptVersion !== undefined && input.receiptVersion !== 2)) {
+      throw Object.assign(new Error("Provide an expectedUrl and 1 to 50 valid form fields."), { code: "INVALID_REQUEST" });
+    }
+    const initial = this.requireInteractiveWebApp(key, input.expectedUrl, "fill");
+    await resolvePaneBounds();
+    const ready = this.requireInteractiveWebApp(key, input.expectedUrl, "fill", initial.webContents);
+    let result: WebFormFillResult;
+    try {
+      result = await ready.webContents.executeJavaScript(createWebFormFillScript(input.expectedUrl, parsed.data, input.rejectCredentialFields === true), true) as WebFormFillResult;
+    } catch {
+      // Page exceptions can contain submitted values; never propagate their message.
+      throw Object.assign(new Error("The page could not complete filling. Inspect it before retrying; some fields may have changed."), { code: "PANE_FILL_FAILED" });
+    }
+    if (result.code) {
+      throw Object.assign(new Error(`Form validation failed for ${result.results[0]?.selector || "the page"}. No fields were filled.`), { code: result.code });
+    }
+    return { ...result, credentialPolicyApplied: input.rejectCredentialFields === true, url: input.expectedUrl };
+  }
+
   async getWebAppTextContent(key: unknown, selector: unknown) {
     const webApp = this.webAppViews.get(String(key || ""));
     if (!webApp || webApp.webContents.isDestroyed()) {
@@ -800,14 +941,28 @@ export class WorkspaceWindowRuntime {
     }
   }
 
-  updateWebAppAutofill(key: unknown, enabled: unknown) {
+  async setPaneAutofill(key: string, input: UnknownRecord, resolvePaneBounds: () => Promise<Rectangle>) {
+    if (typeof input.enabled !== "boolean" || typeof input.expectedUrl !== "string" || !input.expectedUrl) {
+      throw Object.assign(new Error("Provide enabled and the inspected page URL."), { code: "INVALID_REQUEST" });
+    }
+    const initial = this.requireInteractiveWebApp(key, input.expectedUrl, "fill");
+    await resolvePaneBounds();
+    this.requireInteractiveWebApp(key, input.expectedUrl, "fill", initial.webContents);
+    this.updateWebAppAutofill(key, input.enabled, input.expectedUrl);
+    return { requested: true, requestedEnabled: input.enabled, fieldsFilledVerified: false };
+  }
+
+  updateWebAppAutofill(key: unknown, enabled: unknown, expectedUrl?: string) {
     const webApp = this.webAppViews.get(String(key || ""));
     if (!webApp || webApp.webContents.isDestroyed()) {
       return false;
     }
 
     webApp.autofillEnabled = enabled === true;
-    webApp.webContents.send("webapp:autofill-enabled", webApp.autofillEnabled);
+    webApp.autofillExpectedUrl = expectedUrl && webApp.autofillEnabled ? expectedUrl : null;
+    webApp.webContents.send("webapp:autofill-enabled", expectedUrl
+      ? { enabled: webApp.autofillEnabled, expectedUrl }
+      : webApp.autofillEnabled);
     this.sendToRenderer("webapp:autofill-changed", { key: String(key), enabled: webApp.autofillEnabled });
     return webApp.autofillEnabled;
   }

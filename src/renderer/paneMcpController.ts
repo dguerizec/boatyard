@@ -6,6 +6,8 @@ export type PaneMcpErrorCode =
   | "INVALID_REQUEST"
   | "LAYOUT_CHANGED"
   | "PANE_NAVIGATION_NOT_AVAILABLE"
+  | "PANE_CLICK_NOT_AVAILABLE"
+  | "PANE_FILL_NOT_AVAILABLE"
   | "PANE_NOT_FOUND"
   | "PANE_NOT_VISIBLE"
   | "PANE_TYPE_NOT_AVAILABLE"
@@ -196,6 +198,7 @@ export function createPaneMcpController({
       choiceId: selectedWebApp.id || null,
       paneTypeId: getPaneTypeId(selectedWebApp),
       label: getChoiceLabel(selectedWebApp),
+      interaction: { available: Boolean(key && homeUrl) },
       viewport: getMobileDevViewport(selectedWebApp),
       navigation: {
         available: Boolean(key && homeUrl),
@@ -264,6 +267,8 @@ export function createPaneMcpController({
       selectable: group.webApp.menuOnly !== true,
       selected: group.webApp.id === selectedChoiceId,
       capabilities: {
+        fill: Boolean(group.webApp.key && group.webApp.url),
+        click: Boolean(group.webApp.key && group.webApp.url),
         navigation: Boolean(group.webApp.key && group.webApp.url),
         viewport: group.webApp.mobileDev === true
       },
@@ -274,6 +279,8 @@ export function createPaneMcpController({
         selectable: child.webApp.menuOnly !== true,
         selected: child.webApp.id === selectedChoiceId,
         capabilities: {
+          fill: Boolean(child.webApp.key && child.webApp.url),
+          click: Boolean(child.webApp.key && child.webApp.url),
           navigation: Boolean(child.webApp.key && child.webApp.url),
           viewport: child.webApp.mobileDev === true
         }
@@ -314,6 +321,26 @@ export function createPaneMcpController({
         `The active layout changed (expected ${expectedRevision}, current ${currentRevision}).`
       );
     }
+  }
+
+  function getPaneInteractionTarget(input: PaneMcpInput, unavailableCode: "PANE_CLICK_NOT_AVAILABLE" | "PANE_FILL_NOT_AVAILABLE") {
+    requiredString(input, "expectedRevision");
+    requiredString(input, "expectedUrl");
+    const target = getPaneCaptureTarget(input);
+    const { selectedWebApp } = getPaneContext(input);
+    const key = String(selectedWebApp.key || "");
+    if (!key || !selectedWebApp.url) {
+      throw new PaneMcpError(unavailableCode, "The selected pane does not contain web content.");
+    }
+    return { ...target, key };
+  }
+
+  function getPaneClickTarget(input: PaneMcpInput) {
+    return getPaneInteractionTarget(input, "PANE_CLICK_NOT_AVAILABLE");
+  }
+
+  function getPaneFillTarget(input: PaneMcpInput) {
+    return getPaneInteractionTarget(input, "PANE_FILL_NOT_AVAILABLE");
   }
 
   function resolveSelectableWebApp(webApps: WebAppDefinition[], paneId: string, choiceId: string) {
@@ -436,6 +463,12 @@ export function createPaneMcpController({
     if (operation === "get_pane_capture_bounds") {
       return getPaneCaptureTarget(input);
     }
+    if (operation === "get_pane_click_target") {
+      return getPaneClickTarget(input);
+    }
+    if (operation === "get_pane_fill_target") {
+      return getPaneFillTarget(input);
+    }
     if (operation === "update_pane") {
       return updatePane(input);
     }
@@ -456,6 +489,8 @@ export function createPaneMcpController({
   return Object.freeze({
     getPaneLayout,
     getPaneCaptureTarget,
+    getPaneClickTarget,
+    getPaneFillTarget,
     handle,
     listPaneTypes,
     navigatePane,

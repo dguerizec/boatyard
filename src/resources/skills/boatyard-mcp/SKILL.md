@@ -1,11 +1,11 @@
 ---
 name: boatyard-mcp
-description: List, move and prioritize TwiCC Kanban sessions; switch the active project, inspect Boatyard windows and pane layouts, enumerate every pane dropdown entry including dynamic subtypes, update pane content and mobile viewport settings, navigate web panes, and capture visible pane screenshots through the authenticated local Boatyard MCP server. Use when a user asks to manage TwiCC Kanban sessions, switch projects, or inspect, explain, change, or visually inspect panes in a running Boatyard instance. Do not use for splitting or closing panes because those operations are not exposed yet.
+description: List, move and prioritize TwiCC Kanban sessions; switch projects, inspect and update Boatyard panes and mobile viewports, navigate web panes, capture screenshots, click web content, and fill forms through the authenticated local Boatyard MCP server. Use for requested pane inspection, navigation, clicking, form filling, or TwiCC Kanban management. Do not use for splitting or closing panes because those operations are not exposed yet.
 ---
 
 # Boatyard MCP
 
-Use the local Boatyard MCP server to inspect the active UI layout, update exact pane entries and mobile viewports, navigate web panes, and capture their visible pixels. Treat the MCP results as the source of truth; pane IDs, window IDs, available entries, capabilities, and layout revisions are runtime values.
+Use the local Boatyard MCP server to inspect the active UI layout, update exact pane entries and mobile viewports, navigate web panes, capture their visible pixels, click their web content, and fill form fields. Treat the MCP results as the source of truth; pane IDs, window IDs, available entries, capabilities, and layout revisions are runtime values.
 
 ## Connect the client
 
@@ -62,7 +62,7 @@ Unknown projects are rejected before navigation with `PROJECT_NOT_FOUND`.
 4. Use the returned pane IDs, selected entries, and `revision` exactly as reported.
 5. Call `list_pane_types` with that same context, window, and project plus the target `paneId` before interpreting or changing that pane.
 
-For a read-only request, stop after inspection and report the relevant window, layout, pane, selected entry, and requested capability. Do not call `update_pane` or `navigate_pane` merely to verify that mutation works.
+For a read-only request, stop after inspection and report the relevant window, layout, pane, selected entry, and requested capability. Do not call `update_pane`, `navigate_pane`, `click_pane`, or `fill_pane` merely to verify that mutation works.
 
 ## Update a pane
 
@@ -109,9 +109,106 @@ Omit `rect` to capture the full visible pane. To capture a detail, pass `rect` a
 
 Only the pane displayed in the selected window can be captured. If Boatyard reports `PANE_NOT_VISIBLE`, refresh `list_windows` and `get_pane_layout`; target the active project or ask the user to expose the pane rather than capturing a different one. If it reports `LAYOUT_CHANGED`, refresh the layout before retrying. Do not claim to have seen content unless image content was actually returned.
 
+## Click web content
+
+The selected pane's `interaction.available` and each choice's `capabilities.click`
+indicate web clicking support. Inspect the window, layout, and choices first.
+Call `click_pane` with the same context, window, project, and pane IDs, the latest
+`revision` as `expectedRevision`, and `navigation.currentUrl` as `expectedUrl`.
+Provide exactly one target:
+
+- `selector`: a CSS selector matching exactly one visible, enabled, unobstructed
+  element in the main document. Selectors do not traverse iframes or shadow roots.
+- `point: { x, y }`: non-negative integer CSS pixels relative to the visible
+  pane's top-left corner, matching a full `capture_pane` image. For cropped
+  captures, add the returned `rect.x` and `rect.y`. Coordinates can target
+  content inside iframes or shadow roots.
+
+Both modes send one native left click, including pointer and mouse events.
+Coordinates must fall inside the visible native web view; the toolbar and side
+panel are excluded. The window and web content receive focus. Hidden, covered,
+frozen, or loading web content is rejected. Selectors do not scroll the page.
+
+Capture immediately before choosing coordinates. For point input, pass the full
+capture dimensions as optional `expectedPaneSize: { width, height }`; native
+input is rejected if the pane size changed. This does not freeze page pixels.
+Only click for a requested action; respect its effects, including submissions and destructive buttons.
+On `LAYOUT_CHANGED`, `PAGE_CHANGED`, or `PANE_NOT_VISIBLE`, inspect again and
+reassess the target. On `ELEMENT_NOT_FOUND`, `ELEMENT_AMBIGUOUS`,
+`ELEMENT_NOT_CLICKABLE`, `ELEMENT_OBSCURED`, or `POINT_OUTSIDE_WEB_CONTENT`,
+check the target rather than guessing a replacement. `PANE_NOT_READY` means
+the page must finish loading. Never blindly retry: `clicked: true` acknowledges
+input dispatch, not application success. Capture or use an app-specific read
+afterward to verify the effect.
+
+## Fill form fields
+
+Use `fill_pane` for requested form filling. Inspect the window, layout, and
+choices first; the selected pane exposes `interaction.available` and its choice
+exposes `capabilities.fill`. Pass the same context, window, project, and pane IDs,
+the latest revision as `expectedRevision`, and `navigation.currentUrl` as
+`expectedUrl`. Supply 1 to 50 entries under `fields` with a unique CSS `selector`
+and `value`. Optional `expectedValue` protects a draft from being overwritten.
+
+Use strings for text/password/number/date inputs, textarea, single select option
+values, and plain `contenteditable` text; booleans for checkboxes; `true` for
+radios; and string arrays for multiple selects. Empty strings and empty arrays
+clear supported fields. Selectors address the main document only. Fields must
+be rendered, enabled, writable, and supported. File/hidden inputs, buttons,
+iframes, shadow roots, and custom editor APIs are not supported by this tool.
+It neither scrolls nor focuses the pane.
+
+The entire batch is validated before writing. Later application handlers may
+change fields or navigate; filling stops at the first failure and returns
+partial results plus `NOT_ATTEMPTED` for remaining fields. Inspect
+`allSucceeded`, `filledCount`, and each result before continuing. On
+`FIELD_CHANGED`, preserve the newer draft and reassess the requested value.
+Never blindly retry partial fills. Values are not echoed in results.
+
+Version 2 receipts keep `attempted` and `applied` facts separately from final
+`filled` observation. `applied:true` confirms the requested value immediately
+after its setter/handlers; `applied:null` is uncertain. An acknowledged write can
+therefore have `filled:false` with `PAGE_CHANGED` after a search updates the URL.
+Counts are `attemptedCount`/`appliedCount`; later fields remain `NOT_ATTEMPTED`.
+Gateway callers can request `receiptVersion:2`. Never replay on page change or
+infer that zero final-observed fields means no values were applied.
+
+Gateway callers should set `rejectCredentialFields: true` and require
+`expectedValue` for every field. The native guard rejects password and marked
+username/OTP fields, plus fields in password-containing forms, before reading
+values or writing. It rechecks during execution. Acknowledgements include
+`credentialPolicyApplied`; use saved local autofill for credentials. Unmarked
+login fields and custom widgets are not universally identifiable.
+
+Native setters and programmatic field events notify the application, including
+checkbox/radio activation. Boatyard does not submit the form or press Enter;
+page handlers can still autosave. Verify application state afterward. A separate
+`click_pane` on a submit control requires authorization for that action.
+
+## Autofill saved local credentials
+
+Use `set_pane_autofill` to enable or disable the existing local credential
+autofill in an inspected visible web pane. Pass the exact context, window,
+project and pane IDs, latest `expectedRevision`, `navigation.currentUrl` as
+`expectedUrl`, and boolean `enabled`. This is a toolbar action, not a web
+coordinate click. Enabling requires the local password manager already enabled
+with encryption available; do not change settings or permissions as a workaround.
+
+Never supply, request, print or inspect login/password values through MCP. Saved
+credentials stay in Boatyard's local main/preload path. Enter missing credentials
+locally using the existing credential flow. MCP autofill preserves field drafts,
+binds the request to the inspected URL, and disarms on navigation to another URL.
+It may wait for a login form or saved credential. Disabling does not clear fields.
+
+A receipt with `requested:true` and `fieldsFilledVerified:false` proves only
+arming/disarming. It does not prove filling or successful authentication. The
+command does not submit or press Enter, but page field handlers may have effects.
+Do not retry an uncertain request automatically or capture sensitive fields to
+prove success.
+
 ## Respect the current boundary
 
-The current MCP can list windows, switch projects, inspect layouts, enumerate choices, update an existing pane's entry and mobile viewport, navigate its web content, and capture a visible pane. It cannot create a split, close a pane, start a process, or inspect the rendered page as structured DOM/content. State that limitation when one of those operations is required; do not simulate success through unrelated UI or filesystem actions.
+The current MCP can list windows, switch projects, inspect layouts, enumerate choices, update an existing pane's entry and mobile viewport, navigate and click its web content, fill form fields, toggle saved local credential autofill, and capture a visible pane. It cannot create a split, close a pane, start a process, or inspect the rendered page as structured DOM/content. State that limitation when one of those operations is required; do not simulate success through unrelated UI or filesystem actions.
 
 
 ## Manage TwiCC Kanban sessions

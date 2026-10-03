@@ -86,6 +86,8 @@ test("pane MCP controller reports exact choices and updates content and viewport
     ["pier", "pier:feature", "pier:review", "terminal"]
   );
   assert.deepEqual(listed.choices[0].children[0].capabilities, {
+    fill: true,
+    click: true,
     navigation: true,
     viewport: true
   });
@@ -227,7 +229,7 @@ test("pane MCP controller navigates the selected web pane through the shared run
 test("pane MCP controller exposes capture bounds only for a visible current pane", () => {
   const project: RendererProject = { id: "project-1" };
   const layout: PaneLayoutNode = { type: "pane", id: "pane-1", selectedWebAppId: "preview" };
-  const choices: WebAppDefinition[] = [{ id: "preview", label: "Preview" }];
+  const choices: WebAppDefinition[] = [{ id: "preview", label: "Preview", key: "pane-1:preview", url: "https://example.test" }];
   let visible = true;
   const controller = createPaneMcpController({
     assignWebAppToPane: () => undefined,
@@ -249,6 +251,21 @@ test("pane MCP controller exposes capture bounds only for a visible current pane
   });
   const before = controller.getPaneLayout({ projectId: "project-1" });
 
+  const clickInput = { projectId: "project-1", paneId: "pane-1", expectedRevision: before.revision, expectedUrl: choices[0].url };
+  assert.deepEqual(controller.getPaneClickTarget(clickInput), {
+    projectId: "project-1", paneId: "pane-1", revision: before.revision,
+    bounds: { x: 24, y: 72, width: 480, height: 640 }, key: "pane-1:preview"
+  });
+  assert.deepEqual(controller.getPaneFillTarget(clickInput), controller.getPaneClickTarget(clickInput));
+  assert.throws(() => controller.getPaneFillTarget({ ...clickInput, expectedRevision: "old" }), { code: "LAYOUT_CHANGED" });
+  assert.throws(() => controller.getPaneClickTarget({ ...clickInput, expectedRevision: "old" }), { code: "LAYOUT_CHANGED" });
+  assert.throws(() => controller.getPaneClickTarget({ ...clickInput, expectedRevision: undefined }), { code: "INVALID_REQUEST" });
+  assert.throws(() => controller.getPaneClickTarget({ ...clickInput, expectedUrl: undefined }), { code: "INVALID_REQUEST" });
+  choices[0].key = "";
+  assert.throws(() => controller.getPaneFillTarget(clickInput), { code: "PANE_FILL_NOT_AVAILABLE" });
+  assert.throws(() => controller.getPaneClickTarget(clickInput), { code: "PANE_CLICK_NOT_AVAILABLE" });
+  choices[0].key = "pane-1:preview";
+
   assert.deepEqual(controller.getPaneCaptureTarget({
     projectId: "project-1",
     paneId: "pane-1",
@@ -261,6 +278,8 @@ test("pane MCP controller exposes capture bounds only for a visible current pane
   });
 
   visible = false;
+  assert.throws(() => controller.getPaneFillTarget(clickInput), { code: "PANE_NOT_VISIBLE" });
+  assert.throws(() => controller.getPaneClickTarget(clickInput), { code: "PANE_NOT_VISIBLE" });
   assert.throws(() => controller.getPaneCaptureTarget({
     projectId: "project-1",
     paneId: "pane-1",

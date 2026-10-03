@@ -21,5 +21,7 @@ test("the packaged app build contains the complete Boatyard MCP skill", () => {
   assert.match(buildSkill, /capture_pane/);
   assert.match(buildSkill, /update_pane/);
   assert.match(buildSkill, /navigate_pane/);
+  assert.match(buildSkill, /click_pane/);
+  assert.match(buildSkill, /fill_pane/);
   assert.match(buildMetadata, /value: "boatyard"/);
 });

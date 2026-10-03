@@ -96,7 +96,7 @@ export type TerminalServiceInstance = {
 
 export type PasswordManagerInstance = {
   getCredential(url: string): unknown;
-  getStatus(): { encryptionAvailable?: boolean };
+  getStatus(): { enabled?: boolean; encryptionAvailable?: boolean };
   saveCredential(credential: unknown): unknown;
 };
 

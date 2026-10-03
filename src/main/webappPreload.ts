@@ -1,4 +1,6 @@
 import { installHugescreenSelectGuard } from "./hugescreenSelectGuard.js";
+import { setWebFormValue } from "../shared/webFormValues.js";
+import { fillSavedCredential } from "./webCredentialAutofill.js";
 "use strict";
 
 import type { IpcRendererEvent } from "electron";
@@ -10,6 +12,8 @@ installHugescreenSelectGuard(document, paused => ipcRenderer.send("hugescreen:se
 const PASSWORD_SELECTOR = 'input[type="password"]';
 const USERNAME_TYPES = new Set(["email", "text", "tel", "url"]);
 let autofillEnabled = false;
+let autofillExpectedUrl: string | null = null;
+let autofillGeneration = 0;
 
 type WebAppCredential = { url: string; username: string; password: string };
 type PartialWebAppCredential = Partial<WebAppCredential>;
@@ -79,15 +83,7 @@ function setInputValue(input: HTMLInputElement | null, value: unknown): void {
     return;
   }
 
-  const valueSetter = Object.getOwnPropertyDescriptor(input.constructor.prototype, "value")?.set;
-  if (valueSetter) {
-    valueSetter.call(input, value);
-  } else {
-    input.value = String(value);
-  }
-
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
+  setWebFormValue(input, String(value));
 }
 
 async function autofillCredential(): Promise<void> {
@@ -95,32 +91,20 @@ async function autofillCredential(): Promise<void> {
     return;
   }
 
-  const loginFields = findLoginFields();
-  if (!loginFields.usernameInput && !loginFields.passwordInput) {
-    return;
-  }
-
-  const credential = toPartialWebAppCredential(await ipcRenderer.invoke("password-manager:get-credential", window.location.href));
-  if (!credential.username && !credential.password) {
-    return;
-  }
-
-  let didAutofill = false;
-  if (loginFields.usernameInput && loginFields.usernameInput.dataset.boatyardAutofilled !== "true") {
-    setInputValue(loginFields.usernameInput, credential.username);
-    loginFields.usernameInput.dataset.boatyardAutofilled = "true";
-    setPendingUsername(credential.username);
-    didAutofill = true;
-  }
-
-  if (loginFields.passwordInput && loginFields.passwordInput.dataset.boatyardAutofilled !== "true") {
-    setInputValue(loginFields.passwordInput, credential.password);
-    loginFields.passwordInput.dataset.boatyardAutofilled = "true";
-    didAutofill = true;
-  }
-
-  if (didAutofill) {
+  const generation = autofillGeneration;
+  const outcome = await fillSavedCredential<HTMLInputElement>({
+    expectedUrl: autofillExpectedUrl,
+    getUrl: () => window.location.href,
+    getFields: findLoginFields,
+    getCredential: async () => toPartialWebAppCredential(await ipcRenderer.invoke("password-manager:get-credential", window.location.href)),
+    setValue: setInputValue,
+    onUsername: setPendingUsername,
+    isActive: () => autofillEnabled && generation === autofillGeneration
+  });
+  if (generation !== autofillGeneration) return;
+  if (outcome !== "waiting") {
     autofillEnabled = false;
+    autofillExpectedUrl = null;
     ipcRenderer.invoke("webapp:autofill-consumed").catch(() => {});
   }
 }
@@ -270,7 +254,10 @@ function scheduleAutofill(): void {
 }
 
 ipcRenderer.on("webapp:autofill-enabled", (_event: IpcRendererEvent, enabled: unknown) => {
-  autofillEnabled = enabled === true;
+  autofillGeneration += 1;
+  const scoped = isRecord(enabled) && typeof enabled.expectedUrl === "string" && enabled.expectedUrl;
+  autofillEnabled = enabled === true || Boolean(scoped && enabled.enabled === true);
+  autofillExpectedUrl = scoped ? String(enabled.expectedUrl) : null;
   if (autofillEnabled) {
     scheduleAutofill();
   }

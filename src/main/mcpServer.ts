@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 import type { PluginToolDefinition } from "../shared/pluginTypes.js";
 import type { McpSettings } from "./mcpSettingsStore.js";
+import { webFormFieldsSchema } from "./webFormFill.js";
 
 type McpPaneApi = {
   listPluginTools?(): PluginToolDefinition[];
@@ -260,6 +261,49 @@ export class McpServerService {
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
     }, async (input) => this.invokePane("navigate_pane", input));
+    protocolServer.registerTool("click_pane", {
+      title: "Click in a web pane",
+      description: "Send one native left click to a visible web pane. Provide either a unique CSS selector in the main document or a point relative to the pane's top-left corner, using capture_pane CSS-pixel coordinates. Requires the inspected layout revision and page URL. Returns input dispatch acknowledgement; inspect the page afterward to verify the effect.",
+      inputSchema: z.object({
+        ...targetSchema,
+        paneId: z.string().min(1),
+        expectedRevision: z.string().min(1),
+        expectedUrl: z.string().min(1),
+        selector: z.string().trim().min(1).max(512).optional(),
+        point: z.object({ x: z.number().int().min(0), y: z.number().int().min(0) }).strict().optional(),
+        expectedPaneSize: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).strict().optional()
+          .describe("For coordinate clicks, require the pane's current size to match the preceding full capture.")
+      }).strict().refine((input) => Boolean(input.selector) !== Boolean(input.point), {
+        message: "Provide exactly one of selector or point"
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }
+    }, async (input) => this.invokePane("click_pane", input));
+    protocolServer.registerTool("fill_pane", {
+      title: "Fill web pane fields",
+      description: "Fill explicit CSS-selected form fields in a visible web pane without submitting the form. Values are strings for text/single selects, booleans for checkboxes/radios (radio requires true), or string arrays for multiple selects. Validates the whole batch first. Optional expectedValue protects an existing draft. Requires the inspected layout revision and URL. Version 2 receipts distinguish attempted/applied values from final filled observation; PAGE_CHANGED preserves applied input but stops later fields. Verify the page afterward and never replay automatically. Values are not echoed.",
+      inputSchema: z.object({
+        ...targetSchema,
+        paneId: z.string().min(1),
+        expectedRevision: z.string().min(1),
+        expectedUrl: z.string().min(1),
+        fields: webFormFieldsSchema,
+        receiptVersion: z.literal(2).optional().describe("Require version 2 receipts separating attempted/applied input from final field observation and page changes."),
+        rejectCredentialFields: z.boolean().optional().describe("When true, reject password, credential-autocomplete and password-form fields before reading values or writing. Use local saved-credential autofill instead.")
+      }).strict(),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }
+    }, async (input) => this.invokePane("fill_pane", input));
+    protocolServer.registerTool("set_pane_autofill", {
+      title: "Set local credential autofill for a pane",
+      description: "Enable or disable the existing local credential autofill for one inspected visible web pane. Saved credentials stay local; no username or password is returned. An enabled request is bound to the exact inspected URL and preserves existing field drafts. It may wait for a login form; requested does not prove fields filled or authentication. Does not enable the password manager, save credentials or submit a form.",
+      inputSchema: z.object({
+        ...targetSchema,
+        paneId: z.string().min(1),
+        expectedRevision: z.string().min(1),
+        expectedUrl: z.string().min(1),
+        enabled: z.boolean()
+      }).strict(),
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true }
+    }, async (input) => this.invokePane("set_pane_autofill", input));
     protocolServer.registerTool("open_twicc_session", {
       title: "Open TwiCC session in Boatyard",
       description: "Resolve a session ID and open its conversation in an existing TwiCC pane. First use list_windows, get_pane_layout and list_pane_types; select the TwiCC choice with update_pane if needed. Returns metadata and navigation acknowledgement, not proof of page rendering. Pending user actions are completed in TwiCC.",
