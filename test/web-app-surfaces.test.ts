@@ -90,6 +90,7 @@ test("web app surfaces pass project ownership to the main process", async () => 
         autofillEnabled: false,
         backgroundColor: undefined,
         bounds: { height: 196, width: 296, x: 12, y: 42 },
+        borderRadius: 0,
         key: "project-alpha:dashboard",
         label: "Alpha dashboard",
         projectId: "alpha",
@@ -141,9 +142,9 @@ test("mobile surfaces send requested dimensions separately from visible bounds",
   const calls: Array<{ action: string; payload?: unknown }> = [];
   const host = {
     matches: () => true,
-    closest: () => ({
+    closest: (selector: string) => selector === ".webapp-host" ? ({
       getBoundingClientRect: () => ({ x: 0, y: 0, right: 300, bottom: 400 })
-    }),
+    }) : null,
     getBoundingClientRect: () => ({
       x: 0, y: 0, right: 390, bottom: 718, width: 390, height: 718
     })

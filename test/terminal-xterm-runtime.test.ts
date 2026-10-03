@@ -11,10 +11,10 @@ test("terminal themes provide contrasting light and dark palettes", () => {
   const darkTheme = getTerminalTheme("dark");
   const lightTheme = getTerminalTheme("light");
 
-  assert.equal(darkTheme.background, "#080c11");
-  assert.equal(darkTheme.foreground, "#d7dde5");
+  assert.equal(darkTheme.background, "#101521");
+  assert.equal(darkTheme.foreground, "#e7eaf4");
   assert.equal(lightTheme.background, "#ffffff");
-  assert.equal(lightTheme.foreground, "#18201c");
+  assert.equal(lightTheme.foreground, "#252a40");
   assert.notEqual(lightTheme.black, lightTheme.background);
   assert.notEqual(lightTheme.white, lightTheme.background);
 });
@@ -31,7 +31,7 @@ test("applying a terminal theme replaces the xterm theme object", () => {
 
   assert.notEqual(term.options.theme, originalTheme);
   assert.equal(term.options.theme.background, "#ffffff");
-  assert.equal(term.options.theme.cursor, "#147a52");
+  assert.equal(term.options.theme.cursor, "#5364b7");
 });
 
 test("terminal viewport chrome follows the application theme", () => {

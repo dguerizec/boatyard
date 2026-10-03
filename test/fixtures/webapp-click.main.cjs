@@ -34,7 +34,7 @@ module.exports = async win => {
     const url = `http://127.0.0.1:${server.address().port}/`;
     const bounds = { x:80, y:100, width:400, height:350 };
     const paneBounds = { x:20, y:50, width:500, height:450 };
-    runtime.showWebApp({ key:'target', url, bounds });
+    runtime.showWebApp({ key:'target', url, bounds, borderRadius:10 });
     runtime.showWebApp({ key:'other', url, bounds:{ x:520, y:100, width:200, height:350 } });
     runtime.setVisibleWebApps(['target', 'other']);
     const contents = views[0].webContents;

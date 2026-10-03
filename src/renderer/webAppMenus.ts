@@ -1146,8 +1146,11 @@ export function createWebAppMenus({
       menu.className = "webapp-tab-menu";
       menu.setAttribute("role", "menu");
 
-      menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+      const top = Math.round(rect.bottom + 6);
+      const paneBottom = button.closest(".webapp-pane")?.getBoundingClientRect().bottom ?? window.innerHeight;
+      menu.style.top = `${top}px`;
       menu.style.left = `${Math.round(Math.min(rect.left, window.innerWidth - 220))}px`;
+      menu.style.maxHeight = `${Math.max(0, Math.min(paneBottom, window.innerHeight) - top - 12)}px`;
 
       function createWebAppTabMenuItem(
         webApp: MenuWebApp,

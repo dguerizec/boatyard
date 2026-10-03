@@ -11,9 +11,9 @@ type AppThemeManagerOptions = {
   nativeTheme: Pick<NativeTheme, "themeSource">;
 };
 
-const DARK_APP_BACKGROUND_COLOR = "#101418";
-const LIGHT_APP_BACKGROUND_COLOR = "#f4f7f5";
-const DARK_WEBAPP_BACKGROUND_COLOR = "#0b0f14";
+const DARK_APP_BACKGROUND_COLOR = "#111520";
+const LIGHT_APP_BACKGROUND_COLOR = "#f3f4fa";
+const DARK_WEBAPP_BACKGROUND_COLOR = "#101521";
 const LIGHT_WEBAPP_BACKGROUND_COLOR = "#ffffff";
 
 export function normalizeAppTheme(value: unknown): AppTheme {

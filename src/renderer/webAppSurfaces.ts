@@ -1,3 +1,5 @@
+const WEBAPP_VIEW_INSET = 2;
+
 type WebAppBounds = {
   x: number;
   y: number;
@@ -122,13 +124,11 @@ export function createWebAppSurfaces({
       if (right <= x || bottom <= y) {
         return null;
       }
-      const wcvInset = 2;
-
       return {
-        x: x + wcvInset,
-        y: y + wcvInset,
-        width: Math.max(1, right - x - (wcvInset * 2)),
-        height: Math.max(1, bottom - y - (wcvInset * 2))
+        x: x + WEBAPP_VIEW_INSET,
+        y: y + WEBAPP_VIEW_INSET,
+        width: Math.max(1, right - x - (WEBAPP_VIEW_INSET * 2)),
+        height: Math.max(1, bottom - y - (WEBAPP_VIEW_INSET * 2))
       };
     }
 
@@ -210,11 +210,17 @@ export function createWebAppSurfaces({
         const virtualRect = host?.matches(".webapp-mobile-dev-viewport")
           ? host.getBoundingClientRect()
           : null;
+        const pane = host?.closest(".webapp-pane");
+        // Derive native corners from the frame rather than duplicating the theme token.
+        const borderRadius = pane
+          ? Math.max(0, (parseFloat(getComputedStyle(pane).borderBottomLeftRadius) || 0) - WEBAPP_VIEW_INSET)
+          : 0;
         visibleKeys.push(webApp.key);
         showCalls.push(invokeWebApp("showWebApp", {
           key: webApp.key,
           url: webApp.url,
           bounds,
+          borderRadius,
           ...(virtualRect ? {
             viewportSize: {
               width: Math.round(virtualRect.width),
@@ -276,6 +282,7 @@ export function createWebAppSurfaces({
         image.style.top = `${capture.bounds.y}px`;
         image.style.width = `${capture.bounds.width}px`;
         image.style.height = `${capture.bounds.height}px`;
+        image.style.borderRadius = `${capture.borderRadius || 0}px`;
         layer.append(image);
       }
 

@@ -41,6 +41,7 @@ const WEBAPP_POPUP_RESERVATION_TIMEOUT_MS = 100;
 type WebAppFreeze = { all: boolean; keys: Set<string>; rect: Rectangle | null };
 
 type WorkspaceWebAppItem = WebAppItem & {
+  borderRadius: number;
   attached: boolean;
   detachedForBackgroundLoad: boolean;
   autofillExpectedUrl: string | null;
@@ -544,6 +545,7 @@ export class WorkspaceWindowRuntime {
       view,
       webContents,
       attached: true,
+      borderRadius: 0,
       detachedForBackgroundLoad: false,
       url: null,
       configuredUrl: null,
@@ -588,7 +590,7 @@ export class WorkspaceWindowRuntime {
     }
   }
 
-  showWebApp({ key, url, bounds, viewportSize, autofillEnabled, backgroundColor, label, projectId, restoreUrl = true }: ShowWebAppPayload) {
+  showWebApp({ key, url, bounds, borderRadius, viewportSize, autofillEnabled, backgroundColor, label, projectId, restoreUrl = true }: ShowWebAppPayload) {
     if (!key) {
       throw new Error("Webapp key is required.");
     }
@@ -622,6 +624,8 @@ export class WorkspaceWindowRuntime {
     webApp.view.setBackgroundColor(getWebAppBackgroundColor(webApp.backgroundColor, this.theme));
     webApp.bounds = normalizeWebAppBounds(bounds);
     webApp.view.setBounds(webApp.bounds);
+    webApp.borderRadius = Math.max(0, Math.round(finiteNumber(borderRadius, 0)));
+    webApp.view.setBorderRadius(webApp.borderRadius);
     applyWebAppViewport(webApp.webContents, viewportSize);
     webApp.view.setVisible(this.visibleWebAppKeys.has(String(key)) && !this.isWebAppKeyFrozen(String(key)));
     this.activeWebAppKey = String(key);
@@ -1023,7 +1027,7 @@ export class WorkspaceWindowRuntime {
       if (image.isEmpty()) {
         return null;
       }
-      return { key, bounds: item.view.getBounds(), dataUrl: image.toDataURL() };
+      return { key, bounds: item.view.getBounds(), borderRadius: item.borderRadius, dataUrl: image.toDataURL() };
     } catch (error) {
       console.warn(`Could not capture webapp ${key}: ${(error as Error).message}`);
       return null;

@@ -37,7 +37,7 @@
 .file-editor button[aria-pressed="true"] {
   border-color: rgba(var(--accent-rgb), .65);
   background: rgba(var(--accent-rgb), .14);
-  color: var(--success-text);
+  color: var(--accent);
 }
 .file-editor button:disabled { opacity: .45; cursor: default; }
 .file-editor :focus-visible { outline: 2px solid var(--accent, #6ba6ff); outline-offset: 1px; }
@@ -48,9 +48,12 @@
 .file-editor-compare[hidden] { display: none; }
 .file-editor-compare summary { cursor: pointer; }
 .file-editor-compare pre { margin: 8px; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
-.file-editor .cm-editor { font-size: 13px; }
-.file-editor { --editor-selection-background: #315c85; }
-:root[data-theme="light"] .file-editor { --editor-selection-background: #add6ff; }
+.file-editor .cm-editor { font-size: 13px; color: var(--text); background: var(--panel); }
+.file-editor .cm-gutters { background: var(--panel-soft); color: var(--muted); border-right-color: var(--line); }
+.file-editor .cm-activeLine, .file-editor .cm-activeLineGutter { background: rgba(var(--accent-rgb), .06); }
+.file-editor .cm-cursor, .file-editor .cm-dropCursor { border-left-color: var(--accent); }
+.file-editor { --editor-selection-background: #3e4564; }
+:root[data-theme="light"] .file-editor { --editor-selection-background: #d2d7ec; }
 .file-editor .cm-editor .cm-selectionBackground,
 .file-editor .cm-editor.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground {
   background-color: var(--editor-selection-background);
@@ -123,7 +126,7 @@
 .file-browser-entry-icon { flex: 0 0 14px; color: var(--muted); text-align: center; }
 .file-browser-entry-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .file-editor .file-browser-entry:hover { background: rgba(var(--accent-rgb), .08); }
-.file-editor .file-browser-entry[aria-current="page"] { background: rgba(var(--accent-rgb), .14); border-color: rgba(var(--accent-rgb), .4); color: var(--success-text); }
+.file-editor .file-browser-entry[aria-current="page"] { background: rgba(var(--accent-rgb), .14); border-color: rgba(var(--accent-rgb), .4); color: var(--accent); }
 .file-browser-message { padding: 8px; color: var(--muted); overflow-wrap: anywhere; }
 .file-browser-message button { display: block; margin-top: 6px; }
 .file-browser-more { margin: 6px 0; }

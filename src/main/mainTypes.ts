@@ -138,6 +138,7 @@ export type WebAppLookup = {
 };
 
 export type ShowWebAppPayload = {
+  borderRadius?: unknown;
   viewportSize?: unknown;
   autofillEnabled?: unknown;
   backgroundColor?: unknown;
@@ -164,6 +165,7 @@ export type WebAppOpenOptions = UnknownRecord & {
 };
 
 export type WebAppCapture = {
+  borderRadius?: number;
   bounds: Rectangle;
   dataUrl: string;
   key: string;

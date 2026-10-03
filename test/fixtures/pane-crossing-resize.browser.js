@@ -53,6 +53,10 @@ const layout = () => split('root', 'horizontal', 0.5,
   split('top', 'vertical', 0.5, pane('a'), pane('b')),
   split('bottom', 'vertical', 0.5, pane('c'), pane('d')));
 await mount(layout());
+check([...grid.querySelectorAll('.webapp-pane')].every(element => getComputedStyle(element).borderRightColor === 'rgba(0, 0, 0, 0)'),
+  'Split pane borders are invisible at rest');
+check([...grid.querySelectorAll('.webapp-split-resizer')].every(element => getComputedStyle(element).backgroundColor === 'rgba(0, 0, 0, 0)'),
+  'Idle resize handles do not paint divider lines');
 const input = document.createElement('input'); input.value = 'Unsaved content';
 grid.querySelector('[data-pane-id="b"] .webapp-host').append(input);
 const originalLeft = box('a');
@@ -75,6 +79,8 @@ check(cross.style.cursor === 'move', 'Crossing center advertises movement in bot
 check(highlighted().length === 3, 'Hovering a plus highlights all four branches across its three separators');
 check(highlighted().every(element => getComputedStyle(element).backgroundImage.includes('linear-gradient')),
   'Connected separator highlights are painted by the stylesheet');
+check(highlighted().every(element => getComputedStyle(element).backgroundColor === 'rgba(0, 0, 0, 0)'),
+  'Crossing highlights leave uninvolved divider segments invisible');
 hover(x + 100, y);
 check(highlighted().length === 0, 'Moving away from the center clears connected highlights');
 hover(x, y);

@@ -6,19 +6,19 @@ type TerminalRuntimeGlobal = {
 };
 
 const DARK_TERMINAL_THEME: XtermTheme = {
-  background: "#080c11",
-  foreground: "#d7dde5",
-  cursor: "#41b883",
-  cursorAccent: "#080c11",
-  selectionBackground: "rgba(65, 184, 131, 0.3)",
-  black: "#101418",
+  background: "#101521",
+  foreground: "#e7eaf4",
+  cursor: "#a6b2ff",
+  cursorAccent: "#101521",
+  selectionBackground: "rgba(166, 178, 255, 0.3)",
+  black: "#111520",
   red: "#e06c75",
   green: "#41b883",
   yellow: "#e5c07b",
   blue: "#61afef",
   magenta: "#c678dd",
   cyan: "#56b6c2",
-  white: "#d7dde5",
+  white: "#e7eaf4",
   brightBlack: "#65717c",
   brightRed: "#f07c85",
   brightGreen: "#5bc995",
@@ -31,26 +31,26 @@ const DARK_TERMINAL_THEME: XtermTheme = {
 
 const LIGHT_TERMINAL_THEME: XtermTheme = {
   background: "#ffffff",
-  foreground: "#18201c",
-  cursor: "#147a52",
+  foreground: "#252a40",
+  cursor: "#5364b7",
   cursorAccent: "#ffffff",
-  selectionBackground: "rgba(20, 122, 82, 0.24)",
-  black: "#18201c",
+  selectionBackground: "rgba(83, 100, 183, 0.24)",
+  black: "#252a40",
   red: "#b3263b",
   green: "#147a52",
   yellow: "#8a5d00",
   blue: "#175fa5",
   magenta: "#8a4a9c",
   cyan: "#087a85",
-  white: "#53635c",
-  brightBlack: "#65756e",
+  white: "#59627d",
+  brightBlack: "#626d87",
   brightRed: "#d13c50",
   brightGreen: "#1b8f61",
   brightYellow: "#a66f00",
   brightBlue: "#2878c7",
   brightMagenta: "#a25db3",
   brightCyan: "#14939e",
-  brightWhite: "#18201c"
+  brightWhite: "#252a40"
 };
 
 export function getTerminalTheme(theme: AppTheme): XtermTheme {

@@ -12,10 +12,10 @@ test("application themes normalize safely and expose matching backgrounds", () =
   assert.equal(normalizeAppTheme("light"), "light");
   assert.equal(normalizeAppTheme("dark"), "dark");
   assert.equal(normalizeAppTheme("system"), "dark");
-  assert.equal(getAppBackgroundColor("light"), "#f4f7f5");
-  assert.equal(getAppBackgroundColor("dark"), "#101418");
+  assert.equal(getAppBackgroundColor("light"), "#f3f4fa");
+  assert.equal(getAppBackgroundColor("dark"), "#111520");
   assert.equal(getWebAppBackgroundColor(undefined, "light"), "#ffffff");
-  assert.equal(getWebAppBackgroundColor(undefined, "dark"), "#0b0f14");
+  assert.equal(getWebAppBackgroundColor(undefined, "dark"), "#101521");
   assert.equal(getWebAppBackgroundColor("#ffffff", "dark"), "#ffffff");
 });
 

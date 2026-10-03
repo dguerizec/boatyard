@@ -124,6 +124,7 @@ class MockModalWindow extends EventEmitter {
 }
 
 class MockWebContentsView {
+  borderRadius = 0;
   readonly contents = new MockWebContents();
   private attached = true;
   visible = true;
@@ -147,6 +148,8 @@ class MockWebContentsView {
   setBackgroundColor() {}
 
   setBounds() {}
+
+  setBorderRadius(value: number) { this.borderRadius = value; }
 
   setVisible(value: boolean) {
     this.visible = value;
@@ -237,6 +240,26 @@ function showWebApp(runtime: typeof WorkspaceWindowRuntime) {
     url: "https://twicc.example.test/project"
   });
 }
+
+test("native pane corners follow the renderer radius and reset for square frames", () => {
+  const { runtime, views } = createRuntime();
+  const payload = {
+    bounds: { height: 600, width: 800, x: 0, y: 0 },
+    key: "project:twicc",
+    url: "https://twicc.example.test/project"
+  };
+  runtime.showWebApp({ ...payload, borderRadius: 10 });
+  assert.equal(views[0].borderRadius, 10);
+  runtime.showWebApp({ ...payload, borderRadius: 16 });
+  assert.equal(views.length, 1);
+  assert.equal(views[0].borderRadius, 16);
+  runtime.showWebApp({ ...payload, borderRadius: 0 });
+  assert.equal(views[0].borderRadius, 0);
+  for (const borderRadius of [-1, NaN, Infinity, "12", undefined]) {
+    runtime.showWebApp({ ...payload, borderRadius });
+    assert.equal(views[0].borderRadius, 0);
+  }
+});
 
 test("scoped pane autofill uses the existing local toggle with URL and visibility guards", async () => {
   const { runtime, views, rendererMessages } = createRuntime();
@@ -483,7 +506,7 @@ test("workspace runtime opens one sandboxed modal webapp and initializes it afte
   assert.deepEqual(modalWindow.loadedUrls, ["https://twicc.example.test/project/example"]);
   assert.deepEqual(modalOptions, [{
     autoHideMenuBar: true,
-    backgroundColor: "#101418",
+    backgroundColor: "#111520",
     height: 800,
     minHeight: 560,
     minWidth: 720,

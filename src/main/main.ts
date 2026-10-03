@@ -81,7 +81,7 @@ const execFileAsync = promisify(execFile);
 const terminalSessionPrefix = process.env.BOATYARD_TERMINAL_SESSION_PREFIX || "boatyard";
 const WEBAPP_SESSION_PARTITION = "persist:boatyard-webapps";
 const WEBAPP_FREEZE_CAPTURE_TIMEOUT_MS = 350;
-const DEFAULT_WEBAPP_BACKGROUND_COLOR = "#0b0f14";
+const DEFAULT_WEBAPP_BACKGROUND_COLOR = "#101521";
 const WORKSPACE_MIN_WIDTH = 640;
 const WORKSPACE_MIN_HEIGHT = 480;
 
