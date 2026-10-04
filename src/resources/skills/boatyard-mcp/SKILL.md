@@ -216,9 +216,11 @@ The current MCP can list windows, switch projects, inspect layouts, enumerate ch
 The enabled TwiCC plugin contributes these tools to the **Boatyard** MCP server:
 
 - `boatyard.twicc.list_sessions`: `contextId`, `projectId`, optional `lane`.
-- `boatyard.twicc.move_sessions`: `contextId`, `projectId`, `sessionIds`, `lane`.
-- `boatyard.twicc.reorder_sessions`: the same arguments plus `position` and,
-  for `before`/`after`, `anchorSessionId`.
+- `boatyard.twicc.move_sessions`: `contextId`, `projectId`, `sessionIds`, `lane`,
+  optional `expectedBoardToken` and `maxAffectedSessions`.
+- `boatyard.twicc.reorder_sessions`: `contextId`, `projectId`, `sessionIds`,
+  `lane`, `position` and, for `before`/`after`, `anchorSessionId`; optional
+  `expectedLaneToken` and `maxAffectedSessions`.
 
 Use `list_windows` to discover the configuration and Boatyard project IDs. These
 operations work without opening a Kanban pane. Tool names may be normalized by
@@ -227,16 +229,39 @@ Lanes are `in_progress`, `backlog` and `done`. `processState` describes agent
 activity independently of the lane. Listing includes visible, unarchived sessions
 in the same order as the Kanban and never writes annotations.
 
-List before choosing session IDs. Move only the sessions requested by the user.
+List before choosing session IDs. Check `guard.mode: "observed_snapshot"`,
+`guard.version: 1`, `guard.atomic: false` and `guard.complete: true`. Pass
+`guard.boardToken` as `expectedBoardToken` for a move, or the `guard.laneToken`
+from a lane-filtered list as `expectedLaneToken` for reorder. Tokens are opaque
+`obs1:` SHA-256 state fingerprints, not backend revisions or credentials. Set an
+explicit `maxAffectedSessions` appropriate to the user's requested scope; reorder
+targets every visible session in the lane, not only the selected cards. Refuse
+integrations that require guards if the upstream tool does not support them;
+never strip these fields to make a request succeed.
+
+Move only the sessions requested by the user.
 For visual priority, use `position: "first"` or `"last"`, or `"before"`/`"after"`
 with another session in the same lane as the anchor. Selected sessions must
 already be in that lane; move them first if needed. The input order of multiple
 selected sessions is preserved. Do not invent IDs or numeric order values.
 
-A move to Done does not archive or stop an agent. Mutation results can be partial:
-check `allSucceeded` and individual `results`; report failures and refresh the
-list before retrying. Reordering writes the lane's order sequentially, so do not
-claim atomicity or overwrite newer user choices with a blind retry.
+A move to Done does not archive or stop an agent. Guard/limit/scope refusals have
+`status: "rejected"`, an explicit `code` and `attemptedCount: 0`. Once a plan
+exists, `plannedSessionIds` and `results` cover every planned target in order.
+Guarded moves and all reorders stop at the first unconfirmed update; remaining
+targets are `not_attempted`. Check `allSucceeded`, `attemptedCount`,
+`confirmedCount` and every per-target status. `updated`/`noop` are submitted TwiCC
+acknowledgements and count as both attempted and confirmed. `rejected` is a
+definite upstream refusal; `unknown` may already have committed. There is no
+local skipped-write no-op. Receipts report `atomic: false` and
+`finalState: "not_observed"`; keep a failed post-read separate from write receipts.
+
+Do not automatically replay or roll back a partial or uncertain operation.
+Inspect a fresh board and obtain a new user decision when needed. The queue
+only serializes this configuration's MCP writers; Boatyard UI and independent
+TwiCC clients can race after validation. Newly hidden/archived targets are not
+protected at commit time, and TwiCC's unrelated-annotation lost-update risk
+remains. Never describe this as an atomic update or hard external-writer CAS.
 
 ## Open a TwiCC session by ID
 

@@ -1710,12 +1710,6 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(styles, /\.twicc-session-flow-attachment img/);
   assert.match(renderer, /sessionFlowLane: "in_progress"/);
   assert.match(renderer, /pendingCreatedSessions\.set\(created\.sessionId/);
-  assert.match(
-    renderer,
-    /if \(sessionInsertionPlaceholder\?\.parentElement === list\) \{\s*sessionInsertionPlaceholder\.remove\(\);\s*\}/
-  );
-  assert.match(renderer, /getSessionInsertionTarget\(list, event\.clientY, lane\)/);
-  assert.doesNotMatch(renderer, /draggedSessionPointerOffsetY|draggedSessionGhostHeight \/ 2/);
   assert.match(renderer, /twicc-session-flow-insertion-placeholder/);
   assert.match(renderer, /invokePlugin\("reorderSessionFlow"/);
   assert.match(

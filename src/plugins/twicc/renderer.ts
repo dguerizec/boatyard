@@ -1941,9 +1941,19 @@
     const twiccWebAppKey = String(twiccWebAppState?.key || "");
     let activeSessionId = getSessionIdFromUrl(twiccWebAppState?.url);
     let sessions: TwiccSessionFlowItem[] = [];
+    let disposed = false;
+    let loading = false;
+    let reconciliationRequested = false;
+    let hasLoaded = false;
+    let refreshRevision = 0;
+    let renderPending = false;
+    let moveQueue = Promise.resolve();
+    let pendingMoves = 0;
+    let moveFailed = false;
     const pendingCreatedSessions = new Map<string, { createdAt: number; item: TwiccSessionFlowItem }>();
     let draggedSessionId = "";
     let draggedSessionGhostHeight = 0;
+    let draggedSessionCenterOffset = { x: 0, y: 0 };
     let sessionInsertionTarget: TwiccSessionFlowInsertionTarget | null = null;
     let sessionInsertionPlaceholder: HTMLElement | null = null;
     let archiveAllDialog: HTMLDialogElement | null = null;
@@ -1966,6 +1976,9 @@
     }
 
     function isAlive(): boolean {
+      if (disposed) {
+        return false;
+      }
       if (widget.isConnected) {
         wasConnected = true;
       }
@@ -1975,32 +1988,62 @@
     function closeMoveMenu(): void {
       moveMenu?.remove();
       moveMenu = null;
+      if (renderPending) {
+        render();
+      }
+      if (reconciliationRequested) {
+        void load(true);
+      }
     }
 
-    function clearSessionInsertionPlaceholder(): void {
+    function hideSessionInsertionPlaceholder(): void {
       sessionInsertionTarget = null;
       sessionInsertionPlaceholder?.remove();
-      sessionInsertionPlaceholder = null;
       widget.querySelectorAll<HTMLElement>(".twicc-session-flow-empty[hidden]")
         .forEach((element) => {
           element.hidden = false;
         });
     }
 
+    function clearSessionInsertionPlaceholder(): void {
+      hideSessionInsertionPlaceholder();
+      sessionInsertionPlaceholder = null;
+    }
+
     function resetDragState(): void {
       draggedSessionId = "";
       draggedSessionGhostHeight = 0;
+      draggedSessionCenterOffset = { x: 0, y: 0 };
       clearSessionInsertionPlaceholder();
       delete widget.dataset.dragging;
       archiveDropzone.hidden = true;
       archiveDropzone.classList.remove("drop-target");
       widget.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
+      if (renderPending) {
+        render();
+      }
+      if (reconciliationRequested) {
+        void load(true);
+      }
     }
 
-    function beginDrag(sessionId: string, card: HTMLElement): void {
+    function beginDrag(
+      sessionId: string,
+      card: HTMLElement,
+      event: DragEvent,
+      pointerOffset: { x: number; y: number } | null
+    ): void {
+      refreshRevision += 1;
       const rect = card.getBoundingClientRect();
       draggedSessionId = sessionId;
       draggedSessionGhostHeight = rect.height;
+      const offsetX = Math.round(pointerOffset?.x ?? event.clientX - rect.left);
+      const offsetY = Math.round(pointerOffset?.y ?? event.clientY - rect.top);
+      draggedSessionCenterOffset = {
+        x: rect.width / 2 - offsetX,
+        y: rect.height / 2 - offsetY
+      };
+      event.dataTransfer?.setDragImage(card, offsetX, offsetY);
       widget.dataset.dragging = "true";
       archiveDropzone.hidden = false;
     }
@@ -2058,45 +2101,53 @@
 
     function getSessionInsertionTarget(
       list: HTMLElement,
-      clientY: number,
+      centerY: number,
       lane: TwiccSessionFlowLane
     ): TwiccSessionFlowInsertionTarget {
-      // Measure the undistorted list. The full-height placeholder otherwise
-      // pushes the next card away from the pointer and makes its midpoint
-      // increasingly difficult to cross while reordering.
-      if (sessionInsertionPlaceholder?.parentElement === list) {
-        sessionInsertionPlaceholder.remove();
+      const preview = sessionInsertionPlaceholder?.parentElement === list ? sessionInsertionPlaceholder : null;
+      const previewRect = preview?.getBoundingClientRect();
+      if (previewRect && sessionInsertionTarget?.lane === lane
+        && centerY >= previewRect.top && centerY <= previewRect.bottom) {
+        return sessionInsertionTarget;
       }
-      const cards = [...list.querySelectorAll<HTMLElement>(".twicc-session-flow-card")]
-        .filter((card) => card.dataset.sessionId !== draggedSessionId);
-      for (const card of cards) {
-        const rect = card.getBoundingClientRect();
-        if (clientY < rect.top + (rect.height / 2)) {
-          return {
-            beforeNode: card,
-            beforeSessionId: card.dataset.sessionId || null,
-            lane
-          };
-        }
-      }
-      return {
+      const cards = [...list.querySelectorAll<HTMLElement>(".twicc-session-flow-card")];
+      const halfHeight = draggedSessionGhostHeight / 2;
+      const rowGap = Number.parseFloat(getComputedStyle(list).rowGap) || 0;
+      // Subtract the preview's contribution without detaching the browser's
+      // current native drop target or changing scroll bounds while measuring.
+      const previewShift = (node: Element): number => preview && previewRect
+        && (preview.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)
+        ? previewRect.height + rowGap : 0;
+      const lastChild = [...list.children]
+        .filter((child) => child !== preview && child.getClientRects().length).at(-1);
+      const endTop = lastChild
+        ? lastChild.getBoundingClientRect().bottom - previewShift(lastChild) + rowGap
+        : list.getBoundingClientRect().top;
+      let closestDistance = Math.abs(centerY - (endTop + halfHeight));
+      let target: TwiccSessionFlowInsertionTarget = {
         beforeNode: null,
         beforeSessionId: null,
         lane
       };
-    }
-
-    function dropSessionAtInsertion(event: DragEvent, lane: TwiccSessionFlowLane): void {
-      event.preventDefault();
-      event.stopPropagation();
-      const sessionId = event.dataTransfer?.getData("application/x-twicc-session") || draggedSessionId;
-      const beforeSessionId = sessionInsertionTarget?.lane === lane
-        ? sessionInsertionTarget.beforeSessionId
-        : null;
-      resetDragState();
-      if (sessionId) {
-        void moveSession(sessionId, lane, beforeSessionId);
+      for (const [index, card] of cards.entries()) {
+        const rect = card.getBoundingClientRect();
+        // Compare the centers of the actual insertion slots, not the centers
+        // of cards that will be pushed down by the new full-height preview.
+        const distance = Math.abs(centerY - (rect.top - previewShift(card) + halfHeight));
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          target = {
+            beforeNode: card,
+            // The faded source still occupies its slot. Reserving that slot
+            // keeps the existing order instead of trying to insert before itself.
+            beforeSessionId: card.dataset.sessionId === draggedSessionId
+              ? cards[index + 1]?.dataset.sessionId || null
+              : card.dataset.sessionId || null,
+            lane
+          };
+        }
       }
+      return target;
     }
 
     function ensureSessionInsertionPlaceholder(): HTMLElement {
@@ -2106,28 +2157,16 @@
       const placeholder = document.createElement("div");
       placeholder.className = "twicc-session-flow-insertion-placeholder";
       placeholder.setAttribute("aria-hidden", "true");
-      placeholder.addEventListener("dragover", (event) => {
-        event.preventDefault();
-        if (event.dataTransfer) {
-          event.dataTransfer.dropEffect = "move";
-        }
-      });
-      placeholder.addEventListener("drop", (event) => {
-        const lane = sessionInsertionTarget?.lane;
-        if (lane) {
-          dropSessionAtInsertion(event, lane);
-        }
-      });
       sessionInsertionPlaceholder = placeholder;
       return placeholder;
     }
 
     function updateSessionInsertionPlaceholder(
       list: HTMLElement,
-      event: DragEvent,
+      centerY: number,
       lane: TwiccSessionFlowLane
     ): void {
-      sessionInsertionTarget = getSessionInsertionTarget(list, event.clientY, lane);
+      sessionInsertionTarget = getSessionInsertionTarget(list, centerY, lane);
       const placeholder = ensureSessionInsertionPlaceholder();
       placeholder.style.height = `${Math.max(0, Math.round(draggedSessionGhostHeight))}px`;
       widget.querySelectorAll<HTMLElement>(".twicc-session-flow-empty[hidden]")
@@ -2138,7 +2177,9 @@
       if (empty) {
         empty.hidden = true;
       }
-      list.insertBefore(placeholder, sessionInsertionTarget.beforeNode);
+      if (placeholder.parentElement !== list || placeholder.nextSibling !== sessionInsertionTarget.beforeNode) {
+        list.insertBefore(placeholder, sessionInsertionTarget.beforeNode);
+      }
     }
 
     widget.setOrientation = (orientation) => {
@@ -2351,8 +2392,39 @@
       lane: TwiccSessionFlowLane,
       beforeSessionId: string | null = null
     ): Promise<void> {
+      if (!isAlive() || moveFailed || widget.dataset.archiving === "true") {
+        return;
+      }
+      // Accept every user intent, but persist one complete lane at a time.
+      // Recompute each move from the result of the preceding move.
+      refreshRevision += 1;
+      pendingMoves += 1;
+      widget.dataset.moving = "true";
+      widget.setAttribute("aria-busy", "true");
+      const operation = moveQueue.then(() => performMove(sessionId, lane, beforeSessionId));
+      moveQueue = operation.catch(() => {});
+      try {
+        await operation;
+      } finally {
+        pendingMoves -= 1;
+        if (pendingMoves === 0) {
+          delete widget.dataset.moving;
+          widget.setAttribute("aria-busy", "false");
+          render();
+          // A lane reorder can fail after some sessions were already written.
+          // Read back authority instead of leaving the optimistic rollback displayed.
+          void load(true);
+        }
+      }
+    }
+
+    async function performMove(
+      sessionId: string,
+      lane: TwiccSessionFlowLane,
+      beforeSessionId: string | null
+    ): Promise<void> {
       const session = sessions.find((candidate) => candidate.id === sessionId);
-      if (!session || widget.dataset.moving === "true") {
+      if (!session || !isAlive() || moveFailed) {
         return;
       }
       const previousSessions = sessions;
@@ -2387,8 +2459,9 @@
       sessions = previousSessions
         .filter((candidate) => candidate.id !== sessionId && candidate.lane !== lane)
         .concat(nextTargetSessions);
-      widget.dataset.moving = "true";
       render();
+      message.hidden = false;
+      message.textContent = "Saving session moves…";
       try {
         await invokePlugin("reorderSessionFlow", {
           globalConfig: props.globalPluginConfig || {},
@@ -2398,15 +2471,15 @@
         message.hidden = true;
         message.textContent = "";
       } catch (error) {
+        // Do not run queued lane rewrites against an uncertain partial result.
+        moveFailed = true;
         sessions = previousSessions;
         if (pendingSession && previousPendingItem) {
           pendingSession.item = previousPendingItem;
         }
         message.hidden = false;
-        message.textContent = error instanceof Error ? error.message : String(error);
+        message.textContent = `Could not save all session moves: ${error instanceof Error ? error.message : String(error)}`;
         render();
-      } finally {
-        delete widget.dataset.moving;
       }
     }
 
@@ -2591,37 +2664,78 @@
       }
     }
 
-    archiveDropzone.addEventListener("dragover", (event) => {
-      if (!draggedSessionId) {
+    function updateSessionDropTarget(event: DragEvent): HTMLElement | null {
+      const centerX = event.clientX + draggedSessionCenterOffset.x;
+      const centerY = event.clientY + draggedSessionCenterOffset.y;
+      // The preview remains the native drop target while the ghost covers it.
+      const target = document.elementFromPoint(centerX, centerY)?.closest<HTMLElement>(
+        ".twicc-session-flow-lane, .twicc-session-flow-archive-dropzone"
+      );
+      widget.querySelectorAll(".drop-target").forEach((element) => element.classList.remove("drop-target"));
+      if (!target || !widget.contains(target)) {
+        hideSessionInsertionPlaceholder();
+        return null;
+      }
+      target.classList.add("drop-target");
+      if (target !== archiveDropzone) {
+        const lane = target.dataset.lane as TwiccSessionFlowLane;
+        const list = target.querySelector<HTMLElement>(".twicc-session-flow-list");
+        if (!list) {
+          return null;
+        }
+        updateSessionInsertionPlaceholder(list, centerY, lane);
+      } else {
+        hideSessionInsertionPlaceholder();
+      }
+      return target;
+    }
+
+    function handleSessionDragHover(event: DragEvent): void {
+      if (!draggedSessionId || !isAlive()) {
+        return;
+      }
+      const target = updateSessionDropTarget(event);
+      event.stopPropagation();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = target ? "move" : "none";
+      }
+      if (target) {
+        event.preventDefault();
+      }
+    }
+
+    function handleSessionDrop(event: DragEvent): void {
+      if (!draggedSessionId || !isAlive()) {
         return;
       }
       event.preventDefault();
       event.stopPropagation();
-      if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = "move";
-      }
-      clearSessionInsertionPlaceholder();
-      archiveDropzone.classList.add("drop-target");
-    });
-    archiveDropzone.addEventListener("dragleave", (event) => {
-      if (!archiveDropzone.contains(event.relatedTarget as Node | null)) {
-        archiveDropzone.classList.remove("drop-target");
-      }
-    });
-    archiveDropzone.addEventListener("drop", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
+      // Resolve again at release; the final pointer position may differ from
+      // the last dragover. The native event target follows the pointer, not the tile.
+      const target = updateSessionDropTarget(event);
       const sessionId = event.dataTransfer?.getData("application/x-twicc-session") || draggedSessionId;
+      const insertion = sessionInsertionTarget;
       resetDragState();
-      if (sessionId) {
+      if (target === archiveDropzone) {
         void archiveSession(sessionId);
+      } else if (insertion) {
+        void moveSession(sessionId, insertion.lane, insertion.beforeSessionId);
       }
-    });
+    }
+
+    // Capture across the document so the pointer can remain outside the lane
+    // while the center of a tile grabbed near an edge is inside it.
+    // Accept a newly entered preview immediately, including when layout moved
+    // it under a stationary pointer before the next native dragover arrives.
+    document.addEventListener("dragenter", handleSessionDragHover, true);
+    document.addEventListener("dragover", handleSessionDragHover, true);
+    document.addEventListener("drop", handleSessionDrop, true);
 
     function openMoveMenu(event: MouseEvent, session: TwiccSessionFlowItem): void {
       event.preventDefault();
       event.stopPropagation();
       closeMoveMenu();
+      refreshRevision += 1;
       const anchor = event.currentTarget as HTMLElement;
       const menu = document.createElement("div");
       menu.className = "twicc-session-flow-menu";
@@ -3191,6 +3305,7 @@
       }
       const indicatorState = isCurrentSession ? "" : getSessionFlowIndicatorState(session);
       let dragStarted = false;
+      let dragPointerOffset: { x: number; y: number } | null = null;
       let pendingOpenTimer: number | null = null;
       const cancelPendingOpen = (): void => {
         if (pendingOpenTimer === null) {
@@ -3204,7 +3319,7 @@
       };
       card.classList.toggle("current-session", isCurrentSession);
       card.classList.toggle("editing-title", isEditingTitle);
-      card.draggable = !isEditingTitle;
+      card.draggable = !isEditingTitle && !moveFailed && widget.dataset.archiving !== "true";
       card.tabIndex = isEditingTitle ? -1 : 0;
       card.dataset.sessionId = session.id;
       card.dataset.processState = session.processState || "idle";
@@ -3283,6 +3398,7 @@
       move.textContent = "⋮";
       move.title = `Move ${session.title}`;
       move.setAttribute("aria-label", move.title);
+      move.disabled = moveFailed || widget.dataset.archiving === "true";
       move.addEventListener("click", (event) => openMoveMenu(event, session));
       main.append(provider, title, statusIndicator, currentBadge, move);
 
@@ -3351,11 +3467,17 @@
           openSession(session.id);
         }
       });
+      card.addEventListener("pointerdown", (event) => {
+        if (event.button === 0) {
+          const rect = card.getBoundingClientRect();
+          dragPointerOffset = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+        }
+      });
       card.addEventListener("dragstart", (event) => {
         event.stopPropagation();
         cancelPendingOpen();
         dragStarted = true;
-        beginDrag(session.id, card);
+        beginDrag(session.id, card, event, dragPointerOffset);
         card.classList.add("dragging");
         if (event.dataTransfer) {
           event.dataTransfer.effectAllowed = "move";
@@ -3365,6 +3487,7 @@
       card.addEventListener("dragend", (event) => {
         event.stopPropagation();
         resetDragState();
+        dragPointerOffset = null;
         card.classList.remove("dragging");
         globalScope.setTimeout?.(() => {
           dragStarted = false;
@@ -3405,7 +3528,9 @@
         archiveAllButton.type = "button";
         archiveAllButton.className = "twicc-session-flow-archive-all";
         archiveAllButton.textContent = "Archive all";
-        archiveAllButton.disabled = laneSessions.length === 0 || widget.dataset.archiving === "true";
+        archiveAllButton.disabled = laneSessions.length === 0
+          || widget.dataset.archiving === "true"
+          || widget.dataset.moving === "true";
         archiveAllButton.addEventListener("click", openArchiveAllDialog);
         laneHeader.append(archiveAllButton);
       }
@@ -3429,68 +3554,83 @@
         const collapsed = section.classList.toggle("collapsed");
         heading.setAttribute("aria-expanded", String(!collapsed));
       });
-      section.addEventListener("dragover", (event) => {
-        if (!draggedSessionId) {
-          return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.dataTransfer) {
-          event.dataTransfer.dropEffect = "move";
-        }
-        section.classList.add("drop-target");
-        updateSessionInsertionPlaceholder(list, event, lane.id);
-      });
-      section.addEventListener("dragleave", (event) => {
-        if (!section.contains(event.relatedTarget as Node | null)) {
-          section.classList.remove("drop-target");
-          if (sessionInsertionTarget?.lane === lane.id) {
-            clearSessionInsertionPlaceholder();
-          }
-        }
-      });
-      section.addEventListener("drop", (event) => {
-        dropSessionAtInsertion(event, lane.id);
-      });
       section.append(laneHeader, list);
       return section;
     }
 
     function render(): void {
-      closeMoveMenu();
+      if (!isAlive()) {
+        return;
+      }
+      if (draggedSessionId || moveMenu) {
+        renderPending = true;
+        return;
+      }
+      renderPending = false;
+      refreshRevision += 1;
       board.replaceChildren(...TWICC_SESSION_FLOW_LANES.map(createLane));
       board.hidden = false;
     }
 
-    async function load(): Promise<void> {
-      if (
-        !isAlive()
-        || widget.dataset.moving === "true"
-        || widget.dataset.archiving === "true"
-        || Boolean(editingSessionId)
-        || widget.dataset.renaming === "true"
-      ) {
+    function canRefresh(): boolean {
+      return isAlive()
+        && !draggedSessionId
+        && !moveMenu
+        && (!composerMode || !hasLoaded)
+        && !editingSessionId
+        && widget.dataset.moving !== "true"
+        && widget.dataset.archiving !== "true"
+        && widget.dataset.creating !== "true"
+        && widget.dataset.renaming !== "true";
+    }
+
+    async function load(preserveMessage = false): Promise<void> {
+      reconciliationRequested ||= preserveMessage;
+      if (loading || !canRefresh()) {
         return;
       }
+      preserveMessage ||= reconciliationRequested;
+      reconciliationRequested = false;
+      const revision = refreshRevision;
+      const previousMessage = message.textContent;
+      const previousMessageHidden = message.hidden;
       if (!projectReference) {
         board.hidden = true;
         message.hidden = false;
         message.textContent = "Configure this project’s TwiCC URL to load sessions.";
         return;
       }
+      loading = true;
       try {
         const loadedSessions = normalizeSessionFlow(await invokePlugin("sessionFlow", {
           globalConfig: props.globalPluginConfig || {},
           project: projectReference
         }));
+        // A read started before an interaction or mutation is no longer current,
+        // even if that interaction finished before the response arrived.
+        if (revision !== refreshRevision || !canRefresh()) {
+          reconciliationRequested ||= preserveMessage;
+          return;
+        }
         sessions = mergePendingCreatedSessions(loadedSessions);
+        hasLoaded = true;
+        moveFailed = false;
         render();
-        message.hidden = sessions.length > 0;
-        message.textContent = sessions.length ? "" : "No current TwiCC sessions.";
+        message.hidden = preserveMessage ? previousMessageHidden : sessions.length > 0;
+        message.textContent = preserveMessage ? previousMessage : sessions.length ? "" : "No current TwiCC sessions.";
       } catch (error) {
-        board.hidden = true;
+        if (revision !== refreshRevision || !canRefresh()) {
+          reconciliationRequested ||= preserveMessage;
+          return;
+        }
+        // Keep the last useful board available when a background read fails.
         message.hidden = false;
         message.textContent = error instanceof Error ? error.message : String(error);
+      } finally {
+        loading = false;
+        if (reconciliationRequested && canRefresh()) {
+          void load(true);
+        }
       }
     }
 
@@ -3501,23 +3641,17 @@
     void load();
     const refreshInterval = globalScope.setInterval?.(() => {
       if (!isAlive()) {
-        globalScope.clearInterval?.(refreshInterval);
-        closeMoveMenu();
+        widget.cleanup?.();
         return;
       }
-      if (
-        !composerMode
-        && !editingSessionId
-        && widget.dataset.moving !== "true"
-        && widget.dataset.archiving !== "true"
-        && widget.dataset.creating !== "true"
-        && widget.dataset.renaming !== "true"
-      ) {
-        void load();
-      }
+      void load();
     }, TWICC_SESSION_FLOW_REFRESH_MS);
 
     widget.cleanup = () => {
+      disposed = true;
+      document.removeEventListener("dragenter", handleSessionDragHover, true);
+      document.removeEventListener("dragover", handleSessionDragHover, true);
+      document.removeEventListener("drop", handleSessionDrop, true);
       globalScope.clearInterval?.(refreshInterval);
       globalScope.removeEventListener?.(WEBAPP_URL_CHANGED_EVENT, handleWebAppUrlChanged);
       if (archiveAllDialog?.open) {

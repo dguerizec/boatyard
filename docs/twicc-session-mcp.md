@@ -1,5 +1,8 @@
 # Open a TwiCC session through Boatyard MCP
 
+For board listing, guarded movement and priority changes, see
+[Observed Kanban guards and bounded mutation receipts](twicc-kanban-mcp.md).
+
 The optional TwiCC plugin uses the existing TwiCC conversation pane to display
 session titles, messages, live activity and interactive prompts. No additional
 conversation renderer or TwiCC installation is required by other Boatyard panes.

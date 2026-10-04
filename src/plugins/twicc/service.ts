@@ -2,6 +2,7 @@
 
 import type { ExecFileAsync } from "../../shared/pluginTypes";
 import { parseGitWorktrees, type GitWorktreeEntry } from "../../main/gitWorktrees.js";
+import { createHash } from "node:crypto";
 
 const fs = require("node:fs/promises");
 const os = require("node:os");
@@ -43,6 +44,7 @@ type TwiccProcess = {
 type TwiccSession = {
   annotations?: Record<string, unknown>;
   archived?: unknown;
+  hidden?: unknown;
   context_usage?: number;
   created_at?: string;
   git_branch?: string;
@@ -344,7 +346,11 @@ async function rpcCommand(
     throw new Error(`TwiCC RPC ${commandPath} returned an invalid response.`);
   }
   if (payload.exit_code && payload.exit_code !== 0) {
-    throw Object.assign(new Error(String(payload.error || `TwiCC RPC ${commandPath} failed.`)), { exitCode: payload.exit_code });
+    throw Object.assign(new Error(String(payload.error || `TwiCC RPC ${commandPath} failed.`)), {
+      exitCode: payload.exit_code,
+      mutationRejected: commandPath === "update-session/annotations" && isRecord(payload.result)
+        && ["rejected", "validation_error"].includes(String(payload.result.status))
+    });
   }
   if (payload.error) {
     throw new Error(String(payload.error));
@@ -631,7 +637,7 @@ function getTwiccSessionFlow(
 
   const orderedSessions = (Array.isArray(sessions) ? sessions : [])
     .filter(isTwiccSession)
-    .filter((session) => session.archived !== true)
+    .filter((session) => session.archived !== true && session.hidden !== true)
     .map((session) => {
       const sessionId = String(session.id || "").trim();
       const process = processBySessionId.get(sessionId);
@@ -696,9 +702,12 @@ async function readTwiccRows(
   command: "sessions" | "processes" | "projects",
   filters: { project?: string; includeArchived?: boolean; includeHidden?: boolean; active?: boolean },
   options: TwiccCommandOptions,
-  rpcOnly = false
+  rpcOnly = false,
+  strictSnapshot = false
 ): Promise<Record<string, unknown>[]> {
   const rows: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  let expectedTotal: number | undefined;
   let full = command === "sessions";
   for (let offset = 0; ;) {
     const body: Record<string, unknown> = { limit: 1000 };
@@ -727,18 +736,48 @@ async function readTwiccRows(
     }
     const page = Array.isArray(result) ? result : isRecord(result) ? result.items : null;
     if (!Array.isArray(page) || !page.every(isRecord)) {
+      if (strictSnapshot) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
       throw new Error(`TwiCC returned an invalid ${command} list.`);
+    }
+    if (strictSnapshot) {
+      for (const row of page) {
+        if (typeof row.id !== "string" || !row.id.trim() || row.id !== row.id.trim() || seen.has(row.id)) {
+          throw snapshotError("INCOMPLETE_SNAPSHOT");
+        }
+        seen.add(row.id);
+      }
     }
     rows.push(...page);
     if (!Array.isArray(result)) {
       const pagination = isRecord(result) && isRecord(result.pagination) ? result.pagination : null;
       if (!pagination || typeof pagination.has_more !== "boolean" || pagination.offset !== offset
           || !Number.isInteger(pagination.limit) || Number(pagination.limit) <= 0) {
+        if (strictSnapshot) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
         throw new Error(`TwiCC returned invalid ${command} pagination.`);
       }
+      if (strictSnapshot) {
+        if (page.length > Number(pagination.limit)) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
+        if (pagination.total !== undefined) {
+          if (!Number.isSafeInteger(pagination.total) || Number(pagination.total) < rows.length
+              || (expectedTotal !== undefined && expectedTotal !== pagination.total)) {
+            throw snapshotError("INCOMPLETE_SNAPSHOT");
+          }
+          expectedTotal = Number(pagination.total);
+          if (pagination.has_more && rows.length >= expectedTotal) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
+        }
+        if (!pagination.has_more && expectedTotal !== undefined && rows.length !== expectedTotal) {
+          throw snapshotError("INCOMPLETE_SNAPSHOT");
+        }
+      }
       if (!pagination.has_more) { return rows; }
-      if (!page.length) { throw new Error(`TwiCC returned an empty ${command} page with more results pending.`); }
-    } else if (page.length < 1000) { return rows; }
+      if (!page.length) {
+        if (strictSnapshot) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
+        throw new Error(`TwiCC returned an empty ${command} page with more results pending.`);
+      }
+    } else {
+      if (strictSnapshot && page.length > 1000) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
+      if (page.length < 1000) { return rows; }
+    }
     offset += page.length;
   }
 }
@@ -804,10 +843,23 @@ async function runTwiccCommand(
   // Never silently target the local instance when a configured server fails.
   if (shouldUseRpc(options)) { return rpcCommand(command, body, options); }
   if (!options.execFileAsync) { throw new Error("TwiCC command runner is required."); }
-  const { stdout } = await options.execFileAsync("twicc", args, {
-    timeout: 30000, windowsHide: true, maxBuffer: TWICC_COMMAND_MAX_BUFFER
-  });
-  return JSON.parse(String(stdout || "null"));
+  try {
+    const { stdout } = await options.execFileAsync("twicc", args, {
+      timeout: 30000, windowsHide: true, maxBuffer: TWICC_COMMAND_MAX_BUFFER
+    });
+    return JSON.parse(String(stdout || "null"));
+  } catch (error) {
+    if (command === "update-session/annotations") {
+      const detail = error as { stdout?: unknown; code?: unknown };
+      let result: unknown;
+      try { result = JSON.parse(String(detail?.stdout || "null")); } catch { /* An unreadable receipt remains unknown. */ }
+      if ([1, 3].includes(Number(detail?.code)) && isRecord(result)
+          && ["rejected", "validation_error"].includes(String(result.status))) {
+        throw Object.assign(new Error("TwiCC rejected the session update."), { mutationRejected: true });
+      }
+    }
+    throw error;
+  }
 }
 
 async function migrateTwiccSessionFlowLanes(options: TwiccCommandOptions = {}) {
@@ -845,7 +897,9 @@ async function migrateTwiccSessionFlowLanes(options: TwiccCommandOptions = {}) {
 
 function requireTwiccUpdate(result: unknown): void {
   if (!isRecord(result) || !["updated", "noop"].includes(String(result.status))) {
-    throw new Error("TwiCC did not confirm the session update.");
+    throw Object.assign(new Error("TwiCC did not confirm the session update."), {
+      mutationRejected: isRecord(result) && ["rejected", "validation_error"].includes(String(result.status))
+    });
   }
 }
 
@@ -859,6 +913,95 @@ async function loadTwiccSessionFlow(
     ? sessions.map((session) => sessionProcess(session as Record<string, unknown>)).filter((process) => process !== null)
     : await readTwiccRows("processes", { includeHidden: true }, options);
   return getTwiccSessionFlow(sessions, processes);
+}
+
+function snapshotError(code: string): Error & { code: string } {
+  return Object.assign(new Error("TwiCC could not provide a complete, stable Kanban snapshot."), { code });
+}
+
+// Sort object keys recursively; raw annotation values can themselves be JSON objects.
+function canonicalSnapshotValue(value: unknown): unknown {
+  if (Array.isArray(value)) { return value.map(canonicalSnapshotValue); }
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalSnapshotValue(value[key])]));
+  }
+  return value;
+}
+
+function snapshotToken(value: unknown): string {
+  return `obs1:${createHash("sha256").update(JSON.stringify(canonicalSnapshotValue(value))).digest("hex")}`;
+}
+
+function rawAnnotationState(session: TwiccSession): unknown[] {
+  const annotations = isRecord(session.annotations) ? session.annotations : {};
+  const nested = isRecord(annotations.boatyard) ? annotations.boatyard : {};
+  return [TWICC_SESSION_FLOW_ANNOTATION, TWICC_SESSION_FLOW_ORDER_ANNOTATION, TWICC_SESSION_FLOW_ORIGIN_ANNOTATION]
+    .map((key) => [
+      Object.hasOwn(nested, key), nested[key] ?? null,
+      Object.hasOwn(annotations, `boatyard.${key}`), annotations[`boatyard.${key}`] ?? null
+    ]);
+}
+
+async function collectTwiccSessionFlowSnapshot(project: string, boatyardProjectId: string, options: TwiccCommandOptions) {
+  const projects = await readTwiccRows("projects", { includeArchived: true }, options, false, true);
+  const matches = projects.filter((row) => row.id === project || row.id === `-${project}`
+    || (path.isAbsolute(project) && typeof row.directory === "string"
+      && normalizePathForMatch(row.directory) === normalizePathForMatch(project)));
+  if (matches.length !== 1) { throw snapshotError("INVALID_SCOPE"); }
+  const root = matches[0];
+  if (Object.hasOwn(root, "worktrees") && !Array.isArray(root.worktrees)) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
+  const scopeProjects = projects.filter((row) => row.id === root.id || row.worktree_of === root.id);
+  // Older project responses may list worktrees on the parent instead of children.
+  if (Array.isArray(root.worktrees)) {
+    for (const id of root.worktrees) {
+      const child = projects.find((row) => row.id === id);
+      if (!child) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
+      if (!scopeProjects.includes(child)) { scopeProjects.push(child); }
+    }
+  }
+  const scopeIds = new Set(scopeProjects.map((row) => String(row.id)));
+  const rows = await readTwiccRows("sessions", { project: String(root.id) }, options, false, true);
+  for (const row of rows) {
+    if (typeof row.project_id !== "string" || !scopeIds.has(row.project_id)) { throw snapshotError("INVALID_SCOPE"); }
+    if (Object.hasOwn(row, "annotations") && !isRecord(row.annotations)) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
+    if (Object.hasOwn(row, "process") && row.process !== null
+        && (!isRecord(row.process) || typeof row.process.state !== "string")) { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
+    for (const flag of ["hidden", "archived"] as const) {
+      if (Object.hasOwn(row, flag) && typeof row[flag] !== "boolean") { throw snapshotError("INCOMPLETE_SNAPSHOT"); }
+    }
+  }
+  const sessions = rows as TwiccSession[];
+  const processes = sessions.every((session) => Object.hasOwn(session, "process"))
+    ? rows.map(sessionProcess).filter((process) => process !== null)
+    : await readTwiccRows("processes", { includeHidden: true }, options);
+  const flow = getTwiccSessionFlow(sessions, processes);
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  const scope = [
+    shouldUseRpc(options) ? "rpc" : "local_cli", normalizeBaseUrl(options.globalConfig?.twiccBaseUrl),
+    boatyardProjectId, project, String(root.id),
+    scopeProjects.map((row) => [row.id, row.worktree_of ?? null]).sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+  ];
+  const projection = flow.map((item) => {
+    const session = byId.get(item.id)!;
+    return [item.id, session.project_id, item.lane, item.order, rawAnnotationState(session),
+      session.created_at ?? null, session.spawned_by ?? null];
+  });
+  return {
+    flow,
+    boardToken: snapshotToken(["boatyard.twicc.kanban", 1, scope, "board", projection]),
+    laneTokens: Object.fromEntries((Object.keys(TWICC_SESSION_FLOW_LANE_RANKS) as TwiccSessionFlowLane[])
+      .map((lane) => [lane, snapshotToken(["boatyard.twicc.kanban", 1, scope, lane,
+        projection.filter((row) => row[2] === lane)])])) as Record<TwiccSessionFlowLane, string>
+  };
+}
+
+async function loadTwiccSessionFlowSnapshot(project: string, boatyardProjectId: string, options: TwiccCommandOptions = {}) {
+  // Two complete observations detect visible collection races, including offset-page
+  // drift. Neither observation locks TwiCC or proves an atomic backend snapshot.
+  const first = await collectTwiccSessionFlowSnapshot(project, boatyardProjectId, options);
+  const second = await collectTwiccSessionFlowSnapshot(project, boatyardProjectId, options);
+  if (first.boardToken !== second.boardToken) { throw snapshotError("SNAPSHOT_CHANGED"); }
+  return second;
 }
 
 async function updateTwiccSessionTitleFromRpc(
@@ -1661,6 +1804,7 @@ export {
   loadTwiccSessionFromRpc,
   loadTwiccSession,
   loadTwiccSessionFlow,
+  loadTwiccSessionFlowSnapshot,
   migrateTwiccSessionFlowLanes,
   loadTwiccSessionsFromRpc,
   loadTwiccSessions,
