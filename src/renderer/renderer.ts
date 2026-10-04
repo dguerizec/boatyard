@@ -111,7 +111,7 @@ navigationController = createRendererNavigationController({
   isSidebarCollapsed,
   render,
   updateNavigation: async (values: UnknownRecord) => {
-    const navigation = await boatyardWindow.boatyard.updateNavigation(values);
+    const navigation = await boatyardWindow.boatyard.updateNavigation(values, { notifySource: false });
     state = {
       ...state,
       navigation
@@ -1087,7 +1087,7 @@ const projectSidebar = createProjectSidebar({
     const navigation = await boatyardWindow.boatyard.updateNavigation({
       ...(state.navigation || {}),
       ...values
-    });
+    }, { notifySource: false });
     state = {
       ...state,
       navigation
@@ -1328,6 +1328,8 @@ async function loadState() {
 }
 
 boatyardWindow.boatyard.onWorkspaceNavigationChanged?.((navigation) => {
+  const previousView = navigationController.getCurrentView();
+  const previousProjectId = navigationController.getCurrentProjectId();
   state = { ...state, navigation: navigation || {} };
   const hasPendingSettings = (
     ["global-settings", "project-edit"].includes(navigationController.getCurrentView()) &&
@@ -1337,6 +1339,13 @@ boatyardWindow.boatyard.onWorkspaceNavigationChanged?.((navigation) => {
     return;
   }
   restoreNavigation(state.navigation || {});
+  if (
+    previousView === navigationController.getCurrentView() &&
+    previousProjectId === navigationController.getCurrentProjectId()
+  ) {
+    renderProjectList();
+    return;
+  }
   render();
   topbarWidgets.render();
 });

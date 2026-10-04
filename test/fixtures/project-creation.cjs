@@ -113,6 +113,17 @@ app.whenReady().then(async () => {
     assert.ok(sidebar.rowBottom <= sidebar.bottom, 'new ungrouped project is reachable by scrolling');
     assert.ok(sidebar.workspaceBottom > sidebar.visibleBottom, 'Hugescreen workspace stays enlarged');
     await evaluate(`document.querySelector('.workspace-layout-toast')?.remove()`);
+    await evaluate(`document.querySelector('.project-nav-row[data-project-id="existing"] .nav-item').click()`);
+    await delay(250);
+    const operationIndex = operations.length;
+    await evaluate(`(() => {
+      document.querySelector('.project-nav-row[data-project-id="${project.id}"] .nav-item').click();
+      window.paneBeforeNavigationAck = document.querySelector('.webapp-host');
+    })()`);
+    while (!operations.slice(operationIndex).some(([type, id]) => type === 'navigation' && id === project.id)) await delay(25);
+    await delay(100);
+    assert.equal(await evaluate(`window.paneBeforeNavigationAck === document.querySelector('.webapp-host')`),
+      true, 'navigation acknowledgement preserves the already mounted TwiCC pane');
   }
   // A blank layout and no plugin settings must still retain the created project
   // and its fitting geometry, even when creation starts in an oversized window.

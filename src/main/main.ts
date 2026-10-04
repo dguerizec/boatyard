@@ -1552,7 +1552,7 @@ function registerIpcHandlers() {
     return configuration.store.updateSettings(patch, getWorkspaceWindowIdForEvent(event));
   });
 
-  ipcMain.handle("navigation:update", (event: IpcMainInvokeEvent, navigation: unknown) => {
+  ipcMain.handle("navigation:update", (event: IpcMainInvokeEvent, navigation: unknown, options?: { notifySource?: boolean }) => {
     const workspaceWindow = getWorkspaceWindowForWebContents(event.sender);
     const configuration = getConfigurationForEvent(event);
     return hugescreenQueue(configuration).run(async () => {
@@ -1576,7 +1576,11 @@ function registerIpcHandlers() {
             await restoreProjectHugescreen(entry, target);
           }
         }
-        sendWorkspaceNavigation(configuration, windowId, nextNavigation);
+        // Optimistic renderer navigation already updates the originating window.
+        // Echoing queued selections can remount panes or restore an older project.
+        if (windowId !== workspaceWindow.id || options?.notifySource !== false) {
+          sendWorkspaceNavigation(configuration, windowId, nextNavigation);
+        }
       }
       return updated[workspaceWindow.id] || configuration.store.getStateForWorkspaceWindow(workspaceWindow.id).navigation;
     });

@@ -3,6 +3,7 @@ import type { RendererProject, RendererState } from "./rendererTypes";
 import type { WorkspaceLayout } from "./rendererTypes";
 import { createSettingsShell } from "./settingsShell.js";
 import { createToolIcon } from "./toolIcons.js";
+import { clearPaneContainer } from "./paneCleanup.js";
 
 type ProjectPageViewsOptions = {
   addProject: (values: UnknownRecord) => Promise<RendererState>;
@@ -67,7 +68,7 @@ export function createProjectPageViews({
     workspace.classList.remove("project-mode");
     workspaceKicker.textContent = "Project";
     workspaceSummary.textContent = "";
-    dashboardGrid.innerHTML = "";
+    clearPaneContainer(dashboardGrid);
     dashboardGrid.className = className;
     dashboardGrid.style.gridTemplateColumns = "";
   }

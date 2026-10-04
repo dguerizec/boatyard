@@ -35,6 +35,7 @@ import { createPaneTranslation } from "./paneTranslation.js";
 import { createResizablePaneSidePanel } from "./resizablePaneSidePanel.js";
 import { attachPanePointerResize } from "./panePointerResize.js";
 import { createPaneCrossingResize } from "./paneCrossingResize.js";
+import { cleanupPaneLayout } from "./paneCleanup.js";
 
 type PaneLayoutHost = HTMLDivElement & {
   boatyardCleanup?: () => void;
@@ -1170,7 +1171,7 @@ export function createPaneLayoutView({
         options
       );
       for (const detachedPane of reusablePanes.values()) {
-        getDirectPaneHost(detachedPane)?.boatyardCleanup?.();
+        cleanupPaneLayout(detachedPane);
       }
       const currentPaneLayoutElement = dashboardGrid.lastElementChild;
       if (!currentPaneLayoutElement) {
@@ -1734,6 +1735,15 @@ export function createPaneLayoutView({
         }
       } : null;
       const pluginPaneCleanupCallbacks: Array<() => void> = [() => paneDragCleanup?.()];
+      host.boatyardCleanup = () => {
+        for (const callback of pluginPaneCleanupCallbacks) {
+          try {
+            callback();
+          } catch (error) {
+            console.error("Could not clean up pane resource:", error);
+          }
+        }
+      };
 
       const header = document.createElement("div");
       header.className = "webapp-pane-header";
@@ -1827,6 +1837,8 @@ export function createPaneLayoutView({
         }
         closeCompactBrowserControls();
       }
+
+      pluginPaneCleanupCallbacks.push(() => closeCompactBrowserControls());
 
       function onCompactBrowserControlsKeyDown(event: KeyboardEvent) {
         if (event.key !== "Escape" || isWebAppTabMenuOpen()) {
@@ -2319,14 +2331,6 @@ export function createPaneLayoutView({
           webApp: selectedWebApp,
           host: visibleHost
         } as VisiblePaneWebAppEntry);
-      }
-
-      if (pluginPaneCleanupCallbacks.length) {
-        host.boatyardCleanup = () => {
-          for (const callback of pluginPaneCleanupCallbacks) {
-            callback();
-          }
-        };
       }
 
       queueWebAppSync();

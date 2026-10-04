@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   createWorkspaceWindow: () => ipcRenderer.invoke("workspace:create-window"),
   setTheme: (theme: unknown) => ipcRenderer.invoke("theme:set", theme),
   updateSettings: (patch: unknown) => ipcRenderer.invoke("settings:update", patch),
-  updateNavigation: (navigation: unknown) => ipcRenderer.invoke("navigation:update", navigation),
+  updateNavigation: (navigation: unknown, options?: { notifySource?: boolean }) => ipcRenderer.invoke("navigation:update", navigation, options),
   updateOnboarding: (onboarding: unknown) => ipcRenderer.invoke("onboarding:update", onboarding),
   selectFiles: (currentPath: unknown) => ipcRenderer.invoke("files:select", currentPath),
   selectProjectsBasePath: (currentPath: unknown, title: unknown = undefined) => (

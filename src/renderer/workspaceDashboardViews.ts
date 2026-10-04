@@ -1,4 +1,5 @@
 import type { RendererPaneLayoutNode, RendererProject } from "./rendererTypes.js";
+import { cleanupPaneLayout, clearPaneContainer } from "./paneCleanup.js";
 
 type WorkspaceDashboardViewState = {
   currentProjectId?: string | null;
@@ -52,7 +53,7 @@ export function createWorkspaceDashboardViews({
     workspaceKicker.textContent = "Global";
     workspaceTitle.textContent = "System overview";
     workspaceSummary.textContent = "Global workspace for cross-project widgets and operations dashboards.";
-    dashboardGrid.innerHTML = "";
+    clearPaneContainer(dashboardGrid);
     dashboardGrid.className = "project-workbench";
     dashboardGrid.style.gridTemplateColumns = "";
 
@@ -72,6 +73,7 @@ export function createWorkspaceDashboardViews({
     closeWebAppTabMenu();
     closeProjectGroupMenu();
     closeTerminalTabMenu();
+    cleanupPaneLayout(dashboardGrid);
     resetVisibleWebAppHosts();
     const paneLayoutElement = createPaneLayout(globalWorkspace, getPaneLayout(globalWorkspace));
     const currentPaneLayoutElement = dashboardGrid.lastElementChild;
@@ -92,7 +94,7 @@ export function createWorkspaceDashboardViews({
     workspaceKicker.textContent = "Project";
     workspaceTitle.textContent = project.name || "";
     workspaceSummary.textContent = getProjectSummaryTarget(project);
-    dashboardGrid.innerHTML = "";
+    clearPaneContainer(dashboardGrid);
     dashboardGrid.className = "project-workbench";
     dashboardGrid.style.gridTemplateColumns = "";
     resetVisibleWebAppHosts();
@@ -113,6 +115,7 @@ export function createWorkspaceDashboardViews({
 
     closeWebAppTabMenu();
     closeTerminalTabMenu();
+    cleanupPaneLayout(dashboardGrid);
     resetVisibleWebAppHosts();
     const paneLayoutElement = createPaneLayout(project, getPaneLayout(project));
     const currentPaneLayoutElement = dashboardGrid.lastElementChild;

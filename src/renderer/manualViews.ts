@@ -1,3 +1,5 @@
+import { clearPaneContainer } from "./paneCleanup.js";
+
 type ManualEntry = {
   body: string;
   title: string;
@@ -127,7 +129,7 @@ export function createManualViews({
     workspaceKicker.textContent = "Help";
     workspaceTitle.textContent = manual.title || "";
     workspaceSummary.textContent = manual.description || "";
-    dashboardGrid.innerHTML = "";
+    clearPaneContainer(dashboardGrid);
     dashboardGrid.className = "manual-page";
     dashboardGrid.style.gridTemplateColumns = "";
 

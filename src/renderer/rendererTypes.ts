@@ -292,7 +292,7 @@ export type BoatyardBridge = {
   showWebApp(...payload: unknown[]): Promise<unknown>;
   updateGlobalPluginConfig(pluginId: string, values: UnknownRecord): Promise<RendererState>;
   updateGlobalUrls(urls: UnknownRecord[]): Promise<RendererState>;
-  updateNavigation(values: UnknownRecord): Promise<UnknownRecord>;
+  updateNavigation(values: UnknownRecord, options?: { notifySource?: boolean }): Promise<UnknownRecord>;
   updateOnboarding(values: UnknownRecord): Promise<RendererState["onboarding"]>;
   updatePaneLayout(projectId: string | null | undefined, layout: unknown): Promise<RendererState>;
   updateMcpSettings?: (settings: UnknownRecord) => Promise<UnknownRecord>;

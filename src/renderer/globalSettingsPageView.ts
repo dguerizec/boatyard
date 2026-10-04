@@ -1,4 +1,5 @@
 import type { UnknownRecord } from "./rendererRecords.js";
+import { clearPaneContainer } from "./paneCleanup.js";
 import { createSettingsShell } from "./settingsShell.js";
 
 type GlobalSettingsPageViewOptions = {
@@ -67,7 +68,7 @@ export function createGlobalSettingsPageView({
     workspaceKicker.textContent = "Global";
     workspaceTitle.textContent = "Global settings";
     workspaceSummary.textContent = "Manage Boatyard preferences from one place.";
-    dashboardGrid.innerHTML = "";
+    clearPaneContainer(dashboardGrid);
     dashboardGrid.className = "global-settings-layout";
     dashboardGrid.style.gridTemplateColumns = "";
 

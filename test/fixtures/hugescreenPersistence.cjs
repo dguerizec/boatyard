@@ -82,7 +82,21 @@ app.whenReady().then(async () => {
   await invoke(win, 'workspace:create-window');
   while (BrowserWindow.getAllWindows().length < 2) await delay(25);
   const second = BrowserWindow.getAllWindows().find(candidate => candidate !== win);
+  const navigationNotifications = [];
+  const restoreSend = [win, second].map(target => {
+    const send = target.webContents.send.bind(target.webContents);
+    target.webContents.send = (channel, ...args) => {
+      if (channel === 'workspace:navigation-changed') navigationNotifications.push(target.id);
+      send(channel, ...args);
+    };
+    return () => { target.webContents.send = send; };
+  });
+  await invoke(win, 'navigation:update', { view: 'project', projectId: 'a' }, { notifySource: false });
+  assert.deepEqual(navigationNotifications, [second.id], 'optimistic navigation still updates synchronized windows');
+  navigationNotifications.length = 0;
   await invoke(win, 'navigation:update', { view: 'project', projectId: 'a' });
+  assert.deepEqual(new Set(navigationNotifications), new Set([win.id, second.id]), 'default navigation continues to notify every window');
+  restoreSend.forEach(restore => restore());
   for (const target of [win, second]) {
     near((await invoke(target, 'hugescreen:settings')).widthMultiplier, 2.5);
     assert.equal((await invoke(target, 'hugescreen:settings')).active, false);
