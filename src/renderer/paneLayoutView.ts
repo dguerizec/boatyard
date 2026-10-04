@@ -918,19 +918,11 @@ export function createPaneLayoutView({
       }
 
       const webApps = getProjectWebApps(project, paneId).map((webApp) => webApp as PaneWebApp);
-      const currentWebAppId =
-        paneLayoutState.getSelectedWebAppForPane(paneId) ||
-        paneLayoutState.getSelectedWebAppForProject(project.id) ||
-        webApps[0]?.id;
-      const nextWebAppId =
-        webApps.find((webApp: PaneWebApp) => webApp.id === "manual")?.id ||
-        webApps.find((webApp: PaneWebApp) => webApp.id !== currentWebAppId)?.id ||
-        currentWebAppId;
+      const currentWebAppId = (getSelectedWebApp(project, paneId, webApps) as PaneWebApp).id;
       const replacement = paneLayoutState.createSplitNode(
         project,
         direction,
-        { ...currentPaneNode, selectedWebAppId: currentWebAppId },
-        nextWebAppId
+        { ...currentPaneNode, selectedWebAppId: currentWebAppId }
       ) as PaneLayoutNode & { first: PaneLayoutNode };
       replacement.first.selectedWebAppId = currentWebAppId;
       if (!paneLayoutState.applyPaneSplit(project, paneId, replacement as SplitNode)) {

@@ -264,16 +264,39 @@ button {
   flex: 0 0 auto;
 }
 
-.empty-pane-host {
+.webapp-host.empty-pane-host {
+  position: relative;
+  isolation: isolate;
   display: grid;
   place-items: center;
   min-height: 0;
-  background:
-    linear-gradient(135deg, transparent 0 49%, rgba(var(--contrast-rgb), 0.035) 49% 51%, transparent 51% 100%);
-  background-size: 18px 18px;
+  padding: 24px;
+  background: var(--canvas);
+}
+
+.empty-pane-host::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: min(70%, 420px);
+  height: 70%;
+  margin: auto;
+  background: url("./assets/boatyard-mark-night-preview.png") center / contain no-repeat;
+  filter: grayscale(1);
+  mix-blend-mode: screen;
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+:root[data-theme="light"] .empty-pane-host::before {
+  background-image: url("./assets/boatyard-mark-preview.png");
+  mix-blend-mode: multiply;
+  opacity: 0.08;
 }
 
 .empty-pane-message {
+  position: relative;
+  align-self: end;
   max-width: 240px;
   margin: 0;
   color: var(--muted);

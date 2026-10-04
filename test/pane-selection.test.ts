@@ -41,6 +41,37 @@ test("available pane assignments remain selected", () => {
   assert.equal(state.getSelectedWebApp(project, pane.id, webApps).id, "terminal");
 });
 
+test("new panes stay empty even when the project has a previous selection", () => {
+  const state = createState();
+  const project = { id: "selected-project" };
+  state.setSelectedWebAppForProject(project.id, "terminal");
+  const pane = state.getProjectPaneLayout(project);
+
+  assert.equal(pane.selectedWebAppId, "empty");
+  assert.equal(state.getSelectedWebApp(project, pane.id, webApps).id, "empty");
+});
+
+for (const direction of ["vertical", "horizontal"]) {
+  test(`${direction} splits preserve the source pane and persist an empty new pane`, () => {
+    const state = createState();
+    const project = { id: "split-project" };
+    state.setSelectedWebAppForProject(project.id, "terminal");
+    const source = state.createPaneNode(project, "terminal");
+    state.setPaneLayout(project.id, source);
+    const split = state.createSplitNode(project, direction, source);
+
+    assert.equal(state.applyPaneSplit(project, source.id, split), true);
+    assert.equal(state.getSelectedWebApp(project, source.id, webApps).id, "terminal");
+    assert.equal(split.second.selectedWebAppId, "empty");
+    assert.equal(state.getSelectedWebApp(project, split.second.id, webApps).id, "empty");
+
+    const restored = createState();
+    restored.hydratePaneLayouts({ [project.id]: JSON.parse(JSON.stringify(state.getProjectPaneLayout(project))) });
+    assert.equal(restored.getSelectedWebApp(project, source.id, webApps).id, "terminal");
+    assert.equal(restored.getSelectedWebApp(project, split.second.id, webApps).id, "empty");
+  });
+}
+
 test("legacy file preview panes restore as file editors without a separate pane type", () => {
   const state = createState();
   const project = { id: "editor-project" };

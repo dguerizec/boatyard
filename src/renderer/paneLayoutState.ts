@@ -102,18 +102,16 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
      * @param {string | null} selectedWebAppId
      * @returns {PaneNode}
      */
-    function createPaneNode(project: PaneLayoutProject, selectedWebAppId: string | null = null): PaneNode {
+    function createPaneNode(project: PaneLayoutProject, selectedWebAppId: string | null = "empty"): PaneNode {
       const id = `${getProjectPaneLayoutKey(project)}:pane:${nextPaneId}`;
       nextPaneId += 1;
-
-      if (selectedWebAppId) {
-        selectedWebAppByPane.set(id, selectedWebAppId);
-      }
+      const initialWebAppId = selectedWebAppId || "empty";
+      selectedWebAppByPane.set(id, initialWebAppId);
 
       return {
         type: "pane",
         id,
-        selectedWebAppId: selectedWebAppId || null
+        selectedWebAppId: initialWebAppId
       };
     }
 
