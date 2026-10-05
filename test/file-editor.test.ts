@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync, statSync, chmodSync, linkSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { listProjectDirectory, readProjectEditableFile, saveProjectBytes, readProjectImage, MAX_IMAGE_BYTES, readProjectFile, saveProjectFile, MAX_FILE_BYTES } from "../src/plugins/file-editor/service";
+import { fileURLToPath } from "node:url";
+import { listProjectDirectory, readProjectEditableFile, saveProjectBytes, readProjectImage, readProjectFile, saveProjectFile, MAX_FILE_BYTES } from "../src/plugins/file-editor/service";
 import { EditorDocument, type FileAccess } from "../src/plugins/file-editor/document";
 
 function fixture() {
@@ -213,7 +214,7 @@ test("project browser paginates large folders without dropping entries", async (
 });
 
 
-test("image reads preserve bytes and enforce project boundaries and size limits", () => {
+test("image previews use direct file URLs and enforce project boundaries for large files", () => {
   const f = fixture();
   try {
     const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=", "base64");
@@ -221,7 +222,8 @@ test("image reads preserve bytes and enforce project boundaries and size limits"
     const image = readProjectImage(f.root, "pixel.PNG");
     assert.equal(image.path, "pixel.PNG");
     assert.equal(image.size, png.length);
-    assert.equal(image.dataUrl, `data:image/png;base64,${png.toString("base64")}`);
+    assert.equal(fileURLToPath(image.src), join(f.root, "pixel.PNG"));
+    assert.deepEqual(readFileSync(fileURLToPath(image.src)), png);
     writeFileSync(join(f.directory, "outside.png"), png);
     symlinkSync(join(f.directory, "outside.png"), join(f.root, "escape.png"));
     assert.throws(() => readProjectImage(f.root, "escape.png"), /inside this project/);
@@ -229,8 +231,12 @@ test("image reads preserve bytes and enforce project boundaries and size limits"
     assert.throws(() => readProjectImage(f.root, "file.ts"), /format is not supported/);
     mkdirSync(join(f.root, "folder.png"));
     assert.throws(() => readProjectImage(f.root, "folder.png"), /regular files/);
-    writeFileSync(join(f.root, "large.png"), Buffer.alloc(MAX_IMAGE_BYTES + 1));
-    assert.throws(() => readProjectImage(f.root, "large.png"), /20 MiB/);
+    const large = join(f.root, "large # image.png");
+    writeFileSync(large, Buffer.alloc(20 * 1024 * 1024 + 1));
+    const largeImage = readProjectImage(f.root, "large # image.png");
+    assert.equal(largeImage.size, 20 * 1024 * 1024 + 1);
+    assert.equal(fileURLToPath(largeImage.src), large);
+    assert.ok(largeImage.src.length < 1024, "Large previews return metadata rather than image bytes");
   } finally { f.cleanup(); }
 });
 
@@ -304,6 +310,6 @@ test("external binary files and image previews accept absolute paths", () => {
     const image = join(f.directory, "external.svg");
     writeFileSync(image, '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');
     assert.equal(readProjectImage(f.root, image).path, image);
-    assert.match(readProjectImage(f.root, image).dataUrl, /^data:image\/svg\+xml;base64,/);
+    assert.equal(fileURLToPath(readProjectImage(f.root, image).src), image);
   } finally { f.cleanup(); }
 });

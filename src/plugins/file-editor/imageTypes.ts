@@ -6,4 +6,4 @@ export function imageMimeType(path: string): string | undefined {
   const extension = path.split(".").pop()?.toLowerCase() || "";
   return Object.hasOwn(imageTypes, extension) ? imageTypes[extension] : undefined;
 }
-export type ImageSnapshot = { path: string; dataUrl: string; size: number };
+export type ImageSnapshot = { path: string; src: string; size: number };

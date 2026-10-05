@@ -140,18 +140,27 @@
   background: color-mix(in srgb, var(--accent) 20%, var(--panel));
 }
 
-.file-editor-image {
+.file-editor-images, .file-editor-image {
   flex: 1;
   min-height: 0;
   min-width: 0;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
+  flex-direction: column;
 }
-.file-editor-image[hidden] { display: none; }
-.file-editor-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.file-editor-images[hidden], .file-editor-image[hidden] { display: none; }
+.file-editor-image-tools { flex: none; border-bottom: 1px solid var(--line); }
+.file-editor-image-tools[hidden], .file-editor-image-viewport[hidden],
+.file-editor-image-confirmation[hidden] { display: none; }
+.file-editor-image-tools output { min-width: 48px; color: var(--muted); }
+.file-editor-image-viewport { flex: 1; min-height: 0; min-width: 0; overflow: auto; cursor: grab; touch-action: none; contain: strict; overscroll-behavior: contain; }
+.file-editor-image-viewport.panning { cursor: grabbing; }
+.file-editor-image-stage { position: relative; min-width: 100%; min-height: 100%; overflow: hidden; }
+.file-editor-image-stage img { display: block; position: absolute; left: 0; top: 0; max-width: none; max-height: none; transform-origin: 0 0; will-change: transform; }
+.file-editor-image-stage img[hidden], .file-editor-image-surface[hidden] { display: none; }
+.file-editor-image-surface { display: block; position: sticky; left: 0; top: 0; pointer-events: none; }
+.file-editor-image-stage.tiled { overflow: visible; }
+.file-editor-image-confirmation { margin: auto; padding: 24px; max-width: 440px; text-align: center; }
 
 .file-editor-hex { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
 .file-editor-hex[hidden] { display: none; }

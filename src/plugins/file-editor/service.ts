@@ -5,6 +5,7 @@ import { imageMimeType, type ImageSnapshot } from "./imageTypes";
 import { constants, accessSync, closeSync, existsSync, fstatSync, fchmodSync, openSync, readSync, realpathSync, renameSync, statSync, unlinkSync, writeFileSync, fsyncSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export const MAX_FILE_BYTES = DEFAULT_BLOCK_BYTES;
 export type FileSnapshot = { path: string; text: string; revision: string; encoding?: ByteEncoding; block?: FileBlock };
@@ -53,13 +54,21 @@ function readFileBytes(target: string, limit: number): Buffer {
   }
 }
 
-export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export function readProjectImage(root: string, file: string): ImageSnapshot {
   const target = resolveEditorFile(root, file);
   const mime = imageMimeType(target);
   if (!mime) throw new Error("This image format is not supported.");
-  const bytes = readFileBytes(target, MAX_IMAGE_BYTES);
-  return { path: editorFilePath(root, target), dataUrl: `data:${mime};base64,${bytes.toString("base64")}`, size: bytes.length };
+  const descriptor = openSync(target, constants.O_RDONLY | constants.O_NONBLOCK);
+  try {
+    const stats = fstatSync(descriptor);
+    if (!stats.isFile()) throw new Error("Only regular files can be opened.");
+    // Chromium loads the file directly, avoiding full-file buffers and base64 IPC copies.
+    const url = pathToFileURL(target);
+    url.searchParams.set("version", `${stats.mtimeMs}-${stats.size}`);
+    return { path: editorFilePath(root, target), src: url.href, size: stats.size };
+  } finally {
+    closeSync(descriptor);
+  }
 }
 
 export function readProjectFile(root: string, file: string): FileSnapshot {

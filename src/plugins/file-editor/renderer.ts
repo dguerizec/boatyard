@@ -14,6 +14,7 @@ import { byteContent, contentBytes } from "./bytes";
 import { createBlockNavigation } from "./blockNavigation";
 import { createHexView } from "./hexView";
 import { imageMimeType, type ImageSnapshot } from "./imageTypes";
+import { createImagePreviews } from "./imagePreviews";
 import { EditorPaneLinks } from "./paneLinks";
 import { editorVim } from "./vim";
 import { basicSetup } from "codemirror";
@@ -345,6 +346,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     try { return Boolean(localStorage.getItem(draftKey(path)) || localStorage.getItem(changesKey(path))); } catch { return false; }
   }
   function updateTabs() {
+    imageView.retain(tabs.paths);
     fileTabs.update(opening || Boolean(doc?.saving || doc?.changes?.saving));
     openControl.enabled = !opening && !pickerPending && !doc?.saving && !doc?.changes?.saving;
     syncPaneControl(openControl);
@@ -379,21 +381,20 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   let openedImage: ImageSnapshot | undefined;
   const currentBlock = () => doc?.base.block ? (doc.changes?.viewBlock(doc.base.block) ?? doc.base.block) : undefined;
   const currentPath = () => openedImage?.path || doc?.base.path;
-  const imageHost = element("div", "file-editor-image");
-  imageHost.hidden = true;
-  const imageElement = element("img");
-  imageHost.append(imageElement);
   let imageInfo = "";
-  imageElement.addEventListener("load", () => {
+  const imageView = createImagePreviews(paneKey, { onLoading: () => {
+    if (openedImage) status.textContent = `${openedImage.path} · Loading image…`;
+  }, onLoad: (imageElement) => {
     imageInfo = `${imageElement.naturalWidth} × ${imageElement.naturalHeight} · ${Math.ceil((openedImage?.size ?? doc?.bytes.length ?? 0) / 1024)} KiB`;
     if (openedImage) status.textContent = `${openedImage.path} · ${imageInfo}`;
     else if (doc && previewVisible && imageMimeType(doc.base.path)) refreshUi();
-  });
-  imageElement.addEventListener("error", () => {
+  }, onError: () => {
     imageInfo = "This image could not be decoded.";
     if (openedImage) status.textContent = `${openedImage.path} · ${imageInfo}`;
     else if (doc && previewVisible && imageMimeType(doc.base.path)) refreshUi();
-  });
+  }, onReload: reloadImage });
+  const imageHost = imageView.host;
+  imageHost.hidden = true;
   let doc: EditorDocument | undefined;
   let view: EditorView | undefined;
   let surface: ReturnType<typeof createEditorSurface> | undefined;
@@ -635,19 +636,40 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     schedulePreview();
   });
   themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-  function schedulePreview() {
+  async function reloadImage(path: string) {
+    if (disposed || opening || path !== currentPath()) return;
+    const current = doc;
+    const currentImage = openedImage;
+    if (current?.dirty) { showError("Save or discard image byte edits before reloading from disk."); return; }
+    if (current?.busy) { showError("Wait for the current file operation before reloading."); return; }
+    try {
+      const snapshot = await invoke<ImageSnapshot>("readImage", project.id, { path });
+      if (disposed || path !== currentPath() || current !== doc || currentImage !== openedImage) return;
+      if (currentImage) {
+        openedImage = snapshot;
+        imageView.setSource(snapshot.src, snapshot.path, snapshot.size, true);
+      } else if (snapshot.size > DEFAULT_BLOCK_BYTES) {
+        await openFile(path);
+      } else if (current) {
+        await current.refresh();
+        if (!disposed && doc === current && !current.error) schedulePreview(true);
+      }
+    } catch (error) { if (!disposed && path === currentPath()) showError(error); }
+  }
+
+  function schedulePreview(force = false) {
     if (!doc || doc.base.block || disposed || (!previewVisible && imageHost.hidden)) return;
     const mime = imageMimeType(doc.base.path);
     if (mime) {
       const source = JSON.stringify([doc.base.path, doc.text, doc.encoding]);
-      if (previewSource === source) return;
+      if (previewSource === source && !force) return;
       const bytes = doc.bytes;
       let binary = "";
       for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
       imageInfo = "";
-      imageElement.alt = doc.base.path;
-      imageElement.src = `data:${mime};base64,${btoa(binary)}`;
+      // Cached previews can report dimensions synchronously and refresh the UI.
       previewSource = source;
+      imageView.setSource(`data:${mime};base64,${btoa(binary)}`, doc.base.path, bytes.length, force);
       return;
     }
     if (doc.encoding === "hex" || !supportsPreview(doc.base.path)) return;
@@ -1152,9 +1174,10 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
           hexControl.enabled = true;
           hexControl.open = false;
           syncPaneControl(hexControl);
-          imageElement.alt = image.path;
-          status.textContent = `${image.path} · Loading image…`;
-          imageElement.src = image.dataUrl;
+          imageInfo = "";
+          if (imageView.setSource(image.src, image.path, image.size)) {
+            status.textContent = `${image.path} · ${(image.size / 1024 / 1024).toFixed(1)} MiB · Waiting for confirmation`;
+          }
           openedTab(image.path);
           fileBrowser.setSelected(image.path);
           setNotices(); compare.hidden = true;
@@ -1254,8 +1277,8 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       else { unsubscribe?.(); documents.set(key, next); }
       previewControl.label = "preview";
       openedImage = undefined;
+      imageView.clear();
       imageHost.hidden = true;
-      imageElement.removeAttribute("src");
       previewSource = "";
       deletedGitPath = "";
       doc = next;
@@ -1300,8 +1323,9 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     previewVersion++; clearTimeout(previewTimer); previewPendingSource = ""; previewSource = "";
     gitVersion++; gitBaseline = undefined; gitPath = "";
     editorHost.replaceChildren(empty); editorHost.hidden = false;
+    imageView.clear();
     previewFrame.hidden = imageHost.hidden = hexHost.hidden = true;
-    imageElement.removeAttribute("src"); previewFrame.removeAttribute("srcdoc");
+    previewFrame.removeAttribute("srcdoc");
     compare.hidden = true; setNotices(); fileBrowser.setSelected("");
     blockNavigation.update(undefined, false, false);
     gitView.update("", undefined, "", undefined); gitView.show(false);
@@ -1616,6 +1640,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     window.removeEventListener("pagehide", flushPosition);
     themeObserver.disconnect();
     fileBrowser.cleanup();
+    imageView.cleanup();
     blockNavigation.cleanup();
     hexView.cleanup();
     browserLayout.cleanup();

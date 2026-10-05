@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildSync } from "esbuild";
 
-export function runBrowserTest(t: TestContext, fixture: string, native?: { main: string; preload: string }) {
+export function runBrowserTest(t: TestContext, fixture: string, native?: { main: string; preload: string; timeoutMs?: number }) {
   const xvfb = process.platform === "linux" && spawnSync("which", ["xvfb-run"]).status === 0;
   if (process.platform === "linux" && !xvfb && !process.env.DISPLAY) {
     t.skip("Electron requires DISPLAY or xvfb-run");
@@ -34,13 +34,13 @@ export function runBrowserTest(t: TestContext, fixture: string, native?: { main:
             clearInterval(timer); console.log('BROWSER_TEST_PASSED'); app.exit(0);
           }
         }, 50);
-        setTimeout(() => { console.error('Browser test timed out'); app.exit(1); }, 15000);
+        setTimeout(() => { console.error('Browser test timed out'); app.exit(1); }, ${native?.timeoutMs ?? 15000});
       }).catch(error => { console.error(error); app.exit(1); });
     `);
     const args = [join(directory, "main.cjs"), "--no-sandbox"];
     const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
     const result = spawnSync(xvfb ? "xvfb-run" : electron, xvfb ? ["-a", electron, ...args] : args,
-      { env, encoding: "utf8", timeout: 25000 });
+      { env, encoding: "utf8", timeout: (native?.timeoutMs ?? 15000) + 10000 });
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.match(result.stdout, /BROWSER_TEST_PASSED/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
