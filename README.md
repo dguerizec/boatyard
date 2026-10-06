@@ -55,6 +55,18 @@ For development from a source checkout, install dependencies with:
 npm install
 ```
 
+Installation also rebuilds native dependencies, including `node-pty`, for the
+installed Electron version. On Debian/Ubuntu, install the native build tools with
+`sudo apt install build-essential python3` before installing dependencies.
+
+If an existing checkout fails to load `pty.node`, repair its native dependencies
+and start it again:
+
+```sh
+npm run rebuild:native
+make run
+```
+
 ## Run
 
 ```sh
