@@ -26,4 +26,51 @@ try {
   delete Object.prototype.trust;
 }
 
+// Exercise link interception in the mounted editor's sandboxed preview.
+let pane;
+const requests = [], reads = [], external = [];
+window.BoatyardPluginRegistry = { register(_manifest, plugin) {
+  plugin.activate({ settings: { registerGlobalSection() {} }, status: { set() {} }, panes: { register(value) { pane = value; } } });
+} };
+window.boatyard = {
+  openExternal: url => external.push(url),
+  invokePlugin: async (_plugin, action, payload) => {
+    if (action === 'read' || action === 'readEditable') {
+      reads.push(payload.path);
+      return { path: payload.path, text: '<a href="https://example.com/detail"><span>Web</span></a><a href="#section">Anchor</a><h2 id="section">Section</h2><a href="next%20file.html">Local</a>', revision: 'one', size: 200, mtimeMs: 1 };
+    }
+    if (action === 'gitStatus') return { available: false, entries: [] };
+    if (action === 'gitBaseline') return { available: false };
+    return null;
+  }
+};
+await import('../../src/plugins/file-editor/renderer');
+localStorage.clear();
+const project = { id: 'preview-test', sourcePath: '/workspace/example' };
+const paneKey = `boatyard:file-editor:${JSON.stringify([project.id, project.sourcePath])}:pane:test`;
+localStorage.setItem(paneKey, 'docs/example.html');
+localStorage.setItem(`${paneKey}:preview`, 'true');
+const host = document.createElement('div');
+document.body.append(host);
+const cleanup = pane.render(host, { project, paneId: 'test', openUrl: url => requests.push(url) });
+const frame = host.querySelector('.file-editor-preview');
+for (let i = 0; i < 100 && !frame.contentDocument?.querySelector('a'); i++) await new Promise(resolve => setTimeout(resolve, 20));
+check(frame.contentDocument?.querySelector('a'), 'Editor loads its preview document');
+const content = frame.contentDocument;
+content.querySelector('a span').click();
+await new Promise(resolve => setTimeout(resolve, 0));
+check(requests.join() === 'https://example.com/detail' && external.length === 0, 'Preview web link uses the destination dialog instead of opening externally');
+const anchorEvent = new content.defaultView.MouseEvent('click', { bubbles: true, cancelable: true });
+let anchorIntercepted;
+content.addEventListener('click', event => {
+  anchorIntercepted = event.defaultPrevented;
+  // Avoid navigating the srcdoc fixture against the harness's file URL.
+  event.preventDefault();
+}, { once: true });
+content.querySelector('a[href="#section"]').dispatchEvent(anchorEvent);
+check(!anchorIntercepted && requests.length === 1, 'Local anchors retain native preview navigation');
+content.querySelector('a[href="next%20file.html"]').click();
+await new Promise(resolve => setTimeout(resolve, 0));
+check(reads.includes('docs/next file.html') && requests.length === 1, 'Relative file links remain in the editor');
+cleanup();
 window.browserTestResult = 'passed';

@@ -694,7 +694,8 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       if (href.startsWith("#")) return;
       event.preventDefault();
       if (/^https?:\/\//i.test(href)) {
-        void scope.boatyard?.openExternal?.(href);
+        const openUrl = props.openUrl as ((url: string) => unknown) | undefined;
+        void Promise.resolve().then(() => openUrl?.(href)).catch(showError);
       } else if (href && !/^[a-z][a-z\d+.-]*:|^\/\//i.test(href)) {
         const directory = previewPath.replace(/[^/\\]*$/, "");
         try {

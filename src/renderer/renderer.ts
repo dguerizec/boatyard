@@ -572,6 +572,7 @@ const paneLayoutView = createPaneLayoutView({
   openWebAppRefreshMenu,
   openWebAppNavigationHistoryMenu,
   openWebAppUrlFieldMenu,
+  openUrl: (payload) => openWebAppOpenUrlDialog(payload),
   createTerminalSurface,
   invokeWebApp,
   isPasswordManagerEnabled,

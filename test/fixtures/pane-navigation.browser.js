@@ -9,6 +9,7 @@ const layout = { type: 'split', id: 'root', direction: 'vertical', ratio: 0.5,
   second: { type: 'pane', id: 'other', selectedWebAppId: 'repository' } };
 const saves = [];
 const navigations = [];
+const urlRequests = [];
 const urls = new Map();
 const state = createPaneLayoutState({ updatePaneLayout: async (_, value) => saves.push(structuredClone(value)) });
 state.hydratePaneLayouts({ project: layout });
@@ -50,12 +51,17 @@ const view = createPaneLayoutView({
   closeWebAppTabMenu() {}, isWebAppTabMenuOpen: () => false,
   getCurrentWebAppUrl: app => urls.get(app.key) || app.url,
   setCurrentWebAppUrl: (key, url) => urls.set(key, url),
+  openUrl: payload => urlRequests.push(payload),
   invokeWebApp: async (...args) => navigations.push(args),
   setVisibleWebAppHost() {}, isPasswordManagerEnabled: () => false
 });
 grid.append(view.createPaneLayout(project, layout));
 const pane = id => grid.querySelector(`.webapp-pane[data-pane-id="${id}"]`);
 const other = pane('other');
+sourceProps.openUrl('https://example.com/preview');
+check(urlRequests.length === 1 && urlRequests[0].url === 'https://example.com/preview', 'DOM panes route URLs through the shared destination dialog');
+check(urlRequests[0].sourcePaneId === 'source' && urlRequests[0].sourcePaneWebAppId === 'overview' && urlRequests[0].sourceId === 'overview', 'URL dialog receives the originating pane and app');
+check(urlRequests[0].sourceBounds.width > 0, 'URL dialog is anchored to the originating host');
 check(sourceProps.openPaneWebApp('missing', runUrl) === false, 'Unavailable targets are rejected');
 check(saves.length === 0, 'Unavailable target leaves layout untouched');
 pane('source').querySelector('.workflow-link').click();

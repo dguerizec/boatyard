@@ -241,6 +241,7 @@ type PaneLayoutViewOptions = {
   getProjectPluginConfig: (projectId: string | undefined, pluginId: string) => UnknownRecord;
   getGlobalPluginConfig: (pluginId: string) => UnknownRecord;
   getAllProjectPluginConfig: (project: RendererProject) => UnknownRecord;
+  openUrl: (payload: UnknownRecord) => unknown;
   openProjectWebApp: (projectId: string | undefined, webAppId: string, url: string) => unknown;
   setHiddenWebAppPaneIds: (paneIds: Iterable<string>) => void;
   setVisibleWebAppHost: (paneId: string, entry: VisiblePaneWebAppEntry) => void;
@@ -311,6 +312,7 @@ export function createPaneLayoutView({
     getProjectPluginConfig,
     getGlobalPluginConfig,
     getAllProjectPluginConfig,
+    openUrl,
     openProjectWebApp,
     setHiddenWebAppPaneIds,
     setVisibleWebAppHost,
@@ -1728,6 +1730,18 @@ export function createPaneLayoutView({
             } }));
           paneDragCleanup?.();
           paneDragCleanup = startPaneContentDrag(event, targets, createPaneDragFreezeScope());
+        },
+        openUrl(url: string) {
+          const bounds = host.getBoundingClientRect();
+          return openUrl({
+            source: "explicit",
+            sourceId: selectedWebApp.id,
+            sourceLabel: String(selectedWebApp.label || ""),
+            sourcePaneId: paneNode.id,
+            sourcePaneWebAppId: selectedWebApp.id,
+            sourceBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+            url
+          });
         },
         openPaneWebApp,
         openProjectWebApp(webAppId: string, url = "") {
