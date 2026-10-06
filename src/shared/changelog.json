@@ -1,6 +1,77 @@
 {
-  "generatedForVersion": "0.18.1",
+  "generatedForVersion": "0.19.0",
   "releases": [
+    {
+      "version": "0.19.0",
+      "date": "2026-10-07",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Interactive image previews",
+          "body": "View images with fit-to-pane, actual size, zoom, panning, and pixelated rendering, with framing preserved across navigation and large images opened after confirmation."
+        },
+        {
+          "category": "Added",
+          "title": "Terminal memory usage",
+          "body": "See RAM usage beside the active shell name in each terminal footer, including its child processes."
+        },
+        {
+          "category": "Added",
+          "title": "Web pane automation",
+          "body": "Connected assistants can click web content, fill forms, and use saved local credentials through guarded MCP interactions."
+        },
+        {
+          "category": "Added",
+          "title": "Project creation through MCP",
+          "body": "Connected assistants can create Boatyard projects within the configured projects folder and optionally create and link a trusted TwiCC project."
+        },
+        {
+          "category": "Changed",
+          "title": "Refreshed themes",
+          "body": "Updated dark and light colors, compact pane controls, refined content menus, and softer pane frames bring a more consistent appearance across the app."
+        },
+        {
+          "category": "Changed",
+          "title": "Empty new panes",
+          "body": "New unassigned panes show a Boatyard watermark; splitting keeps the original content and adds an empty neighbor."
+        },
+        {
+          "category": "Changed",
+          "title": "Preview link destinations",
+          "body": "Web links in File Editor previews now open the shared destination chooser, while local files and page anchors retain their existing navigation."
+        },
+        {
+          "category": "Fixed",
+          "title": "Reliable Kanban moves",
+          "body": "TwiCC boards preserve active interactions during refreshes, process successive moves in order, and align drag previews with drop positions in both board orientations."
+        },
+        {
+          "category": "Fixed",
+          "title": "Safer assistant-driven Kanban changes",
+          "body": "MCP actions check the observed board state before making changes and report partial or uncertain results without automatically repeating them."
+        },
+        {
+          "category": "Fixed",
+          "title": "New project layouts",
+          "body": "Newly created projects correctly apply their initial panes and start at screen size with panning disabled."
+        },
+        {
+          "category": "Fixed",
+          "title": "Project switching",
+          "body": "Repeated navigation releases unused pane resources and avoids unnecessary pane reloads."
+        },
+        {
+          "category": "Fixed",
+          "title": "Sidebar navigation",
+          "body": "Projects remain reachable at the bottom of the sidebar in Hugescreen, and selecting Global closes the temporary sidebar while preserving pinned mode."
+        },
+        {
+          "category": "Security",
+          "title": "Preview security updates",
+          "body": "Updated preview sanitization and mathematical rendering components address known vulnerabilities."
+        }
+      ]
+    },
     {
       "version": "0.18.1",
       "date": "2026-09-30",

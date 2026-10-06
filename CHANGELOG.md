@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.19.0] - 2026-10-07
+
+### Summary
+
+- **v0.19.0: A Clearer Workspace** — Explore images with richer previews, automate more workspace actions, and enjoy refreshed styling with more reliable panes and Kanban boards.
+
+### Added
+
+- **Interactive image previews** — View images with fit-to-pane, actual size, zoom, panning, and pixelated rendering, with framing preserved across navigation and large images opened after confirmation.
+- **Terminal memory usage** — See RAM usage beside the active shell name in each terminal footer, including its child processes.
+- **Web pane automation** — Connected assistants can click web content, fill forms, and use saved local credentials through guarded MCP interactions.
+- **Project creation through MCP** — Connected assistants can create Boatyard projects within the configured projects folder and optionally create and link a trusted TwiCC project.
+
+### Changed
+
+- **Refreshed themes** — Updated dark and light colors, compact pane controls, refined content menus, and softer pane frames bring a more consistent appearance across the app.
+- **Empty new panes** — New unassigned panes show a Boatyard watermark; splitting keeps the original content and adds an empty neighbor.
+- **Preview link destinations** — Web links in File Editor previews now open the shared destination chooser, while local files and page anchors retain their existing navigation.
+
+### Fixed
+
+- **Reliable Kanban moves** — TwiCC boards preserve active interactions during refreshes, process successive moves in order, and align drag previews with drop positions in both board orientations.
+- **Safer assistant-driven Kanban changes** — MCP actions check the observed board state before making changes and report partial or uncertain results without automatically repeating them.
+- **New project layouts** — Newly created projects correctly apply their initial panes and start at screen size with panning disabled.
+- **Project switching** — Repeated navigation releases unused pane resources and avoids unnecessary pane reloads.
+- **Sidebar navigation** — Projects remain reachable at the bottom of the sidebar in Hugescreen, and selecting Global closes the temporary sidebar while preserving pinned mode.
+
+### Security
+
+- **Preview security updates** — Updated preview sanitization and mathematical rendering components address known vulnerabilities.
+
+### Documentation
+
+- **MCP integration guides** — New guides explain project creation, web pane interactions, credential autofill, and TwiCC Kanban automation.
+
 ## [0.18.1] - 2026-09-30
 
 ### Summary
