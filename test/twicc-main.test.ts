@@ -52,6 +52,28 @@ test("TwiCC main plugin registers its system resource provider", () => {
   assert.deepEqual(resourceProviders, ["boatyard.twicc.systemResources"]);
 });
 
+test("TwiCC createProject action forwards trust and explicit no-propagation options", async () => {
+  for (const trust of [false, true]) {
+    const handlers = new Map<string, (values: unknown) => Promise<unknown>>();
+    const commands: string[][] = [];
+    activate({
+      actions: { handle(name: string, handler: (values: unknown) => Promise<unknown>) { handlers.set(name, handler); } },
+      execFileAsync: async (_command: string, args: string[]) => {
+        commands.push(args);
+        return { stdout: args[0] === "projects" ? JSON.stringify([{ id: "example", directory: "/workspace/example" }]) : "" };
+      },
+      getState: () => ({}), projectInspectors: { register() {} }, tools: { register() {} },
+      stateMigrations: { register() {} }, resources: { registerProvider() {} }
+    });
+    await handlers.get("createProject")?.({ name: "Example", sourcePath: "/workspace/example", trust, propagateTrust: false, allowCliFallback: false });
+    assert.deepEqual(commands, [
+      ["create-project", "/workspace/example", "--name", "Example"],
+      ...(trust ? [["update-project", "/workspace/example", "--trust", "--no-propagate"]] : []),
+      ["projects", "--limit", "1000", "--include-archived"]
+    ]);
+  }
+});
+
 test("TwiCC service upgrade and restart actions execute separate commands", async () => {
   const handlers = new Map<string, () => Promise<unknown>>();
   const commands: Array<{ args: string[]; command: string; options: Record<string, unknown> }> = [];

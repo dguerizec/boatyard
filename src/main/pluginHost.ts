@@ -335,6 +335,10 @@ class PluginHost {
     return this.store?.getState?.()?.plugins?.enabled?.[pluginId] !== false;
   }
 
+  hasAction(pluginId: string, actionName: string): boolean {
+    return this.isPluginEnabled(pluginId) && this.actions.has(`${pluginId}:${actionName}`);
+  }
+
   registerTool(pluginId: string, definition: PluginToolDefinition): void {
     if (!definition.id.startsWith(`${pluginId}.`) || !/^[a-zA-Z0-9_.-]+$/.test(definition.id)) {
       throw new Error(`Tool ${definition.id} must be prefixed with plugin id ${pluginId}.`);

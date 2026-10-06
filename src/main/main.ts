@@ -6,6 +6,7 @@ import { NO_FRAME_INSETS, readWindowFrameInsets } from "./windowFrameInsets.js";
 import { createHugescreenEdgeDriver } from "./hugescreenX11.js";
 import { Hugescreen } from "./hugescreen.js";
 import { selectEditorFiles } from "./filePicker.js";
+import { createMcpProject } from "./mcpProjectCreation.js";
 import { applyWebAppViewport } from "./webAppViewport.js";
 import type {
   BrowserWindow as ElectronBrowserWindow,
@@ -2227,6 +2228,17 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   });
   mcpServerService = new McpServerService({
     api: {
+      createProject: (input) => createMcpProject(input, (contextId) => {
+        const context = [...configurationContexts.values()].find((candidate) => getMcpContextId(candidate) === contextId);
+        return context ? {
+          store: context.store,
+          twiccEnabled: context.pluginHost.hasAction("boatyard.twicc", "createProject"),
+          createTwiccProject: (values) => Promise.resolve(context.pluginHost.invoke("boatyard.twicc", "createProject", {
+            ...values,
+            globalConfig: (context.store.getState().pluginConfig as { global?: Record<string, unknown> } | undefined)?.global?.["boatyard.twicc"] || {}
+          }))
+        } : undefined;
+      }),
       capturePane: captureMcpPane,
       listWindows: listMcpWindows,
       listPluginTools: () => [...new Map([...configurationContexts.values()]

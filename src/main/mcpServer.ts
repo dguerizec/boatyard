@@ -10,8 +10,13 @@ import { z } from "zod";
 import type { PluginToolDefinition } from "../shared/pluginTypes.js";
 import type { McpSettings } from "./mcpSettingsStore.js";
 import { webFormFieldsSchema } from "./webFormFill.js";
+import {
+  createProjectInputSchema, createProjectOutputSchema, rejectProjectCreation,
+  type ProjectCreationReceipt
+} from "./mcpProjectCreation.js";
 
 type McpPaneApi = {
+  createProject?(input: z.infer<typeof createProjectInputSchema>): Promise<ProjectCreationReceipt>;
   listPluginTools?(): PluginToolDefinition[];
   invokePluginTool?(contextId: string, id: string, input: Record<string, unknown>): Promise<unknown>;
   capturePane(
@@ -165,6 +170,22 @@ export class McpServerService {
         return jsonResult(this.api.listWindows());
       } catch (error) {
         return errorResult(error);
+      }
+    });
+
+    protocolServer.registerTool("create_project", {
+      title: "Create a Boatyard project",
+      description: "Create one Boatyard project in a required relative directory inside the configured projects tree, creating missing child directories. Optionally create and link a trusted TwiCC project (auto when enabled), without propagating trust to descendants. Does not select a window, apply a layout or enable other services. Reject duplicates and escaping paths. Partial or unknown receipts may represent committed effects; inspect before any manual retry.",
+      inputSchema: createProjectInputSchema,
+      outputSchema: createProjectOutputSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
+    }, async (input) => {
+      try {
+        return jsonResult(this.api.createProject
+          ? createProjectOutputSchema.parse(await this.api.createProject(input))
+          : rejectProjectCreation("PROJECT_CREATION_UNAVAILABLE"));
+      } catch {
+        return errorResult({ code: "PROJECT_CREATION_UNCERTAIN", message: "Project creation could not be confirmed. Inspect the configuration before retrying." });
       }
     });
 

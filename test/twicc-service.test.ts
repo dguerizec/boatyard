@@ -1444,103 +1444,146 @@ test("loadTwiccProjects can feed source path URL detection", async () => {
   );
 });
 
-test("createTwiccProject names and propagates trust through the CLI", async () => {
+test("createTwiccProject explicitly controls CLI trust propagation while preserving UI defaults", async () => {
+  for (const propagateTrust of [undefined, true, false]) {
+    const calls: ExecCall[] = [];
+    const result = await createTwiccProject({
+      name: "Example app",
+      sourcePath: "/workspace/projects/app",
+      propagateTrust
+    }, {
+      execFileAsync: async (command: string, args: string[]) => {
+        calls.push({ command, args });
+        if (args[0] === "create-project") {
+          return { stdout: "" };
+        }
+        return {
+          stdout: JSON.stringify([{
+            id: "-workspace-projects-app",
+            directory: "/workspace/projects/app",
+            git_root: "/workspace/projects/app"
+          }])
+        };
+      }
+    });
+
+    assert.deepEqual(calls, [
+      {
+        command: "twicc",
+        args: ["create-project", "/workspace/projects/app", "--name", "Example app"]
+      },
+      {
+        command: "twicc",
+        args: ["update-project", "/workspace/projects/app", "--trust", propagateTrust === false ? "--no-propagate" : "--propagate"]
+      },
+      {
+        command: "twicc",
+        args: ["projects", "--limit", "1000", "--include-archived"]
+      }
+    ]);
+    assert.equal(result.matchType, "exact");
+    assert.equal(result.url, "http://localhost:3500/project/-workspace-projects-app");
+  }
+});
+
+test("createTwiccProject explicitly controls RPC trust propagation while preserving UI defaults", async () => {
+  for (const propagateTrust of [undefined, true, false]) {
+    const calls: Array<{ body: Record<string, unknown>; url: string }> = [];
+    const result = await createTwiccProject({
+      name: "Example app",
+      sourcePath: "/workspace/projects/app",
+      propagateTrust
+    }, {
+      globalConfig: {
+        twiccBaseUrl: "https://twicc.example/root",
+        twiccApiToken: "secret-token"
+      },
+      fetch: createRpcFetch((url, init) => {
+        const body = JSON.parse(String(init.body));
+        calls.push({ url, body });
+        if (url.endsWith("/rpc/create-project")) {
+          return {
+            exit_code: 0,
+            result: null,
+            error: null
+          };
+        }
+        return {
+          exit_code: 0,
+          result: [{
+            id: "-workspace-projects-app",
+            directory: "/workspace/projects/app",
+            git_root: "/workspace/projects/app"
+          }],
+          error: null
+        };
+      })
+    });
+
+    assert.deepEqual(calls, [
+      {
+        url: "https://twicc.example/root/rpc/create-project",
+        body: {
+          directory: "/workspace/projects/app",
+          name: "Example app"
+        }
+      },
+      {
+        url: "https://twicc.example/root/rpc/update-project",
+        body: {
+          project_id: "/workspace/projects/app",
+          propagate: propagateTrust !== false,
+          trust: true
+        }
+      },
+      {
+        url: "https://twicc.example/root/rpc/projects",
+        body: {
+          limit: 1000,
+          include_archived: true
+        }
+      }
+    ]);
+    assert.equal(result.matchType, "exact");
+    assert.equal(result.url, "https://twicc.example/project/-workspace-projects-app");
+  }
+});
+
+test("guarded trusted creation stops after an uncertain RPC trust update without fallback or replay", async () => {
+  const calls: string[] = [];
+  const cliCalls: ExecCall[] = [];
+  await assert.rejects(createTwiccProject({
+    name: "Example", sourcePath: "/workspace/example",
+    trust: true, propagateTrust: false, allowCliFallback: false
+  }, {
+    globalConfig: { twiccBaseUrl: "https://twicc.example" },
+    fetch: createRpcFetch((url) => {
+      calls.push(url);
+      if (url.endsWith("/rpc/update-project")) throw new Error("uncertain trust response after commit");
+      return { exit_code: 0, result: null, error: null };
+    }),
+    execFileAsync: async (command: string, args: string[]) => { cliCalls.push({ command, args }); return { stdout: "" }; }
+  }), /uncertain trust response/);
+  assert.deepEqual(calls, ["https://twicc.example/rpc/create-project", "https://twicc.example/rpc/update-project"]);
+  assert.deepEqual(cliCalls, []);
+});
+
+test("guarded trusted creation stops after a CLI trust failure without inspection or replay", async () => {
   const calls: ExecCall[] = [];
-  const result = await createTwiccProject({
-    name: "Example app",
-    sourcePath: "/workspace/projects/app"
+  await assert.rejects(createTwiccProject({
+    name: "Example", sourcePath: "/workspace/example",
+    trust: true, propagateTrust: false, allowCliFallback: false
   }, {
     execFileAsync: async (command: string, args: string[]) => {
       calls.push({ command, args });
-      if (args[0] === "create-project") {
-        return { stdout: "" };
-      }
-      return {
-        stdout: JSON.stringify([{
-          id: "-workspace-projects-app",
-          directory: "/workspace/projects/app",
-          git_root: "/workspace/projects/app"
-        }])
-      };
+      if (args[0] === "update-project") throw new Error("trust update failed");
+      return { stdout: "" };
     }
-  });
-
-  assert.deepEqual(calls, [
-    {
-      command: "twicc",
-      args: ["create-project", "/workspace/projects/app", "--name", "Example app"]
-    },
-    {
-      command: "twicc",
-      args: ["update-project", "/workspace/projects/app", "--trust", "--propagate"]
-    },
-    {
-      command: "twicc",
-      args: ["projects", "--limit", "1000", "--include-archived"]
-    }
+  }), /trust update failed/);
+  assert.deepEqual(calls.map((call) => call.args), [
+    ["create-project", "/workspace/example", "--name", "Example"],
+    ["update-project", "/workspace/example", "--trust", "--no-propagate"]
   ]);
-  assert.equal(result.matchType, "exact");
-  assert.equal(result.url, "http://localhost:3500/project/-workspace-projects-app");
-});
-
-test("createTwiccProject names and propagates trust through Twicc RPC", async () => {
-  const calls: Array<{ body: Record<string, unknown>; url: string }> = [];
-  const result = await createTwiccProject({
-    name: "Example app",
-    sourcePath: "/workspace/projects/app"
-  }, {
-    globalConfig: {
-      twiccBaseUrl: "https://twicc.example/root",
-      twiccApiToken: "secret-token"
-    },
-    fetch: createRpcFetch((url, init) => {
-      const body = JSON.parse(String(init.body));
-      calls.push({ url, body });
-      if (url.endsWith("/rpc/create-project")) {
-        return {
-          exit_code: 0,
-          result: null,
-          error: null
-        };
-      }
-      return {
-        exit_code: 0,
-        result: [{
-          id: "-workspace-projects-app",
-          directory: "/workspace/projects/app",
-          git_root: "/workspace/projects/app"
-        }],
-        error: null
-      };
-    })
-  });
-
-  assert.deepEqual(calls, [
-    {
-      url: "https://twicc.example/root/rpc/create-project",
-      body: {
-        directory: "/workspace/projects/app",
-        name: "Example app"
-      }
-    },
-    {
-      url: "https://twicc.example/root/rpc/update-project",
-      body: {
-        project_id: "/workspace/projects/app",
-        propagate: true,
-        trust: true
-      }
-    },
-    {
-      url: "https://twicc.example/root/rpc/projects",
-      body: {
-        limit: 1000,
-        include_archived: true
-      }
-    }
-  ]);
-  assert.equal(result.matchType, "exact");
-  assert.equal(result.url, "https://twicc.example/project/-workspace-projects-app");
 });
 
 test("createTwiccProject does not retry creation after Twicc RPC created the project", async () => {
@@ -1566,6 +1609,40 @@ test("createTwiccProject does not retry creation after Twicc RPC created the pro
   }), /Trust update failed/);
 
   assert.deepEqual(cliCalls, []);
+});
+
+test("createTwiccProject can create through RPC without changing trust or replaying uncertain writes", async () => {
+  const calls: string[] = [];
+  const cliCalls: ExecCall[] = [];
+  const input = { name: "Example", sourcePath: "/workspace/example", trust: false, allowCliFallback: false };
+  const result = await createTwiccProject(input, {
+    globalConfig: { twiccBaseUrl: "https://twicc.example" },
+    fetch: createRpcFetch((url) => {
+      calls.push(url);
+      return { exit_code: 0, error: null, result: url.endsWith("/rpc/projects")
+        ? [{ id: "example", directory: "/workspace/example" }] : null };
+    })
+  });
+  assert.equal(result.id, "example");
+  assert.deepEqual(calls, ["https://twicc.example/rpc/create-project", "https://twicc.example/rpc/projects"]);
+  await assert.rejects(createTwiccProject(input, {
+    globalConfig: { twiccBaseUrl: "https://twicc.example" },
+    fetch: createRpcFetch(() => { throw new Error("uncertain transport after commit"); }),
+    execFileAsync: async (command: string, args: string[]) => { cliCalls.push({ command, args }); return { stdout: "" }; }
+  }), /uncertain transport/);
+  assert.deepEqual(cliCalls, [], "no creation replay through another transport");
+});
+
+test("createTwiccProject can create through CLI without granting or propagating trust", async () => {
+  const calls: ExecCall[] = [];
+  await createTwiccProject({ name: "Example", sourcePath: "/workspace/example", trust: false, allowCliFallback: false }, {
+    execFileAsync: async (command: string, args: string[]) => {
+      calls.push({ command, args });
+      return { stdout: args[0] === "projects" ? JSON.stringify([{ id: "example", directory: "/workspace/example" }]) : "" };
+    }
+  });
+  assert.deepEqual(calls.map((call) => call.args[0]), ["create-project", "projects"]);
+  assert.equal(calls.some((call) => call.args.includes("--trust") || call.args.includes("--propagate")), false);
 });
 
 export {};

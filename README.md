@@ -174,6 +174,7 @@ Implemented built-in plugins:
 - `boatyard.fileEditor`: a project file editor with syntax highlighting, search/replace, local drafts, and disk-change detection. See [File Editor](docs/file-editor.md).
 - `boatyard.pier`: Pier URLs widget, Pier preview pane, global/project settings, and service.
 - [Open a TwiCC session by ID through Boatyard MCP](docs/twicc-session-mcp.md).
+- [Create a Boatyard project through MCP](docs/project-creation-mcp.md).
 - [Click web content through Boatyard MCP](docs/pane-click-mcp.md).
 - [Fill form fields through Boatyard MCP](docs/pane-fill-mcp.md).
 - `boatyard.twicc`: Twicc conversation pane with a configurable, resizable Session Flow sidebar and compact browser controls; standalone Session Flow pane and widget; global/project settings; project creation action; and service.

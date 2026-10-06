@@ -1,6 +1,6 @@
 ---
 name: boatyard-mcp
-description: List, move and prioritize TwiCC Kanban sessions; switch projects, inspect and update Boatyard panes and mobile viewports, navigate web panes, capture screenshots, click web content, and fill forms through the authenticated local Boatyard MCP server. Use for requested pane inspection, navigation, clicking, form filling, or TwiCC Kanban management. Do not use for splitting or closing panes because those operations are not exposed yet.
+description: Create Boatyard projects; list, move and prioritize TwiCC Kanban sessions; switch projects, inspect and update Boatyard panes and mobile viewports, navigate web panes, capture screenshots, click web content, and fill forms through the authenticated local Boatyard MCP server. Use for requested project creation, pane inspection, navigation, clicking, form filling, or TwiCC Kanban management. Do not use for splitting or closing panes because those operations are not exposed yet.
 ---
 
 # Boatyard MCP
@@ -44,6 +44,43 @@ hermes mcp add boatyard --url "<copied endpoint>" --auth header
 ```
 
 If the Boatyard tools are unavailable, stop and tell the user that the `boatyard` MCP connection must be enabled, installed, or repaired. Do not work around a missing connection by reading Boatyard's private configuration or token files.
+
+## Create projects
+
+Resolve the exact configuration with `list_windows`, then call `create_project`
+with its `contextId`, a nonempty `name` (maximum 160 characters) and a required
+relative `directory` inside configured `projectsBasePath` (maximum 2048
+characters, 16 child segments, no dot traversal). Missing directories are
+created. An existing directory is refused unless `reuse: true` is explicit.
+Optional identity fields are canonical `slug` (maximum 80) and `group` (maximum
+160). Unknown fields, escaping symlinks and duplicate slug, folded name or
+canonical source location are refused before writing.
+If the target configuration is ambiguous, ask the user instead of guessing.
+
+Optional `createTwiccProject` accepts `true`, `false` or `"auto"`; omission means
+auto and follows availability of the enabled TwiCC plugin. Explicit true cannot
+enable a disabled plugin. TwiCC creation requires a name of at most 25 Unicode
+code points; longer names are refused before any write. This creates a core
+Boatyard project using its domain store, then optionally creates and links a
+trusted TwiCC project and propagates trust to its descendants, including
+worktrees. This policy implements the human's explicit choice for new project
+creation; it does not
+change global or provider/session permission settings. A trust update failure
+leaves the TwiCC workflow uncertain and must not be retried automatically.
+It does not select a window, apply a layout, start a session,
+or enable Gmail or another plugin/backend.
+Never pass plugin configuration, credentials or terminal commands through this
+tool. Creation results contain only bounded identity and acknowledgement fields.
+
+Inspect `status`: `created` confirms the requested workflow; `rejected` means
+zero effects; `unknown` with `PROJECT_CREATION_UNCERTAIN` means the domain write
+may have changed memory or persisted files; `partial` means directory, Boatyard
+or TwiCC effects remain after a later failure. Top-level counts concern Boatyard
+creation only; `directory` and `twicc` report independent effects. No cleanup,
+rollback or replay occurs. Never retry a partial/unknown receipt or uncertain
+transport response automatically. Inspect all state before a manual retry. A
+receipt does not prove UI rendering or session readiness. Use `switch_project`
+separately only when requested.
 
 ## Switch projects
 

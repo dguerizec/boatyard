@@ -123,7 +123,7 @@ type TwiccProjectCacheOptions = {
 };
 type TwiccProjectCacheGetOptions = { force?: boolean; projectIds?: string[] };
 type TwiccProjectInspection = { id: string; matchType: "exact" | "parent"; url: string };
-type TwiccProjectCreationInput = { name?: unknown; sourcePath?: unknown };
+type TwiccProjectCreationInput = { name?: unknown; sourcePath?: unknown; trust?: boolean; propagateTrust?: boolean; allowCliFallback?: boolean };
 type BoatyardProject = { id?: string; sourcePath?: string };
 type BoatyardProjectPluginConfig = Record<string, Record<string, Record<string, unknown> | undefined> | undefined>;
 type TwiccSessionNavigationTarget = {
@@ -1743,11 +1743,13 @@ async function createTwiccProject(
         name
       }, options);
       createdViaRpc = true;
-      await rpcCommand("update-project", {
-        project_id: normalizedSourcePath,
-        propagate: true,
-        trust: true
-      }, options);
+      if (input.trust !== false) {
+        await rpcCommand("update-project", {
+          project_id: normalizedSourcePath,
+          propagate: input.propagateTrust !== false,
+          trust: true
+        }, options);
+      }
       const projects = await loadTwiccProjectsFromRpc(options);
       return inspectTwiccProjectFromProjects(
         normalizedSourcePath,
@@ -1755,7 +1757,7 @@ async function createTwiccProject(
         options.globalConfig?.twiccBaseUrl
       );
     } catch (error) {
-      if (createdViaRpc) {
+      if (createdViaRpc || input.allowCliFallback === false) {
         throw error;
       }
       // Fall back for older/local setups where only the CLI is available.
@@ -1770,10 +1772,12 @@ async function createTwiccProject(
     timeout: 30000,
     windowsHide: true
   });
-  await execFileAsync("twicc", ["update-project", normalizedSourcePath, "--trust", "--propagate"], {
-    timeout: 30000,
-    windowsHide: true
-  });
+  if (input.trust !== false) {
+    await execFileAsync("twicc", ["update-project", normalizedSourcePath, "--trust", input.propagateTrust === false ? "--no-propagate" : "--propagate"], {
+      timeout: 30000,
+      windowsHide: true
+    });
+  }
 
   return inspectTwiccProject(normalizedSourcePath, { execFileAsync, ...options });
 }

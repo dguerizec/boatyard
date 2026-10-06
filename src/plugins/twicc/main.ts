@@ -33,7 +33,7 @@ type TwiccState = {
   projects?: BoatyardProject[];
 };
 type GlobalConfigPayload = { globalConfig?: Record<string, unknown> };
-type SourcePathPayload = { name?: unknown; sourcePath?: unknown };
+type SourcePathPayload = { name?: unknown; sourcePath?: unknown; trust?: boolean; propagateTrust?: boolean; allowCliFallback?: boolean };
 type SessionFlowPayload = GlobalConfigPayload & { project?: unknown };
 type SessionFlowSessionPayload = GlobalConfigPayload & { sessionId?: unknown };
 type SessionNavigationTargetPayload = GlobalConfigPayload & {
@@ -169,8 +169,8 @@ function activate(ctx: TwiccPluginContext) {
     getTwiccServiceRestartReadiness(ctx.execFileAsync)
   ));
 
-  ctx.actions.handle<SourcePathPayload & GlobalConfigPayload>("createProject", async ({ name, sourcePath, globalConfig } = {}) => {
-    const project = await createTwiccProject({ name, sourcePath }, {
+  ctx.actions.handle<SourcePathPayload & GlobalConfigPayload>("createProject", async ({ name, sourcePath, globalConfig, trust, propagateTrust, allowCliFallback } = {}) => {
+    const project = await createTwiccProject({ name, sourcePath, trust, propagateTrust, allowCliFallback }, {
       execFileAsync: ctx.execFileAsync,
       globalConfig
     });

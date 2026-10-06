@@ -96,6 +96,8 @@ test("PluginHost discovers runtime plugins and routes actions", async () => {
   });
 
   host.discover();
+  assert.equal(host.hasAction("vendor.example", "echo"), true);
+  assert.equal(host.hasAction("vendor.example", "missing"), false);
 
   assert.deepEqual(host.listRendererPlugins(), [{
     id: "vendor.example",
@@ -150,6 +152,8 @@ test("PluginHost skips disabled plugin actions and inspectors", async () => {
   const host = new PluginHost({ pluginRoot, store });
 
   host.discover();
+  assert.equal(host.hasAction("vendor.example", "echo"), false);
+  assert.equal(host.hasAction("vendor.example", "missing"), false);
 
   await assert.rejects(
     host.invoke("vendor.example", "echo", { value: "ok" }),

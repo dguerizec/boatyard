@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
 import { z } from "zod";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createMcpProject, createProjectOutputSchema, rejectProjectCreation } from "../src/main/mcpProjectCreation.js";
+import { ProjectStore } from "../src/main/store.js";
 import { PluginHost } from "../src/main/pluginHost.js";
 import { McpServerService } from "../src/main/mcpServer.js";
 import type { McpSettings } from "../src/main/mcpSettingsStore.js";
@@ -22,6 +27,93 @@ function parseMcpResponse(text: string): Record<string, unknown> {
   const data = text.split("\n").find((line) => line.startsWith("data: "))?.slice(6) || "{}";
   return JSON.parse(data) as Record<string, unknown>;
 }
+
+test("create_project registers its bounded contract and safely creates only in an isolated configuration", async (t) => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "boatyard-project-protocol-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const store = new ProjectStore(path.join(directory, "state.json"));
+  store.load();
+  const root = path.join(directory, "projects");
+  fs.mkdirSync(root);
+  store.updateSettings({ projectsBasePath: root });
+  const contextId = "0123456789abcdef";
+  let attempts = 0;
+  let throwFailure = false;
+  const settings: McpSettings = { enabled: true, managedClientTokens: {}, port: await reservePort(), token: "test-token-with-sufficient-entropy" };
+  const service = new McpServerService({
+    api: {
+      createProject: async (input) => {
+        attempts += 1;
+        if (throwFailure) throw new Error("SECRET private configuration path");
+        return createMcpProject(input, (id) => id === contextId ? {
+          store, twiccEnabled: false, createTwiccProject: async () => assert.fail("Unexpected TwiCC mutation")
+        } : undefined);
+      },
+      listWindows: () => ({ windows: [] }),
+      capturePane: async () => { throw new Error("Unexpected capture"); },
+      requestPane: async () => { throw new Error("Unexpected UI mutation"); }
+    },
+    getSettings: () => settings, version: "test"
+  });
+  try {
+    const status = await service.configure();
+    const request = async (method: string, params: Record<string, unknown>, token = settings.token) => {
+      const response = await fetch(status.endpoint, {
+        method: "POST",
+        headers: { Accept: "application/json, text/event-stream", Authorization: `Bearer ${token}`, "Content-Type": "application/json", "MCP-Protocol-Version": "2025-06-18" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
+      });
+      const body = await response.text();
+      return { status: response.status, payload: response.ok ? parseMcpResponse(body) : {} };
+    };
+    const listed = await request("tools/list", {});
+    const tool = ((listed.payload.result as Record<string, unknown>).tools as Array<Record<string, unknown>>)
+      .find((candidate) => candidate.name === "create_project");
+    assert.ok(tool);
+    assert.deepEqual(tool.annotations, { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true });
+    const schema = tool.inputSchema as Record<string, unknown>;
+    assert.equal(schema.additionalProperties, false);
+    assert.deepEqual(schema.required, ["contextId", "name", "directory"]);
+    assert.deepEqual(Object.keys(schema.properties as object), ["contextId", "name", "directory", "reuse", "slug", "group", "createTwiccProject"]);
+    assert.ok(tool.outputSchema);
+    if (process.env.BOATYARD_MCP_CONTRACT_EXPORT) {
+      fs.writeFileSync(process.env.BOATYARD_MCP_CONTRACT_EXPORT, JSON.stringify({
+        name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema, annotations: tool.annotations
+      }, null, 2) + "\n");
+    }
+    const call = (args: Record<string, unknown>, token?: string) => request("tools/call", { name: "create_project", arguments: args }, token);
+    const values = { contextId, name: "Example", directory: "example" };
+    assert.equal((await call(values, "incorrect-token")).status, 401);
+    assert.equal(attempts, 0);
+    for (const invalid of [
+      { name: "Example" }, { contextId, name: "Example" }, { ...values, name: " " }, { ...values, name: "n".repeat(161) },
+      { ...values, pluginConfig: { gmail: {} } }, { ...values, contextId: "/workspace/config" },
+      { ...values, directory: "/absolute" }, { ...values, directory: "../escape" }, { ...values, sourcePath: "relative" }, { ...values, slug: "Not-canonical" }
+    ]) {
+      const response = (await call(invalid)).payload;
+      assert.ok(response.error || (response.result as Record<string, unknown>)?.isError, JSON.stringify(response));
+    }
+    assert.equal(attempts, 0, "protocol validation runs before the API");
+    const receipt = async (args: Record<string, unknown>) => {
+      const payload = (await call(args)).payload;
+      const result = payload.result as Record<string, unknown>;
+      const parsed = createProjectOutputSchema.parse(result.structuredContent);
+      assert.deepEqual(JSON.parse((result.content as Array<{ text: string }>)[0].text), parsed);
+      return parsed;
+    };
+    assert.deepEqual(await receipt({ ...values, contextId: "aaaaaaaaaaaaaaaa" }), rejectProjectCreation("CONTEXT_NOT_AVAILABLE"));
+    assert.equal(store.getState().projects.length, 0);
+    assert.equal((await receipt(values)).status, "created");
+    assert.deepEqual(await receipt(values), rejectProjectCreation("DUPLICATE_PROJECT_SLUG"));
+    throwFailure = true;
+    const failure = (await call({ ...values, name: "Another" })).payload.result as Record<string, unknown>;
+    assert.equal(failure.isError, true);
+    assert.equal(JSON.stringify(failure).includes("SECRET"), false);
+    assert.match(JSON.stringify(failure), /PROJECT_CREATION_UNCERTAIN/);
+    assert.equal(attempts, 4, "the tool never automatically retries");
+    assert.equal(store.getState().projects.length, 1);
+  } finally { await service.stop(); }
+});
 
 test("MCP server requires a bearer token and accepts Streamable HTTP initialization", async () => {
   const settings: McpSettings = {
@@ -93,6 +185,7 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
     const tools = ((toolsPayload.result as Record<string, unknown>).tools as Array<Record<string, unknown>>);
     assert.deepEqual(tools.map((tool) => tool.name), [
       "list_windows",
+      "create_project",
       "switch_project",
       "get_pane_layout",
       "list_pane_types",
@@ -115,6 +208,8 @@ test("MCP server requires a bearer token and accepts Streamable HTTP initializat
       });
       return parseMcpResponse(await response.text());
     };
+    const unavailable = await callTool("create_project", { contextId: "0123456789abcdef", name: "Example", directory: "example" });
+    assert.deepEqual((unavailable.result as Record<string, unknown>).structuredContent, rejectProjectCreation("PROJECT_CREATION_UNAVAILABLE"));
     for (const [target, valid] of [
       [{ selector: "#save" }, true], [{ point: { x: 120, y: 80 } }, true],
       [{}, false], [{ selector: "#save", point: { x: 120, y: 80 } }, false],
