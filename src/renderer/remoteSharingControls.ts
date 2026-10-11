@@ -22,6 +22,7 @@ export function setupRemoteSharingControls(button: HTMLButtonElement, api: Boaty
     button.setAttribute("aria-haspopup", "dialog"); button.setAttribute("aria-expanded", String(Boolean(popup)));
     button.textContent = connected > 0 ? String(connected) : name;
     button.setAttribute("aria-label", `${name}: ${connected > 0 ? `${connected} connected` : listening ? "waiting for connections" : "stopped"}`);
+    if (mode === "share" && current.screenHidden === true) button.setAttribute("aria-label", `${button.getAttribute("aria-label")} Screen hidden.`);
     button.title = button.getAttribute("aria-label")!;
   }
   function apply(value: UnknownRecord) { if (!disposed) { current = value; loaded = true; render(); } }

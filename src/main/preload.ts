@@ -58,6 +58,10 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateGlobalPluginConfig: (pluginId: string, patch: unknown) => ipcRenderer.invoke("global-plugin-config:update", pluginId, patch),
   updateProjectPluginConfig: (projectId: string, pluginId: string, patch: unknown) => ipcRenderer.invoke("project-plugin-config:update", projectId, pluginId, patch),
   updatePaneLayout: (projectId: string | null | undefined, layout: unknown) => ipcRenderer.invoke("pane-layout:update", projectId, layout),
+  // Register privacy before the renderer can reveal the next view.
+  prepareShareNavigation: (navigation: unknown) => ipcRenderer.sendSync("share:navigation", navigation),
+  updateShareScreen: (patch: unknown) => ipcRenderer.invoke("share:screen:update", patch),
+  getShareProjects: () => ipcRenderer.invoke("share:projects"),
   createReadOnlyShareLink: (label?: string) => ipcRenderer.invoke("remote:readonly-link", label),
   revokeShareClient: (id: string) => ipcRenderer.invoke("remote:client:revoke", id),
   getWebrtcSettings: () => ipcRenderer.invoke("webrtc:settings"),

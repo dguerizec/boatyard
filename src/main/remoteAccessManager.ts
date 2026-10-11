@@ -70,6 +70,8 @@ export class RemoteAccessManager {
       catch (error) { if (starting) await this.applyConfiguration("share", { enabled: false }); throw error; }
     });
   }
+  updateShareScreen(patch: Record<string, unknown> | (() => Record<string, unknown>)) { return this.run(() => this.controllers.share.updateScreen(typeof patch === "function" ? patch() : patch)); }
+  toggleShareScreen() { return this.run(() => this.controllers.share.updateScreen({ screenHidden: !this.getStatus("share").screenHidden })); }
   revokeClient(id: string) { return this.run(() => this.controllers.share.revokeClient(id)); }
   async initialize() {
     for (const mode of ["remote", "share"] as const) {

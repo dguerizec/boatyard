@@ -1,5 +1,12 @@
+import { updateProjectShareButton, type ProjectSharing } from "./projectShareControls.js";
+export type ProjectMenuFreezeScope = {
+  freezeForMainRect(rect: DOMRectReadOnly, options?: { margin?: number }): Promise<void>;
+  restore(): Promise<void>;
+};
+
 type ProjectGroupMenu = HTMLDivElement & {
   cleanup?: () => void;
+  show?: () => void;
 };
 
 type SidebarGroupProject = {
@@ -8,6 +15,8 @@ type SidebarGroupProject = {
 };
 
 type ProjectSidebarGroupMenusOptions = {
+  projectSharing?: ProjectSharing;
+  createProjectMenuFreezeScope?: () => ProjectMenuFreezeScope;
   applyFormControl: (control: HTMLElement) => void;
   clamp: (value: number, min: number, max: number) => number;
   createProjectGroupForProject: (project: SidebarGroupProject, groupName: string) => Promise<void>;
@@ -82,6 +91,8 @@ function createDialogActions(cancelLabel: string, submitLabel: string, danger = 
 }
 
 export function createProjectSidebarGroupMenus({
+  projectSharing,
+  createProjectMenuFreezeScope,
   applyFormControl,
   clamp,
   createProjectGroupForProject,
@@ -263,6 +274,7 @@ export function createProjectSidebarGroupMenus({
     menu.style.left = `${Math.round(left)}px`;
     menu.style.top = `${Math.round(top)}px`;
 
+    menu.style.visibility = "hidden";
     document.body.append(menu);
     openProjectGroupMenu = menu;
     onMenuOpenChange?.(true);
@@ -279,15 +291,43 @@ export function createProjectSidebarGroupMenus({
       }
     }
 
+    const freezeScope = createProjectMenuFreezeScope?.();
+    let showRequest = 0;
+    menu.show = () => {
+      const request = ++showRequest;
+      menu.style.visibility = "hidden";
+      if (!freezeScope) {
+        menu.style.visibility = "";
+        menu.querySelector("button")?.focus();
+        return;
+      }
+      const rect = menu.getBoundingClientRect();
+      menu.style.top = `${Math.round(clamp(rect.top, 12, Math.max(12, window.innerHeight - rect.height - 12)))}px`;
+      void freezeScope.freezeForMainRect(menu.getBoundingClientRect(), { margin: 8 }).then(async () => {
+        if (openProjectGroupMenu !== menu) {
+          await freezeScope.restore();
+          return;
+        }
+        if (request !== showRequest) return;
+        menu.style.visibility = "";
+        menu.querySelector("button")?.focus();
+      }).catch(error => {
+        console.error("Could not freeze webapps for project context menu:", error);
+        if (openProjectGroupMenu === menu) closeProjectGroupMenu();
+      });
+    };
     menu.cleanup = () => {
       document.removeEventListener("pointerdown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", closeProjectGroupMenu);
+      window.removeEventListener("pagehide", closeProjectGroupMenu);
+      void freezeScope?.restore().catch(error => console.error("Could not restore webapps after project context menu:", error));
     };
 
-    setTimeout(() => {
-      document.addEventListener("pointerdown", onPointerDown);
-      document.addEventListener("keydown", onKeyDown);
-    }, 0);
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", closeProjectGroupMenu);
+    window.addEventListener("pagehide", closeProjectGroupMenu);
 
     return menu;
   }
@@ -316,11 +356,11 @@ export function createProjectSidebarGroupMenus({
     });
 
     menu.append(renameItem, explodeItem);
-    menu.querySelector("button")?.focus();
+    menu.show?.();
   }
 
   function openProjectContextMenu(event: MouseEvent, project: SidebarGroupProject) {
-    const menu = createProjectGroupMenu(event, 132);
+    const menu = createProjectGroupMenu(event, projectSharing?.getState(project.id || "") === undefined ? 132 : 172);
     const projectId = project.id || "";
 
     const settingsItem = document.createElement("button");
@@ -362,10 +402,32 @@ export function createProjectSidebarGroupMenus({
     });
 
     menu.append(settingsItem, pinItem, createGroupItem);
-    menu.querySelector("button")?.focus();
+    if (projectSharing) {
+      const shareItem = document.createElement("button");
+      shareItem.type = "button"; shareItem.className = "webapp-tab-menu-item project-share-menu-item";
+      shareItem.setAttribute("role", "menuitemcheckbox");
+      shareItem.dataset.projectShareId = projectId; shareItem.dataset.projectName = project.name || "Project";
+      updateProjectShareButton(shareItem, projectSharing, projectId, project.name || "Project", true);
+      shareItem.onclick = () => {
+        closeProjectGroupMenu();
+        void projectSharing.toggle(projectId).catch(error => console.error("Could not update shared project:", error));
+      };
+      menu.append(shareItem);
+    }
+    menu.show?.();
+  }
+
+  function refreshProjectSharing() {
+    if (!projectSharing) return;
+    for (const button of openProjectGroupMenu?.querySelectorAll<HTMLButtonElement>("[data-project-share-id]") || []) {
+      const wasHidden = button.hidden;
+      updateProjectShareButton(button, projectSharing, button.dataset.projectShareId!, button.dataset.projectName!, true);
+      if (wasHidden !== button.hidden) openProjectGroupMenu?.show?.();
+    }
   }
 
   return Object.freeze({
+    refreshProjectSharing,
     closeProjectGroupMenu,
     openProjectContextMenu,
     openProjectCreateGroupDialog,

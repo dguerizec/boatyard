@@ -1,3 +1,4 @@
+import { canShareScreen, sharedProjectKey } from "./shareScreenPolicy.js";
 import { loadRemoteAccessSettings, RemoteAccessManager, type RemoteAccessMode } from "./remoteAccessManager.js";
 import { RemoteAccessController } from "./remoteAccessController.js";
 import { RemoteAccessService } from "./remoteAccess.js";
@@ -135,6 +136,8 @@ let pluginHost: PluginHostInstance;
 let updateManager: UpdateManagerInstance;
 let mcpServerService: McpServerService;
 let remoteAccessController: RemoteAccessManager;
+let shareNavigationRevision = 0;
+const shareNavigation = new Map<string, { view?: string; projectId?: string | null; revision: number }>();
 let webrtcSettingsStore: WebrtcSettingsStore;
 let mcpAgentConnectionInstaller: McpAgentConnectionInstaller;
 let mcpSkillInstaller: McpSkillInstaller;
@@ -624,6 +627,7 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
   window.on("blur", () => workspaceWindow.hugescreen.suspend());
   window.on("focus", () => workspaceWindow.hugescreen.resume());
   window.on("closed", () => {
+    shareNavigation.delete(`${getMcpContextId(configuration)}:${workspaceWindow.id}`);
     workspaceWindow.hugescreen.dispose();
     workspaceWindows.delete(getWorkspaceWindowRegistryKey(configuration, workspaceWindow.id));
     if (workspaceWindow.saveStateTimer) {
@@ -756,6 +760,8 @@ function sendWorkspaceNavigation(configuration: ConfigurationContext, windowId: 
   if (!webContents) {
     return;
   }
+  // Keep synchronized windows private until their renderer accepts the navigation.
+  shareNavigation.set(`${getMcpContextId(configuration)}:${windowId}`, { view: "", projectId: null, revision: ++shareNavigationRevision });
   webContents.send("workspace:navigation-changed", navigation);
 }
 
@@ -1538,6 +1544,50 @@ function registerIpcHandlers() {
     getConfigurationForEvent(event);
     return remoteAccessController.getStatus(remoteMode(mode));
   });
+  ipcMain.on("share:navigation", (event: IpcMainEvent, navigation: { view?: string; projectId?: string | null }) => {
+    const record = getWorkspaceWindowForWebContents(event.sender);
+    if (record) shareNavigation.set(`${getMcpContextId(record.configuration)}:${record.id}`, {
+      view: typeof navigation?.view === "string" ? navigation.view : "",
+      projectId: typeof navigation?.projectId === "string" ? navigation.projectId : null,
+      revision: ++shareNavigationRevision
+    });
+    event.returnValue = true;
+  });
+  ipcMain.handle("share:screen:update", (event: IpcMainInvokeEvent, patch: unknown) => {
+    const configuration = getConfigurationForEvent(event);
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("Invalid screen settings.");
+    const value = patch as UnknownRecord;
+    const projects = configuration.store.getState().projects;
+    if (value.sharedProjectIds !== undefined && (!Array.isArray(value.sharedProjectIds)
+      || value.sharedProjectIds.some(id => typeof id !== "string" || !projects.some(project => project.id === id)))) {
+      throw new Error("Invalid shared projects.");
+    }
+    if (value.projectId !== undefined && (typeof value.projectId !== "string"
+      || !projects.some(project => project.id === value.projectId) || typeof value.shared !== "boolean")) {
+      throw new Error("Invalid shared project.");
+    }
+    return remoteAccessController.updateShareScreen(() => {
+      const scoped: UnknownRecord = {};
+      if (value.screenHidden !== undefined) scoped.screenHidden = value.screenHidden;
+      if (Array.isArray(value.sharedProjectIds)) {
+        const contextId = getMcpContextId(configuration);
+        scoped.sharedProjectIds = [
+          ...remoteAccessController.getStatus("share").sharedProjectIds.filter(id => !id.startsWith(`${contextId}:`)),
+          ...value.sharedProjectIds.map(id => sharedProjectKey(contextId, String(id)))
+        ];
+      }
+      if (typeof value.projectId === "string") {
+        const key = sharedProjectKey(getMcpContextId(configuration), value.projectId);
+        const ids = remoteAccessController.getStatus("share").sharedProjectIds.filter(id => id !== key);
+        scoped.sharedProjectIds = value.shared ? [...ids, key] : ids;
+      }
+      return scoped;
+    });
+  });
+  ipcMain.handle("share:projects", (event: IpcMainInvokeEvent) => {
+    const configuration = getConfigurationForEvent(event), contextId = getMcpContextId(configuration);
+    return configuration.store.getState().projects.map(project => ({ id: project.id, name: project.name, group: project.group, key: sharedProjectKey(contextId, String(project.id)) }));
+  });
   ipcMain.handle("remote:readonly-link", (event: IpcMainInvokeEvent, label: unknown) => {
     getConfigurationForEvent(event);
     if (label !== undefined && (typeof label !== "string" || label.length > 80)) throw new Error("Invalid client name.");
@@ -2211,7 +2261,10 @@ if (isPrimaryInstance) {
       if (input.key === "Control" && input.type === "keyDown" && !input.isAutoRepeat) {
         workspace.refreshFrameInsets();
       }
-      if (input.control && input.shift && !input.alt && !input.meta && input.key.toLowerCase() === "h") {
+      if (input.control && input.shift && !input.alt && !input.meta && input.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (input.type === "keyDown" && !input.isAutoRepeat) void remoteAccessController?.toggleShareScreen().catch(error => console.warn("Could not change Share screen visibility:", error));
+      } else if (input.control && input.shift && !input.alt && !input.meta && input.key.toLowerCase() === "h") {
         event.preventDefault();
         if (input.type === "keyDown" && !input.isAutoRepeat && !workspace.restoringGeometry) workspace.hugescreen.toggle();
       } else {
@@ -2283,6 +2336,13 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
     windows: () => [...workspaceWindows.values()].map(record => ({
       id: `${getMcpContextId(record.configuration)}:${record.id}`, window: record.window
     })),
+    screenState: mode === "share" ? id => {
+      const record = [...workspaceWindows.values()].find(candidate => `${getMcpContextId(candidate.configuration)}:${candidate.id}` === id);
+      if (!record || record.window.isDestroyed()) return { allowed: false, revision: "closed" };
+      const navigation = shareNavigation.get(id) || { view: "", projectId: null, revision: 0 };
+      const settings = remoteStores.share.get();
+      return { allowed: canShareScreen(settings, getMcpContextId(record.configuration), navigation), revision: `${remoteStores.share.getRevision()}:${navigation.revision}` };
+    } : undefined,
     target: (id, x, y) => {
       const record = [...workspaceWindows.values()].find(candidate => `${getMcpContextId(candidate.configuration)}:${candidate.id}` === id);
       if (!record || record.window.isDestroyed()) throw new Error("Shared window unavailable");

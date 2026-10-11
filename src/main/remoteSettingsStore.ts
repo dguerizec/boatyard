@@ -2,8 +2,10 @@ import { existsSync, chmodSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname } from "node:path";
 import { hashRemotePassword, isRemotePasswordHash, verifyRemotePassword } from "./remotePassword.js";
 
+import { parseSharedProjectIds } from "./shareScreenPolicy.js";
+
 export const DEFAULT_REMOTE_PORT = 47831;
-export type RemoteSettings = { enabled: boolean; port: number; publicOrigin: string; passwordHash: string; readOnly: boolean };
+export type RemoteSettings = { enabled: boolean; port: number; publicOrigin: string; passwordHash: string; readOnly: boolean; screenHidden: boolean; sharedProjectIds: string[] };
 
 function readPort(value: unknown): number {
   const port = Number(value);
@@ -21,22 +23,29 @@ function readOrigin(value: unknown): string {
 }
 
 export class RemoteSettingsStore {
-  private settings: RemoteSettings = { enabled: false, port: DEFAULT_REMOTE_PORT, publicOrigin: "", passwordHash: "", readOnly: false };
+  private revision = 0;
+  getRevision() { return this.revision; }
+  private settings: RemoteSettings = { enabled: false, port: DEFAULT_REMOTE_PORT, publicOrigin: "", passwordHash: "", readOnly: false, screenHidden: false, sharedProjectIds: [] };
   constructor(private readonly filePath: string, defaults: Partial<RemoteSettings> = {}) { this.settings = { ...this.settings, ...defaults }; }
   load(): RemoteSettings {
     if (existsSync(this.filePath)) {
       try {
         const value = JSON.parse(readFileSync(this.filePath, "utf8"));
         const passwordHash = isRemotePasswordHash(value.passwordHash) ? value.passwordHash : "";
-        this.settings = { enabled: value.enabled === true && (value.readOnly === true || Boolean(passwordHash)), port: readPort(value.port), publicOrigin: readOrigin(value.publicOrigin), passwordHash, readOnly: value.readOnly === true };
+        this.settings = { enabled: value.enabled === true && (value.readOnly === true || Boolean(passwordHash)), port: readPort(value.port), publicOrigin: readOrigin(value.publicOrigin), passwordHash, readOnly: value.readOnly === true, screenHidden: value.screenHidden === true, sharedProjectIds: value.sharedProjectIds === undefined ? [] : parseSharedProjectIds(value.sharedProjectIds) };
         chmodSync(this.filePath, 0o600);
       } catch { console.warn("Could not load remote access settings. Remote access remains disabled."); }
     }
     return this.get();
   }
-  get(): RemoteSettings { return { ...this.settings }; }
+  get(): RemoteSettings { return { ...this.settings, sharedProjectIds: [...this.settings.sharedProjectIds] }; }
   async update(patch: Record<string, unknown>): Promise<RemoteSettings> {
-    const next = { ...this.settings };
+    const next = this.get();
+    if (patch.screenHidden !== undefined) {
+      if (typeof patch.screenHidden !== "boolean") throw new Error("Invalid screen visibility.");
+      next.screenHidden = patch.screenHidden;
+    }
+    if (patch.sharedProjectIds !== undefined) next.sharedProjectIds = parseSharedProjectIds(patch.sharedProjectIds);
     if (patch.port !== undefined) next.port = readPort(patch.port);
     if (patch.publicOrigin !== undefined) next.publicOrigin = readOrigin(patch.publicOrigin);
     if (patch.enabled !== undefined) next.enabled = patch.enabled === true;
@@ -48,7 +57,7 @@ export class RemoteSettingsStore {
     const temporaryPath = `${this.filePath}.${process.pid}.tmp`;
     writeFileSync(temporaryPath, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
     renameSync(temporaryPath, this.filePath); chmodSync(this.filePath, 0o600);
-    this.settings = next;
+    this.settings = next; this.revision++;
     return this.get();
   }
 }

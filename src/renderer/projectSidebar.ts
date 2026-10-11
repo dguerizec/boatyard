@@ -1,3 +1,4 @@
+import { updateProjectShareButton } from "./projectShareControls.js";
 import { createProjectSidebarGroupMenus } from "./projectSidebarGroupMenus.js";
 import { createProjectSidebarGroupRows } from "./projectSidebarGroupRows.js";
 import { createProjectSidebarReorderActions } from "./projectSidebarReorderActions.js";
@@ -11,6 +12,8 @@ import type {
 
 export function createProjectSidebar({
     elements,
+    projectSharing,
+    createProjectMenuFreezeScope,
     getViewState,
     getProjects,
     getProjectGroups,
@@ -85,9 +88,12 @@ export function createProjectSidebar({
     });
     const {
       closeProjectGroupMenu,
+      refreshProjectSharing,
       openProjectContextMenu,
       openProjectGroupContextMenu,
     } = createProjectSidebarGroupMenus({
+      projectSharing,
+      createProjectMenuFreezeScope,
       applyFormControl,
       clamp,
       createProjectGroupForProject,
@@ -382,6 +388,19 @@ export function createProjectSidebar({
         }
       });
       row.append(settingsButton);
+      if (projectSharing) {
+        const shareButton = document.createElement("button");
+        shareButton.type = "button"; shareButton.className = "project-share-button";
+        shareButton.dataset.projectShareId = projectId;
+        shareButton.dataset.projectName = project.name || "Project";
+        shareButton.addEventListener("click", event => {
+          event.stopPropagation();
+          void projectSharing.toggle(projectId).catch(error => console.error("Could not update shared project:", error));
+        });
+        updateProjectShareButton(shareButton, projectSharing, projectId, project.name || "Project");
+        row.classList.toggle("project-sharing-active", projectSharing.getState(projectId) === true);
+        row.append(shareButton);
+      }
 
       return row;
     }
@@ -516,6 +535,7 @@ export function createProjectSidebar({
       button.draggable = Boolean(projectId);
       button.dataset.projectId = projectId;
       button.title = project.name || "Project";
+      updatePinnedSharing(button, project);
       button.addEventListener("click", () => {
         if (projectId) {
           selectProject(projectId);
@@ -1301,10 +1321,32 @@ export function createProjectSidebar({
       });
     }
 
+    function updatePinnedSharing(button: HTMLButtonElement, project: RendererProject) {
+      const shared = projectSharing?.getState(project.id || "");
+      button.classList.toggle("project-sharing-active", shared !== undefined);
+      button.classList.toggle("project-is-shared", shared === true);
+      button.title = `${project.name || "Project"}${shared === undefined ? "" : ` · ${shared ? "Shared" : "Masked"}`}`;
+    }
+
+    function refreshSharing() {
+      if (!projectSharing) return;
+      for (const button of projectList.querySelectorAll<HTMLButtonElement>("[data-project-share-id]")) {
+        const id = button.dataset.projectShareId!;
+        updateProjectShareButton(button, projectSharing, id, button.dataset.projectName!);
+        button.parentElement!.classList.toggle("project-sharing-active", projectSharing.getState(id) === true);
+      }
+      for (const button of pinnedProjects.querySelectorAll<HTMLButtonElement>(".pinned-project-button")) {
+        const project = getProjects().find(project => project.id === button.dataset.projectId);
+        if (project) updatePinnedSharing(button, project);
+      }
+      refreshProjectSharing();
+    }
+
     bindProjectSidebarEvents();
 
     return {
       closeProjectGroupMenu,
+      refreshSharing,
       renderPinnedProjects,
       renderProjectList
     };

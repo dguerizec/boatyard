@@ -87,6 +87,7 @@ function startConnection(id, offer, remoteHost) {
       const setup = await remoteHost.invoke('setup');
       if (!active) return;
       viewport = setup.viewport;
+      const screenProtected = setup.readOnly && setup.screenProtected;
       media = await navigator.mediaDevices.getUserMedia({ audio: false, video: { mandatory: {
         chromeMediaSource: 'desktop', chromeMediaSourceId: setup.sourceId, maxFrameRate: 30
       } } });
@@ -121,21 +122,51 @@ function startConnection(id, offer, remoteHost) {
         } catch { captureTrack?.stop(); captureTrack = null; }
       }
       const dimensions = () => ({ kind: 'viewport', viewport, sourceWidth: source.videoWidth, sourceHeight: source.videoHeight });
-      function paint() {
-        if (!active || !source.videoWidth) return;
-        // Native capture includes window chrome (for example the menu bar).
-        // Input coordinates start at the content origin. Remove chrome before
-        // cropping, independently of the desktop's device scale factor.
-        const sx = source.videoWidth / setup.captureBounds.width;
-        const sy = source.videoHeight / setup.captureBounds.height;
-        const ratio = Math.min(1280 / viewport.width, 720 / viewport.height, 1);
-        const width = Math.max(2, Math.round(viewport.width * ratio / 2) * 2);
-        const height = Math.max(2, Math.round(viewport.height * ratio / 2) * 2);
-        const transportHeight = height + remoteFrameFooterHeight(width);
-        if (canvas.width !== width || canvas.height !== transportHeight) { canvas.width = width; canvas.height = transportHeight; }
-        context.drawImage(source, (setup.contentOffset.x + viewport.x) * sx, (setup.contentOffset.y + viewport.y) * sy, viewport.width * sx, viewport.height * sy, 0, 0, width, height);
-        writeRemoteFrameMetadata(context, width, transportHeight, viewport.revision, performance.now());
-        paintedFrames++;
+      const snapshot = document.createElement('canvas'), snapshotContext = snapshot.getContext('2d', { alpha: false });
+      let painting = false, screenRevision, freshFrames = 0, lastSourceTime = -1;
+      async function paint() {
+        if (!active || !source.videoWidth || painting) return;
+        painting = true;
+        try {
+          const frameViewport = viewport;
+          // Native capture includes window chrome (for example the menu bar).
+          // Input coordinates start at the content origin. Remove chrome before
+          // cropping, independently of the desktop's device scale factor.
+          const sx = source.videoWidth / setup.captureBounds.width;
+          const sy = source.videoHeight / setup.captureBounds.height;
+          const ratio = Math.min(1280 / frameViewport.width, 720 / frameViewport.height, 1);
+          const width = Math.max(2, Math.round(frameViewport.width * ratio / 2) * 2);
+          const height = Math.max(2, Math.round(frameViewport.height * ratio / 2) * 2);
+          const transportHeight = height + remoteFrameFooterHeight(width);
+          if (canvas.width !== width || canvas.height !== transportHeight) { canvas.width = width; canvas.height = transportHeight; }
+          if (snapshot.width !== width || snapshot.height !== height) { snapshot.width = width; snapshot.height = height; }
+          // Copy first, then ask the main process whether this frame may leave.
+          // Navigation announces its privacy state before changing host content.
+          const capturedTime = source.currentTime;
+          const imageContext = screenProtected ? snapshotContext : context;
+          imageContext.drawImage(source, (setup.contentOffset.x + frameViewport.x) * sx, (setup.contentOffset.y + frameViewport.y) * sy, frameViewport.width * sx, frameViewport.height * sy, 0, 0, width, height);
+          if (!screenProtected) {
+            writeRemoteFrameMetadata(context, width, transportHeight, frameViewport.revision, performance.now());
+            paintedFrames++; return;
+          }
+          const state = await remoteHost.invoke('screen-state');
+          if (!active) return;
+          if (state.revision !== screenRevision) {
+            screenRevision = state.revision; freshFrames = 0; lastSourceTime = capturedTime;
+          } else if (capturedTime !== lastSourceTime) { freshFrames++; lastSourceTime = capturedTime; }
+          // Drain capture frames after a project transition before revealing it.
+          // The black frame is encoded continuously, rather than freezing private pixels.
+          context.fillStyle = '#000'; context.fillRect(0, 0, width, height);
+          if (state.allowed && freshFrames >= 2) context.drawImage(snapshot, 0, 0);
+          writeRemoteFrameMetadata(context, width, transportHeight, frameViewport.revision, performance.now(), !state.allowed || freshFrames < 2);
+          paintedFrames++;
+        } catch {
+          freshFrames = 0;
+          context.fillStyle = '#000'; context.fillRect(0, 0, canvas.width, canvas.height);
+          writeRemoteFrameMetadata(context, canvas.width, canvas.height, viewport.revision, performance.now(), true);
+          paintedFrames++;
+        }
+        finally { painting = false; }
       }
       paint(); timer = setInterval(paint, 1000 / 24);
       commands = new RemoteCommandQueue(async message => {

@@ -46,7 +46,9 @@ test("project context menus do not bubble into the top bar context menu", async 
     configurable: true,
     value: {
       innerHeight: 720,
-      innerWidth: 1280
+      innerWidth: 1280,
+      addEventListener() {},
+      removeEventListener() {}
     }
   });
 

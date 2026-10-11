@@ -11,6 +11,7 @@ type RendererNavigationControllerOptions = {
   hasProject: (projectId?: string | null) => boolean;
   isSidebarCollapsed: () => boolean;
   render: () => void;
+  prepareNavigation?: (navigation: { view: string; projectId: string | null }) => void;
   updateNavigation: (values: {
     collapsedProjectGroups: string[];
     pinnedProjectIds: string[];
@@ -32,6 +33,7 @@ export function createRendererNavigationController({
   hasProject,
   isSidebarCollapsed,
   render,
+  prepareNavigation,
   updateNavigation
 }: RendererNavigationControllerOptions) {
   let currentView = "global";
@@ -62,6 +64,7 @@ export function createRendererNavigationController({
       closeTerminalTabMenu();
     }
 
+    prepareNavigation?.({ view, projectId });
     currentView = view;
     currentProjectId = projectId;
 

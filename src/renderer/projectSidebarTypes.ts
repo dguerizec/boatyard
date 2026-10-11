@@ -1,3 +1,5 @@
+import type { ProjectMenuFreezeScope } from "./projectSidebarGroupMenus.js";
+import type { ProjectSharing } from "./projectShareControls.js";
 import type { UnknownRecord } from "./rendererRecords.js";
 import type { ProjectNavBadgeRenderOptions, RendererProject } from "./rendererTypes.js";
 
@@ -34,6 +36,8 @@ export type ProjectListInsertionTarget = {
 };
 
 export type ProjectSidebarOptions = {
+  projectSharing?: ProjectSharing;
+  createProjectMenuFreezeScope?: () => ProjectMenuFreezeScope;
   applyFormControl: (control: HTMLElement) => void;
   clamp: (value: number, min: number, max: number) => number;
   elements: ProjectSidebarElements;

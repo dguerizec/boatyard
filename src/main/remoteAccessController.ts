@@ -37,6 +37,14 @@ export class RemoteAccessController {
     this.queue = result.catch(() => {});
     return result;
   }
+  updateScreen(patch: Record<string, unknown>) {
+    const result = this.queue.then(async () => {
+      if (this.stopped) throw new Error("Boatyard is shutting down.");
+      await this.settings.update(patch);
+      this.changed(); return this.getStatus();
+    });
+    this.queue = result.catch(() => {}); return result;
+  }
   createReadOnlyLink(label?: string) {
     const result = this.queue.then(() => {
       if (this.stopped) throw new Error("Boatyard is shutting down.");

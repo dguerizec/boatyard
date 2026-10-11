@@ -29,7 +29,8 @@ module.exports = async harness => {
   let iceRequests = 0;
   const getIceServers = global.remoteFixtureRenewal ? async () => { iceRequests++; return [{ urls: "stun:unused.example:3478" }]; } : iceFile ? async () => JSON.parse(require('node:fs').readFileSync(iceFile, 'utf8')) : undefined;
   let iceTransportPolicy = process.env.BOATYARD_REMOTE_FIXTURE_FORCE_RELAY === "1" ? "relay" : "all";
-  const service = new RemoteAccessService({ getIceServers, getIceTransportPolicy: () => iceTransportPolicy, passwordHash: readOnly ? "" : await hashRemotePassword("fixture-password"), readOnly, windows: () => [{ id: 'fixture', window: target }, ...(multipleWindows ? [{ id: 'other-fixture', window: target }] : [])], target: (_, x, y) => runtime.resolveRemoteInputTarget(x, y), canInput: (_, contents) => runtime.isRemoteInputTargetVisible(contents) });
+  let screenAllowed = true, screenRevision = 0, screenFailure = false;
+  const service = new RemoteAccessService({ screenState: global.remoteFixturePrivacy ? () => { if (screenFailure) throw new Error("Fixture screen policy unavailable"); return { allowed: screenAllowed, revision: String(screenRevision) }; } : undefined, getIceServers, getIceTransportPolicy: () => iceTransportPolicy, passwordHash: readOnly ? "" : await hashRemotePassword("fixture-password"), readOnly, windows: () => [{ id: 'fixture', window: target }, ...(multipleWindows ? [{ id: 'other-fixture', window: target }] : [])], target: (_, x, y) => runtime.resolveRemoteInputTarget(x, y), canInput: (_, contents) => runtime.isRemoteInputTargetVisible(contents) });
   const connection = () => service.connections.values().next().value;
   const port = await service.start();
   const client = new BrowserWindow({ show: false, width: 1000, height: 800, webPreferences: { sandbox: true, backgroundThrottling: false } });
@@ -183,6 +184,48 @@ module.exports = async harness => {
     await client.webContents.executeJavaScript('document.getElementById("fit").click()');
     await until('document.getElementById("frame").width === 800', "full resolution");
     await sleep(300);
+    if (global.remoteFixturePrivacy) {
+      const original = connection();
+      const isBlue = `(() => {const f=document.getElementById('frame'),p=f.getContext('2d').getImageData(100,400,1,1).data;return p[2]>120 && p[0]<70;})()`;
+      const isBlack = `(() => {const f=document.getElementById('frame'),x=f.getContext('2d');return [[4,4],[100,400],[500,300]].every(([a,b])=>[...x.getImageData(a,b,1,1).data].slice(0,3).every(v=>v<20));})()`;
+      await until(isBlue, 'allowed project appears in actual received video');
+      await client.webContents.executeJavaScript('window.peerBeforePrivacy=window.fixturePeer');
+      assert.equal(await client.webContents.executeJavaScript('getComputedStyle(document.getElementById("placeholder")).display'), 'none', 'Live video hides the connection screen');
+      screenAllowed = false; screenRevision++;
+      await until(isBlack, 'Hide screen encodes black video including native sibling panes');
+      assert.equal(await client.webContents.executeJavaScript('!document.getElementById("screenWaitingCopy").hidden && !document.getElementById("waitingActivity").hidden'), true, 'Private video displays the animated waiting overlay');
+      const mediaTime = await client.webContents.executeJavaScript('document.getElementById("video").currentTime');
+      await sleep(300);
+      assert.ok(await client.webContents.executeJavaScript('document.getElementById("video").currentTime') > mediaTime + .1, 'Black video continues decoding behind the waiting screen');
+      if (process.env.BOATYARD_WAITING_SCREENSHOT_PATH) {
+        await client.webContents.executeJavaScript('if(!document.getElementById("diagnosticsPanel").hidden)document.getElementById("diagnostics").click();Object.assign(document.getElementById("surface").style,{width:"",height:"",flex:""})');
+        client.show(); await sleep(200);
+        require('node:fs').writeFileSync(process.env.BOATYARD_WAITING_SCREENSHOT_PATH, (await client.webContents.capturePage()).toPNG());
+        client.hide();
+      }
+      assert.equal(service.handle(original, 'cursor'), null, 'Hidden screens do not expose the physical pointer');
+      screenAllowed = true; screenRevision++;
+      await until(isBlue, 'Show screen resumes the same peer');
+      assert.equal(await client.webContents.executeJavaScript('document.getElementById("screenWaitingCopy").hidden && window.fixturePeer === window.peerBeforePrivacy'), true, 'Waiting ends on the first visible frame without reconnecting');
+      screenFailure = true;
+      await until(isBlack, 'A failed policy check still sends a decodable black frame');
+      screenFailure = false;
+      await until(isBlue, 'Policy checks recover without replacing the connection');
+      // Announce a private project before repainting the local workspace.
+      screenAllowed = false; screenRevision++;
+      await target.webContents.executeJavaScript('document.body.style.background="#ff0000"');
+      await native.webContents.executeJavaScript('document.body.style.background="#ff0000"');
+      await until(isBlack, 'Private project sends black instead of its pixels');
+      await sleep(300);
+      assert.equal(await client.webContents.executeJavaScript(isBlack), true, 'Black frames continue instead of freezing the previous project');
+      await target.webContents.executeJavaScript('document.body.style.background="#1234ee"');
+      await native.webContents.executeJavaScript('document.body.style.background="#00cc44"');
+      screenAllowed = true; screenRevision++;
+      await until(isBlue, 'Returning to an allowed project resumes video');
+      assert.equal(connection(), original, 'Privacy controls retain the host session');
+      await harness.webContents.executeJavaScript('window.browserTestResult="passed"');
+      await service.stop(); fixtureServer.close(); target.destroy(); client.destroy(); return;
+    }
     const pixels = await client.webContents.executeJavaScript(`(() => {
       const v=document.getElementById('frame'),c=document.createElement('canvas');c.width=v.width;c.height=v.height;
       const x=c.getContext('2d');x.drawImage(v,0,0);return {width:c.width,height:c.height,blue:[...x.getImageData(100,400,1,1).data],green:[...x.getImageData(500,300,1,1).data],origin:[...x.getImageData(4,4,1,1).data],nativeOrigin:[...x.getImageData(405,125,1,1).data]};})()`);

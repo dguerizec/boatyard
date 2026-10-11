@@ -10,6 +10,7 @@ export type RemoteInputTarget = { contents: WebContents; x: number; y: number };
 export type RemoteAccessOptions = {
   windows(): { id: string; window: BrowserWindow }[];
   target(windowId: string, x: number, y: number): RemoteInputTarget;
+  screenState?(windowId: string): { allowed: boolean; revision: string };
   canInput(windowId: string, contents: WebContents): boolean;
   host?: string;
   port?: number;
@@ -130,12 +131,14 @@ export class RemoteAccessService {
       if (!message || message.epoch !== c.epoch || message.action === "transport") throw new Error("Stale streaming transport");
       return this.handle(c, message.action, message.payload);
     }
+    if (action === "screen-state") return this.options.screenState?.(c.windowId) ?? { allowed: true, revision: "unrestricted" };
     if (action === "setup") return this.setup(c);
     if (action === "ice-servers") return this.options.getIceServers ? this.options.getIceServers() : this.options.iceServers || [];
     if (action === "answer") { c.resolve(payload); return; }
     if (action === "closed") { this.disconnect(c.id); return; }
     if (action === "error") { c.reject(new Error(String(payload).slice(0, 200))); this.disconnect(c.id); return; }
     if (action === "cursor") {
+      if (this.options.screenState?.(c.windowId).allowed === false) return null;
       if (c.window.isDestroyed() || !c.window.isVisible() || c.window.isMinimized()) return null;
       const point = screen.getCursorScreenPoint(), bounds = c.window.getContentBounds();
       const x = point.x - bounds.x, y = point.y - bounds.y;
@@ -183,6 +186,7 @@ export class RemoteAccessService {
     // in the composed source, rather than selecting an individual page.
     const bounds = c.window.getBounds(), content = c.window.getContentBounds();
     return {
+      screenProtected: Boolean(this.options.screenState),
       sourceId: c.window.getMediaSourceId().replace(/:1$/, ":0"),
       captureBounds: { width: bounds.width, height: bounds.height },
       contentOffset: { x: content.x - bounds.x, y: content.y - bounds.y },

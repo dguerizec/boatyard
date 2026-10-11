@@ -24,6 +24,22 @@ of its label, keeping the same width. Stopping the server restores its normal ap
   such as **Viewer 1** and **Viewer 2**. **Stop sharing** revokes all Share access
   while leaving Remote running.
 
+The Share dialog and Share pane include **Hide screen / Show screen**. Press
+**Ctrl+Shift+S** anywhere in a Boatyard window, including embedded web apps, to
+toggle it. Hiding sends black video while preserving connections, invitations,
+viewers' crops and viewer access. The browser overlays the Boatyard illustration,
+waiting text and animated dots while black video continues decoding behind it.
+The overlay disappears with the first visible frame, without reconnecting. The
+same illustration and animation appear during connection and recovery until the
+first frame arrives. It does not affect Remote.
+
+Expand **Shared projects** to choose the projects viewers may see. Projects are
+private by default, including projects added later. Only the workspace view of a
+checked project is visible; other projects, the global workspace and settings or
+project forms send black video. Switching back to a checked project resumes video
+unless **Hide screen** is active. The selection and hide state are saved across
+restarts, independently for each configuration context.
+
 Both dialogs open below their toolbar button. **Server settings** opens the
 Remote access section of global settings for port and external URL configuration.
 

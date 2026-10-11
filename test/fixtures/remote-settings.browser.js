@@ -88,8 +88,8 @@ check(current.remote.listening && current.remote.hasPassword && changes.at(-1).p
 await closePopup();
 shareButton.click(); await pause();
 check(popup().querySelector('[data-invite]') && !popup().querySelector('[name=password]'), 'Share dialog manages passwordless clients');
-check(!popup().querySelector('details') && !popup().querySelector('[name=port]') && !popup().querySelector('[name=publicOrigin]'), 'Share links to server settings instead of embedding them');
-check(Math.abs(popup().getBoundingClientRect().top - shareButton.getBoundingClientRect().bottom - 8) < 1 && popup().getBoundingClientRect().width <= 380 && popup().getBoundingClientRect().height < 360, 'Share opens compactly below its toolbar button');
+check(popup().querySelector('[data-screen-projects]') && popup().querySelector('[data-share-tab=projects]') && !popup().querySelector('[name=port]') && !popup().querySelector('[name=publicOrigin]'), 'Share links to server settings instead of embedding them');
+check(Math.abs(popup().getBoundingClientRect().top - shareButton.getBoundingClientRect().bottom - 8) < 1 && popup().getBoundingClientRect().width <= 380 && popup().getBoundingClientRect().height < 360, `Share opens compactly below its toolbar button: ${JSON.stringify(popup().getBoundingClientRect().toJSON())}`);
 const invite = async label => { popup().querySelector('[data-invite] [name=label]').value = label; popup().querySelector('[data-invite]').requestSubmit(); await pause(); };
 await invite(''); await invite('');
 check(shareButton.textContent === 'Share' && shareButton.classList.contains('sharing-waiting'), 'Invitations do not count as connected viewers');

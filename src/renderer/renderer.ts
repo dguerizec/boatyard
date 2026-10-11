@@ -1,3 +1,4 @@
+import { createProjectShareControls } from "./projectShareControls.js";
 import { createSharePane } from "./sharePane.js";
 import { setupHugescreenControls } from "./hugescreenControls.js";
 import { setupRemoteSharingControls } from "./remoteSharingControls.js";
@@ -105,6 +106,7 @@ const {
 });
 
 navigationController = createRendererNavigationController({
+  prepareNavigation: navigation => boatyardWindow.boatyard.prepareShareNavigation?.(navigation),
   closeProjectGroupMenu,
   closeTerminalTabMenu,
   getCollapsedProjectGroups,
@@ -1033,7 +1035,14 @@ function openOnboardingTour(options: UnknownRecord = {}) {
   return onboardingTour.openOnboardingTour(options);
 }
 
+let projectShareControls: ReturnType<typeof createProjectShareControls> | undefined;
 const projectSidebar = createProjectSidebar({
+  createProjectMenuFreezeScope: () => webAppSurfaces.createFreezeScope(),
+  projectSharing: {
+    getState: id => projectShareControls?.getState(id),
+    isBusy: () => projectShareControls?.isBusy() || false,
+    toggle: async id => { await projectShareControls?.toggle(id); }
+  },
   elements: {
     addProjectButton,
     globalNav,
@@ -1093,11 +1102,15 @@ const projectSidebar = createProjectSidebar({
   renderApp: render
 });
 
+projectShareControls = createProjectShareControls(boatyardWindow.boatyard, () => projectSidebar.refreshSharing());
+window.addEventListener("pagehide", () => projectShareControls?.dispose(), { once: true });
+
 function closeProjectGroupMenu() {
   projectSidebar.closeProjectGroupMenu();
 }
 
 function renderProjectList() {
+  void projectShareControls?.refreshProjects();
   projectSidebar.renderProjectList();
 }
 
