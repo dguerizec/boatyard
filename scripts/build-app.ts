@@ -97,6 +97,15 @@ run("npx", ["tsc", "-p", "tsconfig.renderer.json"]);
 copyStaticAssets(sourceRoot);
 copyBrowserScripts(join(sourceRoot, "renderer"));
 copyPluginRendererScripts();
+// Bundle the standalone WebRTC scripts and their shared browser helpers.
+for (const name of ["client", "sender"]) buildSync({
+  entryPoints: [`src/renderer/remote/${name}.js`],
+  outfile: `build/renderer/remote/${name}.js`,
+  bundle: true,
+  format: "iife",
+  platform: "browser",
+  target: "chrome142"
+});
 // Sandboxed preloads cannot require local modules at runtime.
 buildSync({
   entryPoints: ["src/main/webappPreload.ts"],

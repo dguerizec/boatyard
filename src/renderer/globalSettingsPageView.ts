@@ -6,6 +6,7 @@ type GlobalSettingsPageViewOptions = {
   closeTerminalTabMenu: () => void;
   closeWidgetAddMenu: () => void;
   createGlobalMcpSettingsForm: () => HTMLElement;
+  createGlobalRemoteSettingsForm: () => HTMLElement;
   createGlobalPasswordManagerSettingsForm: (options: UnknownRecord) => HTMLElement;
   createGlobalPluginsSettingsView: () => HTMLElement;
   createGlobalPresentationSettingsForm: (options: UnknownRecord) => HTMLElement;
@@ -34,6 +35,7 @@ export function createGlobalSettingsPageView({
   closeTerminalTabMenu,
   closeWidgetAddMenu,
   createGlobalMcpSettingsForm,
+  createGlobalRemoteSettingsForm,
   createGlobalPasswordManagerSettingsForm,
   createGlobalPluginsSettingsView,
   createGlobalPresentationSettingsForm,
@@ -102,6 +104,7 @@ export function createGlobalSettingsPageView({
       }
     });
     const mcpSettings = createGlobalMcpSettingsForm();
+    const remoteSettings = createGlobalRemoteSettingsForm();
     const openRulesSettings = createGlobalWebAppOpenRulesSettingsForm({
       settings: getSettings(),
       onSubmit: async (values: unknown) => {
@@ -196,6 +199,15 @@ export function createGlobalSettingsPageView({
           badge: String(widgetCount),
           keywords: ["extensions", "panes", "dashboard"],
           elements: [widgetsSettings]
+        },
+        {
+          id: "remote",
+          label: "Remote access",
+          description: "Browser access, password, server controls and read-only mode.",
+          group: "system",
+          icon: "eye",
+          keywords: ["WebRTC", "password", "port", "streaming", "read-only"],
+          elements: [remoteSettings]
         },
         {
           id: "mcp",

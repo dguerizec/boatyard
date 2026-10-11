@@ -180,6 +180,11 @@ Implemented built-in plugins:
 - `boatyard.twicc`: Twicc conversation pane with a configurable, resizable Session Flow sidebar and compact browser controls; standalone Session Flow pane and widget; global/project settings; project creation action; and service.
 - `boatyard.telegram`: Telegram project topic pane, widget, global/project settings, and service.
 
+## Remote access
+
+See [Boatyard Remote](docs/remote-access.md) for the opt-in embedded server,
+browser client, WebRTC streaming and mobile controls.
+
 ## Development
 
 ```sh

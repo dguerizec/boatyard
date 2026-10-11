@@ -1,4 +1,5 @@
 import { setupHugescreenEdgeControls } from "./hugescreenEdgeControls.js";
+import { positionToolbarDialog } from "./toolbarDialogPosition.js";
 import type { BoatyardBridge } from "./rendererTypes.js";
 
 type Options = {
@@ -223,11 +224,7 @@ export function setupHugescreenControls({ button, api, showDialog }: Options): v
       } catch (reason) { if (popup === dialog) showError(reason); }
     };
     const reposition = () => {
-      const anchor = button.getBoundingClientRect();
-      dialog.style.left = `${Math.max(12, anchor.right - Math.min(340, window.innerWidth - 24))}px`;
-      dialog.style.top = `${anchor.bottom + 8}px`;
-      const visibleHeight = Math.min(window.innerHeight, screenSize.height || window.innerHeight);
-      dialog.style.maxHeight = `${Math.max(120, visibleHeight - anchor.bottom - 20)}px`;
+      positionToolbarDialog(dialog, button, 340, screenSize.height || window.innerHeight);
     };
     const onResize = () => { closeScopeMenu(); reposition(); if (initialized && !pending) void refresh(); };
     dialog.addEventListener("scroll", () => closeScopeMenu());

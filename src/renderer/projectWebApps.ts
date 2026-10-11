@@ -101,6 +101,8 @@ export function createProjectWebApps({
       widgetPane
     }));
 
+    webApps.push({ icon: "settingsMonitor", id: "share", label: "Share", key: `${paneId}:share`, kind: "share", paneTypeId: "share" });
+
     if (paneNode?.transientWebApp?.url && paneNode.selectedWebAppId === paneNode.transientWebApp.id) {
       webApps.push({
         backgroundColor: "#ffffff",

@@ -113,6 +113,7 @@ createGlobalSettingsPageView({
   createGlobalProjectsSettingsForm: emptyForm, createGlobalUrlsSettingsForm: emptyForm,
   createGlobalPresentationSettingsForm: emptyForm, createGlobalTerminalSettingsForm: emptyForm,
   createGlobalPasswordManagerSettingsForm: emptyForm, createGlobalMcpSettingsForm: emptyForm,
+  createGlobalRemoteSettingsForm: emptyForm,
   createGlobalWebAppOpenRulesSettingsForm: emptyForm, createGlobalPluginsSettingsView: emptyForm,
   createGlobalWidgetsSettingsView: emptyForm, createGlobalUpdateCard: emptyForm
 }).renderGlobalSettingsPage();

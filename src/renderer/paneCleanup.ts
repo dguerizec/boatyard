@@ -1,8 +1,8 @@
 export type PaneCleanupHost = HTMLElement & { boatyardCleanup?: () => void };
 
 export function cleanupPaneLayout(root: Element) {
-  const hosts = [...root.querySelectorAll<PaneCleanupHost>(".webapp-host")];
-  if (root.matches(".webapp-host")) {
+  const hosts = [...root.querySelectorAll<PaneCleanupHost>(".webapp-host, [data-boatyard-cleanup]")];
+  if (root.matches(".webapp-host, [data-boatyard-cleanup]")) {
     hosts.unshift(root as PaneCleanupHost);
   }
   for (const host of hosts) {

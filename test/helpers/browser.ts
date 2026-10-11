@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, existsSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, resolve, basename } from "node:path";
 import { buildSync } from "esbuild";
 
-export function runBrowserTest(t: TestContext, fixture: string, native?: { main: string; preload: string; timeoutMs?: number }) {
+export function runBrowserTest(t: TestContext, fixture: string, native?: { main: string; preload: string; timeoutMs?: number }, assets: string[] = []) {
   const xvfb = process.platform === "linux" && spawnSync("which", ["xvfb-run"]).status === 0;
   if (process.platform === "linux" && !xvfb && !process.env.DISPLAY) {
     t.skip("Electron requires DISPLAY or xvfb-run");
@@ -14,6 +14,7 @@ export function runBrowserTest(t: TestContext, fixture: string, native?: { main:
   }
   const directory = mkdtempSync(join(tmpdir(), "boatyard-browser-test-"));
   try {
+    for (const asset of assets) cpSync(asset, join(directory, basename(asset)));
     buildSync({ entryPoints: [resolve(fixture)], bundle: true,
       format: "esm", loader: { ".png": "dataurl", ".svg": "dataurl" }, outfile: join(directory, "browser.js"), logLevel: "silent" });
     const stylesheet = existsSync(join(directory, "browser.css")) ? '<link rel="stylesheet" href="browser.css">' : '';
@@ -21,6 +22,8 @@ export function runBrowserTest(t: TestContext, fixture: string, native?: { main:
     const electron = require("electron") as string;
     writeFileSync(join(directory, "main.cjs"), `
       const { app, BrowserWindow } = require("electron");
+      // Browser fixtures must never play audio through the developer's speakers.
+      app.on('browser-window-created', (_event, window) => window.webContents.setAudioMuted(true));
       app.setPath('userData', ${JSON.stringify(join(directory, "profile"))});
       app.whenReady().then(async () => {
         // Hidden test windows still need animation frames for editor layout measurements.

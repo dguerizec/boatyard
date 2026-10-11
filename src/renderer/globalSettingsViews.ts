@@ -1,3 +1,4 @@
+import { createRemoteAccessSettingsForms } from "./remoteSettings.js";
 import { createGlobalWebAppOpenRulesSettings } from "./globalWebAppOpenRulesSettings.js";
 import {
   bindSettingsForm,
@@ -1132,6 +1133,7 @@ export function createGlobalSettingsViews({
 
     return {
       createGlobalMcpSettingsForm,
+      createGlobalRemoteSettingsForm: () => createRemoteAccessSettingsForms(boatyard, applyFormControls),
       createGlobalPasswordManagerSettingsForm,
       createGlobalPluginsSettingsView,
       createGlobalPresentationSettingsForm,

@@ -71,14 +71,3 @@ for (const direction of ["vertical", "horizontal"]) {
     assert.equal(restored.getSelectedWebApp(project, split.second.id, webApps).id, "empty");
   });
 }
-
-test("legacy file preview panes restore as file editors without a separate pane type", () => {
-  const state = createState();
-  const project = { id: "editor-project" };
-  const pane = state.createPaneNode(project, "boatyard.fileEditor.preview");
-  state.setPaneLayout(project.id, pane);
-  const available = [...webApps, { id: "boatyard.fileEditor.editor" }];
-
-  assert.equal(state.getSelectedWebApp(project, pane.id, available).id, "boatyard.fileEditor.editor");
-  assert.equal(state.getSelectedWebApp(project, pane.id, webApps).id, "empty");
-});

@@ -4,6 +4,8 @@ import type { UnknownRecord } from "./rendererRecords.js";
 type SettingsViewBridge = ReturnType<typeof createRendererSettingsViewBridge>;
 
 export function createRendererGlobalSettingsAdapters(getSettingsViewBridge: () => SettingsViewBridge) {
+  function createGlobalRemoteSettingsForm() { return getSettingsViewBridge().createGlobalRemoteSettingsForm(); }
+
   function createGlobalMcpSettingsForm() {
     return getSettingsViewBridge().createGlobalMcpSettingsForm();
   }
@@ -60,6 +62,7 @@ export function createRendererGlobalSettingsAdapters(getSettingsViewBridge: () =
 
   return Object.freeze({
     createGlobalMcpSettingsForm,
+    createGlobalRemoteSettingsForm,
     createGlobalPasswordManagerSettingsForm,
     createGlobalPluginsSettingsView,
     createGlobalPresentationSettingsForm,

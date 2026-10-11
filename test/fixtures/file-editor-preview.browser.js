@@ -54,7 +54,14 @@ const host = document.createElement('div');
 document.body.append(host);
 const cleanup = pane.render(host, { project, paneId: 'test', openUrl: url => requests.push(url) });
 const frame = host.querySelector('.file-editor-preview');
-for (let i = 0; i < 100 && !frame.contentDocument?.querySelector('a'); i++) await new Promise(resolve => setTimeout(resolve, 20));
+// Link interception is installed on load, after the srcdoc DOM becomes visible.
+await new Promise(resolve => {
+  frame.addEventListener('load', function loaded() {
+    if (!frame.contentDocument?.querySelector('a')) return;
+    frame.removeEventListener('load', loaded);
+    resolve();
+  });
+});
 check(frame.contentDocument?.querySelector('a'), 'Editor loads its preview document');
 const content = frame.contentDocument;
 content.querySelector('a span').click();

@@ -124,9 +124,14 @@ module.exports = async win => {
     await assert.rejects(fill([{selector:'#text',value:'new'}]),error=>error.code==='PANE_FILL_FAILED'&&!error.message.includes(secret));
     await contents.executeJavaScript("delete document.querySelector('#text').checkVisibility");
     await contents.executeJavaScript("document.querySelector('#search').addEventListener('input',event=>history.replaceState(null,'',event.target.value?'/?search='+encodeURIComponent(event.target.value)+'&status=all':'/'))");
-    const fillCurrent=async fields=>runtime.fillWebApp('target',{
-      expectedUrl:contents.getURL(),fields,rejectCredentialFields:true,receiptVersion:2
-    },async()=>bounds);
+    const fillCurrent=async fields=>{
+      // In-page navigation can detach a background view until loading events settle.
+      for(let i=0;i<100&&(contents.isLoadingMainFrame()||!win.contentView.children.includes(views[0]));i++) await new Promise(resolve=>setTimeout(resolve,25));
+      assert.ok(!contents.isLoadingMainFrame()&&win.contentView.children.includes(views[0]),'Target view is ready after navigation');
+      return runtime.fillWebApp('target',{
+        expectedUrl:contents.getURL(),fields,rejectCredentialFields:true,receiptVersion:2
+      },async()=>bounds);
+    };
     for(const [previous,next] of [['','harborcall-e2-test'],['harborcall-e2-test','']]) {
       const changed=await fillCurrent([{selector:'#search',value:next,expectedValue:previous}]);
       assert.equal(changed.receiptVersion,2);

@@ -1,3 +1,7 @@
+import { loadRemoteAccessSettings, RemoteAccessManager, type RemoteAccessMode } from "./remoteAccessManager.js";
+import { RemoteAccessController } from "./remoteAccessController.js";
+import { RemoteAccessService } from "./remoteAccess.js";
+import { WebrtcSettingsStore } from "./webrtcSettings.js";
 import { HugescreenPreferences } from "./hugescreenPreferences.js";
 import { HugescreenOperationQueue, normalizeHugescreenState, type HugescreenState } from "./hugescreenState.js";
 import { parseHugescreenZones, type HugescreenZones } from "../renderer/hugescreenZones.js";
@@ -130,6 +134,8 @@ let store: ProjectStoreInstance;
 let pluginHost: PluginHostInstance;
 let updateManager: UpdateManagerInstance;
 let mcpServerService: McpServerService;
+let remoteAccessController: RemoteAccessManager;
+let webrtcSettingsStore: WebrtcSettingsStore;
 let mcpAgentConnectionInstaller: McpAgentConnectionInstaller;
 let mcpSkillInstaller: McpSkillInstaller;
 let mcpSettingsStore: McpSettingsStore;
@@ -628,6 +634,11 @@ function createMainWindow(options: CreateWorkspaceWindowOptions = {}) {
       mainWindow = getPrimaryWorkspaceWindow()?.window || null;
     }
     mcpRendererBroker.rejectTarget(rendererWebContentsId);
+    // Hidden streaming windows can outlive the last workspace and prevent
+    // Electron's window-all-closed event from initiating normal shutdown.
+    if (!isQuitting && !workspaceWindows.size && process.platform !== "darwin") {
+      app.quit();
+    }
   });
 
   window.on("move", () => scheduleWindowStateSave(workspaceWindow));
@@ -1503,6 +1514,46 @@ function registerIpcHandlers() {
     return workspaceWindow ? configuration.store.getStateForWorkspaceWindow(workspaceWindow.id) : configuration.store.getState();
   });
 
+  const remoteMode = (value: unknown): RemoteAccessMode => {
+    if (value !== "remote" && value !== "share") throw new Error("Invalid remote access mode.");
+    return value;
+  };
+  ipcMain.handle("webrtc:settings", (event: IpcMainInvokeEvent) => {
+    getConfigurationForEvent(event);
+    return webrtcSettingsStore.status();
+  });
+  ipcMain.handle("webrtc:settings:update", (event: IpcMainInvokeEvent, patch: unknown) => {
+    getConfigurationForEvent(event);
+    const status = webrtcSettingsStore.update(patch);
+    for (const record of workspaceWindows.values()) {
+      if (!record.window.isDestroyed()) record.window.webContents.send("webrtc:settings-changed", status);
+    }
+    return status;
+  });
+  ipcMain.handle("webrtc:test", (event: IpcMainInvokeEvent) => {
+    getConfigurationForEvent(event);
+    return webrtcSettingsStore.getIceServers();
+  });
+  ipcMain.handle("remote:status", (event: IpcMainInvokeEvent, mode: unknown = "remote") => {
+    getConfigurationForEvent(event);
+    return remoteAccessController.getStatus(remoteMode(mode));
+  });
+  ipcMain.handle("remote:readonly-link", (event: IpcMainInvokeEvent, label: unknown) => {
+    getConfigurationForEvent(event);
+    if (label !== undefined && (typeof label !== "string" || label.length > 80)) throw new Error("Invalid client name.");
+    return remoteAccessController.createReadOnlyLink(label as string | undefined);
+  });
+  ipcMain.handle("remote:client:revoke", (event: IpcMainInvokeEvent, id: unknown) => {
+    getConfigurationForEvent(event);
+    if (typeof id !== "string" || id.length > 100) throw new Error("Invalid client.");
+    return remoteAccessController.revokeClient(id);
+  });
+  ipcMain.handle("remote:settings:update", (event: IpcMainInvokeEvent, patch: unknown, mode: unknown = "remote") => {
+    getConfigurationForEvent(event);
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("Invalid remote settings.");
+    return remoteAccessController.configure(remoteMode(mode), patch as UnknownRecord);
+  });
+
   ipcMain.handle("mcp:status", (event: IpcMainInvokeEvent) => {
     getConfigurationForEvent(event);
     return mcpServerService.getStatus();
@@ -2176,6 +2227,7 @@ if (isPrimaryInstance) {
     isQuitting = true;
     mcpRendererBroker.close();
     void mcpServerService?.stop();
+    void remoteAccessController?.stop();
     terminalShutdownCoordinator.handleBeforeQuit(event);
   });
 
@@ -2215,6 +2267,41 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   secretStore.load();
   mcpSettingsStore = new McpSettingsStore(path.join(initialLaunchDescriptor.configurationRoot, "mcp.json"));
   mcpSettingsStore.load();
+  const remoteStores = await loadRemoteAccessSettings(initialLaunchDescriptor.configurationRoot);
+  webrtcSettingsStore = new WebrtcSettingsStore(initialLaunchDescriptor.configurationRoot, process.env.BOATYARD_REMOTE_ICE_SERVERS);
+  try { webrtcSettingsStore.load(); } catch { console.warn("Could not load WebRTC settings. Remote connections require a valid configuration."); }
+  const getRemoteIceServers = () => webrtcSettingsStore.getIceServers();
+  function publishRemoteStatus() {
+    if (!remoteAccessController) return;
+    const statuses = remoteAccessController.getStatuses();
+    for (const record of workspaceWindows.values()) {
+      if (!record.window.isDestroyed()) record.window.webContents.send("remote:status-changed", statuses);
+    }
+  }
+  const createRemoteController = (mode: RemoteAccessMode) => new RemoteAccessController(remoteStores[mode], settings => new RemoteAccessService({
+    clientsChanged: () => { remoteAccessController?.clientsChanged(mode); publishRemoteStatus(); },
+    windows: () => [...workspaceWindows.values()].map(record => ({
+      id: `${getMcpContextId(record.configuration)}:${record.id}`, window: record.window
+    })),
+    target: (id, x, y) => {
+      const record = [...workspaceWindows.values()].find(candidate => `${getMcpContextId(candidate.configuration)}:${candidate.id}` === id);
+      if (!record || record.window.isDestroyed()) throw new Error("Shared window unavailable");
+      return record.runtime.resolveRemoteInputTarget(x, y);
+    },
+    canInput: (id, contents) => {
+      const record = [...workspaceWindows.values()].find(candidate => `${getMcpContextId(candidate.configuration)}:${candidate.id}` === id);
+      return Boolean(record && !record.window.isDestroyed() && record.runtime.isRemoteInputTargetVisible(contents));
+    },
+    host: process.env.BOATYARD_REMOTE_HOST,
+    port: settings.port,
+    passwordHash: settings.passwordHash,
+    sessionFilePath: mode === "remote" ? path.join(initialLaunchDescriptor.configurationRoot, "remote-sessions.json") : undefined,
+    publicOrigin: settings.publicOrigin || undefined,
+    readOnly: settings.readOnly,
+    getIceServers: getRemoteIceServers,
+    getIceTransportPolicy: () => webrtcSettingsStore.getIceTransportPolicy()
+  }), publishRemoteStatus);
+  remoteAccessController = new RemoteAccessManager({ remote: createRemoteController("remote"), share: createRemoteController("share") }, publishRemoteStatus);
   mcpAgentConnectionInstaller = new McpAgentConnectionInstaller({
     getEndpoint: () => `http://127.0.0.1:${mcpSettingsStore.get().port}/mcp`,
     getManagedToken: (targetId) => mcpSettingsStore.get().managedClientTokens[targetId],
@@ -2271,6 +2358,7 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   registerIpcHandlers();
   restoreConfigurationWindows(initialConfiguration);
   await mcpServerService.configure();
+  await remoteAccessController.initialize();
   launchRoutingReady = true;
   for (const descriptor of pendingLaunchDescriptors.splice(0)) {
     await routeLaunchRequest(descriptor);

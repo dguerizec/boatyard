@@ -638,6 +638,25 @@ export class WorkspaceWindowRuntime {
     }
   }
 
+  isRemoteInputTargetVisible(contents: ElectronWebContents) {
+    if (contents.isDestroyed()) return false;
+    if (contents === this.window.webContents) return true;
+    const item = this.getWebAppForWebContents(contents);
+    return Boolean(item && this.visibleWebAppKeys.has(item.key) && !this.isWebAppKeyFrozen(item.key) && this.webAppViews.get(item.key)?.view.getVisible());
+  }
+
+  resolveRemoteInputTarget(x: number, y: number) {
+    const visible = [...this.webAppViews.entries()].reverse();
+    for (const [, item] of visible) {
+      if (!this.isRemoteInputTargetVisible(item.webContents)) continue;
+      const bounds = item.view.getBounds();
+      if (x >= bounds.x && y >= bounds.y && x < bounds.x + bounds.width && y < bounds.y + bounds.height) {
+        return { contents: item.webContents, x: x - bounds.x, y: y - bounds.y };
+      }
+    }
+    return { contents: this.window.webContents, x, y };
+  }
+
   listWebContentsViewResources() {
     return [...this.webAppViews.entries()].flatMap(([key, item]) => {
       if (item.webContents.isDestroyed()) {

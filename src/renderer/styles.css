@@ -38,6 +38,17 @@
   --pane-sidebar-gap: 6px;
 }
 
+#remote-sharing, #remote-access { flex-shrink: 0; }
+#remote-access { width: calc(6ch + 28px); }
+#remote-sharing { width: calc(5ch + 28px); }
+#remote-sharing.sharing-waiting, #remote-access.sharing-waiting { border-color: #b92f47; }
+#remote-sharing.sharing-active, #remote-access.sharing-active {
+  background: #b92f47;
+  border-color: #b92f47;
+  color: #fff;
+}
+#remote-sharing.sharing-active:hover, #remote-access.sharing-active:hover { background: #a2263b; }
+
 :root[data-theme="light"] {
   color-scheme: light;
   --bg: #f3f4fa;
@@ -2208,7 +2219,8 @@ body.sidebar-collapsed .workspace {
   display: none;
 }
 
-.plugin-settings-dialog-panel .field span {
+.plugin-settings-dialog-panel .field span,
+.share-pane .field span {
   color: var(--muted);
   font-size: 11px;
   font-weight: 800;
@@ -2227,7 +2239,8 @@ body.sidebar-collapsed .workspace {
   font: inherit;
 }
 
-.plugin-settings-dialog-panel .field input {
+.plugin-settings-dialog-panel .field input,
+.share-pane .field input {
   width: 100%;
   min-width: 0;
   min-height: 38px;
@@ -5059,3 +5072,43 @@ textarea.form-control {
 .hugescreen-edge-editor[hidden] { display: none; }
 
 .hugescreen-preview.editing-edges svg { max-height: 220px; }
+
+.remote-sharing-dialog { position: fixed; inset: auto; margin: 0; width: min(380px, calc(100vw - 24px)); }
+.remote-sharing-dialog::backdrop { background: transparent; }
+.remote-sharing-dialog .plugin-settings-dialog-panel { gap: 12px; padding: 16px; }
+.remote-sharing-dialog h3, .remote-sharing-dialog p { margin: 0; }
+.remote-sharing-dialog .form-hint { font-size: 12px; color: var(--muted); }
+.remote-sharing-dialog .remote-settings { padding: 0; border: 0; background: none; box-shadow: none; }
+.remote-sharing-dialog .project-form, .remote-sharing-dialog [data-invite] { display: grid; gap: 12px; }
+.remote-sharing-dialog .form-heading { gap: 4px; }
+.remote-sharing-dialog .form-heading h3 { font-size: 18px; }
+.remote-sharing-dialog .remote-settings-link { padding: 0; border: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; margin-right: auto; }
+.remote-sharing-dialog .remote-urls { overflow-wrap: anywhere; }
+.remote-sharing-dialog .form-actions { flex-wrap: wrap; }
+
+.remote-sharing-dialog .remote-client-list { padding: 0; margin: 0; list-style: none; display: grid; gap: 8px; }
+.remote-sharing-dialog .remote-client-list:empty { display: none; }
+.remote-sharing-dialog .remote-client-row { border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.remote-sharing-dialog .remote-client-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+.remote-url-selector { display: flex; align-items: center; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+.remote-url-selector select { flex: 1; min-width: 0; max-width: 100%; min-height: 38px; padding: 0 10px; font: inherit; }
+
+.webrtc-settings-fields { display: grid; gap: 16px; }
+.webrtc-settings-fields[hidden] { display: none; }
+.remote-settings select.form-control { min-height: 42px; padding: 0 10px; font: inherit; }
+
+.share-pane { box-sizing: border-box; padding: 16px; display: grid; align-content: start; gap: 12px; overflow: auto; height: 100%; min-width: 0; }
+.share-pane h3, .share-pane p { margin: 0; }
+.share-pane .form-hint { font-size: 12px; color: var(--muted); }
+.share-pane .form-actions, .share-pane .remote-client-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.share-pane .remote-client-heading > span { flex: 1 1 120px; overflow-wrap: anywhere; }
+.share-pane .remote-client-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.share-pane .remote-client-row { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.share-pane .remote-client-row > span { font-size: 12px; color: var(--muted); }
+.share-pane [data-invite] { display: grid; gap: 12px; }
+.share-pane .remote-urls { overflow-wrap: anywhere; }
+.remote-sharing-dialog .share-pane { padding: 0; height: auto; }
+.share-pane [hidden] { display: none !important; }
+.share-pane .remote-client-list:empty { display: none; }
+.share-pane .field { display: grid; gap: 8px; min-width: 0; }

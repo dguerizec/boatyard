@@ -166,9 +166,7 @@ export function createPaneLayoutState({ updatePaneLayout }: PaneLayoutStateOptio
         paneNode?.selectedWebAppId ||
         selectedWebAppByProject.get(getProjectPaneLayoutKey(project)) ||
         fallbackWebApp.id;
-      // Restore layouts saved while file previews briefly had a separate pane type.
-      const restoredId = selectedId === "boatyard.fileEditor.preview" ? "boatyard.fileEditor.editor" : selectedId;
-      return webApps.find((webApp) => webApp.id === restoredId) || fallbackWebApp;
+      return webApps.find((webApp) => webApp.id === selectedId) || fallbackWebApp;
     }
 
     /**

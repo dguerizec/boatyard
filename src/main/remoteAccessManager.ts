@@ -1,0 +1,86 @@
+import { join } from "node:path";
+import { RemoteAccessController } from "./remoteAccessController.js";
+import { DEFAULT_REMOTE_PORT, RemoteSettingsStore } from "./remoteSettingsStore.js";
+
+export type RemoteAccessMode = "remote" | "share";
+export async function loadRemoteAccessSettings(root: string) {
+  const remote = new RemoteSettingsStore(join(root, "remote.json"));
+  const settings = remote.load();
+  const share = new RemoteSettingsStore(join(root, "remote-share.json"), { readOnly: true, port: settings.port < 65535 ? settings.port + 1 : DEFAULT_REMOTE_PORT });
+  share.load();
+  return { remote, share };
+}
+
+export class RemoteAccessManager {
+  private queue: Promise<unknown> = Promise.resolve();
+  private stopped = false;
+  private shareHadClients = false;
+  private readonly errors = new Map<RemoteAccessMode, string>();
+  constructor(private readonly controllers: Record<RemoteAccessMode, RemoteAccessController>, private readonly changed: () => void = () => {}) {}
+  getStatus(mode: RemoteAccessMode) {
+    const status = this.controllers[mode].getStatus();
+    return { ...status, error: this.errors.get(mode) || status.error };
+  }
+  getStatuses() { return { remote: this.getStatus("remote"), share: this.getStatus("share") }; }
+  configure(mode: RemoteAccessMode, patch?: Record<string, unknown>) {
+    return this.run(() => this.applyConfiguration(mode, patch));
+  }
+  private async applyConfiguration(mode: RemoteAccessMode, patch?: Record<string, unknown>, addingClient = false) {
+    if (mode === "share" && !addingClient) {
+      if (patch?.enabled === true) throw new Error("Add a client to start Share.");
+      patch = { ...patch, enabled: false };
+    }
+    this.errors.delete(mode);
+    const next = { ...this.getStatus(mode), ...patch };
+    const other = this.getStatus(mode === "remote" ? "share" : "remote");
+    if (next.enabled && other.enabled) {
+      if (Number(next.port) === Number(other.port)) throw new Error("Remote and Share must use different ports.");
+      if (next.publicOrigin && other.publicOrigin && new URL(String(next.publicOrigin)).origin === new URL(String(other.publicOrigin)).origin) {
+        throw new Error("Remote and Share must use different external URLs.");
+      }
+    }
+    return this.controllers[mode].configure(patch ? { ...patch, readOnly: mode === "share" } : { readOnly: mode === "share" });
+  }
+  clientsChanged(mode: RemoteAccessMode) {
+    if (mode !== "share" || this.stopped) return;
+    const status = this.getStatus("share");
+    if (!status.listening) { this.shareHadClients = false; return; }
+    const clients = status.clients as { state?: string }[];
+    const ended = this.shareHadClients && !clients.length;
+    this.shareHadClients = clients.length > 0;
+    if (ended) void this.run(async () => {
+      const latest = this.getStatus("share");
+      if (latest.listening && !latest.clients.length) {
+        await this.applyConfiguration("share", { enabled: false });
+      }
+    }).catch(() => {});
+  }
+  private run<T>(action: () => Promise<T>) {
+    const result = this.queue.then(() => { if (this.stopped) throw new Error("Boatyard is shutting down."); return action(); });
+    this.queue = result.catch(() => {}); return result;
+  }
+  createReadOnlyLink(label?: string) {
+    return this.run(async () => {
+      const starting = !this.getStatus("share").listening;
+      if (starting) {
+        const status = await this.applyConfiguration("share", { enabled: true }, true);
+        if (!status.listening) throw new Error(status.error || "Could not start Share.");
+      }
+      try { return await this.controllers.share.createReadOnlyLink(label); }
+      catch (error) { if (starting) await this.applyConfiguration("share", { enabled: false }); throw error; }
+    });
+  }
+  revokeClient(id: string) { return this.run(() => this.controllers.share.revokeClient(id)); }
+  async initialize() {
+    for (const mode of ["remote", "share"] as const) {
+      try { await this.configure(mode); }
+      catch (error) { this.errors.set(mode, error instanceof Error ? error.message : "Could not start server."); this.changed(); }
+    }
+  }
+  stop() {
+    this.stopped = true;
+    return this.queue.then(async () => {
+      await this.controllers.remote.stop(); await this.controllers.share.stop();
+    });
+  }
+}

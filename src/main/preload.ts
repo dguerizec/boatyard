@@ -58,6 +58,23 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateGlobalPluginConfig: (pluginId: string, patch: unknown) => ipcRenderer.invoke("global-plugin-config:update", pluginId, patch),
   updateProjectPluginConfig: (projectId: string, pluginId: string, patch: unknown) => ipcRenderer.invoke("project-plugin-config:update", projectId, pluginId, patch),
   updatePaneLayout: (projectId: string | null | undefined, layout: unknown) => ipcRenderer.invoke("pane-layout:update", projectId, layout),
+  createReadOnlyShareLink: (label?: string) => ipcRenderer.invoke("remote:readonly-link", label),
+  revokeShareClient: (id: string) => ipcRenderer.invoke("remote:client:revoke", id),
+  getWebrtcSettings: () => ipcRenderer.invoke("webrtc:settings"),
+  updateWebrtcSettings: (settings: unknown) => ipcRenderer.invoke("webrtc:settings:update", settings),
+  getWebrtcTestServers: () => ipcRenderer.invoke("webrtc:test"),
+  onWebrtcSettingsChanged: (callback: BridgeCallback): Unsubscribe => {
+    const listener = (_event: IpcRendererEvent, status: unknown) => callback(status);
+    ipcRenderer.on("webrtc:settings-changed", listener);
+    return () => ipcRenderer.removeListener("webrtc:settings-changed", listener);
+  },
+  getRemoteStatus: (mode: string = "remote") => ipcRenderer.invoke("remote:status", mode),
+  updateRemoteSettings: (settings: unknown, mode: string = "remote") => ipcRenderer.invoke("remote:settings:update", settings, mode),
+  onRemoteStatusChanged: (callback: BridgeCallback, mode: string = "remote"): Unsubscribe => {
+    const listener = (_event: IpcRendererEvent, status: Record<string, unknown>) => callback(status[mode]);
+    ipcRenderer.on("remote:status-changed", listener);
+    return () => ipcRenderer.removeListener("remote:status-changed", listener);
+  },
   getMcpStatus: () => ipcRenderer.invoke("mcp:status"),
   updateMcpSettings: (settings: unknown) => ipcRenderer.invoke("mcp:settings:update", settings),
   rotateMcpToken: () => ipcRenderer.invoke("mcp:token:rotate"),

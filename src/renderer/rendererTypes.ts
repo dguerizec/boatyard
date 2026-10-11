@@ -206,6 +206,7 @@ export type UpdateViewsInstance = RendererModuleInstance & {
 
 export type GlobalSettingsViewsInstance = RendererModuleInstance & {
   createGlobalMcpSettingsForm(): HTMLElement;
+  createGlobalRemoteSettingsForm(): HTMLElement;
   createGlobalPasswordManagerSettingsForm(options: UnknownRecord): HTMLElement;
   createGlobalPresentationSettingsForm(options: UnknownRecord): HTMLElement;
   createGlobalProjectsSettingsForm(options: UnknownRecord): HTMLElement;
@@ -260,6 +261,15 @@ export type BoatyardBridge = {
   listLayouts(projectId?: string | null): Promise<WorkspaceLayout[]>;
   getWebAppNavigationHistory?: (key: unknown) => Promise<unknown>;
   getState(): Promise<RendererState>;
+  createReadOnlyShareLink?: (label?: string) => Promise<{ id?: string; urls: string[]; expiresAt: number }>;
+  revokeShareClient?: (id: string) => Promise<UnknownRecord>;
+  getWebrtcSettings?: () => Promise<UnknownRecord>;
+  updateWebrtcSettings?: (settings: UnknownRecord) => Promise<UnknownRecord>;
+  getWebrtcTestServers?: () => Promise<RTCIceServer[]>;
+  onWebrtcSettingsChanged?: (callback: (status: UnknownRecord) => void) => () => void;
+  getRemoteStatus?: (mode?: "remote" | "share") => Promise<UnknownRecord>;
+  updateRemoteSettings?: (settings: UnknownRecord, mode?: "remote" | "share") => Promise<UnknownRecord>;
+  onRemoteStatusChanged?: (callback: (status: UnknownRecord) => void, mode?: "remote" | "share") => () => void;
   getMcpStatus?: () => Promise<UnknownRecord>;
   installMcpAgentConnection?: (targetId: string) => Promise<unknown>;
   installMcpSkill?: (targetId: string) => Promise<unknown>;

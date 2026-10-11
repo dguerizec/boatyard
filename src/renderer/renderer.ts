@@ -1,4 +1,6 @@
+import { createSharePane } from "./sharePane.js";
 import { setupHugescreenControls } from "./hugescreenControls.js";
+import { setupRemoteSharingControls } from "./remoteSharingControls.js";
 import { createGlobalSettingsPageView } from "./globalSettingsPageView.js";
 import { hasActiveSettingsInteraction } from "./settingsFormController.js";
 import { createOnboardingTour } from "./onboardingTour.js";
@@ -67,7 +69,7 @@ registerPluginSettingsFields(window);
 
 const {
   addProjectButton, appShell, dashboardGrid, globalNav, globalNavRow, globalSettingsButton, manualTourButton, pinnedProjects,
-  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, hugescreenButton, splitScreenButton, themeToggleButton, workspace, workspaceKicker, workspaceLayoutsButton, workspaceSummary, workspaceTitle
+  projectCount, projectList, projectSearchInput, sidebarRail, sidebarToggleButton, sidebarUpdateNotice, hugescreenButton, remoteAccessButton, remoteSharingButton, splitScreenButton, themeToggleButton, workspace, workspaceKicker, workspaceLayoutsButton, workspaceSummary, workspaceTitle
 } = rendererDomElements;
 
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
@@ -562,6 +564,7 @@ const paneLayoutView = createPaneLayoutView({
   createWidgetPaneActions: (project, widgetPane, layout, columns) => (
     createWidgetPaneActions(project, widgetPane, layout, columns ?? getWidgetGridColumnCount(MIN_WIDGET_RAIL_WIDTH))
   ),
+  createSharePane: () => createSharePane(boatyardWindow.boatyard),
   createWidgetPaneSurface,
   createWidgetPaneTabs,
   isWebAppTabMenuOpen,
@@ -659,6 +662,7 @@ function renderGlobalPaneArea() {
 
 const {
   createGlobalMcpSettingsForm,
+  createGlobalRemoteSettingsForm,
   createGlobalPasswordManagerSettingsForm,
   createGlobalPluginsSettingsView,
   createGlobalPresentationSettingsForm,
@@ -673,6 +677,7 @@ const globalSettingsPageView = createGlobalSettingsPageView({
   closeTerminalTabMenu,
   closeWidgetAddMenu,
   createGlobalMcpSettingsForm,
+  createGlobalRemoteSettingsForm,
   createGlobalPasswordManagerSettingsForm,
   createGlobalPluginsSettingsView,
   createGlobalPresentationSettingsForm,
@@ -1344,6 +1349,13 @@ workspaceLayoutsButton.addEventListener("click", () => {
 });
 
 setupHugescreenControls({ button: hugescreenButton, api: boatyardWindow.boatyard, showDialog: showOverlayDialog });
+const openRemoteSettings = () => {
+  navigationController.selectGlobalSettings();
+  document.querySelector<HTMLButtonElement>('.settings-nav-button[data-section-id="remote"]')?.click();
+};
+const disposeRemoteSharing = setupRemoteSharingControls(remoteSharingButton, boatyardWindow.boatyard, openRemoteSettings, showOverlayDialog, "share", applyFormControls);
+const disposeRemoteAccess = setupRemoteSharingControls(remoteAccessButton, boatyardWindow.boatyard, openRemoteSettings, showOverlayDialog, "remote", applyFormControls);
+window.addEventListener("pagehide", () => { disposeRemoteSharing(); disposeRemoteAccess(); }, { once: true });
 
 splitScreenButton.addEventListener("click", () => {
   void boatyardWindow.boatyard.createWorkspaceWindow?.();

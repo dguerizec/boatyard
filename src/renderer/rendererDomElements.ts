@@ -28,6 +28,8 @@ export const rendererDomElements = Object.freeze({
   workspace: requireElement<HTMLElement>(".workspace"),
   workspaceKicker: requireElement<HTMLElement>("#workspace-kicker"),
   workspaceLayoutsButton: requireElement<HTMLButtonElement>("#workspace-layouts"),
+  remoteAccessButton: requireElement<HTMLButtonElement>("#remote-access"),
+  remoteSharingButton: requireElement<HTMLButtonElement>("#remote-sharing"),
   workspaceSummary: requireElement<HTMLElement>("#workspace-summary"),
   workspaceTitle: requireElement<HTMLElement>("#workspace-title")
 });
