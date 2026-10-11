@@ -1,3 +1,4 @@
+@import "./shareChat.css";
 :root {
   color-scheme: dark;
   --bg: #111520;
@@ -5157,3 +5158,7 @@ textarea.form-control {
 
 .remote-sharing-dialog .share-admission { margin: 0; }
 .remote-sharing-dialog .share-pane [data-invite] { gap: 4px; }
+
+.share-pane [data-share-panel="chat"] { height: clamp(320px, 65vh, 720px); min-height: 0; }
+.share-pane [data-share-panel="chat"] .share-chat { height: 100%; }
+.share-chat-badge { margin-left: 4px; font-size: 10px; color: var(--accent); }

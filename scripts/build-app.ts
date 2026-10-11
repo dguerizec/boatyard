@@ -96,6 +96,8 @@ run("npx", ["tsc", "-p", "tsconfig.build.json"]);
 run("npx", ["tsc", "-p", "tsconfig.renderer.json"]);
 copyStaticAssets(sourceRoot);
 copyBrowserScripts(join(sourceRoot, "renderer"));
+// The chat view is shared with the standalone browser bundle.
+cpSync("src/renderer/shareChat.js", "build/renderer-esm/shareChat.js");
 copyPluginRendererScripts();
 // Bundle the standalone WebRTC scripts and their shared browser helpers.
 for (const name of ["client", "sender"]) buildSync({

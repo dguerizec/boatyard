@@ -132,6 +132,34 @@ settings renderer or printed in connection URLs.
 Launch the checkout with `make run`; it uses the saved remote settings.
 Remote access is disabled until configured.
 
+## Session chat
+
+The Share browser has a **Chat** toolbar button with an unread-message badge.
+On desktop, chat opens beside the video; on narrow screens, it temporarily takes
+its place and can be closed to return to the video. The operator uses the **Chat**
+tab in the Share pane or dialog. Everyone in the current sharing session sees the
+same conversation, including its full history when joining later or reconnecting.
+There are no private messages or reply threads.
+
+Messages support plain text, clickable HTTP/HTTPS links and one image. Paste a
+screenshot into the message field or use **Attach image** to choose a PNG, JPEG
+or WebP file (up to 5 MB). Review the preview before sending, or remove it.
+**Enter** sends; **Shift+Enter** inserts a new line. Click an image thumbnail to
+enlarge it. Chat does not capture screenshots or request screen access.
+
+Each message shows its author and a compact local-time timestamp; hover over the
+time for the full date and time. Date separators keep longer histories readable.
+The operator can delete any message using its visible trash icon. Deletion removes
+it from every participant's view and the stored archive, including its image.
+
+Each Share server start creates a new conversation. Stopping Share or quitting
+Boatyard ends it without deleting its messages. The operator's conversation selector
+provides read-only access to earlier sessions, with deletion still available.
+Archives and images are stored locally under `share-chat/` in the configuration
+root, and survive application restarts. Participants cannot access older sessions.
+The current conversation allows up to 5,000 messages and 200 MB of images; reaching
+a limit reports an error and preserves the existing history.
+
 ## Connect
 
 Open a displayed URL from another device, such as `http://192.0.2.10:47831`.

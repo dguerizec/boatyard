@@ -1,3 +1,4 @@
+import { startShareChatClient } from "./shareChatClient.js";
 import { remoteFrameFooterHeight, readRemoteFrameMetadata } from "../../shared/remoteFrameMetadata.js";
 import { calculateHugescreenPan } from "../../shared/hugescreenPan.js";
 import { HugescreenMotion } from "../../shared/hugescreenMotion.js";
@@ -12,6 +13,8 @@ import { requestRemoteApi } from "./api.js";
 (() => {
   const $ = id => document.getElementById(id);
   document.querySelectorAll('[data-icon]').forEach(button => button.replaceChildren(createToolIcon(button.dataset.icon)));
+  window.addEventListener("pagehide", () => closeChat());
+  window.addEventListener("pageshow", event => { if (event.persisted && authenticated) void loadWindows().catch(error => status(error.message)); });
   const surface = $('surface'), video = $('video'), frame = $('frame');
   function resizeViewer() {
     const visible = window.visualViewport;
@@ -56,11 +59,12 @@ import { requestRemoteApi } from "./api.js";
     if ((readOnly || followLocal) && ['pointer', 'key', 'text'].includes(message.kind)) return;
     if (channel?.readyState === 'open' && channel.bufferedAmount < 65536) channel.send(JSON.stringify(message));
   };
-  let shareJoin;
+  let shareJoin, disposeChat;
+  const closeChat = () => { disposeChat?.(); disposeChat = null; };
   const api = async (path, body) => {
     const { response, value } = await requestRemoteApi(path, body);
     if (response.status === 401 && authenticated) {
-      authenticated = false; reset(); document.body.classList.remove('authenticated');
+      closeChat(); authenticated = false; reset(); document.body.classList.remove('authenticated');
       $('login').hidden = !passwordLogin; $('logout').hidden = true;
       if (!passwordLogin) { shareJoin.hideAccess(); shareJoin.show(value.error); status(value.error); }
     }
@@ -106,6 +110,7 @@ import { requestRemoteApi } from "./api.js";
     $('windows').closest('label').hidden = result.windows.length <= 1;
     $('connect').hidden = result.windows.length === 1; $('login').hidden = true; $('logout').hidden = false;
     shareJoin.participant(result.participant);
+    if (readOnly && !disposeChat) disposeChat = startShareChatClient({ api, root: $("chatPanel"), button: $("chat"), workspace: $("viewerWorkspace") });
     updateViewerHint();
     status(result.windows.length ? 'Choose a window' : 'No windows available');
     if (result.windows.length === 1) $('connect').requestSubmit();
@@ -120,7 +125,7 @@ import { requestRemoteApi } from "./api.js";
     finally { button.disabled = false; }
   };
   $('logout').onclick = async () => {
-    reset(false);
+    closeChat(); reset(false);
     try { await api('/api/logout', {}); } catch (error) { status(error.message); }
     authenticated = false; document.body.classList.remove('authenticated');
     $('login').hidden = !passwordLogin; $('logout').hidden = true; if (passwordLogin) $('password').focus();

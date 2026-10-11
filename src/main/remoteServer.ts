@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { verifyRemotePassword, isRemotePasswordHash } from "./remotePassword.js";
 import { networkInterfaces } from "node:os";
 import { ShareAccessState, type ShareAccessSettings, type ShareParticipant } from "./shareAccessState.js";
+import { ShareChatStore, MAX_CHAT_IMAGE_BYTES } from "./shareChatStore.js";
 import type { RemoteConnectionRoute } from "../shared/remoteIce.js";
 
 export const DEFAULT_REMOTE_HOST = "0.0.0.0";
@@ -15,6 +16,7 @@ const BROWSER_COOKIE_MAX_AGE = 400 * 24 * 60 * 60;
 const clientAssets: Record<string, [string, string]> = {
   "/": ["client.html", "text/html"],
   "/client.js": ["client.js", "text/javascript"],
+  "/share-chat.css": ["../shareChat.css", "text/css"],
   "/remote.css": ["remote.css", "text/css"],
   "/waiting-screen.png": ["../assets/boatyard-mark-night-preview.png", "image/png"],
   "/manifest.json": ["manifest.json", "application/manifest+json"],
@@ -36,6 +38,7 @@ export type RemoteServerOptions = {
   sessionFilePath?: string;
   readOnly?: boolean;
   shareAccess?: ShareAccessState;
+  chat?: ShareChatStore;
   host?: string;
   port?: number;
   publicOrigin?: string;
@@ -61,6 +64,9 @@ export class RemoteServer {
   private readonly loginClients = new Map<string, { id: string; label: string }>();
   private readonly sessions = new Map<string, { login: string }>();
   private server: Server | null = null;
+  private chatId: string | null = null;
+  private readonly chatStreams = new Map<ServerResponse, string>();
+  private readonly chatLastSent = new Map<string, number>();
   private readonly connecting = new Set<string>();
   private readonly pendingSessions = new Map<string, string>();
   constructor(private readonly options: RemoteServerOptions) {
@@ -130,6 +136,8 @@ export class RemoteServer {
   private invalidateLogin(login: string) {
     // Revoke authentication before closing transports or notifying observers.
     this.logins.delete(login); this.loginClients.delete(login); this.connecting.delete(login);
+    this.chatLastSent.delete(login);
+    for (const [stream, owner] of this.chatStreams) if (owner === login) stream.end();
     const pending = this.pendingSessions.get(login);
     if (pending) { this.pendingSessions.delete(login); this.options.disconnect(pending); }
     for (const [sessionId, session] of [...this.sessions]) if (session.login === login) {
@@ -168,9 +176,14 @@ export class RemoteServer {
     });
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("Remote server did not obtain a port");
+    if (this.options.readOnly && this.options.chat) { this.options.chat.begin(); this.chatId = this.options.chat.activeId; }
     return address.port;
   }
   async stop() {
+    if (this.chatId && this.options.chat?.activeId === this.chatId) this.options.chat.end();
+    this.chatId = null;
+    for (const stream of this.chatStreams.keys()) stream.end();
+    this.chatLastSent.clear();
     this.options.disconnect();
     this.logins.clear(); this.attempts.clear(); if (this.options.shareAccess) this.shareAccess.endSession(); else this.shareAccess.clear(); this.shareAttempts.clear(); this.globalShareAttempts = { since: 0, count: 0 }; this.loginClients.clear();
     this.sessions.clear(); this.connecting.clear(); this.pendingSessions.clear();
@@ -196,7 +209,7 @@ export class RemoteServer {
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("X-Content-Type-Options", "nosniff");
     response.setHeader("Referrer-Policy", "no-referrer");
-    response.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'");
+    response.setHeader("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'");
     const json = (status: number, value: unknown) => {
       if (response.destroyed) return;
       response.writeHead(status, { "Content-Type": "application/json" });
@@ -308,10 +321,45 @@ export class RemoteServer {
       const login = this.loginDigest(token);
       if (!this.logins.has(login)) { this.logins.delete(login); this.loginClients.delete(login); json(401, { error: this.options.readOnly ? "Your access is no longer active. It may have been opened on another device. Join again to use this device." : "Please sign in." }); return; }
       if (request.method === "POST" && url.pathname === "/api/logout") {
-        for (const [id, session] of [...this.sessions]) if (session.login === login) { this.options.disconnect(id); this.sessionClosed(id); }
-        this.logins.delete(login); this.loginClients.delete(login); this.options.clientsChanged?.(); this.saveLogins(); setCookie("", 0); json(200, { authenticated: false }); return;
+        this.invalidateLogin(login); this.options.clientsChanged?.(); this.saveLogins(); setCookie("", 0); json(200, { authenticated: false }); return;
       }
       setCookie(token, BROWSER_COOKIE_MAX_AGE);
+      if (url.pathname.startsWith("/api/chat")) {
+        const chat = this.options.readOnly ? this.options.chat : undefined, chatId = this.chatId;
+        if (!chat || !chatId) { json(404, { error: "Chat is unavailable." }); return; }
+        if (request.method === "GET" && url.pathname === "/api/chat") { json(200, chat.snapshot(chatId)); return; }
+        if (request.method === "GET" && url.pathname === "/api/chat/events") {
+          if ([...this.chatStreams.values()].filter(owner => owner === login).length >= 2 || this.chatStreams.size >= 32) { json(429, { error: "Too many chat connections." }); return; }
+          response.writeHead(200, { "Content-Type": "text/event-stream", "X-Accel-Buffering": "no" });
+          this.chatStreams.set(response, login);
+          const notify = () => {
+            if (!this.logins.has(login) || this.chatId !== chatId) { response.end(); return; }
+            if (response.writableLength > 65536) { response.destroy(); return; }
+            response.write('data: {}\n\n');
+          };
+          const unsubscribe = chat.subscribe(notify);
+          const heartbeat = setInterval(() => {
+            if (!this.logins.has(login)) response.end(); else response.write(': heartbeat\n\n');
+          }, 15000);
+          response.on("close", () => { clearInterval(heartbeat); unsubscribe(); this.chatStreams.delete(response); });
+          notify(); return;
+        }
+        if (request.method === "GET" && url.pathname.startsWith("/api/chat/image/")) {
+          const image = chat.image(chatId, url.pathname.slice("/api/chat/image/".length));
+          response.writeHead(200, { "Content-Type": image.mime }); response.end(image.bytes); return;
+        }
+        if (request.method === "POST" && url.pathname === "/api/chat/send") {
+          const body = await readBody(Math.ceil(MAX_CHAT_IMAGE_BYTES * 1.4) + 65536);
+          if (!this.logins.has(login)) { json(401, { error: "Your access is no longer active." }); return; }
+          if (body.sessionId !== chatId || this.chatId !== chatId) throw new Error("This conversation has ended.");
+          const identity = this.loginClients.get(login);
+          if (!identity) throw new Error("Please join the sharing session.");
+          if (Date.now() - (this.chatLastSent.get(login) || 0) < 500) { json(429, { error: "Please wait a moment before sending another message." }); return; }
+          const message = chat.send(chatId, identity.id, identity.label, body);
+          this.chatLastSent.set(login, Date.now()); json(200, { message }); return;
+        }
+        json(404, { error: "Not found" }); return;
+      }
       if (request.method === "GET" && url.pathname === "/api/windows") {
         const iceServers = this.options.getIceServers ? await this.options.getIceServers() : this.options.iceServers || [];
         if (!this.logins.has(login)) { json(401, { error: "Please sign in." }); return; }

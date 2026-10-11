@@ -167,6 +167,8 @@ const TOOL_ICONS: Record<string, string[]> = {
   check: [
     "M5 12l4 4L19 6"
   ],
+  messageSquare: ["M21 15a2 2 0 0 1-2 2H7l-5 4V5a2 2 0 0 1 2-2h15a2 2 0 0 1 2 2z"],
+  image: ["M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z", "M7 8h2", "m21 15-5-5L5 21"],
   close: [
     "M6 6l12 12",
     "M18 6L6 18"

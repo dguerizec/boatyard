@@ -1,5 +1,6 @@
 import { canShareScreen, sharedProjectKey } from "./shareScreenPolicy.js";
 import { loadRemoteAccessSettings, RemoteAccessManager, type RemoteAccessMode } from "./remoteAccessManager.js";
+import { ShareChatStore } from "./shareChatStore.js";
 import { ShareAccessState } from "./shareAccessState.js";
 import { RemoteAccessController } from "./remoteAccessController.js";
 import { RemoteAccessService } from "./remoteAccess.js";
@@ -137,6 +138,7 @@ let pluginHost: PluginHostInstance;
 let updateManager: UpdateManagerInstance;
 let mcpServerService: McpServerService;
 let remoteAccessController: RemoteAccessManager;
+let shareChatStore: ShareChatStore;
 let shareNavigationRevision = 0;
 const shareNavigation = new Map<string, { view?: string; projectId?: string | null; revision: number }>();
 let webrtcSettingsStore: WebrtcSettingsStore;
@@ -1545,6 +1547,27 @@ function registerIpcHandlers() {
     getConfigurationForEvent(event);
     return remoteAccessController.getStatus(remoteMode(mode));
   });
+  ipcMain.handle("share:chat:read", (event: IpcMainInvokeEvent, id: unknown) => {
+    getConfigurationForEvent(event);
+    if (id !== undefined && id !== null && typeof id !== "string") throw new Error("Invalid conversation.");
+    return shareChatStore.snapshot(id as string | null | undefined, true);
+  });
+  ipcMain.handle("share:chat:send", (event: IpcMainInvokeEvent, id: unknown, input: unknown) => {
+    getConfigurationForEvent(event);
+    if (typeof id !== "string") throw new Error("Invalid conversation.");
+    return shareChatStore.send(id, "operator", "Operator", input);
+  });
+  ipcMain.handle("share:chat:delete", (event: IpcMainInvokeEvent, id: unknown, messageId: unknown) => {
+    getConfigurationForEvent(event);
+    if (typeof id !== "string" || typeof messageId !== "string") throw new Error("Invalid message.");
+    shareChatStore.delete(id, messageId);
+  });
+  ipcMain.handle("share:chat:image", (event: IpcMainInvokeEvent, id: unknown, messageId: unknown) => {
+    getConfigurationForEvent(event);
+    if (typeof id !== "string" || typeof messageId !== "string") throw new Error("Invalid image.");
+    const image = shareChatStore.image(id, messageId);
+    return `data:${image.mime};base64,${image.bytes.toString("base64")}`;
+  });
   ipcMain.on("share:navigation", (event: IpcMainEvent, navigation: { view?: string; projectId?: string | null }) => {
     const record = getWorkspaceWindowForWebContents(event.sender);
     if (record) shareNavigation.set(`${getMcpContextId(record.configuration)}:${record.id}`, {
@@ -2334,6 +2357,12 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   secretStore.load();
   mcpSettingsStore = new McpSettingsStore(path.join(initialLaunchDescriptor.configurationRoot, "mcp.json"));
   mcpSettingsStore.load();
+  shareChatStore = new ShareChatStore(path.join(initialLaunchDescriptor.configurationRoot, "share-chat"));
+  shareChatStore.subscribe(() => {
+    for (const record of workspaceWindows.values()) {
+      if (!record.window.isDestroyed()) record.window.webContents.send("share:chat:changed");
+    }
+  });
   const remoteStores = await loadRemoteAccessSettings(initialLaunchDescriptor.configurationRoot);
   webrtcSettingsStore = new WebrtcSettingsStore(initialLaunchDescriptor.configurationRoot, process.env.BOATYARD_REMOTE_ICE_SERVERS);
   try { webrtcSettingsStore.load(); } catch { console.warn("Could not load WebRTC settings. Remote connections require a valid configuration."); }
@@ -2385,6 +2414,7 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
     publicOrigin: settings.publicOrigin || undefined,
     readOnly: settings.readOnly,
     shareAccess: mode === "share" ? shareAccess : undefined,
+    chat: mode === "share" ? shareChatStore : undefined,
     getIceServers: getRemoteIceServers,
     getIceTransportPolicy: () => webrtcSettingsStore.getIceTransportPolicy()
   }), publishRemoteStatus, mode === "share" ? shareAccess : undefined);

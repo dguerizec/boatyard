@@ -63,6 +63,17 @@ contextBridge.exposeInMainWorld("boatyard", {
   updateShareScreen: (patch: unknown) => ipcRenderer.invoke("share:screen:update", patch),
   getShareProjects: () => ipcRenderer.invoke("share:projects"),
   createReadOnlyShareLink: (label?: string) => ipcRenderer.invoke("remote:readonly-link", label),
+  getShareChat: (id?: string | null) => ipcRenderer.invoke("share:chat:read", id),
+  sendShareChat: (id: string, input: unknown) => ipcRenderer.invoke("share:chat:send", id, input),
+  deleteShareChatMessage: (id: string, messageId: string) => ipcRenderer.invoke("share:chat:delete", id, messageId),
+  getShareChatImage: (id: string, messageId: string) => ipcRenderer.invoke("share:chat:image", id, messageId),
+  onShareChatChanged: (callback: () => void): Unsubscribe => {
+    const listener = () => callback();
+    ipcRenderer.on("share:chat:changed", listener);
+    return () => ipcRenderer.removeListener("share:chat:changed", listener);
+  },
+  configureShareAccess: (patch: unknown) => ipcRenderer.invoke("share:access:update", patch),
+  decideShareJoinRequest: (id: string, accepted: boolean) => ipcRenderer.invoke("share:request:decide", id, accepted),
   revokeShareClient: (id: string) => ipcRenderer.invoke("remote:client:revoke", id),
   getWebrtcSettings: () => ipcRenderer.invoke("webrtc:settings"),
   updateWebrtcSettings: (settings: unknown) => ipcRenderer.invoke("webrtc:settings:update", settings),

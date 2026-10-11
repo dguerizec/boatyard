@@ -64,6 +64,7 @@ test("remote PWA assets are public, uncached and versioned by their content", as
   const directory = mkdtempSync(join(tmpdir(), "boatyard-client-version-"));
   const remoteDirectory = join(directory, "remote");
   cpSync(resolve("src/renderer/remote"), remoteDirectory, { recursive: true });
+  cpSync(resolve("src/renderer/shareChat.css"), join(directory, "shareChat.css"));
   mkdirSync(join(directory, "assets"));
   cpSync(resolve("src/renderer/assets/boatyard-mark-night-preview.png"), join(directory, "assets/boatyard-mark-night-preview.png"));
   const server = new RemoteServer({ assetsDirectory: remoteDirectory, passwordHash: "", readOnly: true,

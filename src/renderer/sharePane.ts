@@ -1,3 +1,4 @@
+import { createShareChat } from "./shareChat.js";
 import { normalizeProjectSearchText, projectMatchesSearch } from "./projectUtils.js";
 import { appendRemoteConnectionLinks } from "./remoteConnectionLinks.js";
 import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
@@ -24,6 +25,7 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
     <p class="form-error" role="alert" hidden></p>
     <div class="share-tabs" role="tablist" aria-label="Share session">
       <button type="button" class="secondary-button" role="tab" id="${paneId}-session-tab" aria-controls="${paneId}-session" aria-selected="true" data-share-tab="session">Session</button>
+      <button type="button" class="secondary-button" role="tab" id="${paneId}-chat-tab" aria-controls="${paneId}-chat" aria-selected="false" tabindex="-1" data-share-tab="chat">Chat<span class="share-chat-badge" hidden></span></button>
       <button type="button" class="secondary-button" role="tab" id="${paneId}-setup-tab" aria-controls="${paneId}-setup" aria-selected="false" tabindex="-1" data-share-tab="setup">Setup</button>
       <button type="button" class="secondary-button" role="tab" id="${paneId}-projects-tab" aria-controls="${paneId}-projects" aria-selected="false" tabindex="-1" data-share-tab="projects">Shared projects</button>
     </div>
@@ -33,6 +35,7 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
     <h4>Connected participants</h4><p class="form-hint" data-session-empty>No connected participants. Create invitations in Setup.</p>
     <ul class="remote-client-list" aria-label="Connected participants"></ul>
     </section>
+    <section class="share-tab-panel" role="tabpanel" id="${paneId}-chat" aria-labelledby="${paneId}-chat-tab" data-share-panel="chat" hidden><div data-chat-root></div></section>
     <section class="share-tab-panel" role="tabpanel" id="${paneId}-setup" aria-labelledby="${paneId}-setup-tab" data-share-panel="setup" hidden>
     <p data-status role="status">Loading…</p>
     <div class="form-actions"><button class="primary-button" type="button" data-start>Start sharing</button><button class="secondary-button" type="button" data-stop>Stop sharing</button></div>
@@ -56,6 +59,18 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
       <div data-project-list></div>
       <p class="form-hint" data-project-empty role="status" hidden>No projects match your search.</p>
     </section>`;
+  const chat = api.getShareChat && api.sendShareChat && api.getShareChatImage ? createShareChat(root.querySelector<HTMLElement>("[data-chat-root]")!, {
+    read: async id => {
+      const value = await api.getShareChat!(id);
+      return !id && !value.session && value.sessions?.length ? api.getShareChat!(value.sessions[0].id) : value;
+    },
+    send: (id, input) => api.sendShareChat!(id, input),
+    delete: (id, messageId) => api.deleteShareChatMessage!(id, messageId),
+    image: (id, messageId) => api.getShareChatImage!(id, messageId),
+    subscribe: callback => api.onShareChatChanged?.(callback),
+    openLink: url => { void api.openExternal(url); },
+    unread: count => { const badge = root.querySelector<HTMLElement>(".share-chat-badge")!; badge.hidden = !count; badge.textContent = count > 99 ? "99+" : String(count); }
+  }) : undefined;
   const statuses: Record<Mode, UnknownRecord> = { share: {}, remote: {} };
   const revisions = { share: 0, remote: 0 };
   let disposed = false, busy = false, loaded = false;
@@ -281,6 +296,7 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
       button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected ? 0 : -1;
       root.querySelector<HTMLElement>(`[data-share-panel="${button.dataset.shareTab}"]`)!.hidden = !selected;
     }
+    chat?.setVisible(tab.dataset.shareTab === "chat");
     if (tab.dataset.shareTab === "projects") refreshProjects();
   }
   for (const [index, tab] of tabs.entries()) {
@@ -309,6 +325,6 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
     void api.getRemoteStatus?.(mode).then(value => { if (!revisions[mode]) apply(mode, value); }).catch(showError);
     return unsubscribe;
   });
-  root.boatyardCleanup = () => { disposed = true; subscriptions.forEach(unsubscribe => unsubscribe?.()); };
+  root.boatyardCleanup = () => { disposed = true; chat?.dispose(); subscriptions.forEach(unsubscribe => unsubscribe?.()); };
   render(); return root;
 }

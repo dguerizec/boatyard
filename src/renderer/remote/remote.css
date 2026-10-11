@@ -1,3 +1,4 @@
+@import url("share-chat.css");
 :root { color-scheme: dark; font: 14px system-ui, sans-serif; background: #101521; color: #e4eaf4; }
 * { box-sizing: border-box; }
 body { margin: 0; position: fixed; top: var(--viewer-top, 0px); left: 0; width: 100%; height: var(--viewer-height, 100dvh); display: flex; flex-direction: column; }
@@ -64,3 +65,19 @@ main.screen-waiting #localCursor { display: none; }
 #shareJoinModes { display: flex; gap: 8px; }
 #shareJoinModes button { flex: 1; }
 #shareJoinModes button[aria-pressed="true"] { background: #315d86; border-color: #75b9ff; }
+
+#viewerWorkspace { display: flex; flex: 1; min-height: 0; min-width: 0; }
+#viewerWorkspace #surface { min-width: 0; }
+body:has(#shareJoin:not([hidden])) #viewerWorkspace, body:has(#login:not([hidden])) #viewerWorkspace { display: none; }
+#chatPanel { flex: 0 0 min(360px, 42vw); display: flex; flex-direction: column; background: #192231; border-left: 1px solid #344156; padding: 12px; min-width: 0; }
+.client-chat-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.client-chat-heading strong { font-size: 13px; }
+.client-chat-body { flex: 1; min-height: 0; }
+#chat { position: relative; }
+#chat[aria-pressed="true"] { background: #315d86; border-color: #75b9ff; }
+.chat-unread { position: absolute; top: 1px; right: 1px; font-size: 9px; background: #315d86; border-radius: 8px; padding: 1px 3px; }
+@media (max-width: 600px) {
+  #viewerWorkspace.chat-open #surface { display: none; }
+  #chatPanel { flex: 1; border-left: 0; }
+  .share-chat .chat-actions span { font-size: 9px; }
+}

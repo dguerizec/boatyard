@@ -10,6 +10,7 @@ module.exports = async harness => {
   const directory = mkdtempSync(join(tmpdir(), 'boatyard-pwa-fixture-'));
   const remoteDirectory = join(directory, 'remote');
   cpSync(resolve('build/renderer/remote'), remoteDirectory, { recursive: true });
+  cpSync(resolve('build/renderer/shareChat.css'), join(directory, 'shareChat.css'));
   mkdirSync(join(directory, 'assets'));
   cpSync(resolve('build/renderer/assets/boatyard-mark-night-preview.png'), join(directory, 'assets/boatyard-mark-night-preview.png'));
   const server = new RemoteServer({ assetsDirectory: remoteDirectory, passwordHash: '', readOnly: true,

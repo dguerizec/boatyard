@@ -6,6 +6,7 @@ import { parseRemoteInput, parseRemoteViewport, remotePoint, type RemoteModifier
 import { getRemoteStreamingHost } from "./remoteStreamingHost.js";
 import type { RemoteConnectionRoute } from "../shared/remoteIce.js";
 import type { ShareAccessState } from "./shareAccessState.js";
+import type { ShareChatStore } from "./shareChatStore.js";
 
 export type RemoteInputTarget = { contents: WebContents; x: number; y: number };
 export type RemoteAccessOptions = {
@@ -19,6 +20,7 @@ export type RemoteAccessOptions = {
   sessionFilePath?: string;
   readOnly?: boolean;
   shareAccess?: ShareAccessState;
+  chat?: ShareChatStore;
   publicOrigin?: string;
   iceServers?: RTCIceServer[];
   getIceServers?(): Promise<RTCIceServer[]>;
