@@ -5,6 +5,7 @@ import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 import type { BoatyardBridge } from "./rendererTypes.js";
 import type { PaneCleanupHost } from "./paneCleanup.js";
 import { createToolIcon } from "./toolIcons.js";
+import type { RemoteAudioMode } from "../shared/remoteAudio.js";
 import type { ShareTab } from "../shared/shareSidebar.js";
 
 export type ShareSidebarPin = {
@@ -16,10 +17,10 @@ type SharePaneOptions = {
   sidebarPin?: ShareSidebarPin;
   hideTabs?: boolean;
   onTabChanged?: (tab: ShareTab) => void;
-  onAlertsChanged?: (alerts: { requests: number; messages: number }) => void;
+  onAlertsChanged?: (alerts: { requests: number; hands: number; messages: number }) => void;
 };
 export type SharePaneHost = PaneCleanupHost & {
-  selectShareTab(tab: ShareTab, section?: "requests"): void;
+  selectShareTab(tab: ShareTab, section?: "requests" | "hands"): void;
   setShareVisible(visible: boolean): void;
 };
 
@@ -38,7 +39,7 @@ let paneSequence = 0;
 export function createSharePane(api: BoatyardBridge, compact = false, options: SharePaneOptions = {}) {
   const root = document.createElement("div") as unknown as SharePaneHost;
   let paneVisible = true, selectedTab: ShareTab = "session";
-  const alerts = { requests: 0, messages: 0 };
+  const alerts = { requests: 0, hands: 0, messages: 0 };
   root.className = "share-pane"; root.dataset.boatyardCleanup = "";
   const paneId = `share-${++paneSequence}`;
   root.innerHTML = `${compact ? "" : "<h3>Share</h3>"}
@@ -51,6 +52,19 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
     </div>
     <section class="share-tab-panel" role="tabpanel" id="${paneId}-session" aria-labelledby="${paneId}-session-tab" data-share-panel="session">
     <div class="share-screen-controls"><button type="button" class="secondary-button" data-screen title="Hide or show screen (Ctrl+Shift+S)">Hide screen</button>${compact ? "" : '<span class="form-hint">Ctrl+Shift+S</span>'}</div>
+    <div class="share-audio-mode"><label for="${paneId}-audio-mode">Audio mode</label>
+      <select class="form-control" id="${paneId}-audio-mode" data-audio-mode><option value="speaker-only">Speaker only</option><option value="open-discussion">Open discussion</option><option value="qa">Q&amp;A</option></select></div>
+    <p class="form-hint" data-audio-mode-hint></p>
+    <label class="share-microphone-device" for="${paneId}-microphone"><span>My microphone</span>
+      <select class="form-control" id="${paneId}-microphone" data-microphone-device><option value="">System default</option></select></label>
+    <p class="form-hint" data-microphone-hint></p>
+    <div class="share-audio-controls" data-voice-controls role="group" aria-label="Microphone and speaking controls"><button type="button" class="secondary-button" data-mic>Unmute my microphone</button>
+      <button type="button" class="secondary-button" data-mute-all>Mute all participants</button>
+      <button type="button" class="secondary-button" data-allow-all>Allow all participants</button>
+      <span class="share-control-divider" aria-hidden="true" data-turn-divider></span>
+      <button type="button" class="secondary-button" data-next-question>Next question</button>
+      <button type="button" class="secondary-button" data-end-turn>End turn</button></div>
+    <p class="form-hint" data-floor-status role="status"></p>
     <section data-join-queue hidden><h4>Join requests</h4><ul class="remote-join-requests" aria-label="Join requests"></ul></section>
     <h4>Participants</h4><p class="form-hint" data-session-empty>No connected participants. Create invitations in Setup.</p>
     <ul class="remote-client-list" aria-label="Connected participants"></ul>
@@ -94,12 +108,13 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
   const statuses: Record<Mode, UnknownRecord> = { share: {}, remote: {} };
   const revisions = { share: 0, remote: 0 };
   let disposed = false, busy = false, loaded = false;
-  const rows = new Map<string, { root: HTMLLIElement; text: HTMLElement; revoke: HTMLButtonElement; urls: HTMLElement; rendered?: string }>();
+  const rows = new Map<string, { root: HTMLLIElement; text: HTMLElement; voice: HTMLElement; mute: HTMLButtonElement; floor: HTMLButtonElement; revoke: HTMLButtonElement; urls: HTMLElement; rendered?: string }>();
   const form = root.querySelector<HTMLFormElement>("[data-invite]")!;
   const label = form.elements.namedItem("label") as HTMLInputElement;
   const list = root.querySelector<HTMLUListElement>('[data-share-panel="session"] .remote-client-list')!;
   const invitations = root.querySelector<HTMLUListElement>("[data-invitations]")!;
   const error = root.querySelector<HTMLElement>("[role=alert]")!;
+  const hostMic = root.querySelector<HTMLButtonElement>("[data-mic]")!;
   const screen = root.querySelector<HTMLButtonElement>("[data-screen]")!;
   const projectList = root.querySelector<HTMLElement>("[data-project-list]")!;
   const projectSearch = root.querySelector<HTMLInputElement>("[data-project-search]")!;
@@ -108,6 +123,18 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
   const groups = new Map<string, { root: HTMLDetailsElement; input: HTMLInputElement; title: HTMLElement; list: HTMLElement; openBeforeSearch?: boolean }>();
   const stop = root.querySelector<HTMLButtonElement>("[data-stop]")!;
   const start = root.querySelector<HTMLButtonElement>("[data-start]")!;
+  const muteAll = root.querySelector<HTMLButtonElement>("[data-mute-all]")!;
+  const allowAll = root.querySelector<HTMLButtonElement>("[data-allow-all]")!;
+  const audioMode = root.querySelector<HTMLSelectElement>("[data-audio-mode]")!;
+  const microphoneDevice = root.querySelector<HTMLSelectElement>("[data-microphone-device]")!;
+  let microphoneOptions = "";
+  let microphoneLoading = Boolean(api.prepareHostMicrophones);
+  const nextQuestion = root.querySelector<HTMLButtonElement>("[data-next-question]")!;
+  const endTurn = root.querySelector<HTMLButtonElement>("[data-end-turn]")!;
+  iconAction(muteAll, "usersMuted", "Mute all participants");
+  iconAction(allowAll, "users", "Allow all participants");
+  iconAction(nextQuestion, "nextTurn", "Next question");
+  iconAction(endTurn, "endTurn", "End turn");
   const showError = (reason: unknown) => { if (!disposed) { error.textContent = reason instanceof Error ? reason.message : String(reason); error.hidden = false; } };
   function apply(mode: Mode, value: UnknownRecord) { if (!disposed) { statuses[mode] = value; loaded = true; render(); } }
   async function mutate(mode: Mode, action: () => Promise<UnknownRecord>) {
@@ -234,28 +261,90 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
     stop.hidden = !share.listening && !share.enabled;
     const connected = Number(share.connectedClients || 0) + Number(statuses.remote.connectedClients || 0);
     root.querySelector<HTMLElement>("[data-session-empty]")!.hidden = connected > 0;
+    root.querySelector<HTMLElement>("[data-voice-controls]")!.hidden = compact && !connected;
+    const hostMuted = statuses.share.listening ? statuses.share.hostMuted !== false : statuses.remote.hostMuted !== false;
+    iconAction(hostMic, hostMuted ? "micOff" : "mic", hostMuted ? "Unmute my microphone" : "Mute my microphone");
+    hostMic.setAttribute("aria-pressed", String(!hostMuted)); hostMic.disabled = busy || !connected;
+    muteAll.disabled = allowAll.disabled = busy || !statuses.share.listening && !statuses.remote.listening;
+    const conference = statuses.share.listening ? share : statuses.remote;
+    const microphone = toUnknownRecord(conference.hostMicrophone);
+    const selectedDevice = String(microphone.deviceId || "");
+    const devices = Array.isArray(microphone.devices) ? microphone.devices.map(toUnknownRecord) : [];
+    const unavailable = Boolean(selectedDevice) && !devices.some(device => device.deviceId === selectedDevice);
+    const optionsKey = JSON.stringify([devices, unavailable ? selectedDevice : ""]);
+    if (optionsKey !== microphoneOptions) {
+      microphoneDevice.replaceChildren(new Option("System default", ""));
+      for (const device of devices) if (device.deviceId !== "default") microphoneDevice.append(new Option(String(device.label), String(device.deviceId)));
+      if (unavailable) microphoneDevice.append(new Option("Selected microphone (unavailable)", selectedDevice));
+      microphoneOptions = optionsKey;
+    }
+    microphoneDevice.value = selectedDevice;
+    microphoneDevice.disabled = busy || !loaded || microphoneLoading;
+    root.querySelector<HTMLElement>("[data-microphone-hint]")!.textContent = microphoneLoading ? "Loading microphones…"
+      : unavailable ? "The selected microphone is unavailable. Choose another device to speak."
+      : "Shared by Share and Remote. Choosing a device keeps a muted microphone off.";
+    const currentMode = String(conference.audioMode || "open-discussion");
+    audioMode.value = currentMode;
+    audioMode.disabled = busy || !loaded || !statuses.share.listening && !statuses.remote.listening;
+    root.querySelector<HTMLElement>("[data-audio-mode-hint]")!.textContent = currentMode === "speaker-only"
+      ? "Participants listen and may raise their hand. Give the floor for a question at any time."
+      : currentMode === "qa" ? "Take questions from the hand queue, one participant at a time."
+      : "Participants may mute or unmute themselves and speak freely.";
+    nextQuestion.hidden = currentMode !== "qa";
+    root.querySelector<HTMLElement>("[data-turn-divider]")!.hidden = currentMode === "open-discussion";
+    endTurn.hidden = currentMode === "open-discussion";
     const ids = new Set<string>();
+    let floorLabel = "", allowedCount = 0;
+    let waitingCount = 0;
+    const participants: { root: HTMLLIElement; rank: number }[] = [];
     for (const mode of ["share", "remote"] as const) {
       const clients = Array.isArray(statuses[mode].clients) ? (statuses[mode].clients as unknown[]).map(toUnknownRecord) : [];
       for (const client of clients) {
-        const id = String(client.id), connected = client.state === "connected";
+        const id = String(client.id), voice = toUnknownRecord(client.voice), connected = client.state === "connected";
+        if (connected && voice.allowed === true) allowedCount++;
+        if (connected && voice.hasFloor === true) floorLabel = String(client.label || "Unnamed participant");
+        if (connected && typeof voice.handRaised === "number") waitingCount++;
         for (const invitation of mode === "share" ? [false, true] : [false]) {
           if (!invitation && !connected) continue;
           const key = `${mode}:${id}:${invitation}`; ids.add(key);
           let row = rows.get(key);
           if (!row) {
-            const item = document.createElement("li"), heading = document.createElement("div"), text = document.createElement("span"), revoke = document.createElement("button"), urls = document.createElement("div");
+            const item = document.createElement("li"), heading = document.createElement("div"), text = document.createElement("span"), voice = document.createElement("span"), mute = document.createElement("button"), floor = document.createElement("button"), revoke = document.createElement("button"), urls = document.createElement("div");
             item.className = "remote-client-row"; item.dataset.clientId = id; heading.className = "remote-client-heading"; urls.className = "remote-urls";
-            revoke.type = "button"; revoke.className = "secondary-button"; revoke.dataset.clientAction = "revoke";
+            voice.className = "remote-client-voice"; voice.setAttribute("role", "img");
+            for (const button of [mute, floor, revoke]) { button.type = "button"; button.className = "secondary-button"; }
+            floor.dataset.clientAction = "floor";
+            floor.onclick = () => { void run(() => controlConference(mode, { floor: id })); };
+            revoke.textContent = "Revoke"; revoke.dataset.clientAction = "revoke"; mute.dataset.clientAction = "mute"; revoke.hidden = mode !== "share";
+            mute.onclick = () => { void run(async () => {
+              if (!api.setRemoteVoiceAllowed) throw new Error("Voice controls are unavailable.");
+              const current = (statuses[mode].clients as unknown[]).map(toUnknownRecord).find(value => value.id === id);
+              await mutate(mode, () => api.setRemoteVoiceAllowed!(mode, id, toUnknownRecord(current?.voice).allowed !== true));
+            }); };
             revoke.onclick = () => { void run(async () => { if (!api.revokeShareClient) throw new Error("Client management is unavailable."); await mutate("share", () => api.revokeShareClient!(id)); }); };
-            heading.append(text, revoke); item.append(heading, urls); (invitation ? invitations : list).append(item);
-            row = { root: item, text, revoke, urls }; rows.set(key, row);
+            heading.append(text, voice, floor, mute, revoke); item.append(heading, urls); (invitation ? invitations : list).append(item);
+            row = { root: item, text, voice, mute, floor, revoke, urls }; rows.set(key, row);
           }
           const route = client.route === "direct" ? "Direct" : client.route === "relay" ? "Relayed" : "Checking connection…";
           row.text.textContent = `${client.label || "Unnamed participant"} · ${mode === "remote" ? "Remote · " : ""}${client.state === "connected" ? `Connected · ${route}` : client.state === "invited" ? "Invited" : "Signed in"}`;
           row.text.title = row.text.textContent;
-          row.revoke.replaceChildren(createToolIcon("trash")); row.revoke.title = `Revoke: ${client.label || "Unnamed participant"}`; row.revoke.setAttribute("aria-label", row.revoke.title);
-          row.revoke.disabled = busy; row.revoke.hidden = !invitation;
+          const microphoneOff = voice.allowed === false || voice.selfMuted !== false;
+          const microphoneLabel = `${voice.hasFloor ? "Has the floor · " : ""}${microphoneOff ? "Microphone off" : "Microphone on"}${voice.allowed === false ? " · Blocked by host" : ""}`;
+          row.voice.replaceChildren(createToolIcon(microphoneOff ? "micOff" : "mic"));
+          row.voice.title = microphoneLabel; row.voice.setAttribute("aria-label", microphoneLabel);
+          row.voice.dataset.muted = String(microphoneOff);
+          row.voice.dataset.blocked = String(voice.allowed === false);
+          row.root.classList.toggle("has-floor", voice.hasFloor === true);
+          const handRaised = connected && typeof voice.handRaised === "number";
+          row.root.classList.toggle("hand-raised", !invitation && handRaised);
+          iconAction(row.floor, "hand", `Give the floor to ${client.label || "Unnamed participant"}`);
+          row.floor.hidden = invitation || !handRaised; row.floor.disabled = busy;
+          if (!invitation) participants.push({ root: row.root, rank: handRaised ? Number(voice.handRaised) : Infinity });
+          row.voice.hidden = invitation;
+          iconAction(row.mute, voice.allowed === false ? "micOff" : "mic", `${voice.allowed === false ? "Allow microphone" : "Mute"}: ${client.label || "Unnamed participant"}`);
+          row.mute.dataset.allowed = String(voice.allowed !== false);
+          iconAction(row.revoke, "trash", `Revoke: ${client.label || "Unnamed participant"}`);
+          row.mute.disabled = busy || !connected; row.mute.hidden = invitation || !connected; row.revoke.disabled = busy; row.revoke.hidden = !invitation;
           row.urls.hidden = !invitation;
           const links = invitation && Array.isArray(client.urls) ? client.urls.map(String) : [];
           const rendered = JSON.stringify([links, client.code]);
@@ -264,8 +353,15 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
       }
     }
     for (const [id, row] of rows) if (!ids.has(id)) { row.root.remove(); rows.delete(id); }
+    for (const [index, participant] of participants.sort((a, b) => a.rank - b.rank).entries()) {
+      if (list.children[index] !== participant.root) list.moveBefore(participant.root, list.children[index] || null);
+    }
     alerts.requests = Array.isArray(toUnknownRecord(share.shareAccess).requests) ? (toUnknownRecord(share.shareAccess).requests as unknown[]).length : 0;
+    alerts.hands = waitingCount;
     options.onAlertsChanged?.({ ...alerts });
+    nextQuestion.disabled = busy || !waitingCount;
+    endTurn.disabled = busy || !floorLabel;
+    root.querySelector<HTMLElement>("[data-floor-status]")!.textContent = `${floorLabel ? `${floorLabel} has the floor. ` : ""}${allowedCount} participant${allowedCount === 1 ? "" : "s"} allowed to speak.${currentMode !== "open-discussion" && allowedCount > 1 ? " Manual permissions override this mode." : ""}`;
   }
   function filterProjects() {
     const query = normalizeProjectSearchText(projectSearch.value);
@@ -328,10 +424,10 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
   root.selectShareTab = (name, section) => {
     if (name !== selectedTab) selectTab(tabs.find(tab => tab.dataset.shareTab === name)!);
     if (section) {
-      const target = root.querySelector<HTMLElement>("[data-join-queue]")!;
+      const target = root.querySelector<HTMLElement>(section === "requests" ? "[data-join-queue]" : "[data-share-panel=session] .hand-raised")!;
       if (!target) return;
       target.scrollIntoView({ block: "nearest" });
-      target.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+      target.querySelector<HTMLButtonElement>(section === "hands" ? "[data-client-action=floor]" : "button")?.focus({ preventScroll: true });
     }
   };
   for (const [index, tab] of tabs.entries()) {
@@ -342,6 +438,37 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
     };
   }
   refreshProjects();
+  hostMic.onclick = () => { void run(async () => {
+    if (!api.setHostMicrophoneMuted) throw new Error("Microphone controls are unavailable.");
+    const mode = statuses.share.listening ? "share" : "remote";
+    const muted = statuses[mode].hostMuted === false;
+    await mutate(mode, () => api.setHostMicrophoneMuted!(mode, muted));
+  }); };
+  function all(allowed: boolean) { void run(async () => {
+    if (!api.setRemoteVoiceAllowed) throw new Error("Voice controls are unavailable.");
+    for (const mode of ["share", "remote"] as const) if (statuses[mode].listening) await mutate(mode, () => api.setRemoteVoiceAllowed!(mode, null, allowed));
+  }); }
+  muteAll.onclick = () => all(false); allowAll.onclick = () => all(true);
+  async function controlConference(mode: Mode, action: { audioMode: RemoteAudioMode } | { floor: string | null }) {
+    if (!api.controlRemoteConference) throw new Error("Conference controls are unavailable.");
+    await mutate(mode, () => api.controlRemoteConference!(mode, action));
+  }
+  const conferenceService = (): Mode => statuses.share.listening ? "share" : "remote";
+  microphoneDevice.onchange = () => { const deviceId = microphoneDevice.value; void run(async () => {
+    if (!api.setHostMicrophoneDevice) throw new Error("Microphone selection is unavailable.");
+    const mode = conferenceService();
+    await mutate(mode, () => api.setHostMicrophoneDevice!(mode, deviceId));
+  }); };
+  audioMode.onchange = () => { const selected = audioMode.value as RemoteAudioMode; void run(async () => {
+    await controlConference(conferenceService(), { audioMode: selected });
+  }); };
+  endTurn.onclick = () => { void run(() => controlConference(conferenceService(), { floor: null })); };
+  nextQuestion.onclick = () => { void run(async () => {
+    const waiting = (["share", "remote"] as const).flatMap(mode => (Array.isArray(statuses[mode].clients) ? statuses[mode].clients as unknown[] : [])
+      .map(toUnknownRecord).filter(client => client.state === "connected" && typeof toUnknownRecord(client.voice).handRaised === "number")
+      .map(client => ({ mode, id: String(client.id), rank: Number(toUnknownRecord(client.voice).handRaised) }))).sort((a, b) => a.rank - b.rank);
+    if (waiting[0]) await controlConference(waiting[0].mode, { floor: waiting[0].id });
+  }); };
   form.onsubmit = event => { event.preventDefault(); void run(async () => {
     if (!api.createReadOnlyShareLink || !api.getRemoteStatus) throw new Error("Share is unavailable.");
     await api.createReadOnlyShareLink(label.value);
@@ -359,6 +486,10 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
     const unsubscribe = api.onRemoteStatusChanged?.(value => { revisions[mode]++; apply(mode, value); }, mode);
     void api.getRemoteStatus?.(mode).then(value => { if (!revisions[mode]) apply(mode, value); }).catch(showError);
     return unsubscribe;
+  });
+  const microphoneRevision = revisions.share;
+  void api.prepareHostMicrophones?.("share").then(value => { if (microphoneRevision === revisions.share) apply("share", value); }).catch(showError).finally(() => {
+    microphoneLoading = false; if (!disposed) render();
   });
   let unsubscribePin: (() => void) | undefined;
   root.boatyardCleanup = () => { disposed = true; unsubscribePin?.(); chat?.dispose(); subscriptions.forEach(unsubscribe => unsubscribe?.()); };

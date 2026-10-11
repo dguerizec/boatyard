@@ -1,9 +1,11 @@
+import type { RemoteAudioMode } from "../shared/remoteAudio.js";
 import { canShareScreen, sharedProjectKey } from "./shareScreenPolicy.js";
 import { loadRemoteAccessSettings, RemoteAccessManager, type RemoteAccessMode } from "./remoteAccessManager.js";
 import { ShareChatStore } from "./shareChatStore.js";
 import { ShareAccessState } from "./shareAccessState.js";
 import { RemoteAccessController } from "./remoteAccessController.js";
 import { RemoteAccessService } from "./remoteAccess.js";
+import { getRemoteStreamingHost } from "./remoteStreamingHost.js";
 import { WebrtcSettingsStore } from "./webrtcSettings.js";
 import { HugescreenPreferences } from "./hugescreenPreferences.js";
 import { HugescreenOperationQueue, normalizeHugescreenState, type HugescreenState } from "./hugescreenState.js";
@@ -1635,6 +1637,38 @@ function registerIpcHandlers() {
     if (typeof id !== "string" || id.length > 100) throw new Error("Invalid client.");
     return remoteAccessController.revokeClient(id);
   });
+  ipcMain.handle("remote:voice:allow", (event: IpcMainInvokeEvent, mode: unknown, id: unknown, allowed: unknown) => {
+    getConfigurationForEvent(event);
+    if ((id !== null && (typeof id !== "string" || id.length > 100)) || typeof allowed !== "boolean") throw new Error("Invalid voice control.");
+    return remoteAccessController.voiceControl(remoteMode(mode), id as string | null, allowed);
+  });
+  ipcMain.handle("remote:voice:conference", (event: IpcMainInvokeEvent, mode: unknown, action: unknown) => {
+    getConfigurationForEvent(event);
+    if (!action || typeof action !== "object" || Array.isArray(action)) throw new Error("Invalid conference control.");
+    const input = action as UnknownRecord;
+    if (Object.keys(input).length !== 1) throw new Error("Invalid conference control.");
+    if (typeof input.audioMode === "string" && ["speaker-only", "open-discussion", "qa"].includes(input.audioMode)) {
+      return remoteAccessController.conferenceControl(remoteMode(mode), { audioMode: input.audioMode as RemoteAudioMode });
+    }
+    if (input.floor === null || typeof input.floor === "string" && input.floor.length <= 100) {
+      return remoteAccessController.conferenceControl(remoteMode(mode), { floor: input.floor as string | null });
+    }
+    throw new Error("Invalid conference control.");
+  });
+  ipcMain.handle("remote:voice:host-device", (event: IpcMainInvokeEvent, mode: unknown, deviceId: unknown) => {
+    getConfigurationForEvent(event);
+    if (typeof deviceId !== "string" || deviceId.length > 512) throw new Error("Invalid microphone device.");
+    return remoteAccessController.selectHostMicrophone(remoteMode(mode), deviceId);
+  });
+  ipcMain.handle("remote:voice:host-devices", (event: IpcMainInvokeEvent, mode: unknown) => {
+    getConfigurationForEvent(event);
+    return remoteAccessController.prepareHostMicrophones(remoteMode(mode));
+  });
+  ipcMain.handle("remote:voice:host", (event: IpcMainInvokeEvent, mode: unknown, muted: unknown) => {
+    getConfigurationForEvent(event);
+    if (typeof muted !== "boolean") throw new Error("Invalid microphone state.");
+    return remoteAccessController.hostMicrophone(remoteMode(mode), muted);
+  });
   ipcMain.handle("remote:settings:update", (event: IpcMainInvokeEvent, patch: unknown, mode: unknown = "remote") => {
     getConfigurationForEvent(event);
     if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("Invalid remote settings.");
@@ -2418,7 +2452,7 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
     getIceServers: getRemoteIceServers,
     getIceTransportPolicy: () => webrtcSettingsStore.getIceTransportPolicy()
   }), publishRemoteStatus, mode === "share" ? shareAccess : undefined);
-  remoteAccessController = new RemoteAccessManager({ remote: createRemoteController("remote"), share: createRemoteController("share") }, publishRemoteStatus);
+  remoteAccessController = new RemoteAccessManager({ remote: createRemoteController("remote"), share: createRemoteController("share") }, publishRemoteStatus, getRemoteStreamingHost());
   mcpAgentConnectionInstaller = new McpAgentConnectionInstaller({
     getEndpoint: () => `http://127.0.0.1:${mcpSettingsStore.get().port}/mcp`,
     getManagedToken: (targetId) => mcpSettingsStore.get().managedClientTokens[targetId],

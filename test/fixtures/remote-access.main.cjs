@@ -149,7 +149,12 @@ module.exports = async harness => {
     }
     if (global.remoteFixtureRecovery) {
       const original = connection(), sender = original.sender;
-      await client.webContents.executeJavaScript('window.originalPeer=window.fixturePeer');
+      const participant = service.server.getClients().find(value => value.state === 'connected');
+      service.setVoiceAllowed(participant.id, false);
+      await until('document.getElementById("microphone").disabled', 'host moderation before recovery');
+      await client.webContents.executeJavaScript('document.getElementById("raiseHand").click();window.originalPeer=window.fixturePeer');
+      await until('document.getElementById("raiseHand").textContent.includes("1")', 'hand order before recovery');
+      const hand = service.server.getClients().find(value => value.id === participant.id).voice.handRaised;
       assert.ok([sender, target, client].every(window => window.webContents.isAudioMuted()), 'Recovery fixtures cannot play through physical speakers');
       // Keep real RTP frames moving, but age their embedded capture times. This
       // exercises the same recovery signal as a queue of obsolete network frames.
@@ -178,9 +183,12 @@ module.exports = async harness => {
       assert.equal(connection(), original, 'Recovery retains the host session instead of admitting a new participant');
       assert.equal(service.connections.size, 1);
       assert.equal(original.epoch, global.remoteFixtureInterrupted ? 1 : 0);
-      assert.equal(original.sender, sender, 'Recovery retains the shared streaming renderer');
+      assert.equal(original.sender, sender, 'Recovery retains the shared audio renderer');
+      const voice = service.server.getClients().find(value => value.id === participant.id).voice;
+      assert.deepEqual(voice, { allowed: false, selfMuted: true, handRaised: hand, audioMode: 'open-discussion', hasFloor: false }, 'Host mute and hand order survive transport recovery');
       assert.equal(await client.webContents.executeJavaScript('window.originalPeer.connectionState'), global.remoteFixtureInterrupted ? 'closed' : 'connected', 'Only an interrupted transport is replaced');
       assert.equal(await client.webContents.executeJavaScript('window.fixturePeer.getReceivers().every(receiver => receiver.jitterBufferTarget === 0)'), true);
+      assert.equal(await client.webContents.executeJavaScript('document.getElementById("microphone").title.includes("Blocked by host") && document.getElementById("microphone").getAttribute("aria-pressed") === "false"'), true, 'Recovery cannot bypass host mute while a raised hand permits microphone preparation');
       if (global.remoteFixtureInterrupted) assert.throws(() => service.handle(original, 'transport', { epoch: 0, action: 'closed' }), /Stale streaming transport/, 'Late old-transport callbacks cannot close the recovered session');
       await harness.webContents.executeJavaScript('window.browserTestResult="passed"');
       await service.stop(); fixtureServer.close(); target.destroy(); client.destroy(); return;
@@ -195,6 +203,9 @@ module.exports = async harness => {
       await until(isBlue, 'allowed project appears in actual received video');
       await client.webContents.executeJavaScript('window.peerBeforePrivacy=window.fixturePeer');
       assert.equal(await client.webContents.executeJavaScript('getComputedStyle(document.getElementById("placeholder")).display'), 'none', 'Live video hides the connection screen');
+      const participant = service.server.getClients().find(value => value.state === 'connected');
+      service.setVoiceAllowed(participant.id, false);
+      const voice = service.server.getClients().find(value => value.id === participant.id).voice;
       screenAllowed = false; screenRevision++;
       await until(isBlack, 'Hide screen encodes black video including native sibling panes');
       assert.equal(await client.webContents.executeJavaScript('!document.getElementById("screenWaitingCopy").hidden && !document.getElementById("waitingActivity").hidden'), true, 'Private video displays the animated waiting overlay');
@@ -227,6 +238,7 @@ module.exports = async harness => {
       screenAllowed = true; screenRevision++;
       await until(isBlue, 'Returning to an allowed project resumes video');
       assert.equal(connection(), original, 'Privacy controls retain the host session');
+      assert.deepEqual(service.server.getClients().find(value => value.id === participant.id).voice, voice, 'Privacy controls retain voice moderation');
       await harness.webContents.executeJavaScript('window.browserTestResult="passed"');
       await service.stop(); fixtureServer.close(); target.destroy(); client.destroy(); return;
     }

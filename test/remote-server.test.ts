@@ -134,6 +134,12 @@ test("remote PWA assets are public, uncached and versioned by their content", as
   appendFileSync(join(remoteDirectory, "remote.css"), "\n/* Fixture update. */\n");
   const changed = await version();
   assert.notEqual(changed, first, "Changing client assets updates the version without restarting the service");
+  const worklet = await fetch(`${endpoint}/microphoneWorklet.js`);
+  assert.equal(worklet.status, 200);
+  assert.equal(worklet.headers.get("content-type"), "text/javascript");
+  assert.equal(await worklet.text(), readFileSync(join(remoteDirectory, "microphoneWorklet.js"), "utf8"));
+  appendFileSync(join(remoteDirectory, "microphoneWorklet.js"), "\n// Fixture update.\n");
+  assert.notEqual(await version(), changed, "Worklet changes also refresh the client version");
   assert.ok((await (await fetch(endpoint)).text()).includes(`content="${await version()}"`));
   assert.equal((await fetch(`${endpoint}/api/windows`)).status, 401, "PWA metadata does not grant access to shared windows");
 });

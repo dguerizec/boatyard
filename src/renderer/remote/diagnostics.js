@@ -58,7 +58,13 @@ export class RemoteFrameDisplay {
   heldFor(now = performance.now()) { return this.changedAt === null ? NaN : Math.max(0, now - this.changedAt); }
 }
 
-export function startRemoteDiagnostics({ connection, button, panel, indicator }) {
+export function microphoneProcessingSummary(settings) {
+  if (!settings) return 'Off';
+  const state = value => value === true ? 'On' : value === false ? 'Off' : 'Unreported';
+  return `Echo cancellation: ${state(settings.echoCancellation)} · Noise suppression: ${state(settings.noiseSuppression)} · Native gain: ${state(settings.autoGainControl)} · Adaptive gain and pause attenuation: On`;
+}
+
+export function startRemoteDiagnostics({ connection, microphone = () => null, button, panel, indicator }) {
   let previous, pending = false, timer, host, presentation;
   const clock = new RemoteFrameClock();
   const display = new RemoteFrameDisplay();
@@ -80,6 +86,8 @@ export function startRemoteDiagnostics({ connection, button, panel, indicator })
       previous = { peer, snapshot: result.snapshot };
       panel.textContent = [
         `Transport: ${result.route === 'direct' ? 'Direct' : result.route === 'relay' ? 'TURN relay' : 'Checking…'}`,
+        `Your microphone: ${microphoneProcessingSummary(microphone())}`,
+        `Host microphone: ${microphoneProcessingSummary(host?.microphone)}`,
         `Network round trip: ${number(result.rtt, 'ms')}`,
         `Host render / encode: ${number(host?.renderedFps, 'fps')} / ${number(host?.encodedFps, 'fps')}`,
         `Host encode per frame: ${number(host?.encodeMs, 'ms')} · ${host?.limitation || 'Unavailable'}`,

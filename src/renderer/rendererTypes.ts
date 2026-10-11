@@ -1,4 +1,5 @@
 import type { ShareChatInput, ShareChatSnapshot } from "../shared/shareChat.js";
+import type { RemoteAudioMode } from "../shared/remoteAudio.js";
 import type { HugescreenState } from "./hugescreenState.js";
 import type { HugescreenZones } from "./hugescreenZones.js";
 import type { UnknownRecord } from "./rendererRecords";
@@ -267,6 +268,11 @@ export type BoatyardBridge = {
   updateShareScreen?: (patch: UnknownRecord) => Promise<UnknownRecord>;
   getShareProjects?: () => Promise<{ id: string; name: string; key: string; group?: string }[]>;
   createReadOnlyShareLink?: (label?: string) => Promise<{ id?: string; urls: string[]; code: string }>;
+  controlRemoteConference?: (mode: "remote" | "share", action: { audioMode: RemoteAudioMode } | { floor: string | null }) => Promise<UnknownRecord>;
+  setRemoteVoiceAllowed?: (mode: "remote" | "share", id: string | null, allowed: boolean) => Promise<UnknownRecord>;
+  setHostMicrophoneDevice?: (mode: "remote" | "share", deviceId: string) => Promise<UnknownRecord>;
+  prepareHostMicrophones?: (mode: "remote" | "share") => Promise<UnknownRecord>;
+  setHostMicrophoneMuted?: (mode: "remote" | "share", muted: boolean) => Promise<UnknownRecord>;
   getShareChat?: (id?: string | null) => Promise<ShareChatSnapshot>;
   sendShareChat?: (id: string, input: ShareChatInput) => Promise<unknown>;
   deleteShareChatMessage?: (id: string, messageId: string) => Promise<void>;

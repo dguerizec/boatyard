@@ -72,7 +72,7 @@ for (const readOnly of [false, true]) test(`persistent video delay remains obser
   });
 });
 
-test("an interrupted Share transport recovers within the same session", t => {
+test("an interrupted Share transport recovers without losing host moderation", t => {
   runBrowserTest(t, "test/fixtures/remote-access.browser.js", {
     main: "test/fixtures/remote-recovery-interrupted.main.cjs",
     preload: "test/fixtures/remote-access.preload.cjs", timeoutMs: 45000

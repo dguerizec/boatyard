@@ -9,6 +9,7 @@ import { startRemoteDiagnostics } from "./diagnostics.js";
 import { RemoteConnectionRecovery, preferLowLatency } from './recovery.js';
 import { createShareJoin } from "./shareJoin.js";
 import { requestRemoteApi } from "./api.js";
+import { openMicrophone } from './microphone.js';
 
 (() => {
   const $ = id => document.getElementById(id);
@@ -31,9 +32,72 @@ import { requestRemoteApi } from "./api.js";
   let frameTimer, frameCallback, pointerViewport, iceRenewalTimer;
   let authenticated = false, readOnly = false, iceServers = [], iceTransportPolicy = "all", peer, channel, sessionId, viewport, full, requested, revision = 0;
   let generation = 0, viewTimer, lastMove, moveFrame;
+  const voiceAudio = $('voiceAudio');
+  let microphone = null, audioSender = null, voiceAllowed = false, selfMuted = true, handRaised = null, microphoneBusy = false, voiceError = "", microphoneRequest = 0, audioMode = 'open-discussion', hasFloor = false;
+  let microphoneCapture = null;
+  function renderVoice() {
+    const connected = channel?.readyState === 'open';
+    $('microphone').disabled = !connected || (selfMuted && !voiceAllowed && handRaised === null) || microphoneBusy;
+    $('microphone').replaceChildren(createToolIcon(selfMuted ? 'micOff' : 'mic'));
+    if (connected && !voiceAllowed) {
+      const lock = createToolIcon('lock'); lock.classList.add('microphone-lock'); $('microphone').append(lock);
+    }
+    $('microphone').setAttribute('aria-pressed', String(!selfMuted));
+    const action = selfMuted ? 'Unmute microphone' : 'Mute microphone';
+    const modeLabel = audioMode === 'speaker-only' ? 'Speaker only' : audioMode === 'qa' ? 'Q&A' : 'Open discussion';
+    $('microphone').title = voiceError || `${voiceAllowed ? action : handRaised === null && selfMuted ? 'Raise your hand to prepare your microphone · Blocked by host' : `${action} · Blocked by host`} · ${modeLabel}${hasFloor ? ' · You have the floor' : ''}`;
+    $('microphone').setAttribute('aria-label', $('microphone').title);
+    $('raiseHand').disabled = !connected;
+    $('raiseHand').replaceChildren(createToolIcon('hand'));
+    if (handRaised !== null) {
+      const number = document.createElement('span'); number.textContent = String(handRaised); number.setAttribute('aria-hidden', 'true'); $('raiseHand').append(number);
+    }
+    $('raiseHand').title = handRaised === null ? 'Raise hand' : `Lower hand (#${handRaised})`;
+    $('raiseHand').setAttribute('aria-pressed', String(handRaised !== null));
+    $('raiseHand').setAttribute('aria-label', handRaised === null ? 'Raise hand' : 'Lower hand');
+    $('voiceStatus').textContent = voiceError || (connected ? `${modeLabel} · ${hasFloor ? 'You have the floor' : !voiceAllowed ? 'Microphone blocked by host' : 'Allowed to speak'}` : '');
+  }
+  function stopMicrophone() {
+    microphoneRequest++;
+    microphoneCapture?.close(); microphoneCapture = null;
+    microphone?.getTracks().forEach(track => track.stop()); microphone = null; selfMuted = true;
+  }
+  async function playVoice() {
+    try { await voiceAudio.play(); $('listen').hidden = true; }
+    catch { if (voiceAudio.srcObject) $('listen').hidden = false; }
+  }
+  $('listen').onclick = playVoice;
+  $('raiseHand').onclick = () => send({ kind: 'voice', raised: handRaised === null });
+  $('microphone').onclick = async () => {
+    if (microphoneBusy || (selfMuted && !voiceAllowed && handRaised === null) || !audioSender) return;
+    const current = generation, sender = audioSender, request = ++microphoneRequest;
+    microphoneBusy = true; voiceError = ""; renderVoice();
+    try {
+      if (!selfMuted) { stopMicrophone(); await sender.replaceTrack(null); send({ kind: 'voice', selfMuted: true }); }
+      else {
+        if (!navigator.mediaDevices?.getUserMedia) throw new Error('Microphone requires HTTPS or localhost.');
+        const context = new AudioContext();
+        let capture;
+        try { capture = await openMicrophone(context); }
+        catch (error) { void context.close(); throw error; }
+        const close = () => { capture.close(); void context.close(); };
+        const media = capture.stream;
+        if (generation !== current || microphoneRequest !== request || (!voiceAllowed && handRaised === null) || channel?.readyState !== 'open') { close(); return; }
+        const track = media.getAudioTracks()[0]; track.enabled = false;
+        microphone = media; microphoneCapture = { close, settings: capture.settings };
+        await sender.replaceTrack(track);
+        if (generation !== current || microphoneRequest !== request || (!voiceAllowed && handRaised === null) || microphone !== media) { close(); return; }
+        selfMuted = false; track.enabled = voiceAllowed;
+        capture.media.getAudioTracks()[0].onended = () => { if (microphone === media) { stopMicrophone(); send({ kind: 'voice', selfMuted: true }); renderVoice(); } };
+        send({ kind: 'voice', selfMuted: false });
+      }
+      void playVoice();
+    } catch (error) { if (generation === current) { stopMicrophone(); voiceError = error.message; } }
+    finally { if (generation === current) { microphoneBusy = false; renderVoice(); } }
+  };
   const recovery = new RemoteConnectionRecovery();
   let recovering = false;
-  const diagnostics = startRemoteDiagnostics({ connection: () => peer, button: $('diagnostics'), panel: $('diagnosticsPanel'), indicator: $('videoDelay') });
+  const diagnostics = startRemoteDiagnostics({ connection: () => peer, microphone: () => microphoneCapture?.settings(), button: $('diagnostics'), panel: $('diagnosticsPanel'), indicator: $('videoDelay') });
   const pointers = new Map();
   let gesture, down = false;
   const motion = new HugescreenMotion();
@@ -78,19 +142,20 @@ import { requestRemoteApi } from "./api.js";
   }
   function closeTransport() {
     clearTimeout(iceRenewalTimer);
-    generation++;
+    generation++; stopMicrophone(); audioSender = null; voiceAllowed = false; microphoneBusy = false; hasFloor = false;
+    voiceAudio.srcObject = null; $('listen').hidden = true;
     release(); clearInterval(frameTimer);
     if (frameCallback !== undefined) video.cancelVideoFrameCallback?.(frameCallback);
     frameCallback = undefined; viewports.clear(); clearTimeout(viewTimer); viewTimer = null;
     ['followMouse', 'fill', 'fit', 'fullscreen', 'zoomIn', 'zoomOut', 'keyboard'].forEach(id => { $(id).disabled = true; });
     setKeyboardOpen(false);
     peer?.close(); peer = null; channel = null;
-    diagnostics.reset(); video.srcObject = null; surface.classList.remove('live', 'screen-waiting'); refreshWaitingScreen();
+    diagnostics.reset(); renderVoice(); video.srcObject = null; surface.classList.remove('live', 'screen-waiting'); refreshWaitingScreen();
   }
   function reset(checkUpdate = true) {
     recovering = false; recovery.reset();
-    closeTransport();
-    followRevision = 0; setFollowLocal(false); viewport = requested = null;
+    closeTransport(); handRaised = null; voiceError = "";
+    followRevision = 0; setFollowLocal(false); renderVoice(); viewport = requested = null;
     ['followMouse', 'disconnect', 'fill', 'fit', 'fullscreen', 'zoomIn', 'zoomOut', 'keyboard'].forEach(id => { $(id).disabled = true; });
     setKeyboardOpen(false); $('connect').hidden = !authenticated;
     const id = sessionId; sessionId = null;
@@ -165,7 +230,13 @@ import { requestRemoteApi } from "./api.js";
     channel.onmessage = event => {
       if (generation !== current) return;
       const message = JSON.parse(event.data);
-      if (message.kind === 'viewport') {
+      if (message.kind === 'voice') {
+        voiceAllowed = message.allowed === true; handRaised = message.handRaised ?? null;
+        audioMode = message.audioMode || 'open-discussion'; hasFloor = message.hasFloor === true;
+        if (message.selfMuted) stopMicrophone();
+        else microphone?.getAudioTracks().forEach(track => { track.enabled = voiceAllowed && !selfMuted; });
+        renderVoice();
+      } else if (message.kind === 'viewport') {
         const camera = message.viewport;
         if (replaceTransport && viewports.size === 0) { revision = camera.revision; requested = { ...camera }; }
         viewports.set(camera.revision, camera);
@@ -199,7 +270,7 @@ import { requestRemoteApi } from "./api.js";
     };
     channel.onclose = interrupted;
     channel.onopen = () => { if (generation === current) {
-      send({ kind: 'pong', sentAt: performance.now() }); scheduleIceRenewal();
+      send({ kind: 'pong', sentAt: performance.now() }); scheduleIceRenewal(); renderVoice();
       status(readOnly ? 'Connected · Read-only' : 'Connected'); ['followMouse', 'fill', 'fit', 'fullscreen', 'zoomIn', 'zoomOut', 'keyboard'].forEach(id => { $(id).disabled = false; }); setFollowLocal(replaceTransport ? following : readOnly); surface.focus();
     } };
     function scheduleIceRenewal() {
@@ -221,6 +292,7 @@ import { requestRemoteApi } from "./api.js";
     connection.ontrack = event => {
       if (generation !== current) return;
       preferLowLatency(event.receiver);
+      if (event.track.kind === 'audio') { voiceAudio.srcObject = new MediaStream([event.track]); void playVoice(); return; }
       video.srcObject = event.streams[0];
       if (frameCallback !== undefined) video.cancelVideoFrameCallback?.(frameCallback);
       const observePresentation = (now, metadata) => {
@@ -236,6 +308,7 @@ import { requestRemoteApi } from "./api.js";
     };
     try {
       connection.addTransceiver('video', { direction: 'recvonly' });
+      audioSender = connection.addTransceiver('audio', { direction: 'sendrecv' }).sender;
       await connection.setLocalDescription(await connection.createOffer());
       await waitForRemoteIce(connection);
       if (generation !== current) return;

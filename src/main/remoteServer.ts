@@ -16,6 +16,7 @@ const BROWSER_COOKIE_MAX_AGE = 400 * 24 * 60 * 60;
 const clientAssets: Record<string, [string, string]> = {
   "/": ["client.html", "text/html"],
   "/client.js": ["client.js", "text/javascript"],
+  "/microphoneWorklet.js": ["microphoneWorklet.js", "text/javascript"],
   "/share-chat.css": ["../shareChat.css", "text/css"],
   "/remote.css": ["remote.css", "text/css"],
   "/waiting-screen.png": ["../assets/boatyard-mark-night-preview.png", "image/png"],
@@ -42,9 +43,10 @@ export type RemoteServerOptions = {
   iceServers?: RTCIceServer[];
   getIceServers?(): Promise<RTCIceServer[]>;
   getIceTransportPolicy?(): RTCIceTransportPolicy;
+  getVoiceState?(sessionId: string): { allowed: boolean; selfMuted: boolean; handRaised: number | null } | undefined;
   getConnectionRoute?(sessionId: string): RemoteConnectionRoute | null;
   listWindows(): RemoteWindowInfo[];
-  connect(offer: RemoteOffer, created?: (id: string) => void): Promise<RemoteAnswer>;
+  connect(offer: RemoteOffer, voiceAllowed?: boolean, created?: (id: string) => void): Promise<RemoteAnswer>;
   recover?(sessionId: string, offer: RemoteOffer): Promise<RemoteAnswer>;
   disconnect(sessionId?: string): void;
   clientsChanged?(): void;
@@ -120,7 +122,7 @@ export class RemoteServer {
     return clients.map(value => {
       const login = [...this.loginClients].find(([, client]) => client.id === value.id)?.[0];
       const session = [...this.sessions].find(([, session]) => session.login === login);
-      return { ...value,
+      return { ...value, voice: session ? this.options.getVoiceState?.(session[0]) : undefined,
         state: session ? "connected" : login ? "signed-in" : "invited",
         route: session ? this.options.getConnectionRoute?.(session[0]) ?? null : null };
     });
@@ -132,6 +134,14 @@ export class RemoteServer {
   }
   decideShareJoinRequest(id: string, accepted: boolean) {
     this.shareAccess.decide(id, accepted); this.options.clientsChanged?.();
+  }
+  setClientVoiceAllowed(id: string | null, allowed: boolean) {
+    for (const participant of this.shareAccess.participants.values()) if (id === null || participant.id === id) participant.voiceAllowed = allowed;
+  }
+  setSessionVoiceAllowed(sessionId: string, allowed: boolean) {
+    const login = this.sessions.get(sessionId)?.login;
+    const client = login ? this.loginClients.get(login) : undefined;
+    if (client) this.setClientVoiceAllowed(client.id, allowed);
   }
   createReadOnlyInvitation(label = "") {
     if (!this.server || !this.options.readOnly) throw new Error("Start read-only sharing before creating a link.");
@@ -411,7 +421,8 @@ export class RemoteServer {
       }
       this.connecting.add(login);
       try {
-        const answer = await this.options.connect(body as RemoteOffer, id => { this.pendingSessions.set(login, id); });
+        const participant = this.shareAccess.participants.get(this.loginClients.get(login)?.id || "");
+        const answer = await this.options.connect(body as RemoteOffer, participant?.voiceAllowed, id => { this.pendingSessions.set(login, id); });
         if (!this.server || response.destroyed) { this.options.disconnect(answer.sessionId); return; }
         if (!this.logins.has(login)) { this.options.disconnect(answer.sessionId); json(401, { error: "Please sign in." }); return; }
         if (!this.loginClients.has(login)) this.loginClients.set(login, { id: randomUUID(), label: "Remote client" });

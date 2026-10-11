@@ -100,7 +100,7 @@ copyBrowserScripts(join(sourceRoot, "renderer"));
 cpSync("src/renderer/shareChat.js", "build/renderer-esm/shareChat.js");
 copyPluginRendererScripts();
 // Bundle the standalone WebRTC scripts and their shared browser helpers.
-for (const name of ["client", "sender"]) buildSync({
+for (const name of ["client", "sender", "microphoneWorklet"]) buildSync({
   entryPoints: [`src/renderer/remote/${name}.js`],
   outfile: `build/renderer/remote/${name}.js`,
   bundle: true,

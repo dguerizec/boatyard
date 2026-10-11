@@ -90,7 +90,12 @@ await closePopup();
 shareButton.click(); await pause();
 check(popup().querySelector('[data-invite]') && !popup().querySelector('[name=password]'), 'Share dialog manages passwordless clients');
 check(popup().querySelector('[data-screen-projects]') && popup().querySelector('[data-share-tab=projects]') && !popup().querySelector('[name=port]') && !popup().querySelector('[name=publicOrigin]'), 'Share links to server settings instead of embedding them');
-check(Math.abs(popup().getBoundingClientRect().top - shareButton.getBoundingClientRect().bottom - 8) < 1 && popup().getBoundingClientRect().width <= 380 && popup().getBoundingClientRect().height < 360, `Share opens compactly below its toolbar button: ${JSON.stringify(popup().getBoundingClientRect().toJSON())}`);
+const shareBounds = popup().getBoundingClientRect();
+check(Math.abs(shareBounds.top - shareButton.getBoundingClientRect().bottom - 8) < 1 && shareBounds.width <= 380 && shareBounds.height < 500 && shareBounds.bottom <= window.innerHeight - 12, `Share opens compactly below its toolbar button with audio controls: ${JSON.stringify(shareBounds.toJSON())}`);
+for (const selector of ['[data-audio-mode]', '[data-microphone-device]']) {
+  const bounds = popup().querySelector(selector).getBoundingClientRect();
+  check(bounds.width > 0 && bounds.height > 0 && bounds.left >= shareBounds.left && bounds.right <= shareBounds.right && bounds.top >= shareBounds.top && bounds.bottom <= shareBounds.bottom, 'Compact Share keeps audio settings visible inside the dialog');
+}
 check(!popup().querySelector('[data-share-panel=session]').hidden && popup().querySelector('[data-share-panel=setup]').hidden, 'Compact Share opens on the session tab');
 popup().querySelector('[data-share-tab=setup]').click();
 popup().querySelector('[data-start]').click(); await pause();

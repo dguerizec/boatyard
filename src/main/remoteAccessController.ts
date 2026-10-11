@@ -1,8 +1,17 @@
+import type { RemoteAudioMode } from "../shared/remoteAudio.js";
 import { RemoteSettingsStore, type RemoteSettings } from "./remoteSettingsStore.js";
 
 import type { ShareAccessSettings, ShareAccessState } from "./shareAccessState.js";
 
 type RemoteService = {
+  getHostMuted?(): boolean;
+  getHostMicrophone?(): { deviceId: string; devices: { deviceId: string; label: string }[] };
+  getAllMuted?(): boolean;
+  getAudioMode?(): RemoteAudioMode;
+  setAudioMode?(mode: RemoteAudioMode): void;
+  floorControl?(id: string | null): void;
+  setHostMuted?(muted: boolean): Promise<void>;
+  setVoiceAllowed?(id: string | null, allowed: boolean): void;
   start(): Promise<number>;
   stop(): Promise<void>;
   server: {
@@ -33,7 +42,7 @@ export class RemoteAccessController {
       return { ...client, ...(invitation ? { code: invitation.code, urls: this.urls.map(url => `${url}/#share=${invitation.code}`) } : {}) };
     });
     return { ...settings, shareAccess: access ? { groupEnabled: access.groupEnabled, groupApprovalRequired: access.groupApprovalRequired,
-      allowJoinRequests: access.allowJoinRequests, groupCode: access.groupCode, groupUrls: access.groupCode ? this.urls.map(url => `${url}/#share=${access.groupCode}`) : [], requests: access.requests } : undefined, hasPassword: Boolean(passwordHash), listening: Boolean(this.service), urls: [...this.urls], error: this.error, clients, connectedClients: this.service?.server.getConnectedClientCount?.() || 0 };
+      allowJoinRequests: access.allowJoinRequests, groupCode: access.groupCode, groupUrls: access.groupCode ? this.urls.map(url => `${url}/#share=${access.groupCode}`) : [], requests: access.requests } : undefined, hostMicrophone: this.service?.getHostMicrophone?.() ?? { deviceId: "", devices: [] }, audioMode: this.service?.getAudioMode?.() ?? "open-discussion", hostMuted: this.service?.getHostMuted?.() ?? true, allMuted: this.service?.getAllMuted?.() ?? false, hasPassword: Boolean(passwordHash), listening: Boolean(this.service), urls: [...this.urls], error: this.error, clients, connectedClients: this.service?.server.getConnectedClientCount?.() || 0 };
   }
   configure(patch?: Record<string, unknown>, clearInvitations = false) {
     const result = this.queue.then(async () => {
@@ -100,6 +109,29 @@ export class RemoteAccessController {
       if (this.service) this.service.server.revokeClient?.(id);
       else this.shareAccess?.revoke(id);
       this.changed(); return this.getStatus();
+    });
+    this.queue = result.catch(() => {}); return result;
+  }
+  voiceControl(id: string | null, allowed: boolean) {
+    const result = this.queue.then(() => {
+      if (this.stopped || !this.service?.setVoiceAllowed) throw new Error("Sharing is unavailable.");
+      this.service.setVoiceAllowed(id, allowed); this.changed(); return this.getStatus();
+    });
+    this.queue = result.catch(() => {}); return result;
+  }
+  conferenceControl(action: { audioMode: RemoteAudioMode } | { floor: string | null }) {
+    const result = this.queue.then(() => {
+      if (this.stopped || !this.service?.setAudioMode || !this.service.floorControl) throw new Error("Sharing is unavailable.");
+      if ("audioMode" in action) this.service.setAudioMode(action.audioMode);
+      else this.service.floorControl(action.floor);
+      this.changed(); return this.getStatus();
+    });
+    this.queue = result.catch(() => {}); return result;
+  }
+  hostMicrophone(muted: boolean) {
+    const result = this.queue.then(async () => {
+      if (this.stopped || !this.service?.setHostMuted) throw new Error("Connect a participant before enabling the microphone.");
+      await this.service.setHostMuted(muted); this.changed(); return this.getStatus();
     });
     this.queue = result.catch(() => {}); return result;
   }

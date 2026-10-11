@@ -43,7 +43,7 @@ export function createShareSidebar(shell: HTMLElement, api: BoatyardBridge, opti
   function update(patch: Partial<ShareSidebarState>) {
     state = normalizeShareSidebarState({ ...state, ...patch }); render(); persist();
   }
-  function open(tab: ShareTab, section?: "requests") {
+  function open(tab: ShareTab, section?: "requests" | "hands") {
     update({ collapsed: false, tab });
     pane?.selectShareTab(tab, section);
     if (!section) pane?.querySelector<HTMLElement>(`[data-share-panel="${tab}"]`)?.focus();
@@ -55,6 +55,7 @@ export function createShareSidebar(shell: HTMLElement, api: BoatyardBridge, opti
   const alertButtons = new Map<string, HTMLButtonElement>();
   for (const [name, label, icon, tab, section] of [
     ["requests", "Join requests pending", "users", "session", "requests"],
+    ["hands", "Raised hands waiting", "hand", "session", "hands"],
     ["messages", "Unread messages", "messageSquare", "chat", undefined]
   ] as const) {
     const control = button(rail, label, icon, () => open(tab, section));
@@ -86,7 +87,7 @@ export function createShareSidebar(shell: HTMLElement, api: BoatyardBridge, opti
           for (const [name, count] of Object.entries(alerts)) {
             const control = alertButtons.get(name)!; control.hidden = count === 0;
             control.querySelector("span")!.textContent = count > 99 ? "99+" : String(count);
-            const label = `${count} ${name === "requests" ? "join requests pending" : "unread messages"}`;
+            const label = `${count} ${name === "requests" ? "join requests pending" : name === "hands" ? "raised hands waiting" : "unread messages"}`;
             control.title = label; control.setAttribute("aria-label", label);
           }
         }

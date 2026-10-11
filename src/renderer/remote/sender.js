@@ -2,9 +2,21 @@ import { remoteFrameFooterHeight, writeRemoteFrameMetadata, readRemoteFrameMetad
 import { remoteConnectionRoute, remotePeerConfiguration, waitForRemoteIce } from "../../shared/remoteIce.js";
 import { RemoteCommandQueue } from "../../shared/remoteCommandQueue.js";
 
+import { preferLowLatency } from './recovery.js';
+import { RemoteAudioMixer } from "./audioMixer.js";
 
 /* global remoteHost */
 const connections = new Map();
+const mixer = new RemoteAudioMixer(muted => { void remoteHost.invoke('host-mic-state', muted).catch(() => {}); });
+let microphoneListRevision = 0;
+async function refreshHostMicrophones() {
+  const revision = ++microphoneListRevision;
+  const devices = (await navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput' && device.deviceId)
+    .map((device, index) => ({ deviceId: device.deviceId, label: device.label || `Microphone ${index + 1}` }));
+  if (revision === microphoneListRevision) await remoteHost.invoke('host-mic-devices', devices);
+}
+navigator.mediaDevices.addEventListener('devicechange', () => { void refreshHostMicrophones().catch(() => {}); });
+void refreshHostMicrophones().catch(() => {});
 remoteHost.onMessage(message => {
   const { id, action, payload } = message;
   if (action === 'offer') {
@@ -14,10 +26,22 @@ remoteHost.onMessage(message => {
     connections.set(id, connection);
   } else if (action === 'close') {
     connections.get(id)?.close(false); connections.delete(id);
+    if (!connections.size) void mixer.setHostMuted(true).catch(() => {});
   }
+  else if (action === 'voice') connections.get(id)?.voice(payload);
   else if (action === 'follow-state') connections.get(id)?.follow(payload);
+  else if (action === 'host-mic' || action === 'host-mic-device' || action === 'host-mic-devices-request') {
+    void (async () => {
+      try {
+        if (action === 'host-mic-device') await mixer.setHostDevice(payload);
+        else if (action === 'host-mic') { if (!payload.muted) await mixer.setHostDevice(payload.deviceId); await mixer.setHostMuted(payload.muted); }
+        await refreshHostMicrophones().catch(() => {});
+        await remoteHost.invoke('command-result', {}, id);
+      } catch (error) { await remoteHost.invoke('command-result', { error: error.message }, id); }
+    })().catch(() => {});
+  }
 });
-window.addEventListener('pagehide', () => { for (const connection of connections.values()) connection.close(); });
+window.addEventListener('pagehide', () => { for (const connection of connections.values()) connection.close(); mixer.close(); });
 function startConnection(id, offer, remoteHost) {
   const source = document.createElement('video');
   source.muted = true;
@@ -48,6 +72,7 @@ function startConnection(id, offer, remoteHost) {
           packetQueueMs: video.packetsSent > previousVideoStats.packetsSent
             ? 1000 * (video.totalPacketSendDelay - previousVideoStats.totalPacketSendDelay) / (video.packetsSent - previousVideoStats.packetsSent) : null,
           canvasCaptureAgeMs: canvasTimestamp === null ? null : Math.max(0, performance.now() - canvasTimestamp),
+          microphone: mixer.host?.capture.settings() ?? null,
           limitation: video.qualityLimitationReason,
           width: source.videoWidth, height: source.videoHeight,
           encodedWidth: video.frameWidth, encodedHeight: video.frameHeight
@@ -75,13 +100,14 @@ function startConnection(id, offer, remoteHost) {
     void captureReader?.cancel().catch(() => {}); captureTrack?.stop();
     media?.getTracks().forEach(track => track.stop());
     output?.getTracks().forEach(track => track.stop());
-    peer?.close(); connections.delete(id);
+    peer?.close(); mixer.remove(id); connections.delete(id);
     if (notify) remoteHost.invoke('closed').catch(() => {});
   }
   function deferClose() {
     // Give the authenticated HTTP recovery offer time to replace this transport.
     if (active && !lostTimer) lostTimer = setTimeout(close, 15000);
   }
+  function voice(state) { if (!active) return; mixer.setVoice(id, state); send({ kind: 'voice', ...state }); }
   void (async () => {
     try {
       const setup = await remoteHost.invoke('setup');
@@ -92,6 +118,8 @@ function startConnection(id, offer, remoteHost) {
         chromeMediaSource: 'desktop', chromeMediaSourceId: setup.sourceId, maxFrameRate: 30
       } } });
       if (!active) { media.getTracks().forEach(track => track.stop()); return; }
+      // Granted media permission can reveal device labels without opening a mic.
+      void refreshHostMicrophones().catch(() => {});
       media.getVideoTracks()[0].onended = close;
       source.srcObject = media;
       await source.play();
@@ -185,6 +213,9 @@ function startConnection(id, offer, remoteHost) {
         track.contentHint = 'detail';
         peer.addTrack(track, output);
       });
+      const audio = mixer.add(id);
+      // Match the already-offered bidirectional audio transceiver, without renegotiation.
+      peer.ontrack = event => { if (!active) return; preferLowLatency(event.receiver); if (event.track.kind === 'audio') mixer.receive(id, event.track); };
       publishCursor = async () => {
         if (!active || !followCursor || cursorPending || channel?.readyState !== 'open' || channel.bufferedAmount > 16384) return;
         cursorPending = true;
@@ -204,6 +235,7 @@ function startConnection(id, offer, remoteHost) {
           if (!active) return;
           send(dimensions()); void publishRoute();
           remoteHost.invoke('follow-state').then(follow).catch(close);
+          remoteHost.invoke('voice-state').then(voice).catch(close);
           heartbeat = setInterval(() => { send({ kind: 'ping' }); void publishRoute(); }, 3000);
         };
         channel.onclose = deferClose;
@@ -215,6 +247,9 @@ function startConnection(id, offer, remoteHost) {
           if (++events > 300) return;
           try {
             const message = JSON.parse(event.data);
+            if (message.kind === 'voice') {
+              remoteHost.invoke('voice', message).catch(error => send({ kind: 'error', message: error.message })); return;
+            }
             if (message.kind === 'ice-restart') {
               if (iceRestartPending || Date.now() - lastIceRestartAt < 60000 || typeof message.sdp !== 'string') return;
               lastIceRestartAt = Date.now();
@@ -248,6 +283,9 @@ function startConnection(id, offer, remoteHost) {
         else { clearTimeout(lostTimer); lostTimer = null; void publishRoute(); }
       };
       await peer.setRemoteDescription(offer);
+      const audioTransceiver = peer.getTransceivers().find(transceiver => transceiver.receiver.track.kind === 'audio');
+      if (audioTransceiver) { audioTransceiver.direction = 'sendrecv'; await audioTransceiver.sender.replaceTrack(audio.getAudioTracks()[0]); mixer.receive(id, audioTransceiver.receiver.track); }
+      voice(await remoteHost.invoke('voice-state'));
       if (!active) return;
       await peer.setLocalDescription(await peer.createAnswer());
       for (const sender of peer.getSenders()) {
@@ -264,5 +302,5 @@ function startConnection(id, offer, remoteHost) {
       await remoteHost.invoke('answer', peer.localDescription.toJSON());
     } catch (error) { if (!active) return; await remoteHost.invoke('error', error.message).catch(() => {}); close(); }
   })();
-  return { close, follow };
+  return { close, voice, follow };
 }

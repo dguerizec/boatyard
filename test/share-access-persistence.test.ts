@@ -16,6 +16,7 @@ test("Share restores options and codes, excludes pending admission and microphon
   access.configure({ groupEnabled: true, groupApprovalRequired: false });
   const groupCode = access.hostSnapshot().groupCode;
   const invitation = access.create("Alice");
+  access.participants.get(invitation.id)!.voiceAllowed = true;
   const pending = access.request("Waiting", "group");
   const approved = access.request("Approved but absent", "group");
   access.decide(approved.id, true);

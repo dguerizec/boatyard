@@ -130,18 +130,18 @@ test("Six-digit code guesses are throttled without consuming valid codes", async
   finally { Date.now = originalNow; }
 });
 
-test("A device takeover cancels pending setup without completing the cancelled setup", async t => {
+test("A device takeover cancels pending setup and keeps microphone permission", async t => {
   let entered!: () => void, finish!: (value: { sessionId: string; type: "answer"; sdp: string }) => void;
   const started = new Promise<void>(resolve => { entered = resolve; });
-  const disconnected: (string | undefined)[] = [];
+  const allowed: (boolean | undefined)[] = [], disconnected: (string | undefined)[] = [];
   const server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash: "", readOnly: true,
     listWindows: () => [{ id: "window", title: "Fixture", width: 800, height: 600 }],
-    connect: async (_offer, created) => {
-      created?.("pending-session"); entered();
+    connect: async (_offer, permission, created) => {
+      allowed.push(permission); created?.("pending-session"); entered();
       return new Promise(resolve => { finish = resolve; });
     }, disconnect: id => disconnected.push(id) });
   const origin = `http://127.0.0.1:${await server.start()}`; t.after(() => server.stop());
-  const invitation = server.createReadOnlyInvitation("Alice");
+  const invitation = server.createReadOnlyInvitation("Alice"); server.setClientVoiceAllowed(invitation.id, false);
   const post = (path: string, body: unknown, cookie = "") => fetch(`${origin}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(body) });
   const first = await post("/api/redeem", { token: invitation.token });
   const cookie = first.headers.get("set-cookie")!.split(";")[0];
@@ -150,5 +150,5 @@ test("A device takeover cancels pending setup without completing the cancelled s
   assert.equal((await post("/api/redeem", { token: invitation.token })).status, 200);
   assert.deepEqual(disconnected, ["pending-session"], "Setup is closed immediately, before it produces its answer");
   finish({ sessionId: "pending-session", type: "answer", sdp: "v=0" });
-  assert.equal((await pending).status, 401); assert.equal(server.getConnectedClientCount(), 0);
+  assert.equal((await pending).status, 401); assert.deepEqual(allowed, [false]); assert.equal(server.getConnectedClientCount(), 0);
 });

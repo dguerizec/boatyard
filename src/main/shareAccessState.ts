@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 
 export type ShareAccessSettings = { groupEnabled: boolean; groupApprovalRequired: boolean; allowJoinRequests: boolean };
-export type ShareParticipant = { id: string; label: string; token: string };
+export type ShareParticipant = { id: string; label: string; token: string; voiceAllowed?: boolean };
 type JoinRequest = { id: string; label: string; token: string; expiresAt: number; state: "pending" | "approved" | "declined" | "claimed"; participantId?: string; source: "group" | "request" };
 
 export function normalizeShareCode(value: unknown) {
@@ -11,7 +11,7 @@ export function normalizeShareCode(value: unknown) {
   return /^\d{6}$/.test(code) ? code : "";
 }
 
-// Invitations and joining options may persist; requests are session-only.
+// Invitations and joining options may persist; requests and microphone permissions are session-only.
 export class ShareAccessState {
   readonly participants = new Map<string, ShareParticipant>();
   private readonly requests = new Map<string, JoinRequest>();
@@ -121,6 +121,7 @@ export class ShareAccessState {
   endSession() {
     for (const request of this.requests.values()) if (request.state === "approved" && request.participantId) this.participants.delete(request.participantId);
     this.requests.clear();
+    for (const participant of this.participants.values()) delete participant.voiceAllowed;
   }
   clearInvitations() {
     this.endSession(); this.participants.clear();

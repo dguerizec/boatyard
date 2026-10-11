@@ -1,6 +1,9 @@
-import { RemoteFrameClock, RemoteFrameDisplay, remoteVideoDiagnostics, remoteFramePresentation } from '../../src/renderer/remote/diagnostics.js';
+import { RemoteFrameClock, RemoteFrameDisplay, remoteVideoDiagnostics, remoteFramePresentation, microphoneProcessingSummary } from '../../src/renderer/remote/diagnostics.js';
 import { RemoteConnectionRecovery, preferLowLatency } from '../../src/renderer/remote/recovery.js';
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
+assert(microphoneProcessingSummary(null) === 'Off', 'An inactive microphone has no processing claim');
+assert(microphoneProcessingSummary({}).includes('Echo cancellation: Unreported'), 'Missing native settings are not assumed enabled');
+assert(microphoneProcessingSummary({ echoCancellation: false, noiseSuppression: true, autoGainControl: false }).includes('Echo cancellation: Off'), 'Diagnostics expose a disabled echo canceller');
 const previous = { id: 'video', timestamp: 1000, framesDecoded: 20, bytesReceived: 1000,
   jitterBufferDelay: 2, jitterBufferEmittedCount: 20, totalDecodeTime: .2 };
 const current = { ...previous, type: 'inbound-rtp', kind: 'video', timestamp: 3000, framesDecoded: 60,

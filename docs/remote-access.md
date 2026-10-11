@@ -25,7 +25,8 @@ of its label, keeping the same width. Stopping the server restores its normal ap
   while leaving Remote running.
 
 The Share dialog and Share pane open on **Session**, with connected participants,
-join approvals and live connection status. **Setup** contains start/stop
+microphone moderation, join approvals, and the speaking queue. **Give the floor**
+grants permission and consumes the selected request. **Setup** contains start/stop
 controls, joining options, participant creation, and invitation links and codes,
 including invitations for participants already connected. **Shared projects**
 controls which projects may be shown. Switching tabs preserves invitation drafts.
@@ -33,7 +34,7 @@ controls which projects may be shown. Switching tabs preserves invitation drafts
 The **Session** tab includes **Hide screen / Show screen**. Press
 **Ctrl+Shift+S** anywhere in a Boatyard window, including embedded web apps, to
 toggle it. Hiding sends black video while preserving connections, invitations,
-viewers' crops and viewer access. The browser overlays the Boatyard illustration,
+viewers' crops and voice chat. The browser overlays the Boatyard illustration,
 waiting text and animated dots while black video continues decoding behind it.
 The overlay disappears with the first visible frame, without reconnecting. The
 same illustration and animation appear during connection and recovery until the
@@ -81,7 +82,8 @@ participants with the same name still have distinct personal codes.
 Opening a link preloads the join form; only explicitly pressing **Join** takes
 over access. Joining with the same personal code from a second device immediately
 invalidates the old browser authentication and closes its stream, including an
-in-progress setup. The participant identity and viewer access remain. The previous device must explicitly
+in-progress setup. The participant identity and host microphone permission remain;
+the new device starts with its microphone off. The previous device must explicitly
 join again and cannot reclaim access through automatic recovery or a page reload.
 The browser's **Your personal access code** button shows the code and offers
 **Copy code** and **Copy link** for moving to another device.
@@ -159,6 +161,93 @@ Archives and images are stored locally under `share-chat/` in the configuration
 root, and survive application restarts. Participants cannot access older sessions.
 The current conversation allows up to 5,000 messages and 200 MB of images; reaching
 a limit reports an error and preserves the existing history.
+
+## Voice conversation
+
+Choose **Share** from any pane's type menu to keep participant management visible.
+The toolbar Share dialog uses the same controls. Both Share viewers and the Remote
+client can join the voice conversation; speaking permission is independent of
+mouse and keyboard access.
+
+- Audio travels in both directions over each client's existing WebRTC connection.
+  No camera is requested. Boatyard mixes the host and permitted guests for each
+  listener, excluding that listener's own voice, and plays guest voices locally.
+  There are no direct connections between clients.
+- All personal microphones start off. **Unmute my microphone** on the host and
+  the microphone button on a client explicitly request microphone access. An enabled
+  microphone stays open until muted, disconnected, or blocked by the host.
+  Muting does not interrupt listening.
+- Microphones request native echo cancellation and noise suppression before a
+  shared adaptive gain stage. Gain increases slowly, is capped at 2×, and stays
+  fixed during pauses. A noise-relative level threshold attenuates quiet input
+  by about 46 dB. Opening requires about 25 ms above a conservative minimum
+  level, so isolated short clicks do not open the gate. A 40 ms input buffer
+  preserves voice onsets, and a short hold preserves word endings.
+  This is level-based attenuation, not speaker identification or a feedback
+  canceller. Native automatic gain is disabled to avoid competing gain stages.
+  The connection diagnostics show the microphone settings reported by the browser
+  for both the local participant and host; unreported settings remain unknown.
+  Guest voices play locally through native audio elements, while Web Audio builds
+  only the outgoing mixes. Echo cancellation still needs an acoustic check with
+  real devices; two nearby speakerphones can create cross-device feedback.
+- **My microphone** selects the host's audio input from detected devices or
+  **System default**, including before starting a session or connecting participants.
+  The choice applies to both Share and Remote and lasts while Boatyard is open. Choosing a device while muted
+  does not open it. While speaking, switching devices releases the old capture only
+  after the new one is ready; a failed switch retains the previous microphone.
+  Device changes update the list. An unavailable selected device stays visible so
+  the host can choose another explicitly.
+- The host can **Mute** or **Allow microphone** for each connected participant,
+  including the Remote client. **Mute all participants** and **Allow all
+  participants** apply to both running services. Collective mute also blocks
+  newly connected guests until permission is restored.
+- A host block cuts audio and resets the guest's local microphone to mute. Restoring
+  permission alone cannot reopen a private conversation. While blocked, a guest
+  must raise their hand before preparing their microphone; its track stays silent
+  until the host grants permission. With permission already granted, guests can
+  unmute directly. A lock badge on the microphone indicates the host block without
+  adding a toolbar status row.
+- **Raise hand** requests a turn. The hand button and **Hand #N** in the host list
+  show the current position in one queue shared by Share and Remote. Positions
+  update when someone lowers their hand, receives permission, or disconnects.
+  Raising a hand again joins the back of the queue; participant rows stay stable.
+  Granting permission clears the hand immediately, even if the microphone is off.
+  A prepared microphone becomes audible; otherwise the guest must unmute locally.
+  Withdrawing a blocked request cancels its prepared microphone. Disconnecting
+  clears the hand too.
+- Browser microphone access requires HTTPS or localhost and the browser's consent.
+  Video and listening remain available when microphone access is denied. If the
+  browser blocks audio autoplay, **Enable audio** starts listening explicitly.
+
+The **Audio mode** selector applies to both Share and Remote without interrupting
+screen sharing:
+
+- **Speaker only** blocks spontaneous guest speech. Participants can raise their
+  hand during the conference, and the host can **Give the floor** for a question.
+- **Open discussion** lets participants mute and unmute themselves freely.
+- **Q&A** uses the shared hand queue. **Next question** gives the floor to the first
+  waiting participant; **End turn** blocks the current floor holder. Selecting a
+  participant directly remains possible. Moving to another speaker in Speaker
+  only or Q&A blocks other permitted participants before granting the new turn.
+
+Changing modes resets guest microphones to off, preserves raised hands and their
+order, and clears the current turn. Speaker only and Q&A initially block guests;
+Open discussion initially permits them. A new conference starts in Open discussion.
+The mode lasts while either service remains running.
+
+Individual and collective microphone controls remain available in every mode.
+Manual permissions can allow several participants at once without changing the
+selected mode. The session shows the actual number allowed to speak and highlights
+the participant who has the floor. Giving the next floor in a moderated mode
+restores one-participant permission. Permission never requests microphone access
+on a guest's behalf; an already prepared microphone reflects the guest's own intent.
+The compact icon controls have accessible labels and tooltips; the host microphone
+uses a restrained active color and the current floor holder has an accented border.
+
+The host microphone is shared across Remote and Share while participants remain
+connected. Stopping one service leaves the other service's conversation intact.
+Disconnecting the last participant releases the host microphone. Push-to-talk and
+active-speaker detection are not part of this version.
 
 ## Connect
 
@@ -353,8 +442,9 @@ target. Frame age never triggers an automatic transport replacement: a slow
 but established stream stays connected so its delay can be measured.
 An actual transport interruption can trigger authenticated HTTP recovery,
 limited to one attempt per 30 seconds.
-The participant identity and camera crop remain in place.
-Failed recovery leaves the viewer disconnected.
+The same participant, host microphone restrictions, hand order and camera crop
+remain in place; the guest's own microphone is muted during recovery and must
+be explicitly enabled again. Failed recovery leaves the viewer disconnected.
 The host keeps an interrupted transport for up to 15 seconds to accept recovery;
 explicit disconnects and invitation revocation still close it immediately.
 The diagnostics text can be selected and copied; the host packet queue measures

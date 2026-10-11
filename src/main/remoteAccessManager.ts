@@ -1,9 +1,18 @@
+import type { RemoteAudioMode } from "../shared/remoteAudio.js";
 import type { ShareAccessSettings } from "./shareAccessState.js";
 import { join } from "node:path";
 import { RemoteAccessController } from "./remoteAccessController.js";
 import { DEFAULT_REMOTE_PORT, RemoteSettingsStore } from "./remoteSettingsStore.js";
 
 export type RemoteAccessMode = "remote" | "share";
+type HostMicrophone = {
+  readonly hostMicrophone: { deviceId: string; devices: { deviceId: string; label: string }[] };
+  prepareMicrophones(): Promise<void>;
+  setHostMicrophoneDevice(deviceId: string): Promise<void>;
+  subscribe(listener: () => void): () => void;
+  close(): void;
+};
+
 export async function loadRemoteAccessSettings(root: string) {
   const remote = new RemoteSettingsStore(join(root, "remote.json"));
   const settings = remote.load();
@@ -17,10 +26,13 @@ export class RemoteAccessManager {
   private stopped = false;
   private shareHadClients = false;
   private readonly errors = new Map<RemoteAccessMode, string>();
-  constructor(private readonly controllers: Record<RemoteAccessMode, RemoteAccessController>, private readonly changed: () => void = () => {}) {}
+  private readonly unsubscribeMicrophone: (() => void) | undefined;
+  constructor(private readonly controllers: Record<RemoteAccessMode, RemoteAccessController>, private readonly changed: () => void = () => {}, private readonly microphone?: HostMicrophone) {
+    this.unsubscribeMicrophone = microphone?.subscribe(changed);
+  }
   getStatus(mode: RemoteAccessMode) {
     const status = this.controllers[mode].getStatus();
-    return { ...status, error: this.errors.get(mode) || status.error };
+    return { ...status, ...(this.microphone ? { hostMicrophone: this.microphone.hostMicrophone } : {}), error: this.errors.get(mode) || status.error };
   }
   getStatuses() { return { remote: this.getStatus("remote"), share: this.getStatus("share") }; }
   configure(mode: RemoteAccessMode, patch?: Record<string, unknown>) {
@@ -86,6 +98,17 @@ export class RemoteAccessManager {
   updateShareScreen(patch: Record<string, unknown> | (() => Record<string, unknown>)) { return this.run(() => this.controllers.share.updateScreen(typeof patch === "function" ? patch() : patch)); }
   toggleShareScreen() { return this.run(() => this.controllers.share.updateScreen({ screenHidden: !this.getStatus("share").screenHidden })); }
   revokeClient(id: string) { return this.run(() => this.controllers.share.revokeClient(id)); }
+  voiceControl(mode: RemoteAccessMode, id: string | null, allowed: boolean) { return this.run(() => this.controllers[mode].voiceControl(id, allowed)); }
+  conferenceControl(mode: RemoteAccessMode, action: { audioMode: RemoteAudioMode } | { floor: string | null }) { return this.run(() => this.controllers[mode].conferenceControl(action)); }
+  prepareHostMicrophones(mode: RemoteAccessMode) { return this.run(async () => {
+    if (!this.microphone) throw new Error("Microphone selection is unavailable.");
+    await this.microphone.prepareMicrophones(); return this.getStatus(mode);
+  }); }
+  selectHostMicrophone(mode: RemoteAccessMode, deviceId: string) { return this.run(async () => {
+    if (!this.microphone) throw new Error("Microphone selection is unavailable.");
+    await this.microphone.setHostMicrophoneDevice(deviceId); return this.getStatus(mode);
+  }); }
+  hostMicrophone(mode: RemoteAccessMode, muted: boolean) { return this.run(() => this.controllers[mode].hostMicrophone(muted)); }
   async initialize() {
     for (const mode of ["remote", "share"] as const) {
       try { await this.run(() => this.applyConfiguration(mode, undefined, true)); }
@@ -96,6 +119,7 @@ export class RemoteAccessManager {
     this.stopped = true;
     return this.queue.then(async () => {
       await this.controllers.remote.stop(); await this.controllers.share.stop();
+      this.unsubscribeMicrophone?.(); this.microphone?.close();
     });
   }
 }

@@ -4,9 +4,11 @@ import { randomUUID } from "node:crypto";
 import { MAX_SHARE_CLIENTS, RemoteServer, type RemoteOffer, type RemoteServerOptions } from "./remoteServer.js";
 import { parseRemoteInput, parseRemoteViewport, remotePoint, type RemoteModifier, type RemoteViewport } from "./remoteProtocol.js";
 import { getRemoteStreamingHost } from "./remoteStreamingHost.js";
+import { RemoteVoiceState } from "./remoteVoiceState.js";
 import type { RemoteConnectionRoute } from "../shared/remoteIce.js";
 import type { ShareAccessState } from "./shareAccessState.js";
 import type { ShareChatStore } from "./shareChatStore.js";
+import type { RemoteAudioMode } from "../shared/remoteAudio.js";
 
 export type RemoteInputTarget = { contents: WebContents; x: number; y: number };
 export type RemoteAccessOptions = {
@@ -64,6 +66,32 @@ export class RemoteAccessService {
   private readonly inputObservers = new Map<WebContents, () => void>();
   private readonly observeCreated = (_event: unknown, contents: WebContents) => this.observeInput(contents);
   private readonly host = getRemoteStreamingHost();
+  private readonly voice = new RemoteVoiceState((id, state) => {
+    this.server.setSessionVoiceAllowed(id, state.allowed);
+    this.host.send(id, "voice", { ...state, ...this.conferenceVoice(id) }); this.options.clientsChanged?.();
+  }, this.host.hands, this.host.conference);
+  private readonly unsubscribe: () => void;
+  private readonly unsubscribeConference: () => void;
+  private conferenceVoice(id: string) { return { audioMode: this.host.conference.mode, hasFloor: this.host.conference.floor === id }; }
+  getAudioMode() { return this.host.conference.mode; }
+  setAudioMode(mode: RemoteAudioMode) { this.host.conference.setMode(mode); }
+  floorControl(clientId: string | null) {
+    if (clientId === null) { this.host.conference.endTurn(); return; }
+    const id = this.server.getClientSession(clientId);
+    if (!id) throw new Error("Participant is not connected.");
+    this.host.conference.giveFloor(id);
+  }
+  getHostMicrophone() { return this.host.hostMicrophone; }
+  setHostMicrophoneDevice(deviceId: string) { return this.host.setHostMicrophoneDevice(deviceId); }
+  getHostMuted() { return this.host.hostMuted; }
+  getAllMuted() { return this.voice.allMuted; }
+  setHostMuted(muted: boolean) { return this.host.setHostMuted(muted); }
+  setVoiceAllowed(clientId: string | null, allowed: boolean) {
+    if (clientId === null) this.voice.allowAll(allowed);
+    else { const id = this.server.getClientSession(clientId); if (!id) throw new Error("Participant is not connected."); this.voice.allow(id, allowed); }
+    this.server.setClientVoiceAllowed(clientId, allowed);
+    this.options.clientsChanged?.();
+  }
   constructor(private readonly options: RemoteAccessOptions) {
     const serverOptions: RemoteServerOptions = {
       ...options,
@@ -72,8 +100,9 @@ export class RemoteAccessService {
         const [width, height] = w.window.getContentSize();
         return { id: w.id, title: w.window.getTitle(), width, height };
       }),
-      connect: (offer, created) => this.connect(offer, created),
+      connect: (offer, allowed, created) => this.connect(offer, allowed, created),
       recover: (id, offer) => this.recover(id, offer),
+      getVoiceState: id => { const voice = this.voice.get(id); return voice ? { ...voice, ...this.conferenceVoice(id) } : undefined; },
       getConnectionRoute: id => this.connections.get(id)?.route ?? null,
       disconnect: id => this.disconnect(id)
     };
@@ -82,6 +111,22 @@ export class RemoteAccessService {
       for (const contents of webContents.getAllWebContents()) this.observeInput(contents);
       app.on("web-contents-created", this.observeCreated);
     }
+    this.unsubscribe = this.host.subscribe(() => this.options.clientsChanged?.());
+    let policyRevision = this.host.conference.policyRevision;
+    this.unsubscribeConference = this.host.conference.subscribe(() => {
+      if (policyRevision !== this.host.conference.policyRevision) {
+        policyRevision = this.host.conference.policyRevision;
+        this.server.setClientVoiceAllowed(null, !this.voice.allMuted);
+      }
+      for (const id of this.connections.keys()) {
+        const voice = this.voice.get(id);
+        if (voice) {
+          this.server.setSessionVoiceAllowed(id, voice.allowed);
+          this.host.send(id, "voice", { ...voice, ...this.conferenceVoice(id) });
+        }
+      }
+      this.options.clientsChanged?.();
+    });
   }
   private observeInput(contents: WebContents) {
     const local = (movement = false) => {
@@ -136,6 +181,8 @@ export class RemoteAccessService {
       if (!message || message.epoch !== c.epoch || message.action === "transport") throw new Error("Stale streaming transport");
       return this.handle(c, message.action, message.payload);
     }
+    if (action === "voice") { this.voice.guest(c.id, payload); return; }
+    if (action === "voice-state") return { ...this.voice.get(c.id), ...this.conferenceVoice(c.id) };
     if (action === "screen-state") return this.options.screenState?.(c.windowId) ?? { allowed: true, revision: "unrestricted" };
     if (action === "setup") return this.setup(c);
     if (action === "ice-servers") return this.options.getIceServers ? this.options.getIceServers() : this.options.iceServers || [];
@@ -182,7 +229,7 @@ export class RemoteAccessService {
   }
   start() { return this.server.start(); }
   async stop() {
-    await this.server.stop();
+    await this.server.stop(); this.unsubscribe(); this.unsubscribeConference(); this.voice.dispose();
     app.removeListener("web-contents-created", this.observeCreated);
     for (const dispose of this.inputObservers.values()) dispose();
   }
@@ -199,7 +246,7 @@ export class RemoteAccessService {
       iceServers: this.options.getIceServers ? await this.options.getIceServers() : this.options.iceServers || [], readOnly: this.options.readOnly === true, viewport: c.viewport
     };
   }
-  private async connect(offer: RemoteOffer, created?: (id: string) => void) {
+  private async connect(offer: RemoteOffer, allowed?: boolean, created?: (id: string) => void) {
     const target = this.options.windows().find(w => w.id === offer.windowId && !w.window.isDestroyed());
     if (!target || this.connections.size >= (this.options.readOnly ? MAX_SHARE_CLIENTS : 1)) throw new Error("Window unavailable or already shared");
     const id = randomUUID();
@@ -216,6 +263,7 @@ export class RemoteAccessService {
       timeout: setTimeout(() => { reject(new Error("Streaming setup timed out")); this.disconnect(id); }, 25000), heartbeat: Date.now(), epoch: 0, recovering: false, recoveredAt: -Infinity,
       following: this.options.readOnly === true, followRevision: 0, localPointer: screen.getCursorScreenPoint() };
     this.connections.set(id, c);
+    this.voice.add(id, allowed);
     created?.(id);
     target.window.once("closed", closeTarget);
     target.window.on("resize", closeTarget);
@@ -239,6 +287,9 @@ export class RemoteAccessService {
     if (c.recovering || Date.now() - c.recoveredAt < 30000) throw new Error("Streaming recovery is already in progress or too recent");
     c.recovering = true; c.recoveredAt = Date.now(); c.epoch++; c.heartbeat = Date.now();
     this.release(c);
+    // Transport replacement retains host moderation and hand order, but never
+    // reopens a participant's microphone after a connection interruption.
+    this.voice.guest(id, { selfMuted: true });
     const answer = new Promise<unknown>((resolve, reject) => { c.resolve = resolve; c.reject = reject; });
     c.timeout = setTimeout(() => { c.reject(new Error("Streaming recovery timed out")); this.disconnect(id); }, 25000);
     try {
@@ -318,6 +369,7 @@ export class RemoteAccessService {
     if (!c) return;
     this.connections.delete(id);
     clearTimeout(c.timeout); clearInterval(c.watchdog);
+    this.voice.remove(id);
     this.release(c);
     c.window.removeListener("closed", c.closeTarget);
     c.window.removeListener("resize", c.closeTarget);
