@@ -1,3 +1,5 @@
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { randomBytes, randomInt, randomUUID } from "node:crypto";
 
 export type ShareAccessSettings = { groupEnabled: boolean; groupApprovalRequired: boolean; allowJoinRequests: boolean };
@@ -9,23 +11,55 @@ export function normalizeShareCode(value: unknown) {
   return /^\d{6}$/.test(code) ? code : "";
 }
 
-// Session-only admission state. Only the host snapshot includes access codes.
+// Invitations and joining options may persist; requests are session-only.
 export class ShareAccessState {
   readonly participants = new Map<string, ShareParticipant>();
   private readonly requests = new Map<string, JoinRequest>();
   private readonly issuedCodes = new Set<string>();
   private groupCode = "";
   private settings: ShareAccessSettings = { groupEnabled: false, groupApprovalRequired: true, allowJoinRequests: false };
-  constructor(private readonly expired: () => void = () => {}) {}
+  constructor(private readonly expired: () => void = () => {}, private readonly filePath?: string) {
+    if (!filePath || !existsSync(filePath)) return;
+    try {
+      const value = JSON.parse(readFileSync(filePath, "utf8"));
+      const settings = value.settings;
+      if (value.version !== 1 || !settings || [settings.groupEnabled, settings.groupApprovalRequired, settings.allowJoinRequests].some(flag => typeof flag !== "boolean") ||
+        settings.groupEnabled && settings.allowJoinRequests || !Array.isArray(value.invitations) || value.invitations.length > 32) throw new Error("Invalid Share access data.");
+      const codes = new Set<string>();
+      const participants = new Map<string, ShareParticipant>();
+      const groupCode = settings.groupEnabled ? normalizeShareCode(value.groupCode) : "";
+      if (settings.groupEnabled && !groupCode) throw new Error("Invalid group code.");
+      if (groupCode) codes.add(groupCode);
+      for (const entry of value.invitations) {
+        const token = normalizeShareCode(entry.token);
+        if (typeof entry.id !== "string" || !entry.id || typeof entry.label !== "string" || entry.label.length > 80 || !token || codes.has(token) || participants.has(entry.id)) throw new Error("Invalid invitation.");
+        participants.set(entry.id, { id: entry.id, label: entry.label, token }); codes.add(token);
+      }
+      chmodSync(filePath, 0o600);
+      this.settings = { groupEnabled: settings.groupEnabled, groupApprovalRequired: settings.groupApprovalRequired, allowJoinRequests: settings.allowJoinRequests };
+      this.groupCode = groupCode;
+      for (const [id, participant] of participants) this.participants.set(id, participant);
+      for (const code of codes) this.issuedCodes.add(code);
+    } catch { console.warn("Could not load Share invitations and joining options."); }
+  }
+  private save() {
+    if (!this.filePath) return;
+    const provisional = new Set([...this.requests.values()].filter(request => request.state === "approved").map(request => request.participantId));
+    const invitations = [...this.participants.values()].filter(participant => !provisional.has(participant.id)).map(({ id, label, token }) => ({ id, label, token }));
+    mkdirSync(dirname(this.filePath), { recursive: true, mode: 0o700 });
+    const temporaryPath = `${this.filePath}.${process.pid}.tmp`;
+    writeFileSync(temporaryPath, `${JSON.stringify({ version: 1, settings: this.settings, groupCode: this.groupCode, invitations }, null, 2)}\n`, { mode: 0o600 });
+    renameSync(temporaryPath, this.filePath); chmodSync(this.filePath, 0o600);
+  }
   private code() {
     let code: string;
     do { code = String(randomInt(1_000_000)).padStart(6, "0"); } while (this.issuedCodes.has(code));
     this.issuedCodes.add(code); return code;
   }
-  create(label = "") {
+  create(label = "", provisional = false) {
     if (this.participants.size >= 32) throw new Error("Too many participants. Remove an existing participant first.");
     const participant = { id: randomUUID(), label: label.trim().slice(0, 80), token: this.code() };
-    this.participants.set(participant.id, participant); return { ...participant };
+    this.participants.set(participant.id, participant); if (!provisional) this.save(); return { ...participant };
   }
   lookup(value: unknown) {
     const code = normalizeShareCode(value);
@@ -43,6 +77,7 @@ export class ShareAccessState {
     if (!this.settings.groupEnabled) this.groupCode = "";
     for (const request of this.requests.values()) if (request.state === "pending" &&
       (request.source === "group" ? !this.settings.groupEnabled : !this.settings.allowJoinRequests)) request.state = "declined";
+    this.save();
   }
   get publicSettings() { return { ...this.settings }; }
   hostSnapshot() {
@@ -61,17 +96,19 @@ export class ShareAccessState {
     this.prune();
     const request = [...this.requests.values()].find(request => request.id === id);
     if (!request || request.state !== "pending") throw new Error("This join request is no longer pending.");
-    if (accepted) { request.participantId = this.create(request.label).id; request.state = "approved"; }
+    if (accepted) { request.participantId = this.create(request.label, true).id; request.state = "approved"; }
     else request.state = "declined";
   }
   poll(token: unknown) { this.prune(); return typeof token === "string" ? this.requests.get(token) : undefined; }
   finish(token: string) { this.requests.delete(token); }
   claimed(id: string) {
     for (const request of this.requests.values()) if (request.participantId === id && request.state === "approved") request.state = "claimed";
+    this.save();
   }
   revoke(id: string) {
     this.participants.delete(id);
     for (const request of this.requests.values()) if (request.participantId === id) request.state = "declined";
+    this.save();
   }
   private prune() {
     let changed = false;
@@ -81,8 +118,18 @@ export class ShareAccessState {
     }
     if (changed) this.expired();
   }
+  endSession() {
+    for (const request of this.requests.values()) if (request.state === "approved" && request.participantId) this.participants.delete(request.participantId);
+    this.requests.clear();
+  }
+  clearInvitations() {
+    this.endSession(); this.participants.clear();
+    this.groupCode = this.settings.groupEnabled ? this.code() : "";
+    this.save();
+  }
   clear() {
     this.participants.clear(); this.requests.clear(); this.issuedCodes.clear(); this.groupCode = "";
     this.settings = { groupEnabled: false, groupApprovalRequired: true, allowJoinRequests: false };
+    this.save();
   }
 }

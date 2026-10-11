@@ -1,5 +1,6 @@
 import { canShareScreen, sharedProjectKey } from "./shareScreenPolicy.js";
 import { loadRemoteAccessSettings, RemoteAccessManager, type RemoteAccessMode } from "./remoteAccessManager.js";
+import { ShareAccessState } from "./shareAccessState.js";
 import { RemoteAccessController } from "./remoteAccessController.js";
 import { RemoteAccessService } from "./remoteAccess.js";
 import { WebrtcSettingsStore } from "./webrtcSettings.js";
@@ -2344,6 +2345,7 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
       if (!record.window.isDestroyed()) record.window.webContents.send("remote:status-changed", statuses);
     }
   }
+  const shareAccess = new ShareAccessState(publishRemoteStatus, path.join(initialLaunchDescriptor.configurationRoot, "share-access.json"));
   const createRemoteController = (mode: RemoteAccessMode) => new RemoteAccessController(remoteStores[mode], settings => new RemoteAccessService({
     clientsChanged: () => { remoteAccessController?.clientsChanged(mode); publishRemoteStatus(); },
     joinRequested: mode === "share" ? label => {
@@ -2382,9 +2384,10 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
     sessionFilePath: mode === "remote" ? path.join(initialLaunchDescriptor.configurationRoot, "remote-sessions.json") : undefined,
     publicOrigin: settings.publicOrigin || undefined,
     readOnly: settings.readOnly,
+    shareAccess: mode === "share" ? shareAccess : undefined,
     getIceServers: getRemoteIceServers,
     getIceTransportPolicy: () => webrtcSettingsStore.getIceTransportPolicy()
-  }), publishRemoteStatus);
+  }), publishRemoteStatus, mode === "share" ? shareAccess : undefined);
   remoteAccessController = new RemoteAccessManager({ remote: createRemoteController("remote"), share: createRemoteController("share") }, publishRemoteStatus);
   mcpAgentConnectionInstaller = new McpAgentConnectionInstaller({
     getEndpoint: () => `http://127.0.0.1:${mcpSettingsStore.get().port}/mcp`,

@@ -35,6 +35,7 @@ export type RemoteServerOptions = {
   passwordHash: string;
   sessionFilePath?: string;
   readOnly?: boolean;
+  shareAccess?: ShareAccessState;
   host?: string;
   port?: number;
   publicOrigin?: string;
@@ -54,7 +55,7 @@ export class RemoteServer {
   private readonly logins = new Set<string>();
   private readonly attempts = new Map<string, { since: number; count: number }>();
   private pendingLogins = 0;
-  private readonly shareAccess = new ShareAccessState(() => this.options.clientsChanged?.());
+  private readonly shareAccess: ShareAccessState;
   private readonly shareAttempts = new Map<string, { since: number; count: number }>();
   private globalShareAttempts = { since: 0, count: 0 };
   private readonly loginClients = new Map<string, { id: string; label: string }>();
@@ -63,6 +64,7 @@ export class RemoteServer {
   private readonly connecting = new Set<string>();
   private readonly pendingSessions = new Map<string, string>();
   constructor(private readonly options: RemoteServerOptions) {
+    this.shareAccess = options.shareAccess ?? new ShareAccessState(() => this.options.clientsChanged?.());
     if (!options.readOnly && !isRemotePasswordHash(options.passwordHash)) throw new Error("Set a password before starting remote access.");
     if (options.publicOrigin && new URL(options.publicOrigin).origin !== options.publicOrigin) throw new Error("Remote public origin must be an origin without a path");
   }
@@ -170,7 +172,7 @@ export class RemoteServer {
   }
   async stop() {
     this.options.disconnect();
-    this.logins.clear(); this.attempts.clear(); this.shareAccess.clear(); this.shareAttempts.clear(); this.globalShareAttempts = { since: 0, count: 0 }; this.loginClients.clear();
+    this.logins.clear(); this.attempts.clear(); if (this.options.shareAccess) this.shareAccess.endSession(); else this.shareAccess.clear(); this.shareAttempts.clear(); this.globalShareAttempts = { since: 0, count: 0 }; this.loginClients.clear();
     this.sessions.clear(); this.connecting.clear(); this.pendingSessions.clear();
     const server = this.server;
     this.server = null;

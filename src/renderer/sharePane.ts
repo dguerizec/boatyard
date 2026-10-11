@@ -47,7 +47,7 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
     </section>
     <form data-invite><label class="field"><span>Participant name (optional)</span><input name="label" maxlength="80" placeholder="Participant enters their name" autocomplete="off"></label>
       <div class="form-actions"><button class="primary-button" type="submit">Add participant</button></div></form>
-    <p class="form-hint">Personal codes last until sharing stops.</p>
+    <p class="form-hint">Personal codes survive app restarts. Stop sharing to invalidate them.</p>
     <h4>Invitations</h4><ul class="remote-client-list" data-invitations aria-label="Participant invitations"></ul></section>
     <section class="share-tab-panel" role="tabpanel" id="${paneId}-projects" aria-labelledby="${paneId}-projects-tab" data-share-panel="projects" data-screen-projects hidden>
       <p class="form-hint">Only checked projects are visible. Sharing pauses on other projects and settings. New projects start private.</p>

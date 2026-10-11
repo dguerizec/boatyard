@@ -52,8 +52,8 @@ Remote access section of global settings for port and external URL configuration
 **Global settings → Remote access** contains settings for both servers:
 
 - **Enable Remote** starts Remote now and automatically with Boatyard. Share
-  starts only when its first client is added, and stays stopped after a restart.
-  Its settings have no standalone Start or automatic startup control.
+  can be started from its sidebar or by adding a participant or enabling a joining
+  option. Both servers restore their enabled state when Boatyard restarts.
 - **Port** defaults to `47831` for Remote and the following port
   (`47832` in a fresh configuration) for Share. The two servers must use different
   ports when enabled together.
@@ -72,7 +72,8 @@ selected address.
 
 Each Share participant has a reusable six-digit personal code, displayed as
 **123 456** in the browser, and a link carrying that code in its URL fragment.
-Codes accept spaces or hyphens and remain valid until the sharing session ends.
+Codes accept spaces or hyphens and survive Boatyard restarts until revoked or
+explicitly invalidated with **Stop sharing**.
 Names are required before joining. A name already associated with a personal
 code is prefilled and can be confirmed or edited. Names do not identify access:
 participants with the same name still have distinct personal codes.
@@ -86,13 +87,17 @@ The browser's **Your personal access code** button shows the code and offers
 **Copy code** and **Copy link** for moving to another device.
 
 The host can always copy an existing participant's link or code again, including
-while they are connected. Codes are kept in memory and omitted from visible host
-link text, keeping them out of shared video. **Copy URL** includes the full link;
+while they are connected. Codes are stored in the private Share access file and
+omitted from visible host link text, keeping them out of shared video. **Copy URL**
+includes the full link;
 **Copy code** copies the digits formatted as two groups of three.
 Revoking a participant invalidates their code and browser authentication and ends
 their stream. Disconnecting or signing out preserves their personal code.
-**Stop sharing**, quitting Boatyard, or applying Share settings ends the sharing
-session and invalidates all its codes, requests and browser authentication.
+**Stop sharing** invalidates personal codes and rotates the group code, while
+keeping the joining options. Quitting Boatyard or applying Share server settings
+ends requests and browser authentication but preserves invitations and joining
+options. If Share was enabled when Boatyard quit, it resumes automatically;
+participants can join again with their existing codes.
 Removing the last participant also stops Share unless group entry or join
 requests remain enabled.
 
@@ -102,8 +107,8 @@ remain available in either mode. The group-code and approval switches share one 
 
 - **Group code** creates one reusable code/link to distribute to a group.
   Each visitor enters their own name and receives a distinct personal code.
-  **Require approval**, enabled by default for every new session, makes these
-  visitors wait for the host. The host may disable it for immediate group entry.
+  **Require approval**, enabled by default and persisted with joining options,
+  makes these visitors wait for the host. The host may disable it for immediate group entry.
   Disabling the group code prevents further entry without revoking personal codes.
 - **Ask to join without a code** lets a visitor enter their name and request
   access from the base Share address. The host receives a desktop notification

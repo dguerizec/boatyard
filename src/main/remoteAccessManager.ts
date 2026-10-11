@@ -24,9 +24,9 @@ export class RemoteAccessManager {
   }
   getStatuses() { return { remote: this.getStatus("remote"), share: this.getStatus("share") }; }
   configure(mode: RemoteAccessMode, patch?: Record<string, unknown>) {
-    return this.run(() => this.applyConfiguration(mode, patch));
+    return this.run(() => this.applyConfiguration(mode, patch, false, mode === "share" && patch?.enabled === false));
   }
-  private async applyConfiguration(mode: RemoteAccessMode, patch?: Record<string, unknown>, addingClient = false) {
+  private async applyConfiguration(mode: RemoteAccessMode, patch?: Record<string, unknown>, addingClient = false, clearInvitations = false) {
     if (mode === "share" && !addingClient && patch?.enabled !== true) {
       patch = { ...patch, enabled: false };
     }
@@ -39,7 +39,7 @@ export class RemoteAccessManager {
         throw new Error("Remote and Share must use different external URLs.");
       }
     }
-    return this.controllers[mode].configure(patch ? { ...patch, readOnly: mode === "share" } : { readOnly: mode === "share" });
+    return this.controllers[mode].configure(patch ? { ...patch, readOnly: mode === "share" } : { readOnly: mode === "share" }, clearInvitations);
   }
   clientsChanged(mode: RemoteAccessMode) {
     if (mode !== "share" || this.stopped) return;
@@ -88,7 +88,7 @@ export class RemoteAccessManager {
   revokeClient(id: string) { return this.run(() => this.controllers.share.revokeClient(id)); }
   async initialize() {
     for (const mode of ["remote", "share"] as const) {
-      try { await this.configure(mode); }
+      try { await this.run(() => this.applyConfiguration(mode, undefined, true)); }
       catch (error) { this.errors.set(mode, error instanceof Error ? error.message : "Could not start server."); this.changed(); }
     }
   }

@@ -5,6 +5,7 @@ import { MAX_SHARE_CLIENTS, RemoteServer, type RemoteOffer, type RemoteServerOpt
 import { parseRemoteInput, parseRemoteViewport, remotePoint, type RemoteModifier, type RemoteViewport } from "./remoteProtocol.js";
 import { getRemoteStreamingHost } from "./remoteStreamingHost.js";
 import type { RemoteConnectionRoute } from "../shared/remoteIce.js";
+import type { ShareAccessState } from "./shareAccessState.js";
 
 export type RemoteInputTarget = { contents: WebContents; x: number; y: number };
 export type RemoteAccessOptions = {
@@ -17,6 +18,7 @@ export type RemoteAccessOptions = {
   passwordHash: string;
   sessionFilePath?: string;
   readOnly?: boolean;
+  shareAccess?: ShareAccessState;
   publicOrigin?: string;
   iceServers?: RTCIceServer[];
   getIceServers?(): Promise<RTCIceServer[]>;

@@ -41,7 +41,7 @@ test("Remote and Share start independently, fix their permissions and reject con
   assert.equal(manager.getStatus("remote").listening, true); assert.equal(manager.getStatus("share").listening, false);
   await manager.createReadOnlyLink();
   await manager.initialize();
-  assert.equal(manager.getStatus("share").listening, false, "Share never starts without clients on initialization");
+  assert.equal(manager.getStatus("share").listening, true, "Initialization restores enabled Share");
   await manager.stop(); await assert.rejects(manager.configure("remote", { enabled: true }), /shutting down/);
 });
 
