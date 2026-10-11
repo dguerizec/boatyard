@@ -277,6 +277,10 @@ test("pane MCP controller exposes capture bounds only for a visible current pane
     bounds: { x: 24, y: 72, width: 480, height: 640 }
   });
 
+  assert.throws(() => controller.getPaneCaptureTarget({
+    projectId: "project-1", paneId: "pane-1", expectedRevision: "old"
+  }), { code: "LAYOUT_CHANGED" });
+
   visible = false;
   assert.throws(() => controller.getPaneFillTarget(clickInput), { code: "PANE_NOT_VISIBLE" });
   assert.throws(() => controller.getPaneClickTarget(clickInput), { code: "PANE_NOT_VISIBLE" });

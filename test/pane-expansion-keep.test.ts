@@ -27,7 +27,7 @@ test("keeping an expansion rejects incomplete geometry without changing state", 
   assert.equal(state.getSelectedWebAppForPane(a.id), "app-a");
 });
 
-test("expanded pane menu keeps geometry and content while disposing covered panes", t => {
+test("expanded panes preserve capture visibility, geometry and content while disposing covered panes", t => {
   runBrowserTest(t, "test/fixtures/pane-expansion-keep.browser.js");
 });
 

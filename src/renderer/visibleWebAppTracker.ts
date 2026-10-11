@@ -52,6 +52,25 @@ export function createVisibleWebAppTracker({
     surfaceHiddenPaneIds = new Set(paneIds);
   }
 
+  function getPaneCaptureBounds(project: RendererProject, paneId: string) {
+    if (getVisibleWebAppProject()?.id !== project.id || surfaceHiddenPaneIds.has(paneId)) {
+      return null;
+    }
+    const pane = document.querySelector<HTMLElement>(`.webapp-pane[data-pane-id="${CSS.escape(paneId)}"]`);
+    if (!pane) {
+      return null;
+    }
+    const rect = pane.getBoundingClientRect();
+    const left = Math.ceil(Math.max(0, rect.left));
+    const top = Math.ceil(Math.max(0, rect.top));
+    const right = Math.floor(Math.min(window.innerWidth, rect.right));
+    const bottom = Math.floor(Math.min(window.innerHeight, rect.bottom));
+    if (![left, top, right, bottom].every(Number.isFinite) || right <= left || bottom <= top) {
+      return null;
+    }
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }
+
   function getWebAppByKey(key: string) {
     for (const { webApp } of visibleWebAppHosts.values()) {
       if (webApp.key === key) {
@@ -115,6 +134,7 @@ export function createVisibleWebAppTracker({
     getEntries,
     getEntryByKey,
     getEntryByUrl,
+    getPaneCaptureBounds,
     getWebAppByKey,
     persistPaneLayoutForWebApp,
     reset,

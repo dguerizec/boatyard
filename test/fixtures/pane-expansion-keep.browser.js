@@ -1,4 +1,5 @@
 import { createPaneLayoutState } from '../../src/renderer/paneLayoutState.js';
+import { createVisibleWebAppTracker } from '../../src/renderer/visibleWebAppTracker.js';
 import { createPaneLayoutView } from '../../src/renderer/paneLayoutView.js';
 import { createWebAppMenus } from '../../src/renderer/webAppMenus.js';
 import '../../src/renderer/styles.css';
@@ -18,10 +19,15 @@ const disposed = [];
 let frozen = false;
 const reloads = [];
 let hidden = [];
+let visibleProject = project;
+const tracker = createVisibleWebAppTracker({
+  getVisibleWebAppProject: () => visibleProject
+});
+const capture = id => tracker.getPaneCaptureBounds(project, id);
 const state = createPaneLayoutState({ updatePaneLayout: async (_, value) => saves.push(structuredClone(value)) });
 state.hydratePaneLayouts({ project: layout });
 const grid = document.createElement('div');
-grid.style.cssText = 'position:fixed;left:13px;top:17px;width:1200px;height:800px;display:grid';
+grid.style.cssText = 'position:fixed;left:13px;top:17px;width:calc(100vw - 26px);height:calc(100vh - 34px);display:grid';
 document.body.append(grid);
 const app = { id: 'fixture', kind: 'dom', label: 'Fixture', pluginPane: {
   pluginId: 'fixture', render(host, props) {
@@ -45,7 +51,7 @@ const view = createPaneLayoutView({
   getProjectWebApps: () => [app], getSelectedWebApp: () => app,
   isCompactPaneTabs: () => false, isGlobalWorkspace: () => false,
   getProjectPluginConfig: () => ({}), getGlobalPluginConfig: () => ({}), getAllProjectPluginConfig: () => ({}),
-  setHiddenWebAppPaneIds: ids => { hidden = [...ids]; },
+  setHiddenWebAppPaneIds: ids => { hidden = [...ids]; tracker.setSurfaceHiddenPaneIds(hidden); },
   resetVisibleWebAppHosts() {}, queueWebAppSync() {},
   persistPaneLayout: state.persistPaneLayout,
   openPaneExpansionMenu: menus.openPaneExpansionMenu,
@@ -64,9 +70,21 @@ const context = id => button(id).dispatchEvent(new MouseEvent('contextmenu', { b
 context('a'); await frame();
 check(!document.querySelector('[role="menu"]'), 'Normal panes have no keep menu');
 state.activatePaneExpansion(project, 'a', ['a', 'c']);
+view.renderPaneLayoutPreservingPanes(project);
+await frame(); await frame();
+check(capture('a'), 'Expanded pane remains capturable');
+check(capture('b') && capture('e'), 'Visible neighbors remain capturable beside one expansion');
+check(capture('c') === null, 'Covered pane is refused even with nonempty DOM bounds');
 state.activatePaneExpansion(project, 'e', ['e', 'f']);
 view.renderPaneLayoutPreservingPanes(project);
 await frame(); await frame();
+check(capture('a') && capture('e'), 'Both expanded panes remain capturable');
+check(capture('b') && capture('d'), 'Visible neighbors remain capturable beside multiple expansions');
+check(capture('c') === null && capture('f') === null, 'Only actually covered panes are refused');
+visibleProject = { id: 'other-project' };
+check(capture('a') === null && capture('b') === null, 'Inactive projects cannot be captured');
+visibleProject = project;
+check(capture('missing') === null, 'Missing panes cannot be captured');
 check(button('a').classList.contains('active'), 'Expanded button is highlighted');
 const expanded = element('a').getBoundingClientRect();
 context('a'); await frame();
@@ -87,6 +105,21 @@ for (const edge of ['left', 'top', 'width', 'height']) {
   check(Math.abs(element('b').getBoundingClientRect()[edge] - outside[edge]) < 0.1, `Outside ${edge} is unchanged`);
 }
 check(button('e').classList.contains('active') && hidden.join(',') === 'f', 'Disjoint expansion remains active');
+check(capture('a') && capture('b') && capture('e') && capture('f') === null, 'Capture visibility follows expansion cleanup');
+const boundsProbe = document.createElement('div');
+boundsProbe.className = 'webapp-pane';
+boundsProbe.dataset.paneId = 'bounds-probe';
+document.body.append(boundsProbe);
+const probe = rect => {
+  boundsProbe.getBoundingClientRect = () => rect;
+  return capture('bounds-probe');
+};
+const clipped = probe({ left: -10.5, top: 20.1, right: window.innerWidth + 10, bottom: 100.9 });
+check(clipped.x === 0 && clipped.y === 21 && clipped.width === window.innerWidth && clipped.height === 79, 'Bounds are clipped and rounded inward');
+check(probe({ left: -30, top: 0, right: -10, bottom: 100 }) === null, 'Outside viewport bounds are refused');
+check(probe({ left: 10, top: 0, right: 10, bottom: 100 }) === null, 'Empty bounds are refused');
+check(probe({ left: NaN, top: 0, right: 10, bottom: 100 }) === null, 'Invalid bounds are refused');
+boundsProbe.remove();
 check(button('a').closest('.webapp-pane').querySelector('[data-pane-action="split-vertical"]').disabled === false, 'Normal structural actions are restored');
 check(!frozen && saves.length === 1, 'Action restores overlays and persists once');
 const restored = createPaneLayoutState({ updatePaneLayout: async () => {} });
