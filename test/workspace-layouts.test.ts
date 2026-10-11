@@ -11,6 +11,26 @@ const {
   resolveWorkspaceLayoutSaveScope
 } = require(`${process.cwd()}/build/renderer/workspaceLayoutPicker`);
 const { createProjectWebApps } = require(`${process.cwd()}/build/renderer/projectWebApps`);
+const { createPaneLayoutState } = require(`${process.cwd()}/build/renderer/paneLayoutState`);
+
+test("Share is absent from pane choices and legacy Share panes safely display Empty", () => {
+  const state = createPaneLayoutState({ updatePaneLayout: async () => {} });
+  const project = { id: "project" };
+  state.setPaneLayout(project.id, { type: "pane", id: "legacy-share", selectedWebAppId: "share" });
+  const runtime = createProjectWebApps({
+    findPaneNode: state.findPaneNode,
+    getGlobalPluginConfig: () => ({}),
+    getPaneLayout: state.getProjectPaneLayout,
+    getPluginPaneDefinitions: () => [],
+    getProjectPluginConfig: () => ({}),
+    getProjectWidgetPanes: () => [],
+    getWebAppFavicon: () => "",
+    isGlobalWorkspace: () => false
+  });
+  const choices = runtime.getProjectWebApps(project, "legacy-share");
+  assert.equal(choices.some((choice: { id: string }) => choice.id === "share"), false);
+  assert.equal(state.getSelectedWebApp(project, "legacy-share", choices).id, "empty");
+});
 
 function createIds() {
   let next = 0;

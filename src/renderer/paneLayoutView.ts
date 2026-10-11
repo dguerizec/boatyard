@@ -189,7 +189,6 @@ type PaneLayoutViewOptions = {
     widgetLayout: WidgetLayout,
     columns: number | null
   ) => HTMLElement;
-  createSharePane?: () => HTMLElement;
   createWidgetPaneSurface: (project: RendererProject, widgetPane: WidgetPane) => HTMLElement;
   createWidgetPaneTabs: (
     project: RendererProject,
@@ -290,7 +289,6 @@ export function createPaneLayoutView({
     getWidgetGridColumnCount,
     createWidgetPaneActions,
     createWidgetPaneSurface,
-    createSharePane,
     createWidgetPaneTabs,
     isWebAppTabMenuOpen,
     closeWebAppTabMenu,
@@ -1143,7 +1141,7 @@ export function createPaneLayoutView({
       reusablePanes.delete(paneNode.id);
       pane.dataset.webAppMenuSignature = nextMenuSignature;
       syncReusedPaneActions(project, paneNode, pane);
-      if (!["dom", "empty", "terminal", "widgets", "share"].includes(selectedWebApp.kind || "")) {
+      if (!["dom", "empty", "terminal", "widgets"].includes(selectedWebApp.kind || "")) {
         const host = getVisiblePaneHost(pane);
         if (host) {
           setVisibleWebAppHost(paneNode.id, {
@@ -1647,7 +1645,6 @@ export function createPaneLayoutView({
     function createWebAppPane(project: RendererProject, paneNode: PaneNode) {
       const webApps = getProjectWebApps(project, paneNode.id).map((webApp) => webApp as PaneWebApp);
       const selectedWebApp = getSelectedWebApp(project, paneNode.id, webApps) as PaneWebApp;
-      const isSharePane = selectedWebApp.kind === "share";
       const isTerminalPane = selectedWebApp.kind === "terminal";
       const isWidgetPane = selectedWebApp.kind === "widgets";
       const isDomPane = selectedWebApp.kind === "dom";
@@ -1955,7 +1952,7 @@ export function createPaneLayoutView({
         }));
       }
 
-      if (!isTerminalPane && !isWidgetPane && !isDomPane && !isEmptyPane && !isSharePane && !hideBrowserControls) {
+      if (!isTerminalPane && !isWidgetPane && !isDomPane && !isEmptyPane && !hideBrowserControls) {
         const homeButton = document.createElement("button");
         homeButton.className = "webapp-tool-button";
         homeButton.type = "button";
@@ -2283,9 +2280,7 @@ export function createPaneLayoutView({
 
       pane.append(header, host);
 
-      if (isSharePane) {
-        if (createSharePane) host.append(createSharePane());
-      } else if (isTerminalPane) {
+      if (isTerminalPane) {
         host.append(createTerminalSurface(project, {
           tagName: "div",
           className: "terminal-pane-surface terminal-widget",

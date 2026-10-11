@@ -17,6 +17,30 @@ type StoreProject = {
   name?: string;
 };
 
+test("Share sidebar preferences survive project switching and restart independently per window", () => {
+  const { directory, filePath, store } = createTempStore();
+  try {
+    store.load();
+    const projectId = store.addProject({ name: "Sidebar", sourcePath: "/workspace/sidebar" }).projects[0].id;
+    store.ensureWorkspaceWindow("window-a", "group-a");
+    store.ensureWorkspaceWindow("window-b", "group-a", "window-a");
+    const shareSidebar = { pinned: true, collapsed: true, width: 420, tab: "chat" };
+    store.updateWorkspaceNavigation("window-a", { view: "global", shareSidebar });
+    store.updateWorkspaceNavigation("window-a", { view: "project", projectId });
+    const reloaded = new ProjectStore(filePath);
+    reloaded.load();
+    assert.deepEqual(reloaded.getStateForWorkspaceWindow("window-a").navigation.shareSidebar, shareSidebar);
+    assert.equal(reloaded.getStateForWorkspaceWindow("window-b").navigation.shareSidebar, undefined);
+    reloaded.updateWorkspaceNavigation("window-a", { view: "global", shareSidebar: { ...shareSidebar, pinned: false } });
+    const restarted = new ProjectStore(filePath);
+    restarted.load();
+    assert.equal(restarted.getStateForWorkspaceWindow("window-a").navigation.shareSidebar.pinned, false);
+    store.updateNavigation({ view: "global", shareSidebar: { pinned: true, width: -10, tab: "invalid" } });
+    store.updateNavigation({ view: "global" });
+    assert.deepEqual(store.getState().navigation.shareSidebar, { pinned: true, collapsed: false, width: 300, tab: "session" });
+  } finally { fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
 test("ProjectStore persists configured projects", () => {
   const { filePath, store } = createTempStore();
 

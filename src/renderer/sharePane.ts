@@ -5,6 +5,24 @@ import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 import type { BoatyardBridge } from "./rendererTypes.js";
 import type { PaneCleanupHost } from "./paneCleanup.js";
 import { createToolIcon } from "./toolIcons.js";
+import type { ShareTab } from "../shared/shareSidebar.js";
+
+export type ShareSidebarPin = {
+  isPinned(): boolean;
+  toggle(): void;
+  subscribe(callback: () => void): () => void;
+};
+type SharePaneOptions = {
+  sidebarPin?: ShareSidebarPin;
+  hideTabs?: boolean;
+  onTabChanged?: (tab: ShareTab) => void;
+  onAlertsChanged?: (alerts: { requests: number; messages: number }) => void;
+};
+export type SharePaneHost = PaneCleanupHost & {
+  selectShareTab(tab: ShareTab, section?: "requests"): void;
+  setShareVisible(visible: boolean): void;
+};
+
 function iconAction(button: HTMLButtonElement, icon: string, label: string) {
   button.classList.add("share-icon-button");
   button.title = label; button.setAttribute("aria-label", label);
@@ -17,13 +35,15 @@ function iconAction(button: HTMLButtonElement, icon: string, label: string) {
 type Mode = "remote" | "share";
 let paneSequence = 0;
 
-export function createSharePane(api: BoatyardBridge, compact = false) {
-  const root = document.createElement("div") as PaneCleanupHost;
+export function createSharePane(api: BoatyardBridge, compact = false, options: SharePaneOptions = {}) {
+  const root = document.createElement("div") as unknown as SharePaneHost;
+  let paneVisible = true, selectedTab: ShareTab = "session";
+  const alerts = { requests: 0, messages: 0 };
   root.className = "share-pane"; root.dataset.boatyardCleanup = "";
   const paneId = `share-${++paneSequence}`;
   root.innerHTML = `${compact ? "" : "<h3>Share</h3>"}
     <p class="form-error" role="alert" hidden></p>
-    <div class="share-tabs" role="tablist" aria-label="Share session">
+    <div class="share-tabs" role="tablist" aria-label="Share session" ${options.hideTabs ? "hidden" : ""}>
       <button type="button" class="secondary-button" role="tab" id="${paneId}-session-tab" aria-controls="${paneId}-session" aria-selected="true" data-share-tab="session">Session</button>
       <button type="button" class="secondary-button" role="tab" id="${paneId}-chat-tab" aria-controls="${paneId}-chat" aria-selected="false" tabindex="-1" data-share-tab="chat">Chat<span class="share-chat-badge" hidden></span></button>
       <button type="button" class="secondary-button" role="tab" id="${paneId}-setup-tab" aria-controls="${paneId}-setup" aria-selected="false" tabindex="-1" data-share-tab="setup">Setup</button>
@@ -32,7 +52,7 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
     <section class="share-tab-panel" role="tabpanel" id="${paneId}-session" aria-labelledby="${paneId}-session-tab" data-share-panel="session">
     <div class="share-screen-controls"><button type="button" class="secondary-button" data-screen title="Hide or show screen (Ctrl+Shift+S)">Hide screen</button>${compact ? "" : '<span class="form-hint">Ctrl+Shift+S</span>'}</div>
     <section data-join-queue hidden><h4>Join requests</h4><ul class="remote-join-requests" aria-label="Join requests"></ul></section>
-    <h4>Connected participants</h4><p class="form-hint" data-session-empty>No connected participants. Create invitations in Setup.</p>
+    <h4>Participants</h4><p class="form-hint" data-session-empty>No connected participants. Create invitations in Setup.</p>
     <ul class="remote-client-list" aria-label="Connected participants"></ul>
     </section>
     <section class="share-tab-panel" role="tabpanel" id="${paneId}-chat" aria-labelledby="${paneId}-chat-tab" data-share-panel="chat" hidden><div data-chat-root></div></section>
@@ -69,7 +89,7 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
     image: (id, messageId) => api.getShareChatImage!(id, messageId),
     subscribe: callback => api.onShareChatChanged?.(callback),
     openLink: url => { void api.openExternal(url); },
-    unread: count => { const badge = root.querySelector<HTMLElement>(".share-chat-badge")!; badge.hidden = !count; badge.textContent = count > 99 ? "99+" : String(count); }
+    unread: count => { const badge = root.querySelector<HTMLElement>(".share-chat-badge")!; badge.hidden = !count; badge.textContent = count > 99 ? "99+" : String(count); alerts.messages = count; options.onAlertsChanged?.({ ...alerts }); }
   }) : undefined;
   const statuses: Record<Mode, UnknownRecord> = { share: {}, remote: {} };
   const revisions = { share: 0, remote: 0 };
@@ -207,7 +227,7 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
     }
     filterProjects();
     root.querySelector<HTMLElement>("[data-status]")!.textContent = !loaded ? "Loading…" : share.listening ? `Share listening on port ${share.port} · ${share.screenHidden ? "Screen hidden" : "Screen is read-only"}` : "Share is stopped.";
-    root.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input:not([data-project-search]), button:not([role=tab])").forEach(control => { control.disabled = busy || !loaded; });
+    root.querySelectorAll<HTMLInputElement | HTMLButtonElement>("input:not([data-project-search]), button:not([role=tab]):not(.share-pin)").forEach(control => { control.disabled = busy || !loaded; });
     renderAdmission(share);
     stop.disabled = busy || !share.listening && !share.enabled;
     start.hidden = share.listening === true;
@@ -233,6 +253,7 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
           }
           const route = client.route === "direct" ? "Direct" : client.route === "relay" ? "Relayed" : "Checking connection…";
           row.text.textContent = `${client.label || "Unnamed participant"} · ${mode === "remote" ? "Remote · " : ""}${client.state === "connected" ? `Connected · ${route}` : client.state === "invited" ? "Invited" : "Signed in"}`;
+          row.text.title = row.text.textContent;
           row.revoke.replaceChildren(createToolIcon("trash")); row.revoke.title = `Revoke: ${client.label || "Unnamed participant"}`; row.revoke.setAttribute("aria-label", row.revoke.title);
           row.revoke.disabled = busy; row.revoke.hidden = !invitation;
           row.urls.hidden = !invitation;
@@ -243,6 +264,8 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
       }
     }
     for (const [id, row] of rows) if (!ids.has(id)) { row.root.remove(); rows.delete(id); }
+    alerts.requests = Array.isArray(toUnknownRecord(share.shareAccess).requests) ? (toUnknownRecord(share.shareAccess).requests as unknown[]).length : 0;
+    options.onAlertsChanged?.({ ...alerts });
   }
   function filterProjects() {
     const query = normalizeProjectSearchText(projectSearch.value);
@@ -296,9 +319,21 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
       button.setAttribute("aria-selected", String(selected)); button.tabIndex = selected ? 0 : -1;
       root.querySelector<HTMLElement>(`[data-share-panel="${button.dataset.shareTab}"]`)!.hidden = !selected;
     }
-    chat?.setVisible(tab.dataset.shareTab === "chat");
+    selectedTab = tab.dataset.shareTab as ShareTab;
+    chat?.setVisible(paneVisible && selectedTab === "chat");
+    options.onTabChanged?.(selectedTab);
     if (tab.dataset.shareTab === "projects") refreshProjects();
   }
+  root.setShareVisible = visible => { if (visible === paneVisible) return; paneVisible = visible; chat?.setVisible(visible && selectedTab === "chat"); };
+  root.selectShareTab = (name, section) => {
+    if (name !== selectedTab) selectTab(tabs.find(tab => tab.dataset.shareTab === name)!);
+    if (section) {
+      const target = root.querySelector<HTMLElement>("[data-join-queue]")!;
+      if (!target) return;
+      target.scrollIntoView({ block: "nearest" });
+      target.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    }
+  };
   for (const [index, tab] of tabs.entries()) {
     tab.onclick = () => selectTab(tab);
     tab.onkeydown = event => {
@@ -325,6 +360,14 @@ export function createSharePane(api: BoatyardBridge, compact = false) {
     void api.getRemoteStatus?.(mode).then(value => { if (!revisions[mode]) apply(mode, value); }).catch(showError);
     return unsubscribe;
   });
-  root.boatyardCleanup = () => { disposed = true; chat?.dispose(); subscriptions.forEach(unsubscribe => unsubscribe?.()); };
-  render(); return root;
+  let unsubscribePin: (() => void) | undefined;
+  root.boatyardCleanup = () => { disposed = true; unsubscribePin?.(); chat?.dispose(); subscriptions.forEach(unsubscribe => unsubscribe?.()); };
+  render();
+  if (options.sidebarPin) {
+    const pin = document.createElement("button"); pin.type = "button"; pin.className = "secondary-button share-pin";
+    const renderPin = () => { pin.textContent = options.sidebarPin!.isPinned() ? "Unpin from right sidebar" : "Pin to right sidebar"; pin.setAttribute("aria-pressed", String(options.sidebarPin!.isPinned())); };
+    pin.onclick = () => options.sidebarPin!.toggle(); root.prepend(pin); renderPin();
+    unsubscribePin = options.sidebarPin.subscribe(renderPin);
+  }
+  return root;
 }

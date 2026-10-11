@@ -995,7 +995,7 @@ class ProjectStore {
     if (!workspaceWindow) {
       return { "": this.updateNavigation(navigation) };
     }
-    const nextNavigation = normalizeNavigationState(navigation);
+    const nextNavigation = normalizeNavigationState({ shareSidebar: workspaceWindow.navigation.shareSidebar, ...toRecord(navigation) });
     const group = this.state.workspaceSession.groups[workspaceWindow.syncGroupId];
     const projectId = nextNavigation.view.startsWith("project") ? nextNavigation.projectId : null;
     if (!projectId || !group) {
@@ -1164,7 +1164,7 @@ class ProjectStore {
   }
 
   updateNavigation(navigation: unknown): NavigationState {
-    this.state.navigation = normalizeNavigationState(navigation);
+    this.state.navigation = normalizeNavigationState({ shareSidebar: this.state.navigation.shareSidebar, ...toRecord(navigation) });
     this.save();
     return structuredClone(this.state.navigation);
   }
@@ -1597,6 +1597,7 @@ class ProjectStore {
     const pinnedProjectIds = this.state.navigation.pinnedProjectIds.filter((pinnedProjectId) => pinnedProjectId !== projectId);
     if (this.state.navigation.projectId === projectId) {
       this.state.navigation = normalizeNavigationState({
+        shareSidebar: this.state.navigation.shareSidebar,
         view: "global",
         pinnedProjectIds,
         sidebarCollapsed: this.state.navigation.sidebarCollapsed

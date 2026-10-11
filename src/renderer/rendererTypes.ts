@@ -22,6 +22,7 @@ export type RendererProject = UnknownRecord & {
 export type RendererState = UnknownRecord & {
   globalUrls?: UnknownRecord[];
   navigation?: {
+    shareSidebar?: import("../shared/shareSidebar.js").ShareSidebarState;
     collapsedProjectGroups?: string[];
     pinnedProjectIds?: string[];
     projectId?: string | null;

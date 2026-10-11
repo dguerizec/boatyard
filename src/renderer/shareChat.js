@@ -3,7 +3,7 @@ import { createToolIcon } from './toolIcons.js';
 /** One view implementation for the operator pane and standalone Share client. */
 export function createShareChat(root, adapter) {
   root.classList.add('share-chat');
-  root.innerHTML = `<label class="chat-archive" hidden>Conversation <select aria-label="Conversation history"></select></label>
+  root.innerHTML = `<label class="chat-archive" hidden>Conversation <select class="form-control" aria-label="Conversation history"></select></label>
     <p class="chat-status" role="status">Loading chat…</p><button class="chat-retry" type="button" hidden>Retry</button>
     <div class="chat-log" role="log" aria-label="Session messages" aria-live="off" tabindex="0"></div>
     <button class="chat-new" type="button" hidden>New messages ↓</button>

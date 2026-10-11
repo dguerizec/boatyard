@@ -3,7 +3,7 @@
 .share-chat .chat-status { margin: 0; font-size: 11px; color: var(--muted, #a9bdd4); }
 .share-chat .chat-status[data-error="true"] { color: var(--danger, #ff9696); }
 .share-chat .chat-archive { display: flex; gap: 8px; align-items: center; font-size: 12px; }
-.share-chat select { min-width: 0; width: 100%; }
+.share-chat select { min-width: 0; width: 100%; min-height: 34px; padding: 0 8px; font: inherit; }
 .share-chat .chat-log { flex: 1; min-height: 120px; overflow: auto; overscroll-behavior: contain; padding: 0 4px; overflow-wrap: anywhere; }
 .share-chat .chat-message { padding: 8px 0; border-bottom: 1px solid var(--line, #344156); }
 .share-chat .chat-message header { display: flex; gap: 8px; align-items: center; min-height: 24px; }

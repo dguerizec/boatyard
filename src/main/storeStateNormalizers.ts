@@ -1,4 +1,5 @@
 import { normalizeHugescreenState } from "./hugescreenState";
+import { normalizeShareSidebarState } from "../renderer/shareSidebarState";
 import { normalizeHugescreenZones } from "../renderer/hugescreenZones.js";
 import {
   DEFAULT_WINDOW_BOUNDS,
@@ -200,7 +201,8 @@ export function normalizeNavigationState(navigation: unknown = {}): NavigationSt
     projectId: isProjectView ? projectId : null,
     collapsedProjectGroups,
     pinnedProjectIds,
-    sidebarCollapsed: source.sidebarCollapsed === true
+    sidebarCollapsed: source.sidebarCollapsed === true,
+    ...(source.shareSidebar !== undefined ? { shareSidebar: normalizeShareSidebarState(source.shareSidebar) } : {})
   };
 }
 

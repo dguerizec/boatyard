@@ -77,6 +77,7 @@ export type SettingsState = {
 };
 
 export type NavigationState = {
+  shareSidebar?: import("../shared/shareSidebar").ShareSidebarState;
   view: string;
   projectId: string | null;
   collapsedProjectGroups: string[];

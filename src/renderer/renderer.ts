@@ -1,5 +1,5 @@
 import { createProjectShareControls } from "./projectShareControls.js";
-import { createSharePane } from "./sharePane.js";
+import { createShareSidebar } from "./shareSidebar.js";
 import { setupHugescreenControls } from "./hugescreenControls.js";
 import { setupRemoteSharingControls } from "./remoteSharingControls.js";
 import { createGlobalSettingsPageView } from "./globalSettingsPageView.js";
@@ -76,6 +76,7 @@ const {
 const ONBOARDING_VERSION = boatyardWindow.BoatyardManual?.version || 1;
 
 let state: RendererState = { projects: [] };
+let shareSidebar: ReturnType<typeof createShareSidebar>;
 const webAppLoadTracker = createWebAppLoadTracker();
 let navigationController: ReturnType<typeof createRendererNavigationController>;
 let webAppRuntime: ReturnType<typeof createRendererWebAppRuntime>;
@@ -566,7 +567,6 @@ const paneLayoutView = createPaneLayoutView({
   createWidgetPaneActions: (project, widgetPane, layout, columns) => (
     createWidgetPaneActions(project, widgetPane, layout, columns ?? getWidgetGridColumnCount(MIN_WIDGET_RAIL_WIDTH))
   ),
-  createSharePane: () => createSharePane(boatyardWindow.boatyard),
   createWidgetPaneSurface,
   createWidgetPaneTabs,
   isWebAppTabMenuOpen,
@@ -1319,6 +1319,7 @@ async function loadState() {
   hydrateWidgetLayouts();
   hydrateTerminalTabOrders();
   restoreNavigation(state.navigation || {});
+  shareSidebar.restore(state.navigation?.shareSidebar);
   render();
   topbarWidgets.render();
   void loadPreparedUpdateNotice();
@@ -1340,6 +1341,7 @@ boatyardWindow.boatyard.onWorkspaceNavigationChanged?.((navigation) => {
     return;
   }
   restoreNavigation(state.navigation || {});
+  shareSidebar.restore(state.navigation?.shareSidebar);
   if (
     previousView === navigationController.getCurrentView() &&
     previousProjectId === navigationController.getCurrentProjectId()
@@ -1366,9 +1368,17 @@ const openRemoteSettings = () => {
   navigationController.selectGlobalSettings();
   document.querySelector<HTMLButtonElement>('.settings-nav-button[data-section-id="remote"]')?.click();
 };
-const disposeRemoteSharing = setupRemoteSharingControls(remoteSharingButton, boatyardWindow.boatyard, openRemoteSettings, showOverlayDialog, "share", applyFormControls);
+shareSidebar = createShareSidebar(appShell, boatyardWindow.boatyard, {
+  async save(shareSidebarState) {
+    const navigation = await boatyardWindow.boatyard.updateNavigation({ ...state.navigation, shareSidebar: shareSidebarState }, { notifySource: false });
+    state = { ...state, navigation };
+  },
+  layoutChanged: queueWebAppSync,
+  applyFormControls
+});
+const disposeRemoteSharing = setupRemoteSharingControls(remoteSharingButton, boatyardWindow.boatyard, openRemoteSettings, showOverlayDialog, "share", applyFormControls, shareSidebar.pinControl);
 const disposeRemoteAccess = setupRemoteSharingControls(remoteAccessButton, boatyardWindow.boatyard, openRemoteSettings, showOverlayDialog, "remote", applyFormControls);
-window.addEventListener("pagehide", () => { disposeRemoteSharing(); disposeRemoteAccess(); }, { once: true });
+window.addEventListener("pagehide", () => { shareSidebar.dispose(); disposeRemoteSharing(); disposeRemoteAccess(); }, { once: true });
 
 splitScreenButton.addEventListener("click", () => {
   void boatyardWindow.boatyard.createWorkspaceWindow?.();
