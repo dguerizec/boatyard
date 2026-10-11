@@ -202,7 +202,7 @@ export class McpServerService {
     }, async (input) => this.invokePane("switch_project", input));
     protocolServer.registerTool("get_pane_layout", {
       title: "Get active pane layout",
-      description: "Read the active split tree, selected choice, mobile viewport, and web navigation state of every pane.",
+      description: "Read the active split tree, selected choice, visibility and its reason, mobile viewport, and web navigation state of every pane.",
       inputSchema: z.object(targetSchema),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
     }, async (input) => this.invokePane("get_pane_layout", input));

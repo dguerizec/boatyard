@@ -1,3 +1,4 @@
+import { createPaneMcpController } from '../../src/renderer/paneMcpController.js';
 import { createPaneLayoutState } from '../../src/renderer/paneLayoutState.js';
 import { createVisibleWebAppTracker } from '../../src/renderer/visibleWebAppTracker.js';
 import { createPaneLayoutView } from '../../src/renderer/paneLayoutView.js';
@@ -44,11 +45,32 @@ const menus = createWebAppMenus({
   invokeWebApp: async (...args) => reloads.push(args),
   clamp: (value, min, max) => Math.min(max, Math.max(min, value))
 });
+const terminal = { id: 'terminal', kind: 'terminal', label: 'Terminal' };
+const selectedApp = (_, id) => ['b', 'f'].includes(id) ? terminal : app;
+const controller = createPaneMcpController({
+  getProjectById: () => project, getProjectPaneLayout: state.getProjectPaneLayout,
+  getProjectWebApps: () => [app, terminal], getSelectedWebApp: selectedApp,
+  getMobileDevViewport: () => null, getCurrentWebAppUrl: () => undefined,
+  getPaneVisibility: tracker.getPaneVisibility, getPaneCaptureBounds: tracker.getPaneCaptureBounds,
+  findPaneNode: state.findPaneNode
+});
+const describe = id => {
+  const find = node => node.type === 'pane' ? (node.id === id ? node : null) : find(node.first) || find(node.second);
+  return find(controller.getPaneLayout({ projectId: project.id }).layout);
+};
+const revision = () => controller.getPaneLayout({ projectId: project.id }).revision;
+const originalRevision = revision();
 const view = createPaneLayoutView({
   paneLayoutState: state, dashboardGrid: grid, webAppSplitResizerSize: 6, minWidgetRailWidth: 200,
   createToolIcon: () => document.createElement('span'),
   getProjectPaneLayout: state.getProjectPaneLayout,
-  getProjectWebApps: () => [app], getSelectedWebApp: () => app,
+  getProjectWebApps: () => [app, terminal], getSelectedWebApp: selectedApp,
+  createTerminalSurface: (_, options) => {
+    const surface = document.createElement('div');
+    surface.dataset.boatyardCleanup = 'true';
+    surface.boatyardCleanup = () => disposed.push(options.storageKey.slice('pane:'.length));
+    return surface;
+  },
   isCompactPaneTabs: () => false, isGlobalWorkspace: () => false,
   getProjectPluginConfig: () => ({}), getGlobalPluginConfig: () => ({}), getAllProjectPluginConfig: () => ({}),
   setHiddenWebAppPaneIds: ids => { hidden = [...ids]; tracker.setSurfaceHiddenPaneIds(hidden); },
@@ -81,10 +103,30 @@ await frame(); await frame();
 check(capture('a') && capture('e'), 'Both expanded panes remain capturable');
 check(capture('b') && capture('d'), 'Visible neighbors remain capturable beside multiple expansions');
 check(capture('c') === null && capture('f') === null, 'Only actually covered panes are refused');
+for (const id of ['a', 'b', 'd', 'e']) {
+  const pane = describe(id);
+  check(pane.visibility.visible === true && pane.visibility.reason === 'visible', `Layout reports ${id} visible`);
+}
+for (const id of ['c', 'f']) {
+  const pane = describe(id);
+  check(pane.visibility.visible === false && pane.visibility.reason === 'covered', `Layout reports ${id} covered`);
+}
+check(describe('b').paneTypeId === 'terminal' && describe('f').paneTypeId === 'terminal', 'Visible and covered terminals expose the same visibility metadata');
+check(revision() === originalRevision, 'Visibility does not change the structural layout revision');
+check(controller.getPaneCaptureTarget({ projectId: project.id, paneId: 'b', expectedRevision: revision() }).bounds, 'Visible terminal layout metadata agrees with capture');
+try {
+  controller.getPaneCaptureTarget({ projectId: project.id, paneId: 'f', expectedRevision: revision() });
+  throw new Error('Covered terminal must reject capture');
+} catch (error) {
+  check(error.code === 'PANE_NOT_VISIBLE', 'Covered terminal metadata agrees with capture refusal');
+}
 visibleProject = { id: 'other-project' };
 check(capture('a') === null && capture('b') === null, 'Inactive projects cannot be captured');
+check(describe('b').visibility.reason === 'inactive_project', 'Layout explains inactive project visibility');
+check(revision() === originalRevision, 'Project activation does not change the layout revision');
 visibleProject = project;
 check(capture('missing') === null, 'Missing panes cannot be captured');
+check(tracker.getPaneVisibility(project, 'missing').reason === 'not_rendered', 'Missing DOM has an explicit reason');
 check(button('a').classList.contains('active'), 'Expanded button is highlighted');
 const expanded = element('a').getBoundingClientRect();
 context('a'); await frame();
@@ -106,6 +148,7 @@ for (const edge of ['left', 'top', 'width', 'height']) {
 }
 check(button('e').classList.contains('active') && hidden.join(',') === 'f', 'Disjoint expansion remains active');
 check(capture('a') && capture('b') && capture('e') && capture('f') === null, 'Capture visibility follows expansion cleanup');
+check(describe('a').visibility.visible && describe('f').visibility.reason === 'covered', 'Layout visibility follows expansion cleanup');
 const boundsProbe = document.createElement('div');
 boundsProbe.className = 'webapp-pane';
 boundsProbe.dataset.paneId = 'bounds-probe';
@@ -117,8 +160,10 @@ const probe = rect => {
 const clipped = probe({ left: -10.5, top: 20.1, right: window.innerWidth + 10, bottom: 100.9 });
 check(clipped.x === 0 && clipped.y === 21 && clipped.width === window.innerWidth && clipped.height === 79, 'Bounds are clipped and rounded inward');
 check(probe({ left: -30, top: 0, right: -10, bottom: 100 }) === null, 'Outside viewport bounds are refused');
+check(tracker.getPaneVisibility(project, 'bounds-probe').reason === 'outside_viewport', 'Viewport exclusion has an explicit reason');
 check(probe({ left: 10, top: 0, right: 10, bottom: 100 }) === null, 'Empty bounds are refused');
 check(probe({ left: NaN, top: 0, right: 10, bottom: 100 }) === null, 'Invalid bounds are refused');
+check(tracker.getPaneVisibility(project, 'bounds-probe').reason === 'invalid_bounds', 'Invalid geometry has an explicit reason');
 boundsProbe.remove();
 check(button('a').closest('.webapp-pane').querySelector('[data-pane-action="split-vertical"]').disabled === false, 'Normal structural actions are restored');
 check(!frozen && saves.length === 1, 'Action restores overlays and persists once');

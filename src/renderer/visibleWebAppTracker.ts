@@ -1,5 +1,10 @@
 import type { RendererPaneLayoutNode, RendererPaneNode, RendererProject } from "./rendererTypes.js";
 
+export type PaneVisibility = {
+  visible: boolean;
+  reason: "visible" | "inactive_project" | "covered" | "not_rendered" | "outside_viewport" | "invalid_bounds";
+};
+
 type VisibleWebAppEntry = {
   host: HTMLElement;
   webApp: {
@@ -52,23 +57,44 @@ export function createVisibleWebAppTracker({
     surfaceHiddenPaneIds = new Set(paneIds);
   }
 
-  function getPaneCaptureBounds(project: RendererProject, paneId: string) {
-    if (getVisibleWebAppProject()?.id !== project.id || surfaceHiddenPaneIds.has(paneId)) {
-      return null;
+  function resolvePanePresentation(project: RendererProject, paneId: string) {
+    const hidden = (reason: PaneVisibility["reason"]) => ({
+      bounds: null,
+      visibility: { visible: false, reason } as PaneVisibility
+    });
+    if (getVisibleWebAppProject()?.id !== project.id) {
+      return hidden("inactive_project");
+    }
+    if (surfaceHiddenPaneIds.has(paneId)) {
+      return hidden("covered");
     }
     const pane = document.querySelector<HTMLElement>(`.webapp-pane[data-pane-id="${CSS.escape(paneId)}"]`);
     if (!pane) {
-      return null;
+      return hidden("not_rendered");
     }
     const rect = pane.getBoundingClientRect();
     const left = Math.ceil(Math.max(0, rect.left));
     const top = Math.ceil(Math.max(0, rect.top));
     const right = Math.floor(Math.min(window.innerWidth, rect.right));
     const bottom = Math.floor(Math.min(window.innerHeight, rect.bottom));
-    if (![left, top, right, bottom].every(Number.isFinite) || right <= left || bottom <= top) {
-      return null;
+    if (![left, top, right, bottom].every(Number.isFinite)) {
+      return hidden("invalid_bounds");
     }
-    return { x: left, y: top, width: right - left, height: bottom - top };
+    if (right <= left || bottom <= top) {
+      return hidden("outside_viewport");
+    }
+    return {
+      bounds: { x: left, y: top, width: right - left, height: bottom - top },
+      visibility: { visible: true, reason: "visible" } as PaneVisibility
+    };
+  }
+
+  function getPaneCaptureBounds(project: RendererProject, paneId: string) {
+    return resolvePanePresentation(project, paneId).bounds;
+  }
+
+  function getPaneVisibility(project: RendererProject, paneId: string): PaneVisibility {
+    return resolvePanePresentation(project, paneId).visibility;
   }
 
   function getWebAppByKey(key: string) {
@@ -135,6 +161,7 @@ export function createVisibleWebAppTracker({
     getEntryByKey,
     getEntryByUrl,
     getPaneCaptureBounds,
+    getPaneVisibility,
     getWebAppByKey,
     persistPaneLayoutForWebApp,
     reset,

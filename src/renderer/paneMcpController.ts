@@ -1,6 +1,7 @@
 import type { PaneLayoutNode, PaneNode } from "./paneLayoutState.js";
 import { buildPaneTypeCatalog } from "./paneTypeCatalog.js";
 import type { RendererProject, WebAppDefinition } from "./rendererTypes.js";
+import type { PaneVisibility } from "./visibleWebAppTracker.js";
 
 export type PaneMcpErrorCode =
   | "INVALID_REQUEST"
@@ -36,6 +37,7 @@ type PaneMcpControllerOptions = {
   getGlobalWorkspace: () => RendererProject;
   getMobileDevViewport: (webApp: WebAppDefinition) => PaneMobileViewport | null;
   getPaneCaptureBounds?: (project: RendererProject, paneId: string) => PaneCaptureBounds | null;
+  getPaneVisibility?: (project: RendererProject, paneId: string) => PaneVisibility;
   getProjectById: (projectId: string) => RendererProject | null | undefined;
   getProjectPaneLayout: (project: RendererProject) => PaneLayoutNode;
   getProjectWebApps: (project: RendererProject, paneId: string) => WebAppDefinition[];
@@ -157,6 +159,7 @@ export function createPaneMcpController({
   getGlobalWorkspace,
   getMobileDevViewport,
   getPaneCaptureBounds,
+  getPaneVisibility,
   getProjectById,
   getProjectPaneLayout,
   getProjectWebApps,
@@ -198,6 +201,7 @@ export function createPaneMcpController({
       choiceId: selectedWebApp.id || null,
       paneTypeId: getPaneTypeId(selectedWebApp),
       label: getChoiceLabel(selectedWebApp),
+      visibility: getPaneVisibility?.(project, node.id) || null,
       interaction: { available: Boolean(key && homeUrl) },
       viewport: getMobileDevViewport(selectedWebApp),
       navigation: {

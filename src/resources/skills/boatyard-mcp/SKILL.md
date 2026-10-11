@@ -97,6 +97,14 @@ Unknown projects are rejected before navigation with `PROJECT_NOT_FOUND`.
 2. If more than one window is available and the request does not identify one, summarize the choices and ask the user which window to use.
 3. Call `get_pane_layout` with the selected `contextId`, `windowId`, and `projectId`.
 4. Use the returned pane IDs, selected entries, and `revision` exactly as reported.
+   Each pane includes `visibility: { visible, reason }`. `visible: true` means
+   it currently has capturable bounds in the selected window. A false value
+   explains why: `covered` by an expansion, `inactive_project`, `not_rendered`,
+   `outside_viewport`, or `invalid_bounds`. This applies equally to Terminal,
+   widget, DOM and web panes. A listed pane is not necessarily visible.
+   Visibility is a current observation, separate from the structural layout
+   revision; refresh the layout before capturing. If this field is absent or null,
+   visibility is unknown rather than visible.
 5. Call `list_pane_types` with that same context, window, and project plus the target `paneId` before interpreting or changing that pane.
 
 For a read-only request, stop after inspection and report the relevant window, layout, pane, selected entry, and requested capability. Do not call `update_pane`, `navigate_pane`, `click_pane`, or `fill_pane` merely to verify that mutation works.

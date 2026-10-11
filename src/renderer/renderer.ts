@@ -795,6 +795,7 @@ const paneMcpController = createPaneMcpController({
   getGlobalWorkspace,
   getMobileDevViewport: (webApp) => paneLayoutView.describeMobileDevViewport(webApp),
   getPaneCaptureBounds: visibleWebApps.getPaneCaptureBounds,
+  getPaneVisibility: visibleWebApps.getPaneVisibility,
   getProjectById,
   getProjectPaneLayout,
   getProjectWebApps,
