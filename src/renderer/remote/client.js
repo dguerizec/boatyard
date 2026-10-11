@@ -33,13 +33,22 @@ import { requestRemoteApi } from "./api.js";
   const pointers = new Map();
   let gesture, down = false;
   const motion = new HugescreenMotion();
-  let mouseSample, passwordLogin = false, followLocal = false, localCursor = null;
+  let mouseSample, passwordLogin = false, followLocal = false, followRevision = 0, localCursor = null;
   const share = new URLSearchParams(location.hash.slice(1)).get('share');
   if (location.hash) history.replaceState(null, '', location.pathname + location.search);
   $('login').hidden = true;
+  function refreshWaitingScreen() {
+    const waiting = surface.classList.contains('screen-waiting');
+    const connecting = !surface.classList.contains('live') && /^(Connecting|Recovering live video|Connected)/.test($('status').textContent);
+    $('status').hidden = waiting;
+    $('screenWaitingCopy').hidden = !waiting;
+    $('waitingHint').textContent = waiting ? 'Your connection is active. Video will return when the host resumes sharing.' : 'Establishing the connection…';
+    $('waitingHint').hidden = $('waitingActivity').hidden = !waiting && !connecting;
+  }
   const status = message => {
     $('status').textContent = message; $('status').title = message;
     surface.classList.toggle('has-message', !message.startsWith('Connected'));
+    refreshWaitingScreen();
     $('loginStatus').textContent = message; $('loginStatus').hidden = authenticated || $('login').hidden;
   };
   const send = message => {
@@ -68,12 +77,12 @@ import { requestRemoteApi } from "./api.js";
     ['followMouse', 'fill', 'fit', 'fullscreen', 'zoomIn', 'zoomOut', 'keyboard'].forEach(id => { $(id).disabled = true; });
     setKeyboardOpen(false);
     peer?.close(); peer = null; channel = null;
-    diagnostics.reset(); video.srcObject = null; surface.classList.remove('live');
+    diagnostics.reset(); video.srcObject = null; surface.classList.remove('live', 'screen-waiting'); refreshWaitingScreen();
   }
   function reset(checkUpdate = true) {
     recovering = false; recovery.reset();
     closeTransport();
-    setFollowLocal(false); viewport = requested = null;
+    followRevision = 0; setFollowLocal(false); viewport = requested = null;
     ['followMouse', 'disconnect', 'fill', 'fit', 'fullscreen', 'zoomIn', 'zoomOut', 'keyboard'].forEach(id => { $(id).disabled = true; });
     setKeyboardOpen(false); $('connect').hidden = !authenticated;
     const id = sessionId; sessionId = null;
@@ -125,6 +134,7 @@ import { requestRemoteApi } from "./api.js";
     if (peer) return;
     const startedAt = generation;
     const selected = $('windows').selectedOptions[0]; if (!selected) return;
+    status(replaceTransport ? 'Recovering live video…' : 'Connecting…');
     if (!replaceTransport && (await clientUpdates.check() || peer)) return;
     try {
       const metadata = await api('/api/windows');
@@ -163,7 +173,12 @@ import { requestRemoteApi } from "./api.js";
         const point = message.cursor;
         localCursor = point && Number.isFinite(point.x) && Number.isFinite(point.y) && point.x >= 0 && point.y >= 0 && point.x < full.width && point.y < full.height ? point : null;
         applyFollowCursor(); drawLocalCursor();
-      } else if (message.kind === 'follow-error') { setFollowLocal(false); status(message.message); }
+      } else if (message.kind === 'follow-state') {
+        if (Number.isSafeInteger(message.revision) && message.revision >= followRevision && typeof message.enabled === 'boolean') {
+          followRevision = message.revision;
+          if (followLocal !== message.enabled) setFollowLocal(message.enabled, false);
+        }
+      } else if (message.kind === 'follow-error') { status(message.message); }
       else if (message.kind === 'ping') send({ kind: 'pong', sentAt: performance.now() });
       else if (message.kind === 'error') status(message.message);
     };
@@ -239,21 +254,24 @@ import { requestRemoteApi } from "./api.js";
     frameContext.drawImage(frameBuffer, 0, 0, width, height, 0, 0, width, height);
     diagnostics.setFrame(metadata.timestamp);
     diagnostics.observeFrame(metadata, 'Displayed');
-    viewport = camera; frame.dataset.revision = String(camera.revision); surface.classList.add('live'); drawLocalCursor();
-    if (mouseSample && !down && !gesture) pointer({ clientX: mouseSample.cursor.x + surface.getBoundingClientRect().left, clientY: mouseSample.cursor.y + surface.getBoundingClientRect().top, button: 0 }, 'move');
+    viewport = camera; frame.dataset.revision = String(camera.revision);
+    const waitingChanged = !surface.classList.contains('live') || surface.classList.contains('screen-waiting') !== metadata.screenHidden;
+    surface.classList.add('live'); surface.classList.toggle('screen-waiting', metadata.screenHidden);
+    if (waitingChanged) refreshWaitingScreen();
+    drawLocalCursor();
   }
   function updateViewerHint() {
     $('viewerHint').textContent = followLocal
       ? 'Following local mouse · Remote input paused · Pinch / wheel to zoom'
       : readOnly ? 'Drag to pan · Pinch / wheel to zoom' : 'One finger: interact · Two fingers: pan / pinch · Alt+drag: pan · Alt+wheel: zoom';
   }
-  function setFollowLocal(enabled) {
+  function setFollowLocal(enabled, notify = true) {
     release(); followLocal = enabled; localCursor = null;
     $('followMouse').setAttribute('aria-pressed', String(enabled));
     $('keyboard').disabled = enabled || readOnly || channel?.readyState !== 'open';
     if (enabled) $('textForm').hidden = true;
     $('localCursor').hidden = true; updateViewerHint();
-    send({ kind: 'follow-cursor', enabled });
+    if (notify) send({ kind: 'follow-cursor', enabled, revision: followRevision });
   }
   $('followMouse').title = 'Follow the local pointer. Remote input is paused while following.';
   $('followMouse').onclick = () => setFollowLocal(!followLocal);
@@ -322,10 +340,13 @@ import { requestRemoteApi } from "./api.js";
     const width = rect.width * scale, height = rect.height * scale;
     return { x: v.x + (v.width - width) / 2, y: v.y + (v.height - height) / 2, width, height };
   }
-  function zoom(factor) {
+  function zoom(factor, anchor) {
     if (!requested) return;
     const v = cameraView();
-    setView({ x: v.x + v.width * (1 - factor) / 2, y: v.y + v.height * (1 - factor) / 2, width: v.width * factor, height: v.height * factor });
+    const rect = surface.getBoundingClientRect();
+    const x = !followLocal && anchor ? Math.max(0, Math.min(1, (anchor.clientX - rect.left) / rect.width)) : .5;
+    const y = !followLocal && anchor ? Math.max(0, Math.min(1, (anchor.clientY - rect.top) / rect.height)) : .5;
+    setView({ x: v.x + v.width * (1 - factor) * x, y: v.y + v.height * (1 - factor) * y, width: v.width * factor, height: v.height * factor });
   }
   $('fit').onclick = () => { if (full) setView({ x: 0, y: 0, ...full }); };
   $('zoomIn').onclick = () => zoom(.8); $('zoomOut').onclick = () => zoom(1.25);
@@ -426,7 +447,7 @@ import { requestRemoteApi } from "./api.js";
     send({ kind: 'release' });
   };
   surface.onpointercancel = release;
-  surface.onwheel = event => { event.preventDefault(); if (event.altKey || readOnly || followLocal) zoom(event.deltaY > 0 ? 1.1 : .9); else pointer(event, 'wheel'); };
+  surface.onwheel = event => { event.preventDefault(); if (event.altKey || readOnly || followLocal) zoom(event.deltaY > 0 ? 1.1 : .9, event); else pointer(event, 'wheel'); };
   surface.addEventListener('wheel', surface.onwheel, { passive: false }); surface.onwheel = null;
   const keys = { ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down', ' ': 'Space' };
   function keyboard(event, action) {
@@ -444,6 +465,7 @@ import { requestRemoteApi } from "./api.js";
   const clientUpdates = startRemoteClientUpdates({ version: document.querySelector('meta[name="boatyard-client-version"]').content,
     installButton: $('install'), isConnected: () => Boolean(peer) });
   void (async () => {
+    status('Connecting…');
     try {
       passwordLogin = (await api('/api/auth')).passwordLogin;
       if (share) await api('/api/redeem', { token: share });

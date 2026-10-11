@@ -15,6 +15,7 @@ remoteHost.onMessage(message => {
   } else if (action === 'close') {
     connections.get(id)?.close(false); connections.delete(id);
   }
+  else if (action === 'follow-state') connections.get(id)?.follow(payload);
 });
 window.addEventListener('pagehide', () => { for (const connection of connections.values()) connection.close(); });
 function startConnection(id, offer, remoteHost) {
@@ -24,6 +25,7 @@ function startConnection(id, offer, remoteHost) {
   const context = canvas.getContext('2d', { alpha: false });
   let peer, channel, media, output, viewport, timer, heartbeat, cursorTimer, lostTimer;
   let cursorPending = false, followCursor = false;
+  let followRevision = -1, publishCursor;
   let commands;
   let active = true;
   let routePending = false, lastRoute, iceRestartPending = false, lastIceRestartAt = 0;
@@ -56,6 +58,15 @@ function startConnection(id, offer, remoteHost) {
     finally { routePending = false; }
   }
   const send = message => { if (active && channel?.readyState === 'open') channel.send(JSON.stringify(message)); };
+  function follow(state) {
+    if (!active || !state || state.revision < followRevision) return;
+    followRevision = state.revision; followCursor = state.enabled;
+    clearInterval(cursorTimer);
+    if (followCursor && publishCursor && channel?.readyState === 'open') {
+      void publishCursor(); cursorTimer = setInterval(publishCursor, 50);
+    }
+    send({ kind: 'follow-state', ...state });
+  }
   function close(notify = true) {
     if (!active) return;
     active = false;
@@ -129,7 +140,9 @@ function startConnection(id, offer, remoteHost) {
       paint(); timer = setInterval(paint, 1000 / 24);
       commands = new RemoteCommandQueue(async message => {
         if (!active) return;
-        if (message.kind === 'viewport') {
+        if (message.kind === 'follow-cursor') {
+          follow(await remoteHost.invoke('follow-cursor', message));
+        } else if (message.kind === 'viewport') {
           await remoteHost.invoke('input', { kind: 'release' });
           viewport = await remoteHost.invoke('viewport', message.viewport);
           if (active) { paint(); send(dimensions()); }
@@ -141,24 +154,25 @@ function startConnection(id, offer, remoteHost) {
         track.contentHint = 'detail';
         peer.addTrack(track, output);
       });
-      async function publishCursor() {
+      publishCursor = async () => {
         if (!active || !followCursor || cursorPending || channel?.readyState !== 'open' || channel.bufferedAmount > 16384) return;
         cursorPending = true;
         try {
           const cursor = await remoteHost.invoke('cursor');
           if (active && followCursor) send({ kind: 'cursor', cursor });
         } catch {
-          followCursor = false; clearInterval(cursorTimer);
+          clearInterval(cursorTimer);
           send({ kind: 'follow-error', message: 'Local pointer tracking is unavailable on this desktop.' });
         }
         finally { cursorPending = false; }
-      }
+      };
       peer.ondatachannel = event => {
         if (!active) return;
         channel = event.channel;
         channel.onopen = () => {
           if (!active) return;
           send(dimensions()); void publishRoute();
+          remoteHost.invoke('follow-state').then(follow).catch(close);
           heartbeat = setInterval(() => { send({ kind: 'ping' }); void publishRoute(); }, 3000);
         };
         channel.onclose = deferClose;
@@ -193,12 +207,6 @@ function startConnection(id, offer, remoteHost) {
               if (Number.isFinite(message.sentAt)) send({ kind: 'clock', sentAt: message.sentAt, hostAt: performance.now() });
               return;
             }
-            if (message.kind === 'follow-cursor') {
-              followCursor = message.enabled === true;
-              clearInterval(cursorTimer);
-              if (followCursor) { void publishCursor(); cursorTimer = setInterval(publishCursor, 50); }
-              return;
-            }
             commands.push(message);
           } catch { send({ kind: 'error', message: 'Invalid control message' }); }
         };
@@ -225,5 +233,5 @@ function startConnection(id, offer, remoteHost) {
       await remoteHost.invoke('answer', peer.localDescription.toJSON());
     } catch (error) { if (!active) return; await remoteHost.invoke('error', error.message).catch(() => {}); close(); }
   })();
-  return { close };
+  return { close, follow };
 }

@@ -9,7 +9,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, main:focus-visi
 label { display: flex; align-items: center; gap: 8px; } input { min-width: 0; } [hidden] { display: none !important; }
 main { position: relative; flex: 1; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; user-select: none; background: #080c13; }
 #frame { width: 100%; height: 100%; object-fit: contain; display: none; pointer-events: none; }
-main.live #frame { display: block; } main.live:not(.has-message) #placeholder { display: none; }
+main.live #frame { display: block; } main.live:not(.has-message):not(.screen-waiting) #placeholder { display: none; }
 #placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; color: #9caec5; pointer-events: none; }
 #videoDelay { position: absolute; top: 8px; right: 8px; padding: 4px 7px; border-radius: 4px; background: #10152166; color: #e4eaf4b3; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 #textForm label { flex: 1; } #text { flex: 1; }
@@ -35,3 +35,17 @@ footer { position: relative; flex: none; display: flex; flex-direction: column; 
 #connect { justify-content: center; }
 #diagnosticsPanel { position: absolute; bottom: 100%; left: 0; right: 0; margin: 0; padding: 12px; background: #192231; font: 12px/1.6 monospace; white-space: pre-wrap; pointer-events: auto; user-select: text; cursor: text; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+
+#placeholder { isolation: isolate; }
+#placeholder::before { content: ""; position: absolute; inset: 0; width: min(70%, 420px); height: 70%; margin: auto; background: url("waiting-screen.png") center / contain no-repeat; filter: grayscale(1); mix-blend-mode: screen; opacity: .1; z-index: -1; }
+.waiting-copy { position: relative; max-width: min(320px, 100%); }
+#screenWaitingCopy { font-size: 16px; font-weight: 500; color: #c5d3e4; }
+#waitingHint { position: absolute; top: calc(100% + 12px); left: 50%; transform: translateX(-50%); width: min(280px, 75vw); margin: 0; font-size: 13px; line-height: 1.5; }
+#waitingActivity { position: absolute; top: calc(100% + 70px); left: 50%; transform: translateX(-50%); display: flex; gap: 7px; }
+#waitingActivity i { width: 6px; height: 6px; border-radius: 50%; background: #a9bdd4; animation: waiting-dot 1.4s ease-in-out infinite; }
+#waitingActivity i:nth-child(2) { animation-delay: .2s; }
+#waitingActivity i:nth-child(3) { animation-delay: .4s; }
+main.screen-waiting #localCursor { display: none; }
+@keyframes waiting-dot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { #waitingActivity i { animation: none; opacity: .6; } }

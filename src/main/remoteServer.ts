@@ -15,6 +15,7 @@ const clientAssets: Record<string, [string, string]> = {
   "/": ["client.html", "text/html"],
   "/client.js": ["client.js", "text/javascript"],
   "/remote.css": ["remote.css", "text/css"],
+  "/waiting-screen.png": ["../assets/boatyard-mark-night-preview.png", "image/png"],
   "/manifest.json": ["manifest.json", "application/manifest+json"],
   "/icon-192.png": ["icon-192.png", "image/png"],
   "/icon-512.png": ["icon-512.png", "image/png"],

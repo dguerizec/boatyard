@@ -6,8 +6,9 @@ function layout(width: number) {
   return { cell, columns, height: Math.ceil(BYTE_COUNT * 8 / columns) * cell };
 }
 export function remoteFrameFooterHeight(width: number) { return layout(width).height; }
-export function writeRemoteFrameMetadata(context: CanvasRenderingContext2D, width: number, height: number, revision: number, timestamp: number) {
-  const bytes = [0xb0, 0xa8];
+export function writeRemoteFrameMetadata(context: CanvasRenderingContext2D, width: number, height: number, revision: number, timestamp: number, screenHidden = false) {
+  // Hidden frames use a distinct marker while retaining the same footer layout.
+  const bytes = [0xb0, screenHidden ? 0xa9 : 0xa8];
   let remaining = revision;
   for (let i = 0; i < 8; i++) { bytes.push(remaining % 256); remaining = Math.floor(remaining / 256); }
   remaining = Math.floor(timestamp);
@@ -22,7 +23,7 @@ export function writeRemoteFrameMetadata(context: CanvasRenderingContext2D, widt
     }
   }
 }
-export function readRemoteFrameMetadata(context: CanvasRenderingContext2D, width: number, height: number): { revision: number; timestamp: number } | null {
+export function readRemoteFrameMetadata(context: CanvasRenderingContext2D, width: number, height: number): { revision: number; timestamp: number; screenHidden: boolean } | null {
   const grid = layout(width);
   if (height <= grid.height) return null;
   const pixels = context.getImageData(0, height - grid.height, width, grid.height).data;
@@ -33,10 +34,10 @@ export function readRemoteFrameMetadata(context: CanvasRenderingContext2D, width
     const offset = (y * width + x) * 4;
     if (pixels[offset]! + pixels[offset + 1]! + pixels[offset + 2]! > 384) bytes[Math.floor(bit / 8)]! |= 1 << (bit % 8);
   }
-  if (bytes[0] !== 0xb0 || bytes[1] !== 0xa8 || bytes[16] !== bytes.slice(0, 16).reduce((sum, byte, index) => (sum + byte * (index + 1)) % 251, 0)) return null;
+  if (bytes[0] !== 0xb0 || (bytes[1] !== 0xa8 && bytes[1] !== 0xa9) || bytes[16] !== bytes.slice(0, 16).reduce((sum, byte, index) => (sum + byte * (index + 1)) % 251, 0)) return null;
   let revision = 0;
   for (let i = 9; i >= 2; i--) revision = revision * 256 + bytes[i]!;
   let timestamp = 0;
   for (let i = 15; i >= 10; i--) timestamp = timestamp * 256 + bytes[i]!;
-  return Number.isSafeInteger(revision) ? { revision, timestamp } : null;
+  return Number.isSafeInteger(revision) ? { revision, timestamp, screenHidden: bytes[1] === 0xa9 } : null;
 }

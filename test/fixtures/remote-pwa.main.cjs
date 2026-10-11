@@ -1,5 +1,5 @@
 const { BrowserWindow } = require('electron');
-const { cpSync, mkdtempSync, appendFileSync, rmSync } = require('node:fs');
+const { cpSync, mkdtempSync, appendFileSync, rmSync, mkdirSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 const assert = require('node:assert/strict');
@@ -8,8 +8,11 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 module.exports = async harness => {
   const directory = mkdtempSync(join(tmpdir(), 'boatyard-pwa-fixture-'));
-  cpSync(resolve('build/renderer/remote'), directory, { recursive: true });
-  const server = new RemoteServer({ assetsDirectory: directory, passwordHash: '', readOnly: true,
+  const remoteDirectory = join(directory, 'remote');
+  cpSync(resolve('build/renderer/remote'), remoteDirectory, { recursive: true });
+  mkdirSync(join(directory, 'assets'));
+  cpSync(resolve('build/renderer/assets/boatyard-mark-night-preview.png'), join(directory, 'assets/boatyard-mark-night-preview.png'));
+  const server = new RemoteServer({ assetsDirectory: remoteDirectory, passwordHash: '', readOnly: true,
     listWindows: () => [{id: "one", title: "One", width: 800, height: 600}, {id: "two", title: "Two", width: 800, height: 600}], connect: async () => { throw new Error('No fixture windows'); }, disconnect() {} });
   const port = await server.start(), invitation = server.createReadOnlyInvitation('PWA viewer');
   const client = new BrowserWindow({ show: false, webPreferences: { sandbox: true, backgroundThrottling: false } });
@@ -97,7 +100,7 @@ module.exports = async harness => {
     assert.equal(await client.webContents.executeJavaScript('document.getElementById("connect").hidden'), false, 'A proxy error keeps reconnection available');
     await client.webContents.executeJavaScript('window.fixtureProxyOffline=false');
     const before = await client.webContents.executeJavaScript('document.querySelector("meta[name=boatyard-client-version]").content');
-    appendFileSync(join(directory, 'remote.css'), '\nbody { background-color: rgb(33, 44, 55); }\n');
+    appendFileSync(join(remoteDirectory, 'remote.css'), '\nbody { background-color: rgb(33, 44, 55); }\n');
     await client.webContents.executeJavaScript('document.getElementById("connect").requestSubmit()');
     await until(`document.querySelector('meta[name=boatyard-client-version]').content !== ${JSON.stringify(before)} && document.getElementById('status').textContent === 'Choose a window'`);
     assert.equal(await client.webContents.executeJavaScript('getComputedStyle(document.body).backgroundColor'), 'rgb(33, 44, 55)', 'Actual reload applies the new stylesheet');

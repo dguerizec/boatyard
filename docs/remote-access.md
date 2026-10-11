@@ -211,6 +211,12 @@ dragging and touch gestures. Touch keeps explicit pan and pinch controls.
   normal controls. The camera stays where it is when the local pointer leaves
   the shared window; desktop coordinates are not transmitted. Local pointer
   tracking requires desktop pointer access (X11/XWayland on Linux).
+- Local mouse movement, clicks or key presses in the controlled Boatyard window
+  automatically enable **Follow mouse** on Remote. Held remote buttons and keys
+  are released before the local interaction, and remote input stays paused until
+  the remote user explicitly turns Follow mouse off. Activity in other windows
+  does not trigger this handover. An idle Remote viewer does not continuously
+  resend its pointer position as video frames arrive.
 - **Keyboard** opens mobile text entry with **Send** and **Enter**.
 - **Disconnect** ends the stream while keeping the browser signed in.
 

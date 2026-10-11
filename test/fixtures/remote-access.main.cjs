@@ -43,13 +43,22 @@ module.exports = async harness => {
   void (async () => {
     const invitation = readOnly ? service.server.createReadOnlyInvitation().token : "";
     // Install frame-observation hooks before the authenticated single-window auto-connect.
-    const pendingRequests = [];
+    const pendingRequests = [], pendingConnections = [];
     client.webContents.session.webRequest.onBeforeRequest({ urls: [`http://127.0.0.1:${port}/api/windows`] }, (_, callback) => pendingRequests.push(callback));
     await client.loadURL(`http://127.0.0.1:${port}/${readOnly ? `#share=${invitation}` : ""}`);
     // Keep input-coordinate fixtures at the source ratio; camera coverage below
     // exercises mismatched ratios explicitly instead of relying on window chrome.
     await client.webContents.executeJavaScript('Object.assign(document.getElementById("surface").style,{width:"800px",height:"600px",flex:"none"})');
     await client.webContents.executeJavaScript(`(() => {const create=RTCPeerConnection.prototype.createDataChannel;RTCPeerConnection.prototype.createDataChannel=function(...args){window.fixturePeer=this;const channel=create.apply(this,args);channel.addEventListener('message',event=>{const message=JSON.parse(event.data);if(message.kind==='viewport')window.remoteViewport=message.viewport;});Object.defineProperty(channel,'onmessage',{set(handler){channel.addEventListener('message',event=>{if(window.delayViewport && JSON.parse(event.data).kind==='viewport')setTimeout(()=>handler(event),window.delayViewport);else handler(event);});}});return channel;};})()`);
+    if (global.remoteFixtureInputHandover) await client.webContents.executeJavaScript(`(() => {
+      const create = RTCPeerConnection.prototype.createDataChannel;
+      RTCPeerConnection.prototype.createDataChannel = function(...args) {
+        const channel = create.apply(this, args), send = channel.send.bind(channel);
+        window.fixtureChannel = channel; window.sentControls = [];
+        channel.send = message => { window.sentControls.push(JSON.parse(message)); send(message); };
+        return channel;
+      };
+    })()`);
     if (global.remoteFixtureRenewal) await client.webContents.executeJavaScript(`(() => {
       const schedule = window.setTimeout;
       window.setTimeout = (callback, delay, ...args) => {
@@ -62,6 +71,7 @@ module.exports = async harness => {
       };
     })()`);
     client.webContents.session.webRequest.onBeforeRequest(null);
+    if (global.remoteFixturePrivacy) client.webContents.session.webRequest.onBeforeRequest({ urls: [`http://127.0.0.1:${port}/api/connect`] }, (_, callback) => pendingConnections.push(callback));
     pendingRequests.forEach(callback => callback({ cancel: false }));
     if (!readOnly) {
       await until('!document.getElementById("login").hidden', "password login");
@@ -76,6 +86,19 @@ module.exports = async harness => {
       await client.webContents.executeJavaScript('document.getElementById("connect").requestSubmit()');
     }
     if (readOnly && !await client.webContents.executeJavaScript('location.hash === "" && document.getElementById("login").hidden')) throw new Error('Read-only invitation must clear the fragment and skip password login');
+    if (global.remoteFixturePrivacy) {
+      await until('document.getElementById("status").textContent === "Connecting…" && !document.getElementById("waitingActivity").hidden', 'long connections show an animated waiting screen');
+      await sleep(500);
+      assert.ok(pendingConnections.length, 'Signaling remains pending during the waiting animation');
+      const waiting = await client.webContents.executeJavaScript(`(() => {
+        const panel=document.getElementById('placeholder'),dot=document.querySelector('#waitingActivity i');
+        return { visible:getComputedStyle(panel).display !== 'none', image:getComputedStyle(panel,'::before').backgroundImage,
+          animation:dot.getAnimations().some(animation=>animation.playState==='running') };
+      })()`);
+      assert.ok(waiting.visible && waiting.animation && waiting.image.includes('waiting-screen.png'), 'The connection screen reuses the Boatyard illustration and a running animation');
+      client.webContents.session.webRequest.onBeforeRequest(null);
+      pendingConnections.forEach(callback => callback({ cancel: false }));
+    }
     await until('document.getElementById("status").textContent.startsWith("Connected") && document.getElementById("video").videoWidth > 0', 'WebRTC video');
     if (global.remoteFixtureRenewal) {
       const before = connection(), requests = iceRequests;
@@ -112,6 +135,13 @@ module.exports = async harness => {
     await client.webContents.executeJavaScript('document.getElementById("diagnostics").click()');
     await until('!document.getElementById("videoDelay").hidden && /Video delay: \\d+ ms/.test(document.getElementById("videoDelay").textContent)', 'persistent video delay with the diagnostics panel closed');
     assert.equal(await client.webContents.executeJavaScript('getComputedStyle(document.getElementById("videoDelay")).pointerEvents'), 'none', 'Video delay does not intercept viewer gestures');
+    if (global.remoteFixtureInputHandover) {
+      await require('./remote-input-handover.cjs')({ target, native, client, service, connection, until });
+      await harness.webContents.executeJavaScript('window.browserTestResult="passed"');
+      await service.stop();
+      assert.equal(service.inputObservers.size, 0, 'Stopping Remote removes local input observers');
+      fixtureServer.close(); target.destroy(); client.destroy(); return;
+    }
     if (global.remoteFixtureRecovery) {
       const original = connection(), sender = original.sender;
       await client.webContents.executeJavaScript('window.originalPeer=window.fixturePeer');
@@ -176,10 +206,10 @@ module.exports = async harness => {
       const { execFileSync } = require('node:child_process');
       const bounds = target.getContentBounds();
       const moveLocal = (x, y) => execFileSync('xdotool', ['mousemove', '--', String(bounds.x + x), String(bounds.y + y)]);
+      assert.equal(await client.webContents.executeJavaScript('document.getElementById("followMouse").getAttribute("aria-pressed")'), String(readOnly), 'Only Share follows the mouse by default');
       moveLocal(20, 20);
       await target.webContents.executeJavaScript('document.getElementById("main").focus()');
-      assert.equal(await client.webContents.executeJavaScript('document.getElementById("followMouse").getAttribute("aria-pressed")'), String(readOnly), 'Only Share follows the mouse by default');
-      if (!readOnly) await client.webContents.executeJavaScript('document.getElementById("followMouse").click()');
+      if (!readOnly) await until('document.getElementById("followMouse").getAttribute("aria-pressed") === "true"', 'Local movement automatically enables follow on Remote');
       await until('!document.getElementById("localCursor").hidden', 'local cursor in Fit');
       assert.deepEqual(cameraBounds(connection().viewport), cameraBounds(fitCamera), 'Follow preserves the full Fit viewport');
       await client.webContents.executeJavaScript('document.getElementById("zoomIn").click()');
@@ -201,9 +231,14 @@ module.exports = async harness => {
       await until('document.getElementById("localCursor").hidden', 'cursor leaves shared content');
       assert.deepEqual(connection().viewport, followed, 'Leaving shared content preserves the camera');
       await client.webContents.executeJavaScript('document.getElementById("followMouse").click()');
-      moveLocal(20, 20); await sleep(150);
+      await until('document.getElementById("followMouse").getAttribute("aria-pressed") === "false"', 'explicit follow exit');
+      for (let i = 0; i < 50 && connection().following; i++) await sleep(20);
+      assert.equal(connection().following, false, 'The host acknowledges remote control before the next local gesture');
       assert.deepEqual(connection().viewport, followed, 'Disabling follow stops host-driven pan');
       assert.equal(await client.webContents.executeJavaScript('document.getElementById("keyboard").disabled'), readOnly, 'Leaving follow restores the session input permissions');
+      moveLocal(20, 20); await sleep(150);
+      if (!readOnly) await until('document.getElementById("followMouse").getAttribute("aria-pressed") === "true"', 'New local movement takes control again');
+      else assert.deepEqual(connection().viewport, followed, 'Share keeps its explicit follow preference');
       await service.stop(); fixtureServer.close(); target.destroy(); client.destroy();
       await harness.webContents.executeJavaScript('window.browserTestResult="passed"');
       return;
@@ -244,6 +279,26 @@ module.exports = async harness => {
         const camera = connection().viewport;
         assert.ok(Math.abs(camera.x-(800-camera.width)/2)<1 && Math.abs(camera.y-(600-camera.height)/2)<1, 'Fill centers the cropped source');
         assert.ok(Math.abs(camera.width-800)<1 || Math.abs(camera.height-600)<1, 'Fill retains the entire limiting source axis');
+        // Leave room on every edge so source bounds do not constrain the anchor.
+        for (let i = 0; i < 2; i++) {
+          await client.webContents.executeJavaScript('document.getElementById("zoomIn").click()');
+          await sleep(150);
+        }
+        for (const [deltaY, count] of [[-100, 3], [100, 1]]) {
+          const previous = { ...connection().viewport };
+          const factor = (deltaY < 0 ? .9 : 1.1) ** count;
+          await client.webContents.executeJavaScript(`(() => {
+            const s = document.getElementById('surface'), r = s.getBoundingClientRect();
+            for (let i = 0; i < ${count}; i++) s.dispatchEvent(new WheelEvent('wheel', {
+              clientX: r.left + r.width * .7, clientY: r.top + r.height * .3,
+              deltaY: ${deltaY}, altKey: true, bubbles: true, cancelable: true
+            }));
+          })()`);
+          await until(`Math.abs(window.remoteViewport?.width - ${previous.width * factor}) < 1 && Math.abs(document.getElementById('frame').width - ${previous.width * factor}) < 2`, 'cursor-anchored wheel zoom');
+          const next = connection().viewport;
+          assert.ok(Math.abs(next.x + next.width * .7 - previous.x - previous.width * .7) < 1, 'Alt+wheel preserves the source point under the viewer cursor horizontally');
+          assert.ok(Math.abs(next.y + next.height * .3 - previous.y - previous.height * .3) < 1, 'Alt+wheel preserves the source point under the viewer cursor vertically');
+        }
         for (const input of ['wheel', 'pinch']) {
           await fit();
           await client.webContents.executeJavaScript(`(() => {

@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, type WebContents } from "electron";
+import { app, BrowserWindow, screen, webContents, type Input, type MouseInputEvent, type WebContents } from "electron";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { MAX_SHARE_CLIENTS, RemoteServer, type RemoteOffer, type RemoteServerOptions } from "./remoteServer.js";
@@ -32,6 +32,7 @@ type Connection = {
   viewports: Map<number, RemoteViewport>;
   keyboard: WebContents;
   drag: RemoteInputTarget | null;
+  lastPointer: RemoteInputTarget | null;
   buttons: Set<"left" | "middle" | "right">;
   keys: Map<string, { contents: WebContents; modifiers: RemoteModifier[] }>;
   closeTarget(): void;
@@ -45,11 +46,17 @@ type Connection = {
   watchdog?: ReturnType<typeof setInterval>;
   route: RemoteConnectionRoute | null;
   iceTransportPolicy: RTCIceTransportPolicy;
+  following: boolean;
+  followRevision: number;
+  localPointer: { x: number; y: number };
 };
 
 export class RemoteAccessService {
   readonly server: RemoteServer;
   private readonly connections = new Map<string, Connection>();
+  private injecting = 0;
+  private readonly inputObservers = new Map<WebContents, () => void>();
+  private readonly observeCreated = (_event: unknown, contents: WebContents) => this.observeInput(contents);
   private readonly host = getRemoteStreamingHost();
   constructor(private readonly options: RemoteAccessOptions) {
     const serverOptions: RemoteServerOptions = {
@@ -65,6 +72,56 @@ export class RemoteAccessService {
       disconnect: id => this.disconnect(id)
     };
     this.server = new RemoteServer(serverOptions);
+    if (!options.readOnly) {
+      for (const contents of webContents.getAllWebContents()) this.observeInput(contents);
+      app.on("web-contents-created", this.observeCreated);
+    }
+  }
+  private observeInput(contents: WebContents) {
+    const local = (movement = false) => {
+      if (this.injecting) return;
+      for (const c of this.connections.values()) {
+        if (c.following || c.window.isDestroyed() || !this.options.canInput(c.windowId, contents)) continue;
+        if (movement) {
+          const point = screen.getCursorScreenPoint();
+          const previous = c.localPointer;
+          c.localPointer = point;
+          // Window focus can synthesize a stationary mouse move. Only physical
+          // pointer movement should take control away from the remote user.
+          if (point.x === previous.x && point.y === previous.y) continue;
+        }
+        c.following = true; c.followRevision++;
+        this.release(c);
+        this.host.send(c.id, "follow-state", this.followState(c));
+      }
+    };
+    const mouse = (_event: unknown, input: MouseInputEvent) => {
+      if (this.injecting) return;
+      if (input.type === "mouseDown") local();
+      else if (input.type === "mouseMove") local(true);
+    };
+    const key = (_event: unknown, input: Input) => { if (input.type === "keyDown") local(); };
+    const dispose = () => {
+      contents.removeListener("before-mouse-event", mouse);
+      contents.removeListener("before-input-event", key);
+      contents.removeListener("destroyed", dispose);
+      this.inputObservers.delete(contents);
+    };
+    contents.prependListener("before-mouse-event", mouse);
+    contents.prependListener("before-input-event", key);
+    contents.once("destroyed", dispose);
+    this.inputObservers.set(contents, dispose);
+  }
+  private followState(c: Connection) { return { enabled: c.following, revision: c.followRevision }; }
+  private inject(action: () => void) {
+    // Electron invokes its before-input observers synchronously during dispatch.
+    // Include focus and release events so they cannot be mistaken for local use.
+    this.injecting++;
+    try { action(); } finally { this.injecting--; }
+  }
+  private focus(c: Connection, contents: WebContents) {
+    c.localPointer = screen.getCursorScreenPoint();
+    this.inject(() => { c.window.focus(); contents.focus(); });
   }
   private handle(c: Connection, action: string, payload: unknown): unknown {
     if (this.connections.get(c.id) !== c) throw new Error("Remote connection unavailable");
@@ -101,10 +158,26 @@ export class RemoteAccessService {
       return viewport;
     }
     if (action === "input") { this.input(c, payload); return; }
+    if (action === "follow-state") return this.followState(c);
+    if (action === "follow-cursor") {
+      const request = payload as { enabled?: unknown; revision?: unknown } | null;
+      if (!request || typeof request.enabled !== "boolean") throw new Error("Invalid follow request");
+      // A toggle queued before local takeover cannot restore remote control.
+      if (request.revision === c.followRevision) {
+        c.following = request.enabled;
+        if (c.following) this.release(c);
+        else c.localPointer = screen.getCursorScreenPoint();
+      }
+      return this.followState(c);
+    }
     throw new Error("Unknown streaming action");
   }
   start() { return this.server.start(); }
-  async stop() { await this.server.stop(); }
+  async stop() {
+    await this.server.stop();
+    app.removeListener("web-contents-created", this.observeCreated);
+    for (const dispose of this.inputObservers.values()) dispose();
+  }
   private async setup(c: Connection) {
     // Request native window capture so sibling WebContentsViews are included
     // in the composed source, rather than selecting an individual page.
@@ -130,8 +203,9 @@ export class RemoteAccessService {
     const c: Connection = { id, window: target.window, windowId: target.id,
       viewport: { x: 0, y: 0, width, height, revision: 0 }, keyboard: target.window.webContents,
       viewports: new Map([[0, { x: 0, y: 0, width, height, revision: 0 }]]),
-      drag: null, buttons: new Set(), keys: new Map(), closeTarget, resolve, reject, route: null, iceTransportPolicy: this.options.getIceTransportPolicy?.() ?? "all",
-      timeout: setTimeout(() => { reject(new Error("Streaming setup timed out")); this.disconnect(id); }, 25000), heartbeat: Date.now(), epoch: 0, recovering: false, recoveredAt: -Infinity };
+      drag: null, lastPointer: null, buttons: new Set(), keys: new Map(), closeTarget, resolve, reject, route: null, iceTransportPolicy: this.options.getIceTransportPolicy?.() ?? "all",
+      timeout: setTimeout(() => { reject(new Error("Streaming setup timed out")); this.disconnect(id); }, 25000), heartbeat: Date.now(), epoch: 0, recovering: false, recoveredAt: -Infinity,
+      following: this.options.readOnly === true, followRevision: 0, localPointer: screen.getCursorScreenPoint() };
     this.connections.set(id, c);
     target.window.once("closed", closeTarget);
     target.window.on("resize", closeTarget);
@@ -171,9 +245,10 @@ export class RemoteAccessService {
     const input = parseRemoteInput(value);
     if (input.kind === "release") { this.release(c); return; }
     if (this.options.readOnly) throw new Error("Remote access is read-only.");
+    if (c.following) return;
     if (!this.options.canInput(c.windowId, c.keyboard)) { this.release(c); c.keyboard = c.window.webContents; }
     if (input.kind === "text") {
-      if (!c.keyboard.isDestroyed()) { c.window.focus(); c.keyboard.focus(); c.keyboard.insertText(input.text); }
+      if (!c.keyboard.isDestroyed()) { this.focus(c, c.keyboard); this.inject(() => c.keyboard.insertText(input.text)); }
       return;
     }
     if (input.kind === "key") {
@@ -181,11 +256,11 @@ export class RemoteAccessService {
       const contents = held?.contents || c.keyboard;
       if (contents.isDestroyed()) return;
       if (input.action === "down" && c.keys.size >= 32 && !held) throw new Error("Too many held keys");
-      c.window.focus(); contents.focus();
-      contents.sendInputEvent({ type: input.action === "down" ? "keyDown" : "keyUp", keyCode: input.key, modifiers: input.modifiers });
+      this.focus(c, contents);
+      this.inject(() => contents.sendInputEvent({ type: input.action === "down" ? "keyDown" : "keyUp", keyCode: input.key, modifiers: input.modifiers }));
       // Enter needs its character event for form submission and newlines.
       if (input.action === "down" && ["Enter", "Return"].includes(input.key) && input.modifiers.every(modifier => modifier === "shift")) {
-        contents.sendInputEvent({ type: "char", keyCode: "\r", modifiers: input.modifiers });
+        this.inject(() => contents.sendInputEvent({ type: "char", keyCode: "\r", modifiers: input.modifiers }));
       }
       if (input.action === "down") c.keys.set(input.key, { contents, modifiers: input.modifiers });
       else c.keys.delete(input.key);
@@ -199,8 +274,9 @@ export class RemoteAccessService {
     const hit = this.options.target(c.windowId, point.x, point.y);
     const target = c.drag ? { ...c.drag, x: c.drag.x + point.x, y: c.drag.y + point.y } : hit;
     if (!this.options.canInput(c.windowId, target.contents)) { this.release(c); return; }
+    c.lastPointer = target;
     if (input.action === "down") {
-      c.window.focus(); target.contents.focus(); c.keyboard = target.contents;
+      this.focus(c, target.contents); c.keyboard = target.contents;
       c.drag = { contents: target.contents, x: target.x - point.x, y: target.y - point.y };
       c.buttons.add(input.button);
     }
@@ -208,20 +284,23 @@ export class RemoteAccessService {
     const buttonModifiers = { left: "leftbuttondown", middle: "middlebuttondown", right: "rightbuttondown" } as const;
     const modifiers = [...c.buttons].map(button => buttonModifiers[button]);
     // Electron's native wheel deltas use the opposite sign to DOM WheelEvent.
-    if (input.action === "wheel") target.contents.sendInputEvent({ type: "mouseWheel", x: target.x, y: target.y, deltaX: -input.deltaX, deltaY: -input.deltaY, canScroll: true });
-    else target.contents.sendInputEvent({ type: input.action === "down" ? "mouseDown" : input.action === "up" ? "mouseUp" : "mouseMove", x: target.x, y: target.y, button: input.button, clickCount: 1, modifiers });
+    this.inject(() => {
+      if (input.action === "wheel") target.contents.sendInputEvent({ type: "mouseWheel", x: target.x, y: target.y, deltaX: -input.deltaX, deltaY: -input.deltaY, canScroll: true });
+      else target.contents.sendInputEvent({ type: input.action === "down" ? "mouseDown" : input.action === "up" ? "mouseUp" : "mouseMove", x: target.x, y: target.y, button: input.button, clickCount: 1, modifiers });
+    });
     if (input.action === "up" && !c.buttons.size) c.drag = null;
   }
   private release(c: Connection) {
     for (const [key, held] of c.keys) {
-      if (!held.contents.isDestroyed()) held.contents.sendInputEvent({ type: "keyUp", keyCode: key, modifiers: held.modifiers });
+      if (!held.contents.isDestroyed()) this.inject(() => held.contents.sendInputEvent({ type: "keyUp", keyCode: key, modifiers: held.modifiers }));
     }
     c.keys.clear();
     for (const button of c.buttons) {
       const contents = c.drag?.contents || c.keyboard;
-      if (!contents.isDestroyed()) contents.sendInputEvent({ type: "mouseUp", x: -1, y: -1, button, clickCount: 1 });
+      const point = c.lastPointer || { x: -1, y: -1 };
+      if (!contents.isDestroyed()) this.inject(() => contents.sendInputEvent({ type: "mouseUp", x: point.x, y: point.y, button, clickCount: 1 }));
     }
-    c.buttons.clear(); c.drag = null;
+    c.buttons.clear(); c.drag = null; c.lastPointer = null;
   }
   private disconnect(id?: string) {
     if (!id) { for (const key of [...this.connections.keys()]) this.disconnect(key); return; }

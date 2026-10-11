@@ -5,7 +5,7 @@ import { RemoteServer } from "../src/main/remoteServer";
 import { request } from "node:http";
 import { resolve } from "node:path";
 import { networkInterfaces } from "node:os";
-import { cpSync, mkdtempSync, appendFileSync, rmSync, readFileSync, statSync } from "node:fs";
+import { cpSync, mkdtempSync, appendFileSync, rmSync, readFileSync, statSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -62,8 +62,11 @@ test("Share authentication has no time limit and is invalidated by stopping the 
 
 test("remote PWA assets are public, uncached and versioned by their content", async t => {
   const directory = mkdtempSync(join(tmpdir(), "boatyard-client-version-"));
-  cpSync(resolve("src/renderer/remote"), directory, { recursive: true });
-  const server = new RemoteServer({ assetsDirectory: directory, passwordHash: "", readOnly: true,
+  const remoteDirectory = join(directory, "remote");
+  cpSync(resolve("src/renderer/remote"), remoteDirectory, { recursive: true });
+  mkdirSync(join(directory, "assets"));
+  cpSync(resolve("src/renderer/assets/boatyard-mark-night-preview.png"), join(directory, "assets/boatyard-mark-night-preview.png"));
+  const server = new RemoteServer({ assetsDirectory: remoteDirectory, passwordHash: "", readOnly: true,
     listWindows: () => [], connect: async () => ({ sessionId: "fixture", type: "answer", sdp: "v=0" }), disconnect() {} });
   const port = await server.start();
   t.after(async () => { await server.stop(); rmSync(directory, { recursive: true, force: true }); });
@@ -92,7 +95,10 @@ test("remote PWA assets are public, uncached and versioned by their content", as
     assert.equal(png.readUInt32BE(16), size); assert.equal(png.readUInt32BE(20), size);
   }
   assert.equal((await fetch(`${endpoint}/apple-touch-icon.png`)).status, 200);
-  appendFileSync(join(directory, "remote.css"), "\n/* Fixture update. */\n");
+  const waiting = await fetch(`${endpoint}/waiting-screen.png`);
+  assert.equal(waiting.headers.get("content-type"), "image/png");
+  assert.deepEqual(Buffer.from(await waiting.arrayBuffer()), readFileSync(resolve("src/renderer/assets/boatyard-mark-night-preview.png")));
+  appendFileSync(join(remoteDirectory, "remote.css"), "\n/* Fixture update. */\n");
   const changed = await version();
   assert.notEqual(changed, first, "Changing client assets updates the version without restarting the service");
   assert.ok((await (await fetch(endpoint)).text()).includes(`content="${await version()}"`));

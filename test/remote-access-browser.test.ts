@@ -21,6 +21,15 @@ test("native window chrome is excluded from video and pointer coordinates at eve
   });
 });
 
+test("local input forces Remote to follow while an idle or unrelated viewer cannot interfere", t => {
+  if (process.platform !== "linux" || ["xdotool", "xvfb-run"].some(command => spawnSync("which", [command]).status !== 0)) {
+    t.skip("Local input coverage requires Linux, xdotool and an isolated Xvfb display"); return;
+  }
+  runBrowserTest(t, "test/fixtures/remote-access.browser.js", {
+    main: "test/fixtures/remote-input-handover.main.cjs", preload: "test/fixtures/remote-access.preload.cjs", timeoutMs: 45000
+  });
+});
+
 test("zoom removes Fit letterboxing and Fill covers portrait and landscape viewers", t => {
   runBrowserTest(t, "test/fixtures/remote-access.browser.js", {
     main: "test/fixtures/remote-camera.main.cjs", preload: "test/fixtures/remote-access.preload.cjs", timeoutMs: 45000
