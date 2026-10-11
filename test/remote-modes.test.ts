@@ -18,11 +18,13 @@ test("Remote and Share start independently, fix their permissions and reject con
   }));
   const manager = new RemoteAccessManager({ remote: make("remote"), share: make("share") });
   await manager.configure("remote", { enabled: true, password: "fixture-password", publicOrigin: "https://remote.example.com", readOnly: true });
-  await assert.rejects(manager.configure("share", { enabled: true }), /Add a client/);
+  await manager.configure("share", { enabled: true });
+  assert.equal(manager.getStatus("share").listening, true, "Explicit start does not require an invitation");
+  await manager.configure("share", { enabled: false });
   await manager.configure("share", { publicOrigin: "https://share.example.com", readOnly: false });
   assert.equal(manager.getStatus("share").listening, false);
   assert.equal((await manager.createReadOnlyLink("Viewer")).id, "viewer");
-  assert.deepEqual(events, ["start:remote:false", "start:share:true"]);
+  assert.deepEqual(events, ["start:remote:false", "start:share:true", "stop:share", "start:share:true"]);
   assert.equal(manager.getStatus("share").port, 47832);
   assert.equal(manager.getStatus("remote").listening, true); assert.equal(manager.getStatus("share").listening, true);
   assert.equal((await manager.createReadOnlyLink("Viewer")).id, "viewer");
@@ -63,7 +65,7 @@ test("Share survives viewer disconnections and explicit Stop closes the sharing 
   const post = (url: string, body: unknown, cookie = "") => fetch(url, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(body) });
   async function connect(link: string) {
     const url = new URL(link), token = url.hash.slice("#share=".length);
-    const login = await post(`${url.origin}/api/redeem`, { token });
+    const login = await post(`${url.origin}/api/redeem`, { token, label: "Guest" });
     const cookie = login.headers.get("set-cookie")!.split(";")[0];
     const answer = await post(`${url.origin}/api/connect`, { windowId: "window", type: "offer", sdp: "v=0\r\n" }, cookie);
     return { origin: url.origin, cookie, sessionId: (await answer.json()).sessionId };
@@ -89,4 +91,31 @@ test("Share survives viewer disconnections and explicit Stop closes the sharing 
   await manager.revokeClient(client.id); await manager.revokeClient("queue-barrier");
   assert.equal(manager.getStatus("share").listening, false, "Revoking the final invited client stops Share");
   assert.ok(pending.urls.length);
+});
+
+test("Group admission and join requests start Share and keep it available without participants", async t => {
+  const root = mkdtempSync(join(tmpdir(), "boatyard-share-admission-")); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const stores = await loadRemoteAccessSettings(root);
+  let manager: RemoteAccessManager, server!: RemoteServer;
+  const remote = new RemoteAccessController(stores.remote, settings => ({ async start() { return settings.port; }, async stop() {}, server: { getConnectionOrigins: () => [] } }));
+  const share = new RemoteAccessController(stores.share, () => {
+    server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash: "", readOnly: true,
+      listWindows: () => [], connect: async () => ({ sessionId: "fixture", type: "answer", sdp: "v=0" }), disconnect() {},
+      clientsChanged: () => manager.clientsChanged("share") });
+    return { server, start: () => server.start(), stop: () => server.stop() };
+  });
+  manager = new RemoteAccessManager({ remote, share }); t.after(() => manager.stop());
+  const started = await manager.configureShareAccess({ groupEnabled: true });
+  assert.equal(started.listening, true); assert.equal(started.clients.length, 0); assert.match(started.shareAccess!.groupCode, /^\d{6}$/);
+  const invitation = await manager.createReadOnlyLink("Alice");
+  const status = manager.getStatus("share");
+  assert.deepEqual(status.clients[0].urls, invitation.urls, "The host can resend the same invitation from authoritative status");
+  assert.equal(status.clients[0].code, invitation.code);
+  await manager.revokeClient(invitation.id!); await manager.revokeClient("queue-barrier");
+  assert.equal(manager.getStatus("share").listening, true, "Open admission keeps Share listening after the last participant is removed");
+  await manager.configure("share", { enabled: false });
+  assert.equal(manager.getStatus("share").shareAccess, undefined);
+  const requests = await manager.configureShareAccess({ allowJoinRequests: true });
+  assert.equal(requests.shareAccess!.groupEnabled, false, "A new sharing session does not retain its former group code");
+  assert.equal(requests.shareAccess!.allowJoinRequests, true);
 });

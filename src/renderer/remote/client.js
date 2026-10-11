@@ -6,6 +6,7 @@ import { createToolIcon } from "../toolIcons.js";
 import { startRemoteClientUpdates } from "./clientUpdates.js";
 import { startRemoteDiagnostics } from "./diagnostics.js";
 import { RemoteConnectionRecovery, preferLowLatency } from './recovery.js';
+import { createShareJoin } from "./shareJoin.js";
 import { requestRemoteApi } from "./api.js";
 
 (() => {
@@ -55,15 +56,18 @@ import { requestRemoteApi } from "./api.js";
     if ((readOnly || followLocal) && ['pointer', 'key', 'text'].includes(message.kind)) return;
     if (channel?.readyState === 'open' && channel.bufferedAmount < 65536) channel.send(JSON.stringify(message));
   };
+  let shareJoin;
   const api = async (path, body) => {
     const { response, value } = await requestRemoteApi(path, body);
     if (response.status === 401 && authenticated) {
       authenticated = false; reset(); document.body.classList.remove('authenticated');
       $('login').hidden = !passwordLogin; $('logout').hidden = true;
+      if (!passwordLogin) { shareJoin.hideAccess(); shareJoin.show(value.error); status(value.error); }
     }
-    if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
+    if (!response.ok) { const error = new Error(value.error || `HTTP ${response.status}`); error.status = response.status; throw error; }
     return value;
   };
+  shareJoin = createShareJoin({ api, joined: loadWindows, initialCode: share });
   function release() {
     mouseSample = null; cancelAnimationFrame(moveFrame); moveFrame = null; lastMove = null;
     send({ kind: 'release' }); pointerViewport = null; down = false; pointers.clear(); gesture = null;
@@ -101,6 +105,7 @@ import { requestRemoteApi } from "./api.js";
     $('windows').hidden = result.windows.length <= 1;
     $('windows').closest('label').hidden = result.windows.length <= 1;
     $('connect').hidden = result.windows.length === 1; $('login').hidden = true; $('logout').hidden = false;
+    shareJoin.participant(result.participant);
     updateViewerHint();
     status(result.windows.length ? 'Choose a window' : 'No windows available');
     if (result.windows.length === 1) $('connect').requestSubmit();
@@ -119,7 +124,7 @@ import { requestRemoteApi } from "./api.js";
     try { await api('/api/logout', {}); } catch (error) { status(error.message); }
     authenticated = false; document.body.classList.remove('authenticated');
     $('login').hidden = !passwordLogin; $('logout').hidden = true; if (passwordLogin) $('password').focus();
-    else status('Ask for a new read-only share link to sign in again.');
+    else { shareJoin.hideAccess(); shareJoin.show('Enter your code to join again.'); status('Enter your code to join again.'); }
   };
   $('connect').onsubmit = event => { event.preventDefault(); void connectStream(); };
   async function recoverStream() {
@@ -467,12 +472,17 @@ import { requestRemoteApi } from "./api.js";
   void (async () => {
     status('Connecting…');
     try {
-      passwordLogin = (await api('/api/auth')).passwordLogin;
-      if (share) await api('/api/redeem', { token: share });
-      await loadWindows();
+      const auth = await api('/api/auth'); passwordLogin = auth.passwordLogin; shareJoin.configure(auth);
+      if (!passwordLogin && share) { shareJoin.show(); return; }
+      try { await loadWindows(); }
+      catch (error) {
+        if (!passwordLogin && error.status === 401 && shareJoin.resumeRequest()) return;
+        throw error;
+      }
     } catch (error) {
-      $('login').hidden = !passwordLogin || Boolean(share);
-      status(share ? error.message : passwordLogin ? 'Sign in to connect.' : 'Open your one-use read-only share link.');
+      $('login').hidden = !passwordLogin;
+      if (!passwordLogin) shareJoin.show();
+      status(passwordLogin ? 'Sign in to connect.' : 'Enter your access code or ask to join.');
     }
   })();
 })();

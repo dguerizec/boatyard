@@ -15,9 +15,9 @@ main.live #frame { display: block; } main.live:not(.has-message):not(.screen-wai
 #textForm label { flex: 1; } #text { flex: 1; }
 @media (max-width: 600px) { #login label { width: 100%; } #password { flex: 1; } #textForm label { width: 100%; } }
 
-body:has(#login:not([hidden])) #surface, body:not(.authenticated) #connect { display: none; }
-#login { margin: auto; width: min(420px, 100%); padding: 28px; border-radius: 10px; flex-direction: column; align-items: stretch; }
-#login h1 { font-size: 20px; margin: 0 0 12px; } #login label { flex-direction: column; align-items: stretch; }
+body:has(#shareJoin:not([hidden])) #surface, body:has(#login:not([hidden])) #surface, body:not(.authenticated) #connect { display: none; }
+#login, #shareJoin { margin: auto; width: min(420px, 100%); padding: 28px; border-radius: 10px; flex-direction: column; align-items: stretch; }
+#login h1, #shareJoin h1 { font-size: 20px; margin: 0 0 12px; } #login label, #shareJoin label { flex-direction: column; align-items: stretch; }
 #loginStatus { margin: 0; }
 
 #followMouse[aria-pressed="true"], #fullscreen[aria-pressed="true"], #keyboard[aria-pressed="true"] { background: #315d86; border-color: #75b9ff; }
@@ -49,3 +49,18 @@ footer { position: relative; flex: none; display: flex; flex-direction: column; 
 main.screen-waiting #localCursor { display: none; }
 @keyframes waiting-dot { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-4px); } }
 @media (prefers-reduced-motion: reduce) { #waitingActivity i { animation: none; opacity: .6; } }
+
+#shareJoin { overflow-y: auto; flex-shrink: 1; }
+#shareJoinStatus { margin: 0; color: #c5d3e4; }
+#accessCode, #personalCode { font-variant-numeric: tabular-nums; letter-spacing: .12em; }
+#participantAccess { max-width: min(420px, calc(100% - 24px)); border: 1px solid #41516b; border-radius: 10px; background: #192231; color: inherit; padding: 24px; }
+#participantAccess::backdrop { background: #0009; }
+#participantAccess h2 { margin-top: 0; }
+#participantAccess div { display: flex; gap: 8px; flex-wrap: wrap; }
+#personalCode { display: block; font-size: 28px; user-select: text; }
+
+#participantAccess label { flex-direction: column; align-items: stretch; margin: 12px 0; }
+
+#shareJoinModes { display: flex; gap: 8px; }
+#shareJoinModes button { flex: 1; }
+#shareJoinModes button[aria-pressed="true"] { background: #315d86; border-color: #75b9ff; }

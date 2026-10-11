@@ -48,7 +48,7 @@ test("Share authentication has no time limit and is invalidated by stopping the 
     listWindows: () => [], connect: async () => ({ sessionId: "fixture", type: "answer", sdp: "v=0" }), disconnect() {} });
   const endpoint = `http://127.0.0.1:${await server.start()}`; t.after(() => server.stop());
   const invitation = server.createReadOnlyInvitation();
-  const response = await fetch(`${endpoint}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: invitation.token }) });
+  const response = await fetch(`${endpoint}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: invitation.token, label: invitation.label || "Guest" }) });
   const cookie = response.headers.get("set-cookie")!.split(";")[0];
   const originalNow = Date.now;
   try {
@@ -178,7 +178,7 @@ test("remote server accepts its LAN address while retaining authentication and o
   assert.equal((await fetch(origin)).status, 200);
   assert.equal((await fetch(`${origin}/api/windows`)).status, 401);
   assert.equal((await fetch(`${origin}/api/login`, { method: "POST", headers: { "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ password: "fixture-password" }) })).status, 401);
-  const login = await fetch(`${origin}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ token: server.createReadOnlyInvitation().token }) });
+  const login = await fetch(`${origin}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json", Origin: origin }, body: JSON.stringify({ token: server.createReadOnlyInvitation().token, label: "LAN guest" }) });
   assert.equal(login.status, 200);
   const headers = { Cookie: login.headers.get("set-cookie")!.split(";")[0], Origin: origin };
   const windows = await fetch(`${origin}/api/windows`, { headers });
@@ -188,49 +188,46 @@ test("remote server accepts its LAN address while retaining authentication and o
 });
 
 
-test("read-only links are passwordless, consumed once, individually revoked and cleared on stop", async t => {
-  const server = new RemoteServer({
-    assetsDirectory: resolve("src/renderer/remote"), passwordHash: "", readOnly: true,
+test("Share codes require names, survive reuse and time, and are individually revoked or cleared on stop", async t => {
+  let next = 0;
+  const disconnected: (string | undefined)[] = [];
+  const server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash: "", readOnly: true,
     listWindows: () => [{ id: "window", title: "Fixture", width: 800, height: 600 }],
-    connect: async () => ({ sessionId: "session", type: "answer", sdp: "v=0\r\n" }), disconnect() {}
-  });
-  const port = await server.start(); t.after(() => server.stop());
-  const origin = `http://127.0.0.1:${port}`;
-  const post = (path: string, body: unknown) => fetch(`${origin}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  assert.deepEqual(await (await fetch(`${origin}/api/auth`)).json(), { passwordLogin: false });
+    connect: async () => ({ sessionId: `session-${++next}`, type: "answer", sdp: "v=0" }), disconnect: id => disconnected.push(id) });
+  const origin = `http://127.0.0.1:${await server.start()}`; t.after(() => server.stop());
+  const post = (path: string, body: unknown, cookie = "") => fetch(`${origin}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(body) });
+  const invitation = server.createReadOnlyInvitation(), other = server.createReadOnlyInvitation("Bob");
+  assert.equal(server.getClients()[0].label, "", "The host may leave the name for the participant");
+  assert.match(invitation.token, /^\d{6}$/); assert.notEqual(invitation.token, other.token);
+  assert.ok(!JSON.stringify(server.getClients()).includes(invitation.token), "Public client metadata excludes codes");
+  assert.equal((await post("/api/redeem", invitation)).status, 400, "Unnamed access cannot connect");
+  assert.equal((await post("/api/redeem", { token: invitation.token, label: " " })).status, 400);
   assert.equal((await post("/api/login", { password: "anything" })).status, 401);
-  const unnamed = server.createReadOnlyInvitation(" "), nextUnnamed = server.createReadOnlyInvitation();
-  assert.deepEqual(server.getClients().map(client => client.label), ["Viewer 1", "Viewer 2"]);
-  server.revokeClient(unnamed.id); server.revokeClient(nextUnnamed.id);
-  const afterRemoval = server.createReadOnlyInvitation();
-  assert.equal(server.getClients()[0].label, "Viewer 3", "Numbers are not reused after revocation");
-  server.revokeClient(afterRemoval.id);
-  const old = server.createReadOnlyInvitation("Old viewer"), invitation = server.createReadOnlyInvitation("New viewer");
-  assert.equal(server.getClients().length, 2);
-  assert.ok(!JSON.stringify(server.getClients()).includes(invitation.token));
-  server.revokeClient(old.id);
-  assert.ok(invitation.expiresAt > Date.now() && invitation.expiresAt <= Date.now() + 15 * 60 * 1000);
-  assert.equal((await post("/api/redeem", { token: old.token })).status, 401);
-  assert.equal((await post("/api/redeem", { token: "wrong" })).status, 401);
-  // Loading the page does not consume the invitation (e.g. a link preview).
-  assert.equal((await fetch(`${origin}/#share=${invitation.token}`)).status, 200);
-  const results = await Promise.all([post("/api/redeem", invitation), post("/api/redeem", invitation)]);
-  assert.deepEqual(results.map(result => result.status).sort(), [200, 401]);
-  const login = results.find(result => result.status === 200)!;
-  assert.deepEqual(await login.json(), { authenticated: true });
-  const headers = { Cookie: login.headers.get("set-cookie")!.split(";")[0] };
-  assert.equal((await (await fetch(`${origin}/api/windows`, { headers })).json()).readOnly, true);
-  const expiring = server.createReadOnlyInvitation();
+  const preview = await post("/api/share/preview", { token: other.token });
+  assert.equal((await preview.json()).label, "Bob");
+  assert.equal((await fetch(`${origin}/#share=${invitation.token}`)).status, 200, "Opening a link does not take over access");
+  const first = await post("/api/redeem", { token: invitation.token, label: "Alice" });
+  const cookie = first.headers.get("set-cookie")!.split(";")[0];
+  await post("/api/connect", { windowId: "window", type: "offer", sdp: "v=0" }, cookie);
   const originalNow = Date.now;
   try {
-    Date.now = () => expiring.expiresAt + 1;
-    assert.equal((await post("/api/redeem", expiring)).status, 401);
+    Date.now = () => originalNow() + 30 * 24 * 60 * 60 * 1000;
+    const second = await post("/api/redeem", { token: invitation.token.slice(0, 3) + " " + invitation.token.slice(3), label: "Alice" });
+    assert.equal(second.status, 200, "Codes remain valid throughout the sharing session");
+    assert.equal((await fetch(`${origin}/api/windows`, { headers: { Cookie: cookie } })).status, 401, "Old authentication cannot reconnect");
+    assert.deepEqual(disconnected, ["session-1"]);
+    assert.equal(server.getClients().length, 2, "A device transfer preserves identity");
   } finally { Date.now = originalNow; }
-  const revoked = server.createReadOnlyInvitation();
+  const results = await Promise.all([post("/api/redeem", { token: invitation.token, label: "Alice" }), post("/api/redeem", { token: invitation.token, label: "Alice" })]);
+  assert.deepEqual(results.map(result => result.status), [200, 200]);
+  const statuses = await Promise.all(results.map(result => fetch(`${origin}/api/windows`, { headers: { Cookie: result.headers.get("set-cookie")!.split(";")[0] } }).then(response => response.status)));
+  assert.deepEqual(statuses.sort(), [200, 401], "Concurrent admissions leave only one authenticated browser");
+  server.revokeClient(invitation.id);
+  assert.equal((await post("/api/redeem", { token: invitation.token, label: "Alice" })).status, 401);
+  assert.equal((await post("/api/redeem", { token: other.token })).status, 200, "Revocation leaves other access intact");
   await server.stop();
-  const newPort = await server.start();
-  assert.equal((await fetch(`http://127.0.0.1:${newPort}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(revoked) })).status, 401);
-  assert.equal((await fetch(`http://127.0.0.1:${newPort}/api/windows`, { headers })).status, 401);
+  const restarted = `http://127.0.0.1:${await server.start()}`;
+  assert.equal((await fetch(`${restarted}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: other.token, label: "Bob" }) })).status, 401);
 });
 
 test("Share isolates concurrent clients, accepts independent invites and revokes one without affecting others", async t => {
@@ -269,7 +266,8 @@ test("Share isolates concurrent clients, accepts independent invites and revokes
   assert.equal((await fetch(`${origin}/api/windows`, { headers: { Cookie: a } })).status, 200);
   assert.deepEqual(server.getClients().map(client => client.label), ["Alice"]);
   await post("/api/logout", {}, a);
-  assert.equal(server.getClients().length, 0);
+  assert.equal(server.getClients().length, 1, "Sign out preserves the personal invitation");
+  assert.equal(server.getClients()[0].state, "invited");
   assert.deepEqual(disconnected, [secondAnswer.sessionId, firstAnswer.sessionId]);
   assert.equal(server.getConnectedClientCount(), 0);
 });
@@ -283,7 +281,7 @@ test("Share reserves viewer capacity during concurrent connection setup", async 
   const origin = `http://127.0.0.1:${port}`;
   const cookies = await Promise.all(Array.from({ length: 9 }, async (_, index) => {
     const invitation = server.createReadOnlyInvitation(`Viewer ${index}`);
-    const login = await fetch(`${origin}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: invitation.token }) });
+    const login = await fetch(`${origin}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: invitation.token, label: invitation.label || "Guest" }) });
     return login.headers.get("set-cookie")!.split(";")[0];
   }));
   const connect = (cookie: string) => fetch(`${origin}/api/connect`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify({ windowId: "window", type: "offer", sdp: "v=0\r\n" }) });
@@ -303,7 +301,7 @@ test("revoking a Share client during setup discards its answer and closes only i
     connect: () => { started(); return new Promise(resolve => { finish = resolve; }); }, disconnect: id => disconnected.push(id) });
   const port = await server.start(); t.after(() => server.stop());
   const origin = `http://127.0.0.1:${port}`, invitation = server.createReadOnlyInvitation();
-  const login = await fetch(`${origin}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(invitation) });
+  const login = await fetch(`${origin}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...invitation, label: invitation.label || "Guest" }) });
   const pending = fetch(`${origin}/api/connect`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: login.headers.get("set-cookie")!.split(";")[0] }, body: JSON.stringify({ windowId: "window", type: "offer", sdp: "v=0\r\n" }) });
   await entered; server.revokeClient(invitation.id);
   finish({ sessionId: "revoked-stream", type: "answer", sdp: "v=0\r\n" });

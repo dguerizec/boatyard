@@ -1,6 +1,6 @@
 import type { BoatyardBridge } from "./rendererTypes.js";
 
-export function appendRemoteConnectionLinks(container: HTMLElement, urls: string[], api: BoatyardBridge, onError: (reason: unknown) => void, options: { hideFragment?: boolean } = {}) {
+export function appendRemoteConnectionLinks(container: HTMLElement, urls: string[], api: BoatyardBridge, onError: (reason: unknown) => void, options: { hideFragment?: boolean; code?: string; showCodeButton?: boolean } = {}) {
   if (!urls.length) return;
   const row = document.createElement("div"), select = document.createElement("select"), open = document.createElement("a"), copy = document.createElement("button");
   row.className = "remote-url-selector";
@@ -24,5 +24,20 @@ export function appendRemoteConnectionLinks(container: HTMLElement, urls: string
       if (copy.isConnected) copy.textContent = "Copied";
     } catch (reason) { onError(reason); }
   };
-  row.append(select, open, copy); container.append(row);
+  row.append(select, open, copy);
+  if (options.code || options.showCodeButton) {
+    const copyCode = document.createElement("button"); copyCode.type = "button"; copyCode.className = "secondary-button"; copyCode.textContent = "Copy code";
+    copyCode.dataset.copyCode = ""; copyCode.disabled = !options.code;
+    if (!options.code) copyCode.title = "No code is needed for Ask to join.";
+    copyCode.onclick = async () => {
+      if (!options.code) return;
+      try {
+        if (!api.writeClipboardText) throw new Error("Clipboard access is unavailable.");
+        await api.writeClipboardText(options.code!.replace(/^(\d{3})(\d{3})$/, "$1 $2"));
+        if (copyCode.isConnected) copyCode.textContent = "Copied";
+      } catch (reason) { onError(reason); }
+    };
+    row.append(copyCode);
+  }
+  container.append(row);
 }

@@ -1,6 +1,21 @@
 import { RemoteSettingsStore, type RemoteSettings } from "./remoteSettingsStore.js";
 
-type RemoteService = { start(): Promise<number>; stop(): Promise<void>; server: { getConnectionOrigins(port: number): string[]; createReadOnlyInvitation?(label?: string): { token: string; expiresAt: number; id?: string }; getClients?(): unknown[]; getConnectedClientCount?(): number; revokeClient?(id: string): void } };
+import type { ShareAccessSettings, ShareAccessState } from "./shareAccessState.js";
+
+type RemoteService = {
+  start(): Promise<number>;
+  stop(): Promise<void>;
+  server: {
+    getConnectionOrigins(port: number): string[];
+    createReadOnlyInvitation?(label?: string): { token: string; id?: string };
+    getClients?(): unknown[];
+    getShareAccess?(): ReturnType<ShareAccessState["hostSnapshot"]> | undefined;
+    configureShareAccess?(patch: Partial<ShareAccessSettings>): void;
+    decideShareJoinRequest?(id: string, accepted: boolean): void;
+    getConnectedClientCount?(): number;
+    revokeClient?(id: string): void;
+  };
+};
 export class RemoteAccessController {
   private queue: Promise<unknown> = Promise.resolve();
   private service: RemoteService | null = null;
@@ -11,7 +26,14 @@ export class RemoteAccessController {
     private readonly changed: () => void = () => {}) {}
   getStatus() {
     const { passwordHash, ...settings } = this.settings.get();
-    return { ...settings, hasPassword: Boolean(passwordHash), listening: Boolean(this.service), urls: [...this.urls], error: this.error, clients: this.service?.server.getClients?.() || [], connectedClients: this.service?.server.getConnectedClientCount?.() || 0 };
+    const access = this.service?.server.getShareAccess?.();
+    const clients = (this.service?.server.getClients?.() || []).map(value => {
+      const client = value as { id: string };
+      const invitation = access?.invitations.find(invitation => invitation.id === client.id);
+      return { ...client, ...(invitation ? { code: invitation.code, urls: this.urls.map(url => `${url}/#share=${invitation.code}`) } : {}) };
+    });
+    return { ...settings, shareAccess: access ? { groupEnabled: access.groupEnabled, groupApprovalRequired: access.groupApprovalRequired,
+      allowJoinRequests: access.allowJoinRequests, groupCode: access.groupCode, groupUrls: access.groupCode ? this.urls.map(url => `${url}/#share=${access.groupCode}`) : [], requests: access.requests } : undefined, hasPassword: Boolean(passwordHash), listening: Boolean(this.service), urls: [...this.urls], error: this.error, clients, connectedClients: this.service?.server.getConnectedClientCount?.() || 0 };
   }
   configure(patch?: Record<string, unknown>) {
     const result = this.queue.then(async () => {
@@ -52,10 +74,24 @@ export class RemoteAccessController {
         throw new Error("Start read-only sharing before creating a link.");
       }
       const invitation = this.service.server.createReadOnlyInvitation(label);
-      return { id: invitation.id, urls: this.urls.map(url => `${url}/#share=${invitation.token}`), expiresAt: invitation.expiresAt };
+      return { id: invitation.id, urls: this.urls.map(url => `${url}/#share=${invitation.token}`), code: invitation.token };
     });
     this.queue = result.catch(() => {});
     return result;
+  }
+  configureShareAccess(patch: Partial<ShareAccessSettings>) {
+    const result = this.queue.then(() => {
+      if (this.stopped || !this.service?.server.configureShareAccess) throw new Error("Share is unavailable.");
+      this.service.server.configureShareAccess(patch); this.changed(); return this.getStatus();
+    });
+    this.queue = result.catch(() => {}); return result;
+  }
+  decideShareJoinRequest(id: string, accepted: boolean) {
+    const result = this.queue.then(() => {
+      if (this.stopped || !this.service?.server.decideShareJoinRequest) throw new Error("Share is unavailable.");
+      this.service.server.decideShareJoinRequest(id, accepted); this.changed(); return this.getStatus();
+    });
+    this.queue = result.catch(() => {}); return result;
   }
   revokeClient(id: string) {
     const result = this.queue.then(() => {

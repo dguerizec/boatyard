@@ -20,11 +20,15 @@ module.exports = async harness => {
     for (let i = 0; i < 100; i++) { if (await client.webContents.executeJavaScript(expression)) return; await sleep(100); }
     throw new Error(`Timed out: ${label}`);
   }
-  async function connect(readOnly, label, partition = `fixture-${randomUUID()}`) {
+  async function connect(readOnly, label, partition = `fixture-${randomUUID()}`, existingInvitation) {
     const client = new BrowserWindow({ show: false, width: 1000, height: 800, webPreferences: { sandbox: true, backgroundThrottling: false, partition } });
     clients.push(client);
-    const invitation = readOnly ? share.server.createReadOnlyInvitation(label) : null;
+    const invitation = readOnly ? existingInvitation || share.server.createReadOnlyInvitation(label) : null;
     await client.loadURL(`http://127.0.0.1:${readOnly ? sharePort : remotePort}/${invitation ? `#share=${invitation.token}` : ''}`);
+    if (readOnly) {
+      await until(client, '!document.getElementById("shareJoin").hidden', 'Share join form');
+      await client.webContents.executeJavaScript(`document.getElementById('participantName').value=${JSON.stringify(label || 'Fixture guest')};document.getElementById('shareJoin').requestSubmit()`);
+    }
     if (!readOnly) {
       await until(client, '!document.getElementById("login").hidden', 'password login');
       await client.webContents.executeJavaScript('document.getElementById("password").value="fixture-password";document.getElementById("login").requestSubmit()');
@@ -59,6 +63,14 @@ module.exports = async harness => {
     share.server.revokeClient(second.invitation.id); await sleep(200);
     assert.equal(share.connections.size, 1); assert.equal(remote.connections.size, 1);
     assert.equal(await first.client.webContents.executeJavaScript('document.getElementById("status").textContent'), 'Connected · Read-only', 'Revoking Bob leaves Alice connected');
+    const replacement = await connect(true, 'Alice', `fixture-${randomUUID()}`, first.invitation);
+    await until(first.client, '!document.getElementById("shareJoin").hidden', 'old device returns to explicit join');
+    assert.equal(share.connections.size, 1, 'A personal code has only one active stream after takeover');
+    assert.equal(share.server.getClients().length, 1, 'Device takeover preserves the same participant');
+    const guest = replacement.client;
+    await sleep(1000);
+    assert.equal(await replacement.client.webContents.executeJavaScript('document.getElementById("status").textContent'), 'Connected · Read-only', 'The old device cannot reclaim access automatically');
+    assert.equal(remote.connections.size, 1, 'Takeover leaves Remote connected');
     await share.stop(); await sleep(150);
     assert.equal(remote.connections.size, 1, 'Stopping Share keeps Remote alive');
     await type('y'); await sleep(150);

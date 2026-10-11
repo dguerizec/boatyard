@@ -62,7 +62,7 @@ test("passwordless read-only settings reload and share links stay outside status
   }));
   await assert.rejects(controller.createReadOnlyLink(), /Start read-only/);
   await controller.configure();
-  assert.deepEqual(await controller.createReadOnlyLink(), { id: undefined, urls: ["http://127.0.0.1:47831/#share=fixture-secret"], expiresAt: 123 });
+  assert.deepEqual(await controller.createReadOnlyLink(), { id: undefined, urls: ["http://127.0.0.1:47831/#share=fixture-secret"], code: "fixture-secret" });
   assert.ok(!JSON.stringify(controller.getStatus()).includes("fixture-secret"));
   await controller.configure({ enabled: false });
   await assert.rejects(controller.createReadOnlyLink(), /Start read-only/);

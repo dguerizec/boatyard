@@ -47,6 +47,10 @@ module.exports = async harness => {
     const pendingRequests = [], pendingConnections = [];
     client.webContents.session.webRequest.onBeforeRequest({ urls: [`http://127.0.0.1:${port}/api/windows`] }, (_, callback) => pendingRequests.push(callback));
     await client.loadURL(`http://127.0.0.1:${port}/${readOnly ? `#share=${invitation}` : ""}`);
+    if (readOnly) {
+      await until('!document.getElementById("shareJoin").hidden', 'Share join form');
+      await client.webContents.executeJavaScript('document.getElementById("participantName").value="Fixture guest";document.getElementById("shareJoin").requestSubmit()');
+    }
     // Keep input-coordinate fixtures at the source ratio; camera coverage below
     // exercises mismatched ratios explicitly instead of relying on window chrome.
     await client.webContents.executeJavaScript('Object.assign(document.getElementById("surface").style,{width:"800px",height:"600px",flex:"none"})');

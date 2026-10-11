@@ -1,3 +1,4 @@
+import type { ShareAccessSettings } from "./shareAccessState.js";
 import { join } from "node:path";
 import { RemoteAccessController } from "./remoteAccessController.js";
 import { DEFAULT_REMOTE_PORT, RemoteSettingsStore } from "./remoteSettingsStore.js";
@@ -26,8 +27,7 @@ export class RemoteAccessManager {
     return this.run(() => this.applyConfiguration(mode, patch));
   }
   private async applyConfiguration(mode: RemoteAccessMode, patch?: Record<string, unknown>, addingClient = false) {
-    if (mode === "share" && !addingClient) {
-      if (patch?.enabled === true) throw new Error("Add a client to start Share.");
+    if (mode === "share" && !addingClient && patch?.enabled !== true) {
       patch = { ...patch, enabled: false };
     }
     this.errors.delete(mode);
@@ -46,11 +46,12 @@ export class RemoteAccessManager {
     const status = this.getStatus("share");
     if (!status.listening) { this.shareHadClients = false; return; }
     const clients = status.clients as { state?: string }[];
-    const ended = this.shareHadClients && !clients.length;
+    const access = status.shareAccess;
+    const ended = this.shareHadClients && !clients.length && !access?.groupEnabled && !access?.allowJoinRequests;
     this.shareHadClients = clients.length > 0;
     if (ended) void this.run(async () => {
       const latest = this.getStatus("share");
-      if (latest.listening && !latest.clients.length) {
+      if (latest.listening && !latest.clients.length && !latest.shareAccess?.groupEnabled && !latest.shareAccess?.allowJoinRequests) {
         await this.applyConfiguration("share", { enabled: false });
       }
     }).catch(() => {});
@@ -70,6 +71,18 @@ export class RemoteAccessManager {
       catch (error) { if (starting) await this.applyConfiguration("share", { enabled: false }); throw error; }
     });
   }
+  configureShareAccess(patch: Partial<ShareAccessSettings>) {
+    return this.run(async () => {
+      const starting = !this.getStatus("share").listening;
+      if (starting) {
+        const status = await this.applyConfiguration("share", { enabled: true }, true);
+        if (!status.listening) throw new Error(status.error || "Could not start Share.");
+      }
+      try { return await this.controllers.share.configureShareAccess(patch); }
+      catch (error) { if (starting) await this.applyConfiguration("share", { enabled: false }); throw error; }
+    });
+  }
+  decideShareJoinRequest(id: string, accepted: boolean) { return this.run(() => this.controllers.share.decideShareJoinRequest(id, accepted)); }
   updateShareScreen(patch: Record<string, unknown> | (() => Record<string, unknown>)) { return this.run(() => this.controllers.share.updateScreen(typeof patch === "function" ? patch() : patch)); }
   toggleShareScreen() { return this.run(() => this.controllers.share.updateScreen({ screenHidden: !this.getStatus("share").screenHidden })); }
   revokeClient(id: string) { return this.run(() => this.controllers.share.revokeClient(id)); }

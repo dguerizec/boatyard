@@ -15,16 +15,22 @@ of its label, keeping the same width. Stopping the server restores its normal ap
   lets you set the password and start or stop the server.
   Leaving the password blank retains the existing password.
 - **Share** is always read-only and accepts up to eight simultaneous viewers.
-  Its dialog lets you name and add clients, copy their one-use links, see whether
-  they are invited, signed in or connected, and revoke an individual client.
+  Its dialog lets you name and add clients, copy their reusable links or
+  six-digit personal codes, see whether they are invited, signed in or connected, and revoke an individual client.
   Connected clients show **Direct** or **Relayed**, based on their selected
   WebRTC candidate pair. The route refreshes every three seconds; until it is
   known, the dialog shows **Checking connection…**.
-  **Add client** starts Share if needed. Unnamed clients receive sequential names
-  such as **Viewer 1** and **Viewer 2**. **Stop sharing** revokes all Share access
+  **Add participant** starts Share if needed. The host may prefill a name, or leave
+  it for the participant to enter before joining. **Stop sharing** revokes all Share access
   while leaving Remote running.
 
-The Share dialog and Share pane include **Hide screen / Show screen**. Press
+The Share dialog and Share pane open on **Session**, with connected participants,
+join approvals and live connection status. **Setup** contains start/stop
+controls, joining options, participant creation, and invitation links and codes,
+including invitations for participants already connected. **Shared projects**
+controls which projects may be shown. Switching tabs preserves invitation drafts.
+
+The **Session** tab includes **Hide screen / Show screen**. Press
 **Ctrl+Shift+S** anywhere in a Boatyard window, including embedded web apps, to
 toggle it. Hiding sends black video while preserving connections, invitations,
 viewers' crops and viewer access. The browser overlays the Boatyard illustration,
@@ -64,20 +70,54 @@ sharing until another client is added. **Start** saves and enables Remote;
 other. Connection addresses use a dropdown; **Open** and **Copy URL** use its
 selected address.
 
-Each Share client gets a separate link, valid for 15 minutes and consumed by the
-first browser that signs in. Adding another client does not invalidate existing
-invitations. Revoking a client invalidates its invitation and browser session and
-ends its stream. Disconnecting viewers keeps Share running so they can reconnect
-with the same browser session. **Stop sharing** explicitly closes the session
-and revokes all access. Removing its last client also stops Share. Links are kept
-only in memory and remain available in the Share pane or dialog until they are
-consumed, revoked, or Boatyard exits; the private code is omitted from visible
-link text so existing spectators
-cannot read it in the shared video, but **Copy URL** copies the complete link.
+Each Share participant has a reusable six-digit personal code, displayed as
+**123 456** in the browser, and a link carrying that code in its URL fragment.
+Codes accept spaces or hyphens and remain valid until the sharing session ends.
+Names are required before joining. A name already associated with a personal
+code is prefilled and can be confirmed or edited. Names do not identify access:
+participants with the same name still have distinct personal codes.
 
-The client removes the URL fragment before redeeming the link. Loading the page
-without running the client does not consume it. After a restart, add clients
-again to start Share and generate new links.
+Opening a link preloads the join form; only explicitly pressing **Join** takes
+over access. Joining with the same personal code from a second device immediately
+invalidates the old browser authentication and closes its stream, including an
+in-progress setup. The participant identity and viewer access remain. The previous device must explicitly
+join again and cannot reclaim access through automatic recovery or a page reload.
+The browser's **Your personal access code** button shows the code and offers
+**Copy code** and **Copy link** for moving to another device.
+
+The host can always copy an existing participant's link or code again, including
+while they are connected. Codes are kept in memory and omitted from visible host
+link text, keeping them out of shared video. **Copy URL** includes the full link;
+**Copy code** copies the digits formatted as two groups of three.
+Revoking a participant invalidates their code and browser authentication and ends
+their stream. Disconnecting or signing out preserves their personal code.
+**Stop sharing**, quitting Boatyard, or applying Share settings ends the sharing
+session and invalidates all its codes, requests and browser authentication.
+Removing the last participant also stops Share unless group entry or join
+requests remain enabled.
+
+**Joining options**, always visible above participant creation in **Setup**, offers
+two exclusive admission paths. Enabling one disables the other; personal invitations
+remain available in either mode. The group-code and approval switches share one row.
+
+- **Group code** creates one reusable code/link to distribute to a group.
+  Each visitor enters their own name and receives a distinct personal code.
+  **Require approval**, enabled by default for every new session, makes these
+  visitors wait for the host. The host may disable it for immediate group entry.
+  Disabling the group code prevents further entry without revoking personal codes.
+- **Ask to join without a code** lets a visitor enter their name and request
+  access from the base Share address. The host receives a desktop notification
+  when supported, and the Share button shows a pending-request badge. The Share
+  pane and dialog offer **Accept** and **Decline** for each named request.
+  Acceptance creates the personal access; waiting visitors cannot access windows
+  or stream before approval. Requests expire after ten minutes and can be cancelled.
+  Reloading the same tab resumes its pending request without creating another.
+
+Enabling either admission path starts Share if needed. These options and all
+access codes are scoped to the current sharing session. Failed code attempts,
+request creation and total admission traffic are bounded and rate limited.
+The browser removes invitation fragments before looking up the code. Loading
+only the HTML, such as a link preview, does not join or take over access.
 
 Settings are shared across Boatyard profiles and saved in the configuration
 root's `remote.json` (Remote) and `remote-share.json` (Share). Only a salted scrypt
@@ -90,15 +130,21 @@ Remote access is disabled until configured.
 ## Connect
 
 Open a displayed URL from another device, such as `http://192.0.2.10:47831`.
-For full access, enter the password. For read-only access, open a generated
-one-use link without a password prompt. A single available window connects
-automatically; with multiple windows, choose the shared window and connect.
-The browser keeps an HttpOnly, SameSite session
-cookie for up to twelve hours. **Sign out** revokes it and ends that browser's
-stream. Disconnecting or reloading preserves access in the same browser until
-expiry or sign-out; the consumed URL cannot authenticate another browser. Server
-restart or settings changes invalidate sessions for that server. Remote and Share
-use separate cookies, including when both are accessed through the same LAN host.
+For full access, enter the password. For Share, enter your personal or group
+code and your name, or select the separate **Ask to join** path if the host
+allows requests. The request path only asks for your name. The browser remembers
+your entered name in localStorage for later visits; a name associated with a
+personal code takes priority when that code is looked up.
+A generated link preloads the code and any associated name. After joining,
+a single available window connects automatically; with multiple windows,
+choose the shared window and connect.
+The browser keeps an HttpOnly, SameSite cookie. **Sign out** invalidates that
+browser's authentication and ends its stream; a Share participant can use their
+personal code to join again. Disconnecting or reloading preserves active browser
+access. Remote and Share use separate cookies, including when both are accessed
+through the same LAN host. Share authentication ends when sharing stops or the
+personal code is used on another device. Remote authentication persists across
+restarts unless signed out or the password changes.
 
 The listener binds to `0.0.0.0`. The advanced environment override
 `BOATYARD_REMOTE_HOST=127.0.0.1` restricts it to loopback. The application accepts
@@ -188,7 +234,8 @@ Remote browser authentication survives server and Boatyard restarts until
 explicit sign-out or a password change. Only session-token hashes are stored in
 `remote-sessions.json`, with private file permissions. Cookies are renewed on
 authenticated requests; browser storage limits and clearing site data still apply.
-Share authentication lasts until sign-out, client revocation, or stopping Share;
+Share browser authentication lasts until sign-out, participant revocation,
+use of the personal code on another device, or stopping Share;
 stopping Share still invalidates its invitations and browser sessions.
 
 Viewer commands use a single bottom toolbar with Lucide icons and labeled tooltips.

@@ -3,7 +3,7 @@ import { createRemoteSettingsForm } from "./remoteSettings.js";
 import { cleanupPaneLayout } from "./paneCleanup.js";
 import { positionToolbarDialog } from "./toolbarDialogPosition.js";
 import type { BoatyardBridge } from "./rendererTypes.js";
-import type { UnknownRecord } from "./rendererRecords.js";
+import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 
 type ShowDialog = (dialog: HTMLDialogElement, options: { removeOnClose: boolean; freeze: "all"; onClose(): void }) => Promise<unknown>;
 
@@ -20,9 +20,14 @@ export function setupRemoteSharingControls(button: HTMLButtonElement, api: Boaty
     button.classList.toggle("sharing-waiting", listening && connected === 0);
     button.setAttribute("aria-pressed", String(current.listening === true));
     button.setAttribute("aria-haspopup", "dialog"); button.setAttribute("aria-expanded", String(Boolean(popup)));
+    const requests = toUnknownRecord(current.shareAccess).requests;
+    const pending = mode === "share" && Array.isArray(requests) ? requests.length : 0;
+    button.classList.toggle("sharing-requests", pending > 0);
+    button.dataset.joinRequests = String(pending);
     button.textContent = connected > 0 ? String(connected) : name;
     button.setAttribute("aria-label", `${name}: ${connected > 0 ? `${connected} connected` : listening ? "waiting for connections" : "stopped"}`);
     if (mode === "share" && current.screenHidden === true) button.setAttribute("aria-label", `${button.getAttribute("aria-label")} Screen hidden.`);
+    if (pending) button.setAttribute("aria-label", `${button.getAttribute("aria-label")}. ${pending} join requests pending.`);
     button.title = button.getAttribute("aria-label")!;
   }
   function apply(value: UnknownRecord) { if (!disposed) { current = value; loaded = true; render(); } }

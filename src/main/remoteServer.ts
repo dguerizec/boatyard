@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, chmodSy
 import { dirname, join } from "node:path";
 import { verifyRemotePassword, isRemotePasswordHash } from "./remotePassword.js";
 import { networkInterfaces } from "node:os";
+import { ShareAccessState, type ShareAccessSettings, type ShareParticipant } from "./shareAccessState.js";
 import type { RemoteConnectionRoute } from "../shared/remoteIce.js";
 
 export const DEFAULT_REMOTE_HOST = "0.0.0.0";
@@ -42,22 +43,25 @@ export type RemoteServerOptions = {
   getIceTransportPolicy?(): RTCIceTransportPolicy;
   getConnectionRoute?(sessionId: string): RemoteConnectionRoute | null;
   listWindows(): RemoteWindowInfo[];
-  connect(offer: RemoteOffer): Promise<RemoteAnswer>;
+  connect(offer: RemoteOffer, created?: (id: string) => void): Promise<RemoteAnswer>;
   recover?(sessionId: string, offer: RemoteOffer): Promise<RemoteAnswer>;
   disconnect(sessionId?: string): void;
   clientsChanged?(): void;
+  joinRequested?(label: string): void;
 };
 
 export class RemoteServer {
   private readonly logins = new Set<string>();
   private readonly attempts = new Map<string, { since: number; count: number }>();
   private pendingLogins = 0;
-  private nextViewerNumber = 1;
-  private readonly invitations = new Map<string, { id: string; label: string; expiresAt: number }>();
+  private readonly shareAccess = new ShareAccessState(() => this.options.clientsChanged?.());
+  private readonly shareAttempts = new Map<string, { since: number; count: number }>();
+  private globalShareAttempts = { since: 0, count: 0 };
   private readonly loginClients = new Map<string, { id: string; label: string }>();
   private readonly sessions = new Map<string, { login: string }>();
   private server: Server | null = null;
   private readonly connecting = new Set<string>();
+  private readonly pendingSessions = new Map<string, string>();
   constructor(private readonly options: RemoteServerOptions) {
     if (!options.readOnly && !isRemotePasswordHash(options.passwordHash)) throw new Error("Set a password before starting remote access.");
     if (options.publicOrigin && new URL(options.publicOrigin).origin !== options.publicOrigin) throw new Error("Remote public origin must be an origin without a path");
@@ -99,40 +103,55 @@ export class RemoteServer {
   }
   getConnectedClientCount() { return this.sessions.size; }
   getClients() {
-    this.prune();
-    return [
-      ...[...this.invitations.values()].map(value => ({ ...value, state: "invited" })),
-      ...[...this.loginClients].map(([login, value]) => {
-        const session = [...this.sessions].find(([, session]) => session.login === login);
-        return { ...value, state: session ? "connected" : "signed-in",
-          route: session ? this.options.getConnectionRoute?.(session[0]) ?? null : null };
-      })
-    ];
+    const clients = this.options.readOnly ? [...this.shareAccess.participants.values()].map(({ id, label }) => ({ id, label })) : [...this.loginClients.values()];
+    return clients.map(value => {
+      const login = [...this.loginClients].find(([, client]) => client.id === value.id)?.[0];
+      const session = [...this.sessions].find(([, session]) => session.login === login);
+      return { ...value,
+        state: session ? "connected" : login ? "signed-in" : "invited",
+        route: session ? this.options.getConnectionRoute?.(session[0]) ?? null : null };
+    });
   }
-  private prune() {
-    for (const [token, value] of this.invitations) if (value.expiresAt <= Date.now()) this.invitations.delete(token);
-    for (const login of this.loginClients.keys()) if (!this.logins.has(login)) this.loginClients.delete(login);
+  getShareAccess() { return this.options.readOnly ? this.shareAccess.hostSnapshot() : undefined; }
+  configureShareAccess(patch: Partial<ShareAccessSettings>) {
+    if (!this.server || !this.options.readOnly) throw new Error("Share is unavailable.");
+    this.shareAccess.configure(patch); this.options.clientsChanged?.();
+  }
+  decideShareJoinRequest(id: string, accepted: boolean) {
+    this.shareAccess.decide(id, accepted); this.options.clientsChanged?.();
   }
   createReadOnlyInvitation(label = "") {
     if (!this.server || !this.options.readOnly) throw new Error("Start read-only sharing before creating a link.");
-    this.prune();
-    if (this.invitations.size + this.logins.size >= 32) throw new Error("Too many invited clients. Remove an existing client first.");
-    const token = randomBytes(32).toString("base64url");
-    const suppliedName = String(label).trim().slice(0, 80);
-    const names = new Set(this.getClients().map(client => client.label));
-    let name = suppliedName;
-    if (!name) { do { name = `Viewer ${this.nextViewerNumber++}`; } while (names.has(name)); }
-    const invitation = { id: randomUUID(), label: name, expiresAt: Date.now() + 15 * 60 * 1000 };
-    this.invitations.set(token, invitation);
-    this.options.clientsChanged?.();
-    return { token, ...invitation };
+    const invitation = this.shareAccess.create(String(label));
+    this.options.clientsChanged?.(); return invitation;
+  }
+  private invalidateLogin(login: string) {
+    // Revoke authentication before closing transports or notifying observers.
+    this.logins.delete(login); this.loginClients.delete(login); this.connecting.delete(login);
+    const pending = this.pendingSessions.get(login);
+    if (pending) { this.pendingSessions.delete(login); this.options.disconnect(pending); }
+    for (const [sessionId, session] of [...this.sessions]) if (session.login === login) {
+      this.options.disconnect(sessionId); this.sessionClosed(sessionId);
+    }
+  }
+  private signInParticipant(participant: ShareParticipant) {
+    for (const [login, client] of [...this.loginClients]) if (client.id === participant.id) this.invalidateLogin(login);
+    const token = randomBytes(32).toString("base64url"), login = this.loginDigest(token);
+    this.shareAccess.claimed(participant.id);
+    this.logins.add(login); this.loginClients.set(login, { id: participant.id, label: participant.label });
+    this.options.clientsChanged?.(); return token;
+  }
+  private allowShareAttempt(request: IncomingMessage, validCode: boolean) {
+    const now = Date.now(), address = request.socket.remoteAddress || "unknown";
+    for (const [key, attempt] of this.shareAttempts) if (now - attempt.since >= 60000) this.shareAttempts.delete(key);
+    if (now - this.globalShareAttempts.since >= 60000) this.globalShareAttempts = { since: now, count: 0 };
+    const attempt = this.shareAttempts.get(address) || { since: now, count: 0 };
+    if (attempt.count >= 10 || this.globalShareAttempts.count >= 120 || this.shareAttempts.size >= 256 && !this.shareAttempts.has(address)) return false;
+    if (!validCode) attempt.count++; this.globalShareAttempts.count++; this.shareAttempts.set(address, attempt); return true;
   }
   revokeClient(id: string) {
-    for (const [token, client] of this.invitations) if (client.id === id) this.invitations.delete(token);
-    for (const [login, client] of this.loginClients) if (client.id === id) {
-      this.logins.delete(login); this.loginClients.delete(login);
-      for (const [sessionId, session] of [...this.sessions]) if (session.login === login) { this.options.disconnect(sessionId); this.sessionClosed(sessionId); }
-    }
+    this.shareAccess.revoke(id);
+    for (const [login, client] of [...this.loginClients]) if (client.id === id) this.invalidateLogin(login);
     this.options.clientsChanged?.();
   }
   async start(): Promise<number> {
@@ -151,8 +170,8 @@ export class RemoteServer {
   }
   async stop() {
     this.options.disconnect();
-    this.logins.clear(); this.attempts.clear(); this.invitations.clear(); this.loginClients.clear();
-    this.sessions.clear(); this.connecting.clear();
+    this.logins.clear(); this.attempts.clear(); this.shareAccess.clear(); this.shareAttempts.clear(); this.globalShareAttempts = { since: 0, count: 0 }; this.loginClients.clear();
+    this.sessions.clear(); this.connecting.clear(); this.pendingSessions.clear();
     const server = this.server;
     this.server = null;
     if (server) {
@@ -216,26 +235,51 @@ export class RemoteServer {
         return body as Record<string, unknown>;
       };
       if (request.method === "GET" && url.pathname === "/api/auth") {
-        json(200, { passwordLogin: !this.options.readOnly }); return;
+        json(200, { passwordLogin: !this.options.readOnly, ...(this.options.readOnly ? this.shareAccess.publicSettings : {}) }); return;
       }
-      if (request.method === "POST" && url.pathname === "/api/redeem") {
+      if (request.method === "POST" && ["/api/share/preview", "/api/redeem", "/api/share/request"].includes(url.pathname)) {
+        if (!this.options.readOnly) { json(404, { error: "Share is unavailable." }); return; }
         const body = await readBody(4096);
-        const invitation = typeof body.token === "string" ? this.invitations.get(body.token) : undefined;
-        if (!this.options.readOnly || !invitation || invitation.expiresAt <= Date.now()) {
-          json(401, { error: "This share link has expired or has already been used. Ask for a new link." }); return;
+        if (!this.server) return;
+        const participant = this.shareAccess.lookup(body.token), group = this.shareAccess.isGroup(body.token);
+        if (!this.allowShareAttempt(request, Boolean(participant || group))) { json(429, { error: "Too many access attempts. Try again in a minute." }); return; }
+        if (url.pathname === "/api/share/preview") {
+          if (!participant && !group) { json(401, { error: "Invalid access code." }); return; }
+          json(200, { label: participant?.label || "", group, approvalRequired: group && this.shareAccess.publicSettings.groupApprovalRequired }); return;
         }
-        if (this.logins.size >= 32) { json(429, { error: "Too many active browser sessions." }); return; }
-        // Consume synchronously before issuing the browser session; concurrent redemption cannot reuse it.
-        this.invitations.delete(String(body.token));
-        const login = randomBytes(32).toString("base64url");
-        this.logins.add(this.loginDigest(login));
-        this.loginClients.set(this.loginDigest(login), { id: invitation.id, label: invitation.label });
-        this.options.clientsChanged?.();
-        setCookie(login, BROWSER_COOKIE_MAX_AGE);
-        json(200, { authenticated: true }); return;
+        const label = typeof body.label === "string" ? body.label.trim() : participant?.label || "";
+        if (!label || label.length > 80) { json(400, { error: "Enter your name (up to 80 characters)." }); return; }
+        if (url.pathname === "/api/share/request" || group && this.shareAccess.publicSettings.groupApprovalRequired) {
+          const source = url.pathname === "/api/share/request" ? "request" : "group";
+          if (source === "request" && !this.shareAccess.publicSettings.allowJoinRequests) { json(403, { error: "Join requests are unavailable." }); return; }
+          const pending = this.shareAccess.request(label, source);
+          this.options.clientsChanged?.(); this.options.joinRequested?.(label);
+          json(200, { pending: true, requestToken: pending.token }); return;
+        }
+        if (!participant && !group) { json(401, { error: "Invalid access code." }); return; }
+        const identity = participant || this.shareAccess.participants.get(this.shareAccess.create(label).id)!;
+        identity.label = label;
+        setCookie(this.signInParticipant(identity), BROWSER_COOKIE_MAX_AGE);
+        json(200, { authenticated: true, participant: { label: identity.label, code: identity.token } }); return;
+      }
+      if (request.method === "POST" && ["/api/share/request-status", "/api/share/request-cancel"].includes(url.pathname)) {
+        const body = await readBody(4096), pending = this.options.readOnly ? this.shareAccess.poll(body.requestToken) : undefined;
+        if (!pending) { json(410, { error: "This join request has expired. Ask to join again." }); return; }
+        if (url.pathname === "/api/share/request-cancel") {
+          if (pending.participantId) this.revokeClient(pending.participantId);
+          this.shareAccess.finish(pending.token); this.options.clientsChanged?.(); json(200, { cancelled: true }); return;
+        }
+        if (pending.state === "approved") {
+          const participant = this.shareAccess.participants.get(pending.participantId!);
+          if (!participant) { json(410, { error: "This access has been revoked." }); return; }
+          setCookie(this.signInParticipant(participant), BROWSER_COOKIE_MAX_AGE);
+          json(200, { authenticated: true, participant: { label: participant.label, code: participant.token } }); return;
+        }
+        if (pending.state === "claimed") { json(410, { error: "This request has already joined. Use your personal access code." }); return; }
+        json(200, { pending: pending.state === "pending", declined: pending.state === "declined" }); return;
       }
       if (request.method === "POST" && url.pathname === "/api/login") {
-        if (this.options.readOnly) { json(401, { error: "Open your one-use read-only share link." }); return; }
+        if (this.options.readOnly) { json(401, { error: "Enter your Share access code." }); return; }
         const address = request.socket.remoteAddress || "unknown";
         const now = Date.now();
         for (const [key, attempt] of this.attempts) if (now - attempt.since > 60000) this.attempts.delete(key);
@@ -260,7 +304,7 @@ export class RemoteServer {
       }
       const token = request.headers.cookie?.split(";").map(value => value.trim()).find(value => value.startsWith(`${cookieName}=`))?.slice(cookieName.length + 1) || "";
       const login = this.loginDigest(token);
-      if (!this.logins.has(login)) { this.logins.delete(login); this.loginClients.delete(login); json(401, { error: "Please sign in." }); return; }
+      if (!this.logins.has(login)) { this.logins.delete(login); this.loginClients.delete(login); json(401, { error: this.options.readOnly ? "Your access is no longer active. It may have been opened on another device. Join again to use this device." : "Please sign in." }); return; }
       if (request.method === "POST" && url.pathname === "/api/logout") {
         for (const [id, session] of [...this.sessions]) if (session.login === login) { this.options.disconnect(id); this.sessionClosed(id); }
         this.logins.delete(login); this.loginClients.delete(login); this.options.clientsChanged?.(); this.saveLogins(); setCookie("", 0); json(200, { authenticated: false }); return;
@@ -269,10 +313,12 @@ export class RemoteServer {
       if (request.method === "GET" && url.pathname === "/api/windows") {
         const iceServers = this.options.getIceServers ? await this.options.getIceServers() : this.options.iceServers || [];
         if (!this.logins.has(login)) { json(401, { error: "Please sign in." }); return; }
-        json(200, { windows: this.options.listWindows(), iceServers, iceTransportPolicy: this.options.getIceTransportPolicy?.() ?? "all", readOnly: this.options.readOnly === true }); return;
+        const identity = this.shareAccess.participants.get(this.loginClients.get(login)?.id || "");
+        json(200, { windows: this.options.listWindows(), iceServers, iceTransportPolicy: this.options.getIceTransportPolicy?.() ?? "all", readOnly: this.options.readOnly === true, ...(this.options.readOnly ? { participant: identity ? { label: identity.label, code: identity.token } : undefined } : {}) }); return;
       }
       if (request.method !== "POST" || !["/api/connect", "/api/disconnect", "/api/recover"].includes(url.pathname)) { json(404, { error: "Not found" }); return; }
       const body = await readBody();
+      if (!this.logins.has(login)) { json(401, { error: "Your access is no longer active. Join again." }); return; }
       if (url.pathname === "/api/disconnect") {
         if (typeof body.sessionId !== "string") { json(400, { error: "Invalid session" }); return; }
         if (this.sessions.get(body.sessionId)?.login === login) { this.options.disconnect(body.sessionId); this.sessionClosed(body.sessionId); }
@@ -298,14 +344,14 @@ export class RemoteServer {
       }
       this.connecting.add(login);
       try {
-        const answer = await this.options.connect(body as RemoteOffer);
+        const answer = await this.options.connect(body as RemoteOffer, id => { this.pendingSessions.set(login, id); });
         if (!this.server || response.destroyed) { this.options.disconnect(answer.sessionId); return; }
         if (!this.logins.has(login)) { this.options.disconnect(answer.sessionId); json(401, { error: "Please sign in." }); return; }
         if (!this.loginClients.has(login)) this.loginClients.set(login, { id: randomUUID(), label: "Remote client" });
         this.sessions.set(answer.sessionId, { login });
         this.options.clientsChanged?.();
         json(200, answer);
-      } finally { this.connecting.delete(login); }
+      } finally { this.connecting.delete(login); this.pendingSessions.delete(login); }
     } catch (error) {
       json(400, { error: error instanceof Error ? error.message : "Remote request failed" });
     }

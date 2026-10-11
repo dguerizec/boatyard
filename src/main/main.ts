@@ -73,7 +73,7 @@ const { execFile } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const path = require("node:path");
 const { promisify } = require("node:util");
-const { app, BrowserWindow, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, nativeTheme, screen, shell } = require("electron");
+const { app, BrowserWindow, WebContentsView, clipboard, desktopCapturer, dialog, ipcMain, nativeTheme, Notification, screen, shell } = require("electron");
 const { createCaptureRunner } = require("./captureRunner");
 const { PasswordManager } = require("./passwordManager");
 const { PluginHost } = require("./pluginHost");
@@ -1593,6 +1593,19 @@ function registerIpcHandlers() {
     if (label !== undefined && (typeof label !== "string" || label.length > 80)) throw new Error("Invalid client name.");
     return remoteAccessController.createReadOnlyLink(label as string | undefined);
   });
+  ipcMain.handle("share:access:update", (event: IpcMainInvokeEvent, patch: unknown) => {
+    getConfigurationForEvent(event);
+    if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new Error("Invalid Share access settings.");
+    const input = patch as UnknownRecord;
+    const allowed = ["groupEnabled", "groupApprovalRequired", "allowJoinRequests"];
+    if (Object.entries(input).some(([key, value]) => !allowed.includes(key) || typeof value !== "boolean")) throw new Error("Invalid Share access settings.");
+    return remoteAccessController.configureShareAccess(input);
+  });
+  ipcMain.handle("share:request:decide", (event: IpcMainInvokeEvent, id: unknown, accepted: unknown) => {
+    getConfigurationForEvent(event);
+    if (typeof id !== "string" || id.length > 100 || typeof accepted !== "boolean") throw new Error("Invalid join request.");
+    return remoteAccessController.decideShareJoinRequest(id, accepted);
+  });
   ipcMain.handle("remote:client:revoke", (event: IpcMainInvokeEvent, id: unknown) => {
     getConfigurationForEvent(event);
     if (typeof id !== "string" || id.length > 100) throw new Error("Invalid client.");
@@ -2333,6 +2346,17 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
   }
   const createRemoteController = (mode: RemoteAccessMode) => new RemoteAccessController(remoteStores[mode], settings => new RemoteAccessService({
     clientsChanged: () => { remoteAccessController?.clientsChanged(mode); publishRemoteStatus(); },
+    joinRequested: mode === "share" ? label => {
+      try {
+        if (!Notification.isSupported()) return;
+        const notification = new Notification({ title: "Boatyard Share", body: `${label} wants to join. Open Share to accept or decline.` });
+        notification.on("click", () => {
+          const record = [...workspaceWindows.values()].find(record => !record.window.isDestroyed());
+          if (record) { record.window.show(); record.window.focus(); }
+        });
+        notification.show();
+      } catch { console.warn("Could not display the Share join notification. Requests remain available in Share."); }
+    } : undefined,
     windows: () => [...workspaceWindows.values()].map(record => ({
       id: `${getMcpContextId(record.configuration)}:${record.id}`, window: record.window
     })),

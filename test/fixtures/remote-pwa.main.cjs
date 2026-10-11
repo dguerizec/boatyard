@@ -23,6 +23,8 @@ module.exports = async harness => {
   };
   void (async () => {
     await client.loadURL(`http://127.0.0.1:${port}/#share=${invitation.token}`);
+    await until('!document.getElementById("shareJoin").hidden');
+    await client.webContents.executeJavaScript('document.getElementById("participantName").value="Fixture guest";document.getElementById("shareJoin").requestSubmit()');
     await until('document.getElementById("status").textContent === "Choose a window"');
     assert.equal(await client.webContents.executeJavaScript('location.hash'), '', 'The invitation is absent from the installed start address');
     client.webContents.debugger.attach('1.3');

@@ -22,6 +22,7 @@ export type RemoteAccessOptions = {
   getIceServers?(): Promise<RTCIceServer[]>;
   getIceTransportPolicy?(): RTCIceTransportPolicy;
   clientsChanged?(): void;
+  joinRequested?(label: string): void;
 };
 
 type Connection = {
@@ -67,7 +68,7 @@ export class RemoteAccessService {
         const [width, height] = w.window.getContentSize();
         return { id: w.id, title: w.window.getTitle(), width, height };
       }),
-      connect: offer => this.connect(offer),
+      connect: (offer, created) => this.connect(offer, created),
       recover: (id, offer) => this.recover(id, offer),
       getConnectionRoute: id => this.connections.get(id)?.route ?? null,
       disconnect: id => this.disconnect(id)
@@ -194,7 +195,7 @@ export class RemoteAccessService {
       iceServers: this.options.getIceServers ? await this.options.getIceServers() : this.options.iceServers || [], readOnly: this.options.readOnly === true, viewport: c.viewport
     };
   }
-  private async connect(offer: RemoteOffer) {
+  private async connect(offer: RemoteOffer, created?: (id: string) => void) {
     const target = this.options.windows().find(w => w.id === offer.windowId && !w.window.isDestroyed());
     if (!target || this.connections.size >= (this.options.readOnly ? MAX_SHARE_CLIENTS : 1)) throw new Error("Window unavailable or already shared");
     const id = randomUUID();
@@ -211,6 +212,7 @@ export class RemoteAccessService {
       timeout: setTimeout(() => { reject(new Error("Streaming setup timed out")); this.disconnect(id); }, 25000), heartbeat: Date.now(), epoch: 0, recovering: false, recoveredAt: -Infinity,
       following: this.options.readOnly === true, followRevision: 0, localPointer: screen.getCursorScreenPoint() };
     this.connections.set(id, c);
+    created?.(id);
     target.window.once("closed", closeTarget);
     target.window.on("resize", closeTarget);
     target.window.on("minimize", closeTarget);
