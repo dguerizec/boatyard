@@ -87,15 +87,47 @@ test("remote PWA assets are public, uncached and versioned by their content", as
   assert.equal(response.headers.get("content-type"), "application/manifest+json");
   assert.equal(response.headers.get("cache-control"), "no-store");
   const manifest = await response.json();
+  assert.equal(manifest.name, "Boatyard Share"); assert.equal(manifest.short_name, "Share");
+  assert.ok(html.includes("<title>Boatyard Share</title>"));
+  assert.ok(html.includes('content="Share"'));
+  assert.ok(html.includes('/icons/share/apple-touch-icon.png'));
+  assert.ok(html.includes('/icons/share/favicon.png'));
   assert.equal(manifest.display, "standalone"); assert.equal(manifest.start_url, "/"); assert.equal(manifest.id, "/");
   for (const size of [192, 512]) {
     const icon = manifest.icons.find((icon: { sizes: string }) => icon.sizes === `${size}x${size}`);
+    assert.equal(icon.src, `/icons/share/icon-${size}.png`);
     const response = await fetch(`${endpoint}${icon.src}`);
     assert.equal(response.headers.get("content-type"), "image/png");
     const png = Buffer.from(await response.arrayBuffer());
     assert.equal(png.readUInt32BE(16), size); assert.equal(png.readUInt32BE(20), size);
+    assert.deepEqual(png, readFileSync(join(remoteDirectory, `icons/share/icon-${size}.png`)));
   }
-  assert.equal((await fetch(`${endpoint}/apple-touch-icon.png`)).status, 200);
+  for (const [file, size] of [["apple-touch-icon.png", 180], ["favicon.png", 32]] as const) {
+    const png = Buffer.from(await (await fetch(`${endpoint}/icons/share/${file}`)).arrayBuffer());
+    assert.equal(png.readUInt32BE(16), size); assert.equal(png.readUInt32BE(20), size);
+    assert.deepEqual(png, Buffer.from(await (await fetch(`${endpoint}/${file}`)).arrayBuffer()));
+  }
+  const remote = new RemoteServer({ assetsDirectory: remoteDirectory, passwordHash: await hashRemotePassword("fixture-password"),
+    listWindows: () => [], connect: async () => ({ sessionId: "fixture", type: "answer", sdp: "v=0" }), disconnect() {} });
+  const remotePort = await remote.start(); t.after(() => remote.stop());
+  const remoteEndpoint = `http://127.0.0.1:${remotePort}`;
+  const remoteManifest = await (await fetch(`${remoteEndpoint}/manifest.json`)).json();
+  assert.equal(remoteManifest.name, "Boatyard Remote"); assert.equal(remoteManifest.short_name, "Remote");
+  assert.equal(remoteManifest.id, "/"); assert.equal(remoteManifest.start_url, "/");
+  const remoteHtml = await (await fetch(remoteEndpoint)).text();
+  assert.ok(remoteHtml.includes("<title>Boatyard Remote</title>"));
+  assert.ok(remoteHtml.includes('content="Remote"'));
+  assert.ok(remoteHtml.includes('/icons/remote/apple-touch-icon.png'));
+  assert.ok(remoteHtml.includes('/icons/remote/favicon.png'));
+  for (const size of [192, 512]) {
+    const icon = remoteManifest.icons.find((icon: { sizes: string }) => icon.sizes === `${size}x${size}`);
+    assert.equal(icon.src, `/icons/remote/icon-${size}.png`);
+    const png = Buffer.from(await (await fetch(`${remoteEndpoint}${icon.src}`)).arrayBuffer());
+    assert.deepEqual(png, readFileSync(join(remoteDirectory, `icons/remote/icon-${size}.png`)));
+    assert.notDeepEqual(png, readFileSync(join(remoteDirectory, `icons/share/icon-${size}.png`)));
+    assert.deepEqual(png, Buffer.from(await (await fetch(`${remoteEndpoint}/icon-${size}.png`)).arrayBuffer()));
+  }
+  assert.notEqual((await (await fetch(`${remoteEndpoint}/api/client-version`)).json()).version, first);
   const waiting = await fetch(`${endpoint}/waiting-screen.png`);
   assert.equal(waiting.headers.get("content-type"), "image/png");
   assert.deepEqual(Buffer.from(await waiting.arrayBuffer()), readFileSync(resolve("src/renderer/assets/boatyard-mark-night-preview.png")));

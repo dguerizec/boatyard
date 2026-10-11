@@ -11,6 +11,7 @@
     "dev": "npm run build:app && electron . --xdg-portal-required-version=4",
     "smoke": "npm run build:app && electron . --xdg-portal-required-version=4 --smoke --no-sandbox",
     "build:scripts": "tsc -p tsconfig.scripts.json",
+    "generate:remote-icons": "npm run build:scripts && node build-scripts/scripts/generate-remote-icons.js",
     "build:app": "npm run build:scripts && node build-scripts/scripts/build-app.js",
     "build:test": "node -e \"require('node:fs').rmSync('build-test', { recursive: true, force: true })\" && tsc -p tsconfig.test.json",
     "capture:doc": "npm run build:app && node build-scripts/scripts/capture-doc-screenshot.js",

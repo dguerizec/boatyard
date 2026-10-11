@@ -255,8 +255,15 @@ and [coturn authentication](https://github.com/coturn/coturn/blob/master/README.
 The viewer can be installed as a standalone PWA from its HTTPS address. Chrome
 offers **Install app** when installation is available; on iOS, use the browser's
 Share menu and **Add to Home Screen**. Remote and Share origins install separately.
+They install as **Boatyard Remote** (coral frame and pointer badge) and
+**Boatyard Share** (blue frame and broadcast badge), using the official Boatyard
+artwork. Browser tabs and Apple home-screen icons use the same mode-specific identity.
 The installed app opens the root address, without retaining private invitation
 codes. Its usual password or browser-session authentication still applies.
+
+To regenerate the committed icon sizes from the official artwork and badge
+definitions, run `npm run generate:remote-icons` with ImageMagick installed.
+Normal builds use the committed PNG files and do not require ImageMagick.
 
 Clients check for changed client assets when disconnecting from the stream and
 before connecting again. A changed version reloads the page automatically between

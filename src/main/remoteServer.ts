@@ -19,10 +19,7 @@ const clientAssets: Record<string, [string, string]> = {
   "/share-chat.css": ["../shareChat.css", "text/css"],
   "/remote.css": ["remote.css", "text/css"],
   "/waiting-screen.png": ["../assets/boatyard-mark-night-preview.png", "image/png"],
-  "/manifest.json": ["manifest.json", "application/manifest+json"],
-  "/icon-192.png": ["icon-192.png", "image/png"],
-  "/icon-512.png": ["icon-512.png", "image/png"],
-  "/apple-touch-icon.png": ["apple-touch-icon.png", "image/png"]
+  "/manifest.json": ["manifest.json", "application/manifest+json"]
 };
 
 function localInterfaceAddresses() {
@@ -69,10 +66,18 @@ export class RemoteServer {
   private readonly chatLastSent = new Map<string, number>();
   private readonly connecting = new Set<string>();
   private readonly pendingSessions = new Map<string, string>();
+  private readonly assets = { ...clientAssets };
+  private readonly mode: "remote" | "share";
   constructor(private readonly options: RemoteServerOptions) {
     this.shareAccess = options.shareAccess ?? new ShareAccessState(() => this.options.clientsChanged?.());
     if (!options.readOnly && !isRemotePasswordHash(options.passwordHash)) throw new Error("Set a password before starting remote access.");
     if (options.publicOrigin && new URL(options.publicOrigin).origin !== options.publicOrigin) throw new Error("Remote public origin must be an origin without a path");
+    this.mode = options.readOnly ? "share" : "remote";
+    for (const file of ["icon-192.png", "icon-512.png", "apple-touch-icon.png", "favicon.png"]) {
+      const asset: [string, string] = [`icons/${this.mode}/${file}`, "image/png"];
+      this.assets[`/icons/${this.mode}/${file}`] = asset;
+      this.assets[`/${file}`] = asset;
+    }
   }
   private passwordFingerprint() { return createHash("sha256").update(this.options.passwordHash).digest("hex"); }
   private loginDigest(token: string) { return createHash("sha256").update(token).digest("hex"); }
@@ -195,8 +200,8 @@ export class RemoteServer {
     }
   }
   private async clientVersion() {
-    const hash = createHash("sha256");
-    for (const [file] of Object.values(clientAssets)) {
+    const hash = createHash("sha256").update(this.mode);
+    for (const file of new Set(Object.values(this.assets).map(([file]) => file))) {
       hash.update(file); hash.update(await readFile(join(this.options.assetsDirectory, file)));
     }
     // Include the sender protocol and the unbundled source helper as well.
@@ -229,10 +234,22 @@ export class RemoteServer {
       if (request.method === "GET" && url.pathname === "/api/client-version") {
         json(200, { version: await this.clientVersion() }); return;
       }
-      const asset = clientAssets[url.pathname];
+      const asset = this.assets[url.pathname];
       if (request.method === "GET" && asset) {
         let bytes = await readFile(join(this.options.assetsDirectory, asset[0]));
-        if (url.pathname === "/") bytes = Buffer.from(bytes.toString("utf8").replace("__BOATYARD_CLIENT_VERSION__", await this.clientVersion()));
+        if (url.pathname === "/") bytes = Buffer.from(bytes.toString("utf8")
+          .replaceAll("__BOATYARD_APP_NAME__", this.options.readOnly ? "Boatyard Share" : "Boatyard Remote")
+          .replaceAll("__BOATYARD_SHORT_NAME__", this.options.readOnly ? "Share" : "Remote")
+          .replaceAll("__BOATYARD_ICON_PATH__", `/icons/${this.mode}`)
+          .replace("__BOATYARD_CLIENT_VERSION__", await this.clientVersion()));
+        if (url.pathname === "/manifest.json") {
+          const manifest = JSON.parse(bytes.toString("utf8"));
+          manifest.name = this.options.readOnly ? "Boatyard Share" : "Boatyard Remote";
+          manifest.short_name = this.options.readOnly ? "Share" : "Remote";
+          manifest.description = this.options.readOnly ? "View a shared Boatyard window." : "View and control a shared Boatyard window.";
+          for (const icon of manifest.icons) icon.src = `/icons/${this.mode}${icon.src}`;
+          bytes = Buffer.from(JSON.stringify(manifest));
+        }
         response.writeHead(200, { "Content-Type": asset[1] }); response.end(bytes); return;
       }
       const secureCookie = origin?.startsWith("https://") || (host === publicHost && this.options.publicOrigin?.startsWith("https://"));

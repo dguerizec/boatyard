@@ -1,7 +1,7 @@
 {
   "id": "/",
   "name": "Boatyard Remote",
-  "short_name": "Boatyard",
+  "short_name": "Remote",
   "description": "View and control a shared Boatyard window.",
   "start_url": "/",
   "scope": "/",
