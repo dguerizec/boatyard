@@ -52,6 +52,33 @@ test("Malformed saved admission fails closed without partially restoring invitat
   assert.deepEqual(restored.publicSettings, { groupEnabled: false, groupApprovalRequired: true, allowJoinRequests: false });
 });
 
+test("Share browser authentication persists device takeover and forced disconnection without reviving old cookies", async t => {
+  const root = mkdtempSync(join(tmpdir(), "boatyard-share-browser-auth-")), file = join(root, "share-access.json");
+  let server: RemoteServer;
+  t.after(async () => { await server?.stop(); rmSync(root, { recursive: true, force: true }); });
+  const boot = async () => {
+    const access = new ShareAccessState(undefined, file);
+    server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash: "", readOnly: true, shareAccess: access,
+      listWindows: () => [], connect: async () => ({ sessionId: "unused", type: "answer", sdp: "v=0" }), disconnect() {} });
+    return `http://127.0.0.1:${await server.start()}`;
+  };
+  let origin = await boot();
+  const invitation = server!.createReadOnlyInvitation("Alice");
+  const signIn = async () => {
+    const response = await fetch(`${origin}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: invitation.token }) });
+    assert.equal(response.status, 200); return response.headers.get("set-cookie")!.split(";")[0];
+  };
+  const windows = (cookie: string) => fetch(`${origin}/api/windows`, { headers: { Cookie: cookie } });
+  const oldCookie = await signIn(), cookie = await signIn();
+  await server!.stop(); origin = await boot();
+  assert.equal((await windows(oldCookie)).status, 401, "Device takeover is durable");
+  assert.equal((await windows(cookie)).status, 200);
+  server!.disconnectClient(invitation.id);
+  await server!.stop(); origin = await boot();
+  assert.equal((await windows(cookie)).status, 401, "Forced disconnection is durable");
+  assert.equal((await windows(await signIn())).status, 200, "The reusable invitation still permits a deliberate join");
+});
+
 test("Restart resumes enabled Share with saved codes, and explicit Stop remains stopped while keeping options", async t => {
   const root = mkdtempSync(join(tmpdir(), "boatyard-share-restart-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -78,6 +105,7 @@ test("Restart resumes enabled Share with saved codes, and explicit Stop remains 
   const redeem = (origin: string, code: string) => fetch(`${origin}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: code, label: "Alice" }) });
   const login = await redeem(first.manager.getStatus("share").urls[0], invitation.code);
   assert.equal(login.status, 200);
+  assert.ok(!readFileSync(join(root, "share-access.json"), "utf8").includes(login.headers.get("set-cookie")!.split(";")[0].split("=")[1]), "Only hashed browser tokens are persisted");
   const oldCookie = login.headers.get("set-cookie")!.split(";")[0];
   await first.manager.stop();
   const second = await boot();
@@ -87,9 +115,9 @@ test("Restart resumes enabled Share with saved codes, and explicit Stop remains 
   assert.equal(status.shareAccess!.groupApprovalRequired, false);
   assert.equal(status.clients.length, 2);
   assert.equal(status.clients[0].code, invitation.code);
-  assert.equal((status.clients[0] as { state?: string }).state, "invited");
+  assert.equal((status.clients[0] as { state?: string }).state, "signed-in");
   const resumedOrigin = status.urls[0];
-  assert.equal((await fetch(`${resumedOrigin}/api/windows`, { headers: { Cookie: oldCookie } })).status, 401);
+  assert.equal((await fetch(`${resumedOrigin}/api/windows`, { headers: { Cookie: oldCookie } })).status, 200);
   assert.equal((await redeem(resumedOrigin, invitation.code)).status, 200);
   await second.manager.configure("share", {});
   await assert.rejects(second.manager.configureShareAccess({ groupEnabled: true, allowJoinRequests: true }), /Choose either/);
@@ -97,17 +125,22 @@ test("Restart resumes enabled Share with saved codes, and explicit Stop remains 
   assert.equal(second.manager.getStatus("share").clients.length, 2, "Failed setup must preserve restored invitations");
   assert.equal(second.manager.getStatus("share").shareAccess!.groupCode, groupCode);
   await second.manager.revokeClient(revoked.id!);
+  const unused = await second.manager.createReadOnlyLink("Unused invitation");
   await second.manager.configure("share", { enabled: true });
   const origin = second.manager.getStatus("share").urls[0];
-  assert.equal((await redeem(origin, invitation.code)).status, 200);
+  const resumedLogin = await redeem(origin, invitation.code);
+  assert.equal(resumedLogin.status, 200);
+  const resumedCookie = resumedLogin.headers.get("set-cookie")!.split(";")[0];
   assert.equal((await redeem(origin, revoked.code)).status, 401);
   await second.manager.configure("share", { enabled: false });
-  assert.equal(second.manager.getStatus("share").clients.length, 0);
+  assert.equal(second.manager.getStatus("share").clients.length, 1, "Stop preserves invitations that have never been used");
   assert.equal(second.manager.getStatus("share").shareAccess!.groupApprovalRequired, false);
   const third = await boot();
   assert.equal(third.manager.getStatus("share").listening, false, "Explicit Stop survives restart");
-  assert.equal(third.manager.getStatus("share").clients.length, 0);
+  assert.equal(third.manager.getStatus("share").clients.length, 1);
   assert.notEqual(third.manager.getStatus("share").shareAccess!.groupCode, groupCode);
   await third.manager.configure("share", { enabled: true });
   assert.equal((await redeem(third.manager.getStatus("share").urls[0], invitation.code)).status, 401);
+  assert.equal((await fetch(`${third.manager.getStatus("share").urls[0]}/api/windows`, { headers: { Cookie: resumedCookie } })).status, 401);
+  assert.equal((await redeem(third.manager.getStatus("share").urls[0], unused.code)).status, 200);
 });

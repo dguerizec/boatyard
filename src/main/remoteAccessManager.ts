@@ -38,7 +38,7 @@ export class RemoteAccessManager {
   configure(mode: RemoteAccessMode, patch?: Record<string, unknown>) {
     return this.run(() => this.applyConfiguration(mode, patch, false, mode === "share" && patch?.enabled === false));
   }
-  private async applyConfiguration(mode: RemoteAccessMode, patch?: Record<string, unknown>, addingClient = false, clearInvitations = false) {
+  private async applyConfiguration(mode: RemoteAccessMode, patch?: Record<string, unknown>, addingClient = false, endShareSession = false) {
     if (mode === "share" && !addingClient && patch?.enabled !== true) {
       patch = { ...patch, enabled: false };
     }
@@ -51,7 +51,7 @@ export class RemoteAccessManager {
         throw new Error("Remote and Share must use different external URLs.");
       }
     }
-    return this.controllers[mode].configure(patch ? { ...patch, readOnly: mode === "share" } : { readOnly: mode === "share" }, clearInvitations);
+    return this.controllers[mode].configure(patch ? { ...patch, readOnly: mode === "share" } : { readOnly: mode === "share" }, endShareSession);
   }
   clientsChanged(mode: RemoteAccessMode) {
     if (mode !== "share" || this.stopped) return;

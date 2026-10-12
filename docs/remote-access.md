@@ -21,8 +21,8 @@ of its label, keeping the same width. Stopping the server restores its normal ap
   WebRTC candidate pair. The route refreshes every three seconds; until it is
   known, the dialog shows **Checking connection…**.
   **Add participant** starts Share if needed. The host may prefill a name, or leave
-  it for the participant to enter before joining. **Stop sharing** revokes all Share access
-  while leaving Remote running.
+  it for the participant to enter before joining. **Stop sharing** ends the Share
+  session and invalidates used personal codes while leaving Remote running.
 
 The Share dialog and Share pane open on **Session**, with connected participants,
 microphone moderation, join approvals, and the speaking queue. **Give the floor**
@@ -101,11 +101,15 @@ includes the full link;
 **Copy code** copies the digits formatted as two groups of three.
 Revoking a participant invalidates their code and browser authentication and ends
 their stream. Disconnecting or signing out preserves their personal code.
-**Stop sharing** invalidates personal codes and rotates the group code, while
-keeping the joining options. Quitting Boatyard or applying Share server settings
-ends requests and browser authentication but preserves invitations and joining
-options. If Share was enabled when Boatyard quit, it resumes automatically;
-participants can join again with their existing codes.
+**Stop sharing** ends browser authentication, invalidates personal codes that have
+already been used, and rotates the group code. Invitations that have never been
+used and the joining options remain available. Quitting Boatyard or applying Share
+server settings preserves browser authentication, invitations and joining options;
+pending requests end. If Share was enabled when Boatyard quit, it resumes
+automatically, and its admitted clients reconnect without entering their code.
+Refreshing or reopening a crashed client also resumes its authenticated connection.
+Automatic reconnection never redeems a code, so it cannot bypass a forced
+**Disconnect**, revocation, sign-out or an explicit **Stop sharing**.
 Removing the last participant also stops Share unless group entry or join
 requests remain enabled.
 
@@ -270,9 +274,10 @@ The browser keeps an HttpOnly, SameSite cookie. **Sign out** invalidates that
 browser's authentication and ends its stream; a Share participant can use their
 personal code to join again. Disconnecting or reloading preserves active browser
 access. Remote and Share use separate cookies, including when both are accessed
-through the same LAN host. Share authentication ends when sharing stops or the
-personal code is used on another device. Remote authentication persists across
-restarts unless signed out or the password changes.
+through the same LAN host. Share authentication survives Boatyard restarts and
+ends when sharing is explicitly stopped or the personal code is used on another
+device. Remote authentication persists across restarts unless signed out or the
+password changes.
 
 The listener binds to `0.0.0.0`. The advanced environment override
 `BOATYARD_REMOTE_HOST=127.0.0.1` restricts it to loopback. The application accepts
@@ -371,7 +376,9 @@ explicit sign-out or a password change. Only session-token hashes are stored in
 authenticated requests; browser storage limits and clearing site data still apply.
 Share browser authentication lasts until sign-out, participant revocation,
 use of the personal code on another device, or stopping Share;
-stopping Share still invalidates its invitations and browser sessions.
+an explicit Stop invalidates browser sessions and used invitations, preserving
+unused codes. Only browser-token hashes and their participant identities are saved
+in the private Share access file.
 
 Viewer commands use a single bottom toolbar with Lucide icons and labeled tooltips.
 Connection messages appear centered in the video area. When disconnected, the
@@ -450,7 +457,11 @@ An actual transport interruption can trigger authenticated HTTP recovery,
 limited to one attempt per 30 seconds.
 The same participant, host microphone restrictions, hand order and camera crop
 remain in place; the guest's own microphone is muted during recovery and must
-be explicitly enabled again. Failed recovery leaves the viewer disconnected.
+be explicitly enabled again. If recovery cannot reuse the old transport, the
+viewer retries an authenticated new connection while Boatyard is unavailable,
+including across host restarts. Reloaded clients resume the previously selected
+window when available, or the sole available window. Invalidated authentication
+ends retries and requires explicit admission again.
 The host keeps an interrupted transport for up to 15 seconds to accept recovery;
 explicit disconnects and invitation revocation still close it immediately.
 The diagnostics text can be selected and copied; the host packet queue measures

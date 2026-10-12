@@ -32,6 +32,35 @@ import { openMicrophone } from './microphone.js';
   let frameTimer, frameCallback, pointerViewport, iceRenewalTimer;
   let authenticated = false, readOnly = false, iceServers = [], iceTransportPolicy = "all", peer, channel, sessionId, viewport, full, requested, revision = 0;
   let generation = 0, viewTimer, lastMove, moveFrame;
+  let reconnectTimer, reconnectEpoch = 0;
+  const remembered = key => { try { return sessionStorage.getItem(key); } catch { return null; } };
+  const remember = (key, value) => { try { if (value) sessionStorage.setItem(key, value); else sessionStorage.removeItem(key); } catch { /* Reconnection still works within this page when storage is unavailable. */ } };
+  let reconnectWanted = remembered('boatyard-stream-active') === 'true';
+  function cancelReconnect(clearIntent = true) {
+    ++reconnectEpoch; clearTimeout(reconnectTimer); reconnectTimer = null;
+    if (clearIntent) { reconnectWanted = false; remember('boatyard-stream-active', null); }
+  }
+  function retryConnection() {
+    if (!reconnectWanted || peer || reconnectTimer) return;
+    const epoch = reconnectEpoch;
+    status('Waiting for Boatyard to reconnect…');
+    reconnectTimer = setTimeout(async () => {
+      reconnectTimer = null;
+      if (epoch !== reconnectEpoch || !reconnectWanted) return;
+      closeChat();
+      try { if (await loadWindows(true)) return; }
+      catch (error) {
+        if (epoch === reconnectEpoch) {
+          status(error.message);
+          if (error.status === 401) {
+            cancelReconnect();
+            if (!passwordLogin) shareJoin.show(error.message);
+          }
+        }
+      }
+      if (epoch === reconnectEpoch) retryConnection();
+    }, 1500);
+  }
   const voiceAudio = $('voiceAudio');
   let microphone = null, audioSender = null, voiceAllowed = false, selfMuted = true, handRaised = null, microphoneBusy = false, voiceError = "", microphoneRequest = 0, audioMode = 'open-discussion', hasFloor = false;
   let microphoneCapture = null;
@@ -152,7 +181,8 @@ import { openMicrophone } from './microphone.js';
     peer?.close(); peer = null; channel = null;
     diagnostics.reset(); renderVoice(); video.srcObject = null; surface.classList.remove('live', 'screen-waiting'); refreshWaitingScreen();
   }
-  function reset(checkUpdate = true) {
+  function reset(checkUpdate = true, preserveIntent = false) {
+    cancelReconnect(!preserveIntent);
     recovering = false; recovery.reset();
     closeTransport(); handRaised = null; voiceError = "";
     followRevision = 0; setFollowLocal(false); renderVoice(); viewport = requested = null;
@@ -163,9 +193,12 @@ import { openMicrophone } from './microphone.js';
     const disconnected = id ? api('/api/disconnect', { sessionId: id }).catch(() => {}) : Promise.resolve();
     return disconnected.then(() => { if (checkUpdate !== false) return clientUpdates.check(); });
   }
-  $('disconnect').onclick = reset;
-  async function loadWindows() {
-    const result = await api('/api/windows'); iceServers = result.iceServers; readOnly = result.readOnly;
+  $('disconnect').onclick = () => { void reset(); };
+  async function loadWindows(resume = false) {
+    const epoch = reconnectEpoch;
+    const result = await api('/api/windows');
+    if (resume && epoch !== reconnectEpoch) return true;
+    iceServers = result.iceServers; readOnly = result.readOnly;
     $('windows').replaceChildren(...result.windows.map(w => {
       const option = document.createElement('option'); option.value = w.id; option.textContent = w.title || w.id;
       option.dataset.width = w.width; option.dataset.height = w.height; return option;
@@ -178,7 +211,12 @@ import { openMicrophone } from './microphone.js';
     if (readOnly && !disposeChat) disposeChat = startShareChatClient({ api, root: $("chatPanel"), button: $("chat"), workspace: $("viewerWorkspace") });
     updateViewerHint();
     status(result.windows.length ? 'Choose a window' : 'No windows available');
-    if (result.windows.length === 1) $('connect').requestSubmit();
+    const desired = remembered('boatyard-stream-window'), title = remembered('boatyard-stream-title');
+    const matches = result.windows.filter(window => window.title === title);
+    const selected = result.windows.find(window => window.id === desired) || (matches.length === 1 ? matches[0] : undefined);
+    if (resume && selected) $('windows').value = selected.id;
+    if (result.windows.length === 1 || resume && selected) return connectStream();
+    return false;
   }
   $('login').onsubmit = async event => {
     event.preventDefault(); status('Signing in…');
@@ -206,7 +244,10 @@ import { openMicrophone } from './microphone.js';
     finally { recovering = false; }
   }
   async function connectStream(replaceTransport = false, following = false) {
-    if (peer) return;
+    if (peer) return true;
+    reconnectWanted = true; remember('boatyard-stream-active', 'true');
+    remember('boatyard-stream-window', $('windows').value);
+    remember('boatyard-stream-title', $('windows').selectedOptions[0]?.textContent || '');
     const startedAt = generation;
     const selected = $('windows').selectedOptions[0]; if (!selected) return;
     status(replaceTransport ? 'Recovering live video…' : 'Connecting…');
@@ -217,7 +258,14 @@ import { openMicrophone } from './microphone.js';
       readOnly = metadata.readOnly; iceServers = metadata.iceServers;
       if (!replaceTransport) iceTransportPolicy = metadata.iceTransportPolicy === "relay" ? "relay" : "all";
     }
-    catch (error) { if (generation === startedAt) { if (replaceTransport) reset(); status(replaceTransport ? `Connection lost. ${error.message}` : error.message); } return; }
+    catch (error) {
+      if (generation === startedAt) {
+        void reset(false, reconnectWanted);
+        status(replaceTransport ? `Connection lost. ${error.message}` : error.message);
+        retryConnection();
+      }
+      return false;
+    }
     if (peer || generation !== startedAt) return;
     const current = ++generation;
     if (!replaceTransport) {
@@ -266,7 +314,7 @@ import { openMicrophone } from './microphone.js';
     const interrupted = () => {
       if (generation !== current || recovering) return;
       if (recovery.attempt()) void recoverStream();
-      else { reset(); status('Connection lost. Connect again.'); }
+      else { void reset(false, true); retryConnection(); }
     };
     channel.onclose = interrupted;
     channel.onopen = () => { if (generation === current) {
@@ -316,7 +364,14 @@ import { openMicrophone } from './microphone.js';
       if (generation !== current) { await api('/api/disconnect', { sessionId: answer.sessionId }); return; }
       sessionId = answer.sessionId;
       await connection.setRemoteDescription({ type: answer.type, sdp: answer.sdp });
-    } catch (error) { if (generation === current) { reset(); status(replaceTransport ? `Connection lost. ${error.message}` : error.message); } }
+      return true;
+    } catch (error) {
+      if (generation === current) {
+        void reset(false, reconnectWanted); status(replaceTransport ? `Connection lost. ${error.message}` : error.message);
+        retryConnection();
+      }
+      return false;
+    }
   }
   function sameCrop(a, b) { return a && b && ['x', 'y', 'width', 'height'].every(key => Math.abs(a[key] - b[key]) < .01); }
   function presentFrame() {
@@ -544,7 +599,7 @@ import { openMicrophone } from './microphone.js';
   surface.addEventListener('blur', release);
   window.addEventListener('blur', release);
   document.addEventListener('visibilitychange', () => { if (document.hidden) release(); });
-  window.addEventListener('pagehide', () => { diagnostics.stop(); reset(false); });
+  window.addEventListener('pagehide', () => { diagnostics.stop(); void reset(false, true); });
   const clientUpdates = startRemoteClientUpdates({ version: document.querySelector('meta[name="boatyard-client-version"]').content,
     installButton: $('install'), isConnected: () => Boolean(peer) });
   void (async () => {
@@ -552,7 +607,7 @@ import { openMicrophone } from './microphone.js';
     try {
       const auth = await api('/api/auth'); passwordLogin = auth.passwordLogin; shareJoin.configure(auth);
       if (!passwordLogin && share) { shareJoin.show(); return; }
-      try { await loadWindows(); }
+      try { await loadWindows(reconnectWanted); }
       catch (error) {
         if (!passwordLogin && error.status === 401 && shareJoin.resumeRequest()) return;
         throw error;
@@ -561,6 +616,7 @@ import { openMicrophone } from './microphone.js';
       $('login').hidden = !passwordLogin;
       if (!passwordLogin) shareJoin.show();
       status(passwordLogin ? 'Sign in to connect.' : 'Enter your access code or ask to join.');
+      if (error.status === 401) cancelReconnect(); else retryConnection();
     }
   })();
 })();

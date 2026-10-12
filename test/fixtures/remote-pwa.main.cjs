@@ -99,13 +99,13 @@ module.exports = async harness => {
         : original(url,options);
       document.getElementById('connect').requestSubmit();
     })()`);
-    await until('document.getElementById("status").textContent === "Boatyard is unavailable. Make sure it is running, then try again."');
+    await until('document.getElementById("status").textContent === "Waiting for Boatyard to reconnect…"');
     assert.equal(await client.webContents.executeJavaScript('document.getElementById("connect").hidden'), false, 'A proxy error keeps reconnection available');
     await client.webContents.executeJavaScript('window.fixtureProxyOffline=false');
     const before = await client.webContents.executeJavaScript('document.querySelector("meta[name=boatyard-client-version]").content');
     appendFileSync(join(remoteDirectory, 'remote.css'), '\nbody { background-color: rgb(33, 44, 55); }\n');
     await client.webContents.executeJavaScript('document.getElementById("connect").requestSubmit()');
-    await until(`document.querySelector('meta[name=boatyard-client-version]').content !== ${JSON.stringify(before)} && document.getElementById('status').textContent === 'Choose a window'`);
+    await until(`document.querySelector('meta[name=boatyard-client-version]').content !== ${JSON.stringify(before)} && document.body.classList.contains('authenticated')`);
     assert.equal(await client.webContents.executeJavaScript('getComputedStyle(document.body).backgroundColor'), 'rgb(33, 44, 55)', 'Actual reload applies the new stylesheet');
     assert.equal(await client.webContents.executeJavaScript('document.getElementById("login").hidden && location.hash === ""'), true, 'Reload preserves the redeemed Share cookie without replaying the invitation');
     assert.equal(server.getClients().length, 1);

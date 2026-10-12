@@ -45,12 +45,12 @@ export class RemoteAccessController {
     return { ...settings, shareAccess: access ? { groupEnabled: access.groupEnabled, groupApprovalRequired: access.groupApprovalRequired,
       allowJoinRequests: access.allowJoinRequests, groupCode: access.groupCode, groupUrls: access.groupCode ? this.urls.map(url => `${url}/#share=${access.groupCode}`) : [], requests: access.requests } : undefined, hostMicrophone: this.service?.getHostMicrophone?.() ?? { deviceId: "", devices: [] }, audioMode: this.service?.getAudioMode?.() ?? "open-discussion", hostMuted: this.service?.getHostMuted?.() ?? true, allMuted: this.service?.getAllMuted?.() ?? false, hasPassword: Boolean(passwordHash), listening: Boolean(this.service), urls: [...this.urls], error: this.error, clients, connectedClients: this.service?.server.getConnectedClientCount?.() || 0 };
   }
-  configure(patch?: Record<string, unknown>, clearInvitations = false) {
+  configure(patch?: Record<string, unknown>, endShareSession = false) {
     const result = this.queue.then(async () => {
       if (this.stopped) throw new Error("Boatyard is shutting down.");
       if (patch) await this.settings.update(patch);
       await this.stopService();
-      if (clearInvitations) this.shareAccess?.clearInvitations();
+      if (endShareSession) this.shareAccess?.terminateSession();
       this.error = null;
       const settings = this.settings.get();
       if (settings.enabled) {

@@ -85,7 +85,14 @@ export class RemoteServer {
   private loginDigest(token: string) { return createHash("sha256").update(token).digest("hex"); }
   private loadLogins() {
     const file = this.options.sessionFilePath;
-    if (!file || this.options.readOnly) return;
+    if (this.options.readOnly) {
+      for (const { login, id } of this.shareAccess.getBrowserSessions()) {
+        const participant = this.shareAccess.participants.get(id);
+        if (participant) { this.logins.add(login); this.loginClients.set(login, { id, label: participant.label }); }
+      }
+      return;
+    }
+    if (!file) return;
     if (existsSync(file)) {
       try {
         const saved = JSON.parse(readFileSync(file, "utf8"));
@@ -98,7 +105,11 @@ export class RemoteServer {
   }
   private saveLogins() {
     const file = this.options.sessionFilePath;
-    if (!file || this.options.readOnly) return;
+    if (this.options.readOnly) {
+      this.shareAccess.saveBrowserSessions([...this.loginClients].filter(([login]) => this.logins.has(login)).map(([login, client]) => ({ login, id: client.id })));
+      return;
+    }
+    if (!file) return;
     mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     const temporary = `${file}.${process.pid}.tmp`;
     writeFileSync(temporary, JSON.stringify({ passwordFingerprint: this.passwordFingerprint(), logins: [...this.logins] }) + "\n", { mode: 0o600 });
@@ -164,7 +175,7 @@ export class RemoteServer {
     const token = randomBytes(32).toString("base64url"), login = this.loginDigest(token);
     this.shareAccess.claimed(participant.id);
     this.logins.add(login); this.loginClients.set(login, { id: participant.id, label: participant.label });
-    this.options.clientsChanged?.(); return token;
+    this.saveLogins(); this.options.clientsChanged?.(); return token;
   }
   private allowShareAttempt(request: IncomingMessage, validCode: boolean) {
     const now = Date.now(), address = request.socket.remoteAddress || "unknown";

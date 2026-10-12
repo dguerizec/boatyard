@@ -1,0 +1,86 @@
+const { BrowserWindow } = require('electron');
+const assert = require('node:assert/strict');
+const { mkdtempSync, rmSync } = require('node:fs');
+const { tmpdir } = require('node:os');
+const { join } = require('node:path');
+const { RemoteAccessService } = require('../../build/main/remoteAccess');
+const { ShareAccessState } = require('../../build/main/shareAccessState');
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+module.exports = async harness => {
+  const root = mkdtempSync(join(tmpdir(), 'boatyard-share-reconnect-'));
+  const file = join(root, 'share-access.json');
+  const target = new BrowserWindow({ show: true, width: 800, height: 600, webPreferences: { sandbox: true } });
+  await target.loadURL('data:text/html,<title>Shared fixture</title><body style="background:navy">Shared window</body>');
+  const client = new BrowserWindow({ show: false, webPreferences: { sandbox: true, backgroundThrottling: false } });
+  let access = new ShareAccessState(undefined, file), service, port = 0, windowId = 'before-restart';
+  const boot = async () => {
+    service = new RemoteAccessService({ passwordHash: '', readOnly: true, shareAccess: access, host: '127.0.0.1', port,
+      windows: () => [{ id: windowId, window: target }],
+      target: (_, x, y) => ({ contents: target.webContents, x, y }), canInput: () => false });
+    port = await service.start();
+  };
+  await boot();
+  const origin = `http://127.0.0.1:${port}`;
+  const requests = [];
+  client.webContents.session.webRequest.onCompleted({ urls: [`${origin}/api/*`] }, details => { requests.push({ path: new URL(details.url).pathname, status: details.statusCode }); });
+  const evaluate = expression => client.webContents.executeJavaScript(expression);
+  const until = async (predicate, label) => {
+    for (let attempt = 0; attempt < 700; attempt++) { if (await predicate()) return; await sleep(50); }
+    throw new Error(`Share reconnect timed out: ${label}; status=${await evaluate('document.getElementById("status").textContent')}; intent=${await evaluate('sessionStorage.getItem("boatyard-stream-active")')}; requests=${JSON.stringify(requests.slice(-15))}`);
+  };
+  const connected = () => until(async () => service.server.getConnectedClientCount() === 1 &&
+    await evaluate('document.getElementById("status").textContent.startsWith("Connected") && document.getElementById("video").videoWidth > 0'), 'live video');
+  const joinClient = async code => {
+    await evaluate(`document.getElementById('accessCode').value=${JSON.stringify(code)};document.getElementById('participantName').value='Alice';document.getElementById('shareJoin').requestSubmit()`);
+    await connected();
+  };
+  harness.on('closed', () => {
+    void service.stop().finally(() => rmSync(root, { recursive: true, force: true }));
+    if (!client.isDestroyed()) client.destroy();
+    if (!target.isDestroyed()) target.destroy();
+  });
+  void (async () => {
+    const invitation = service.server.createReadOnlyInvitation('Alice');
+    const unused = service.server.createReadOnlyInvitation('Unused');
+    await client.loadURL(`${origin}/#share=${invitation.token}`);
+    await until(() => evaluate('!document.getElementById("shareJoin").hidden'), 'initial join form');
+    await joinClient(invitation.token);
+    const identity = service.server.getClients().find(client => client.state === 'connected').id;
+    let loaded = new Promise(resolve => client.webContents.once('did-finish-load', resolve));
+    client.reload(); await loaded;
+    await connected();
+    assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'Reload keeps participant identity');
+    const crashed = new Promise(resolve => client.webContents.once('render-process-gone', resolve));
+    client.webContents.forcefullyCrashRenderer(); await crashed;
+    await sleep(100); loaded = new Promise(resolve => client.webContents.once('did-finish-load', resolve));
+    client.reload(); await loaded; await connected();
+    assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'Renderer crash and reload preserve admission');
+    await service.stop();
+    await sleep(2200);
+    access = new ShareAccessState(undefined, file); windowId = 'after-restart';
+    await boot(); await connected();
+    assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'Host restart retains the admitted participant');
+    assert.equal(await evaluate('document.getElementById("microphone").getAttribute("aria-pressed")'), 'false', 'Automatic reconnection never starts a microphone');
+    service.server.disconnectClient(identity);
+    await until(() => evaluate('!document.getElementById("shareJoin").hidden'), 'forced disconnect requires admission');
+    await sleep(2200);
+    assert.equal(service.server.getConnectedClientCount(), 0, 'Forced disconnect does not automatically redeem a reusable code');
+    await joinClient(invitation.token);
+    await service.stop(); access.terminateSession();
+    await sleep(1800); access = new ShareAccessState(undefined, file); await boot();
+    await until(() => evaluate('!document.getElementById("shareJoin").hidden'), 'explicit Stop terminates admission');
+    await sleep(1800);
+    assert.equal(service.server.getConnectedClientCount(), 0, 'Restarting Share after explicit Stop does not resume the old client');
+    assert.equal(access.lookup(invitation.token), undefined, 'Used code is invalidated by Stop');
+    assert.ok(access.lookup(unused.token), 'Unused invitation survives Stop');
+    await client.webContents.executeJavaScript('document.getElementById("accessCode").value="000000"');
+    client.reload();
+    await until(() => evaluate('!document.getElementById("shareJoin").hidden'), 'reload after Stop still requires admission');
+    assert.equal(service.server.getConnectedClientCount(), 0);
+    await joinClient(unused.token);
+    await service.stop(); client.destroy(); target.destroy();
+    rmSync(root, { recursive: true, force: true });
+    await harness.webContents.executeJavaScript('window.browserTestResult="passed"');
+  })().catch(error => { console.error(error); require('electron').app.exit(1); });
+};
