@@ -176,7 +176,11 @@ export class RemoteServer {
   }
   revokeClient(id: string) {
     this.shareAccess.revoke(id);
+    this.disconnectClient(id);
+  }
+  disconnectClient(id: string) {
     for (const [login, client] of [...this.loginClients]) if (client.id === id) this.invalidateLogin(login);
+    this.saveLogins();
     this.options.clientsChanged?.();
   }
   async start(): Promise<number> {

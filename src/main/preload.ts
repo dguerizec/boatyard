@@ -79,6 +79,7 @@ contextBridge.exposeInMainWorld("boatyard", {
   },
   configureShareAccess: (patch: unknown) => ipcRenderer.invoke("share:access:update", patch),
   decideShareJoinRequest: (id: string, accepted: boolean) => ipcRenderer.invoke("share:request:decide", id, accepted),
+  disconnectRemoteClient: (mode: "remote" | "share", id: string) => ipcRenderer.invoke("remote:client:disconnect", mode, id),
   revokeShareClient: (id: string) => ipcRenderer.invoke("remote:client:revoke", id),
   getWebrtcSettings: () => ipcRenderer.invoke("webrtc:settings"),
   updateWebrtcSettings: (settings: unknown) => ipcRenderer.invoke("webrtc:settings:update", settings),

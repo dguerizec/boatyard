@@ -280,6 +280,7 @@ export type BoatyardBridge = {
   onShareChatChanged?: (callback: () => void) => () => void;
   configureShareAccess?: (patch: { groupEnabled?: boolean; groupApprovalRequired?: boolean; allowJoinRequests?: boolean }) => Promise<UnknownRecord>;
   decideShareJoinRequest?: (id: string, accepted: boolean) => Promise<UnknownRecord>;
+  disconnectRemoteClient?: (mode: "remote" | "share", id: string) => Promise<UnknownRecord>;
   revokeShareClient?: (id: string) => Promise<UnknownRecord>;
   getWebrtcSettings?: () => Promise<UnknownRecord>;
   updateWebrtcSettings?: (settings: UnknownRecord) => Promise<UnknownRecord>;

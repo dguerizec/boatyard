@@ -31,6 +31,12 @@ controls, joining options, participant creation, and invitation links and codes,
 including invitations for participants already connected. **Shared projects**
 controls which projects may be shown. Switching tabs preserves invitation drafts.
 
+Each connected Share or Remote participant has a **Disconnect** button (plug icon)
+on their **Session** row. It closes that client's stream and browser authentication
+without affecting other participants. The client must sign in again before
+reconnecting; their Share invitation remains reusable. Use **Revoke** in **Setup**
+to invalidate the invitation as well.
+
 The **Session** tab includes **Hide screen / Show screen**. Press
 **Ctrl+Shift+S** anywhere in a Boatyard window, including embedded web apps, to
 toggle it. Hiding sends black video while preserving connections, invitations,

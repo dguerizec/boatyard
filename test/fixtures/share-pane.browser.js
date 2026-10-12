@@ -33,6 +33,13 @@ const bridge = {
   },
   getRemoteStatus: mode => mode === 'share' ? new Promise(resolve => { resolveInitial = resolve; }) : Promise.resolve(state.remote),
   onRemoteStatusChanged: (listener, mode) => { listeners[mode].add(listener); return () => listeners[mode].delete(listener); },
+  async disconnectRemoteClient(mode, id) {
+    controls.push({ mode, id, disconnect: true });
+    if (mode === 'share') state.share.clients.find(client => client.id === id).state = 'invited';
+    else state.remote.clients = state.remote.clients.filter(client => client.id !== id);
+    state[mode].connectedClients--;
+    listeners[mode].forEach(listener => listener(state[mode])); return state[mode];
+  },
   async setRemoteVoiceAllowed(mode, id, allowed) {
     controls.push({ mode, id, allowed });
     for (const client of state[mode].clients) if (id === null || id === client.id) { client.voice.allowed = allowed; if (!allowed) client.voice.selfMuted = true; }
@@ -228,6 +235,15 @@ check(pane.querySelector('[data-microphone-hint]').textContent.includes('unavail
 microphoneDevice.value = ''; microphoneDevice.dispatchEvent(new Event('change')); await tick();
 check(state.share.hostMicrophone.deviceId === '' && state.share.hostMuted, 'System default can be selected without unmuting');
 check(pane.scrollWidth <= pane.clientWidth, 'The microphone selector fits a narrow pane');
+const aliceDisconnect = session.querySelector('[data-client-id=alice] [data-client-action=disconnect]');
+check(!aliceDisconnect.hidden && aliceDisconnect.getAttribute('aria-label') === 'Disconnect: Alice', 'Connected participants have an accessible disconnect action');
+check([...setup.querySelectorAll('[data-client-action=disconnect]')].every(button => button.hidden), 'Invitations retain their separate revoke action');
+aliceDisconnect.click(); await tick();
+check(controls.at(-1).mode === 'share' && controls.at(-1).id === 'alice' && controls.at(-1).disconnect, 'Share disconnect targets the selected participant');
+check(!session.querySelector('[data-client-id=alice]') && setup.querySelector('[data-client-id=alice]'), 'Disconnect removes the participant while preserving the invitation');
+check(session.querySelector('[data-client-id=bob]'), 'Other participants stay connected');
+session.querySelector('[data-client-id=remote] [data-client-action=disconnect]').click(); await tick();
+check(controls.at(-1).mode === 'remote' && controls.at(-1).id === 'remote' && !session.querySelector('[data-client-id=remote]'), 'Remote disconnect uses the same control with the correct service');
 state.share.listening = state.remote.listening = false;
 state.share.connectedClients = state.remote.connectedClients = 0;
 state.share.clients = state.remote.clients = [];

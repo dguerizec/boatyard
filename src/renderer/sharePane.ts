@@ -108,7 +108,7 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
   const statuses: Record<Mode, UnknownRecord> = { share: {}, remote: {} };
   const revisions = { share: 0, remote: 0 };
   let disposed = false, busy = false, loaded = false;
-  const rows = new Map<string, { root: HTMLLIElement; text: HTMLElement; voice: HTMLElement; mute: HTMLButtonElement; floor: HTMLButtonElement; revoke: HTMLButtonElement; urls: HTMLElement; rendered?: string }>();
+  const rows = new Map<string, { root: HTMLLIElement; text: HTMLElement; voice: HTMLElement; mute: HTMLButtonElement; floor: HTMLButtonElement; revoke: HTMLButtonElement; disconnect: HTMLButtonElement; urls: HTMLElement; rendered?: string }>();
   const form = root.querySelector<HTMLFormElement>("[data-invite]")!;
   const label = form.elements.namedItem("label") as HTMLInputElement;
   const list = root.querySelector<HTMLUListElement>('[data-share-panel="session"] .remote-client-list')!;
@@ -309,10 +309,10 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
           const key = `${mode}:${id}:${invitation}`; ids.add(key);
           let row = rows.get(key);
           if (!row) {
-            const item = document.createElement("li"), heading = document.createElement("div"), text = document.createElement("span"), voice = document.createElement("span"), mute = document.createElement("button"), floor = document.createElement("button"), revoke = document.createElement("button"), urls = document.createElement("div");
+            const item = document.createElement("li"), heading = document.createElement("div"), text = document.createElement("span"), voice = document.createElement("span"), mute = document.createElement("button"), floor = document.createElement("button"), revoke = document.createElement("button"), disconnect = document.createElement("button"), urls = document.createElement("div");
             item.className = "remote-client-row"; item.dataset.clientId = id; heading.className = "remote-client-heading"; urls.className = "remote-urls";
             voice.className = "remote-client-voice"; voice.setAttribute("role", "img");
-            for (const button of [mute, floor, revoke]) { button.type = "button"; button.className = "secondary-button"; }
+            for (const button of [mute, floor, revoke, disconnect]) { button.type = "button"; button.className = "secondary-button"; }
             floor.dataset.clientAction = "floor";
             floor.onclick = () => { void run(() => controlConference(mode, { floor: id })); };
             revoke.textContent = "Revoke"; revoke.dataset.clientAction = "revoke"; mute.dataset.clientAction = "mute"; revoke.hidden = mode !== "share";
@@ -322,8 +322,10 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
               await mutate(mode, () => api.setRemoteVoiceAllowed!(mode, id, toUnknownRecord(current?.voice).allowed !== true));
             }); };
             revoke.onclick = () => { void run(async () => { if (!api.revokeShareClient) throw new Error("Client management is unavailable."); await mutate("share", () => api.revokeShareClient!(id)); }); };
-            heading.append(text, voice, floor, mute, revoke); item.append(heading, urls); (invitation ? invitations : list).append(item);
-            row = { root: item, text, voice, mute, floor, revoke, urls }; rows.set(key, row);
+            disconnect.dataset.clientAction = "disconnect";
+            disconnect.onclick = () => { void run(async () => { if (!api.disconnectRemoteClient) throw new Error("Client management is unavailable."); await mutate(mode, () => api.disconnectRemoteClient!(mode, id)); }); };
+            heading.append(text, voice, floor, mute, disconnect, revoke); item.append(heading, urls); (invitation ? invitations : list).append(item);
+            row = { root: item, text, voice, mute, floor, revoke, disconnect, urls }; rows.set(key, row);
           }
           const route = client.route === "direct" ? "Direct" : client.route === "relay" ? "Relayed" : "Checking connection…";
           row.text.textContent = `${client.label || "Unnamed participant"} · ${mode === "remote" ? "Remote · " : ""}${client.state === "connected" ? `Connected · ${route}` : client.state === "invited" ? "Invited" : "Signed in"}`;
@@ -345,6 +347,8 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
           row.mute.dataset.allowed = String(voice.allowed !== false);
           iconAction(row.revoke, "trash", `Revoke: ${client.label || "Unnamed participant"}`);
           row.mute.disabled = busy || !connected; row.mute.hidden = invitation || !connected; row.revoke.disabled = busy; row.revoke.hidden = !invitation;
+          iconAction(row.disconnect, "unplug", `Disconnect: ${client.label || "Unnamed participant"}`);
+          row.disconnect.hidden = invitation || !connected; row.disconnect.disabled = busy;
           row.urls.hidden = !invitation;
           const links = invitation && Array.isArray(client.urls) ? client.urls.map(String) : [];
           const rendered = JSON.stringify([links, client.code]);

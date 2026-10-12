@@ -98,6 +98,7 @@ export class RemoteAccessManager {
   updateShareScreen(patch: Record<string, unknown> | (() => Record<string, unknown>)) { return this.run(() => this.controllers.share.updateScreen(typeof patch === "function" ? patch() : patch)); }
   toggleShareScreen() { return this.run(() => this.controllers.share.updateScreen({ screenHidden: !this.getStatus("share").screenHidden })); }
   revokeClient(id: string) { return this.run(() => this.controllers.share.revokeClient(id)); }
+  disconnectClient(mode: RemoteAccessMode, id: string) { return this.run(() => this.controllers[mode].disconnectClient(id)); }
   voiceControl(mode: RemoteAccessMode, id: string | null, allowed: boolean) { return this.run(() => this.controllers[mode].voiceControl(id, allowed)); }
   conferenceControl(mode: RemoteAccessMode, action: { audioMode: RemoteAudioMode } | { floor: string | null }) { return this.run(() => this.controllers[mode].conferenceControl(action)); }
   prepareHostMicrophones(mode: RemoteAccessMode) { return this.run(async () => {

@@ -23,6 +23,7 @@ type RemoteService = {
     decideShareJoinRequest?(id: string, accepted: boolean): void;
     getConnectedClientCount?(): number;
     revokeClient?(id: string): void;
+    disconnectClient?(id: string): void;
   };
 };
 export class RemoteAccessController {
@@ -109,6 +110,13 @@ export class RemoteAccessController {
       if (this.service) this.service.server.revokeClient?.(id);
       else this.shareAccess?.revoke(id);
       this.changed(); return this.getStatus();
+    });
+    this.queue = result.catch(() => {}); return result;
+  }
+  disconnectClient(id: string) {
+    const result = this.queue.then(() => {
+      if (this.stopped || !this.service?.server.disconnectClient) throw new Error("Client management is unavailable.");
+      this.service.server.disconnectClient(id); this.changed(); return this.getStatus();
     });
     this.queue = result.catch(() => {}); return result;
   }

@@ -332,7 +332,7 @@ test("Share reserves viewer capacity during concurrent connection setup", async 
   assert.equal((await connect(cookies[refused])).status, 200, "Capacity returns after one viewer disconnects");
 });
 
-test("revoking a Share client during setup discards its answer and closes only its stream", async t => {
+for (const action of ["revokeClient", "disconnectClient"] as const) test(`${action} during Share setup discards its answer and closes only its stream`, async t => {
   let finish!: (answer: { sessionId: string; sdp: string; type: "answer" }) => void, started!: () => void;
   const entered = new Promise<void>(resolve => { started = resolve; }), disconnected: (string | undefined)[] = [];
   const server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash: "", readOnly: true,
@@ -342,8 +342,52 @@ test("revoking a Share client during setup discards its answer and closes only i
   const origin = `http://127.0.0.1:${port}`, invitation = server.createReadOnlyInvitation();
   const login = await fetch(`${origin}/api/redeem`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...invitation, label: invitation.label || "Guest" }) });
   const pending = fetch(`${origin}/api/connect`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: login.headers.get("set-cookie")!.split(";")[0] }, body: JSON.stringify({ windowId: "window", type: "offer", sdp: "v=0\r\n" }) });
-  await entered; server.revokeClient(invitation.id);
+  await entered; server[action](invitation.id);
   finish({ sessionId: "revoked-stream", type: "answer", sdp: "v=0\r\n" });
   assert.equal((await pending).status, 401); assert.deepEqual(disconnected, ["revoked-stream"]);
-  assert.equal(server.getClients().length, 0);
+  assert.equal(server.getClients().length, action === "revokeClient" ? 0 : 1);
+});
+
+for (const readOnly of [true, false]) test(`${readOnly ? "Share" : "Remote"} host disconnect closes only the selected client and invalidates authentication`, async t => {
+  const directory = mkdtempSync(join(tmpdir(), "boatyard-host-disconnect-"));
+  const passwordHash = readOnly ? "" : await hashRemotePassword("fixture-password");
+  const disconnected: (string | undefined)[] = [];
+  let next = 0;
+  const server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash, readOnly,
+    sessionFilePath: join(directory, "sessions.json"),
+    listWindows: () => [{ id: "window", title: "Fixture", width: 800, height: 600 }],
+    connect: async () => ({ sessionId: `session-${++next}`, type: "answer", sdp: "v=0\r\n" }), disconnect: id => disconnected.push(id) });
+  let endpoint = `http://127.0.0.1:${await server.start()}`;
+  t.after(async () => { await server.stop(); rmSync(directory, { recursive: true, force: true }); });
+  const post = (path: string, body: unknown, cookie = "") => fetch(`${endpoint}${path}`, {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(body) });
+  const invitation = readOnly ? server.createReadOnlyInvitation("Alice") : undefined;
+  const signIn = async () => {
+    const response = await post(readOnly ? "/api/redeem" : "/api/login", readOnly ? { token: invitation!.token } : { password: "fixture-password" });
+    assert.equal(response.status, 200); return response.headers.get("set-cookie")!.split(";")[0];
+  };
+  const cookie = await signIn();
+  const offer = { windowId: "window", type: "offer", sdp: "v=0\r\n" };
+  const response = await post("/api/connect", offer, cookie); assert.equal(response.status, 200);
+  const answer = await response.json();
+  let otherCookie = "";
+  if (readOnly) {
+    const bob = server.createReadOnlyInvitation("Bob");
+    const login = await post("/api/redeem", { token: bob.token }); otherCookie = login.headers.get("set-cookie")!.split(";")[0];
+    assert.equal((await post("/api/connect", offer, otherCookie)).status, 200);
+  }
+  const id = server.getClients()[0].id;
+  server.disconnectClient(id);
+  assert.deepEqual(disconnected, [answer.sessionId]);
+  assert.equal(server.getConnectedClientCount(), readOnly ? 1 : 0);
+  assert.equal((await post("/api/connect", offer, cookie)).status, 401, "A disconnected browser cannot automatically reconnect");
+  if (readOnly) {
+    assert.equal(server.getClients().find(client => client.id === id)?.state, "invited");
+    assert.equal((await fetch(`${endpoint}/api/windows`, { headers: { Cookie: otherCookie } })).status, 200);
+    assert.equal((await post("/api/connect", offer, await signIn())).status, 200, "The same invitation still permits a deliberate new sign-in");
+  } else {
+    await server.stop(); endpoint = `http://127.0.0.1:${await server.start()}`;
+    assert.equal((await fetch(`${endpoint}/api/windows`, { headers: { Cookie: cookie } })).status, 401, "Host disconnect remains effective after restart");
+    assert.equal((await post("/api/connect", offer, await signIn())).status, 200);
+  }
 });

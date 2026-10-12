@@ -1637,6 +1637,11 @@ function registerIpcHandlers() {
     if (typeof id !== "string" || id.length > 100) throw new Error("Invalid client.");
     return remoteAccessController.revokeClient(id);
   });
+  ipcMain.handle("remote:client:disconnect", (event: IpcMainInvokeEvent, mode: unknown, id: unknown) => {
+    getConfigurationForEvent(event);
+    if (typeof id !== "string" || !id || id.length > 100) throw new Error("Invalid client.");
+    return remoteAccessController.disconnectClient(remoteMode(mode), id);
+  });
   ipcMain.handle("remote:voice:allow", (event: IpcMainInvokeEvent, mode: unknown, id: unknown, allowed: unknown) => {
     getConfigurationForEvent(event);
     if ((id !== null && (typeof id !== "string" || id.length > 100)) || typeof allowed !== "boolean") throw new Error("Invalid voice control.");
