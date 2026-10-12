@@ -45,6 +45,8 @@ export type RemoteServerOptions = {
   getIceTransportPolicy?(): RTCIceTransportPolicy;
   getVoiceState?(sessionId: string): { allowed: boolean; selfMuted: boolean; handRaised: number | null } | undefined;
   getConnectionRoute?(sessionId: string): RemoteConnectionRoute | null;
+  isTransportConnected?(sessionId: string): boolean;
+  isTransportInterrupted?(sessionId: string): boolean;
   listWindows(): RemoteWindowInfo[];
   connect(offer: RemoteOffer, voiceAllowed?: boolean, created?: (id: string) => void): Promise<RemoteAnswer>;
   recover?(sessionId: string, offer: RemoteOffer): Promise<RemoteAnswer>;
@@ -61,6 +63,7 @@ export class RemoteServer {
   private readonly shareAttempts = new Map<string, { since: number; count: number }>();
   private globalShareAttempts = { since: 0, count: 0 };
   private readonly loginClients = new Map<string, { id: string; label: string }>();
+  private readonly inactiveLogins = new Set<string>();
   private readonly sessions = new Map<string, { login: string }>();
   private server: Server | null = null;
   private chatId: string | null = null;
@@ -86,9 +89,10 @@ export class RemoteServer {
   private loadLogins() {
     const file = this.options.sessionFilePath;
     if (this.options.readOnly) {
-      for (const { login, id } of this.shareAccess.getBrowserSessions()) {
+      for (const { login, id, awaiting } of this.shareAccess.getBrowserSessions()) {
         const participant = this.shareAccess.participants.get(id);
         if (participant) { this.logins.add(login); this.loginClients.set(login, { id, label: participant.label }); }
+        if (participant && awaiting === false) this.inactiveLogins.add(login);
       }
       return;
     }
@@ -97,7 +101,7 @@ export class RemoteServer {
       try {
         const saved = JSON.parse(readFileSync(file, "utf8"));
         if (saved.passwordFingerprint === this.passwordFingerprint() && Array.isArray(saved.logins) && saved.logins.length <= 32 && saved.logins.every((value: unknown) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value))) {
-          for (const login of saved.logins) this.logins.add(login);
+          for (const login of saved.logins) this.signInRemote(login);
         }
       } catch { console.warn("Could not restore remote browser sessions. Sign in again."); }
     }
@@ -106,7 +110,7 @@ export class RemoteServer {
   private saveLogins() {
     const file = this.options.sessionFilePath;
     if (this.options.readOnly) {
-      this.shareAccess.saveBrowserSessions([...this.loginClients].filter(([login]) => this.logins.has(login)).map(([login, client]) => ({ login, id: client.id })));
+      this.shareAccess.saveBrowserSessions([...this.loginClients].filter(([login]) => this.logins.has(login)).map(([login, client]) => ({ login, id: client.id, ...(this.inactiveLogins.has(login) ? { awaiting: false } : {}) })));
       return;
     }
     if (!file) return;
@@ -134,9 +138,10 @@ export class RemoteServer {
       const login = [...this.loginClients].find(([, client]) => client.id === value.id)?.[0];
       const session = [...this.sessions].find(([, session]) => session.login === login);
       return { ...value, voice: session ? this.options.getVoiceState?.(session[0]) : undefined,
-        state: session ? "connected" : login ? "signed-in" : "invited",
+        state: login && this.inactiveLogins.has(login) ? "invited" : login && this.connecting.has(login) || session && this.options.isTransportConnected?.(session[0]) === false || this.shareAccess.isAwaitingJoin(value.id)
+          ? "connecting" : session ? "connected" : login ? "signed-in" : "invited",
         route: session ? this.options.getConnectionRoute?.(session[0]) ?? null : null };
-    });
+    }).filter(client => this.options.readOnly || client.state === "connecting" || client.state === "connected");
   }
   getShareAccess() { return this.options.readOnly ? this.shareAccess.hostSnapshot() : undefined; }
   configureShareAccess(patch: Partial<ShareAccessSettings>) {
@@ -162,6 +167,7 @@ export class RemoteServer {
   private invalidateLogin(login: string) {
     // Revoke authentication before closing transports or notifying observers.
     this.logins.delete(login); this.loginClients.delete(login); this.connecting.delete(login);
+    this.inactiveLogins.delete(login);
     this.chatLastSent.delete(login);
     for (const [stream, owner] of this.chatStreams) if (owner === login) stream.end();
     const pending = this.pendingSessions.get(login);
@@ -176,6 +182,10 @@ export class RemoteServer {
     this.shareAccess.claimed(participant.id);
     this.logins.add(login); this.loginClients.set(login, { id: participant.id, label: participant.label });
     this.saveLogins(); this.options.clientsChanged?.(); return token;
+  }
+  private signInRemote(login: string) {
+    this.logins.add(login);
+    if (!this.loginClients.has(login)) this.loginClients.set(login, { id: randomUUID(), label: "Remote client" });
   }
   private allowShareAttempt(request: IncomingMessage, validCode: boolean) {
     const now = Date.now(), address = request.socket.remoteAddress || "unknown";
@@ -216,7 +226,7 @@ export class RemoteServer {
     this.chatLastSent.clear();
     this.options.disconnect();
     this.logins.clear(); this.attempts.clear(); if (this.options.shareAccess) this.shareAccess.endSession(); else this.shareAccess.clear(); this.shareAttempts.clear(); this.globalShareAttempts = { since: 0, count: 0 }; this.loginClients.clear();
-    this.sessions.clear(); this.connecting.clear(); this.pendingSessions.clear();
+    this.sessions.clear(); this.connecting.clear(); this.pendingSessions.clear(); this.inactiveLogins.clear();
     const server = this.server;
     this.server = null;
     if (server) {
@@ -355,7 +365,7 @@ export class RemoteServer {
         if (!this.server) return;
         if (this.logins.size >= 32) { json(429, { error: "Too many active browser sessions." }); return; }
         const login = randomBytes(32).toString("base64url");
-        this.logins.add(this.loginDigest(login)); this.saveLogins();
+        this.signInRemote(this.loginDigest(login)); this.saveLogins(); this.options.clientsChanged?.();
         setCookie(login, BROWSER_COOKIE_MAX_AGE);
         json(200, { authenticated: true }); return;
       }
@@ -406,13 +416,21 @@ export class RemoteServer {
         const iceServers = this.options.getIceServers ? await this.options.getIceServers() : this.options.iceServers || [];
         if (!this.logins.has(login)) { json(401, { error: "Please sign in." }); return; }
         const identity = this.shareAccess.participants.get(this.loginClients.get(login)?.id || "");
-        json(200, { windows: this.options.listWindows(), iceServers, iceTransportPolicy: this.options.getIceTransportPolicy?.() ?? "all", readOnly: this.options.readOnly === true, ...(this.options.readOnly ? { participant: identity ? { label: identity.label, code: identity.token } : undefined } : {}) }); return;
+        json(200, { windows: this.options.listWindows(), iceServers, iceTransportPolicy: this.options.getIceTransportPolicy?.() ?? "all", readOnly: this.options.readOnly === true, resumeAllowed: !this.inactiveLogins.has(login), ...(this.options.readOnly ? { participant: identity ? { label: identity.label, code: identity.token } : undefined } : {}) }); return;
       }
       if (request.method !== "POST" || !["/api/connect", "/api/disconnect", "/api/recover"].includes(url.pathname)) { json(404, { error: "Not found" }); return; }
       const body = await readBody();
       if (!this.logins.has(login)) { json(401, { error: "Your access is no longer active. Join again." }); return; }
       if (url.pathname === "/api/disconnect") {
         if (typeof body.sessionId !== "string") { json(400, { error: "Invalid session" }); return; }
+        if (body.leave === true && (body.sessionId === "" || this.sessions.get(body.sessionId)?.login === login)) {
+          this.inactiveLogins.add(login); this.saveLogins(); this.options.clientsChanged?.();
+          if (body.sessionId === "") {
+            const pending = this.pendingSessions.get(login);
+            if (pending) this.options.disconnect(pending);
+            for (const [id, session] of [...this.sessions]) if (session.login === login) { this.options.disconnect(id); this.sessionClosed(id); }
+          }
+        }
         if (this.sessions.get(body.sessionId)?.login === login) { this.options.disconnect(body.sessionId); this.sessionClosed(body.sessionId); }
         json(200, { disconnected: true }); return;
       }
@@ -423,28 +441,34 @@ export class RemoteServer {
         if (!this.options.recover) { json(400, { error: "Streaming recovery unavailable" }); return; }
         if (this.connecting.has(login)) { json(409, { error: "Streaming recovery already in progress" }); return; }
         this.connecting.add(login);
+        this.options.clientsChanged?.();
         try {
           const answer = await this.options.recover(body.sessionId, body as RemoteOffer);
           if (!this.server || response.destroyed) { this.options.disconnect(answer.sessionId); return; }
           if (!this.logins.has(login) || this.sessions.get(answer.sessionId)?.login !== login) { this.options.disconnect(answer.sessionId); json(401, { error: "Remote session closed" }); return; }
           json(200, answer);
-        } finally { this.connecting.delete(login); }
+        } finally { this.connecting.delete(login); this.options.clientsChanged?.(); }
         return;
+      }
+      const previous = [...this.sessions].find(([, session]) => session.login === login);
+      if (!this.connecting.has(login) && previous && this.options.isTransportInterrupted?.(previous[0]) === true) {
+        this.options.disconnect(previous[0]); this.sessionClosed(previous[0]);
       }
       if (this.connecting.has(login) || [...this.sessions.values()].some(session => session.login === login) || this.connecting.size + this.sessions.size >= (this.options.readOnly ? MAX_SHARE_CLIENTS : 1)) {
         json(409, { error: this.options.readOnly ? "The viewer limit has been reached or this browser is already connected." : "A client is already connected. Disconnect it first." }); return;
       }
       this.connecting.add(login);
+      if (this.inactiveLogins.delete(login)) this.saveLogins();
+      this.options.clientsChanged?.();
       try {
         const participant = this.shareAccess.participants.get(this.loginClients.get(login)?.id || "");
         const answer = await this.options.connect(body as RemoteOffer, participant?.voiceAllowed, id => { this.pendingSessions.set(login, id); });
         if (!this.server || response.destroyed) { this.options.disconnect(answer.sessionId); return; }
         if (!this.logins.has(login)) { this.options.disconnect(answer.sessionId); json(401, { error: "Please sign in." }); return; }
-        if (!this.loginClients.has(login)) this.loginClients.set(login, { id: randomUUID(), label: "Remote client" });
         this.sessions.set(answer.sessionId, { login });
         this.options.clientsChanged?.();
         json(200, answer);
-      } finally { this.connecting.delete(login); this.pendingSessions.delete(login); }
+      } finally { this.connecting.delete(login); this.pendingSessions.delete(login); this.options.clientsChanged?.(); }
     } catch (error) {
       json(400, { error: error instanceof Error ? error.message : "Remote request failed" });
     }

@@ -24,12 +24,32 @@ of its label, keeping the same width. Stopping the server restores its normal ap
   it for the participant to enter before joining. **Stop sharing** ends the Share
   session and invalidates used personal codes while leaving Remote running.
 
-The Share dialog and Share pane open on **Session**, with connected participants,
+The Share dialog and Share pane open on **Session**, with admitted participants,
 microphone moderation, join approvals, and the speaking queue. **Give the floor**
 grants permission and consumes the selected request. **Setup** contains start/stop
 controls, joining options, participant creation, and invitation links and codes,
 including invitations for participants already connected. **Shared projects**
 controls which projects may be shown. Switching tabs preserves invitation drafts.
+
+Accepted Share participants appear immediately as **Connecting…**. Authenticated
+Share clients waiting to resume after a host or client restart remain visible as
+**Waiting to connect…**. Remote clients appear when streaming setup begins;
+saved Remote authentication alone does not create a participant row.
+**Connected** appears once the streaming transport opens;
+an interrupted transport returns to **Connecting…** during recovery. Microphone
+status and moderation actions appear when connected. Unused invitations remain
+in **Setup**.
+
+After a refresh, an authenticated client can replace its own interrupted
+transport immediately instead of waiting for its retention timeout. Active
+transports and other participants remain protected from replacement. The client
+shows **Reconnecting…** while retrying.
+
+Using the client's **Disconnect** button leaves the live participant list and
+stops automatic reconnection. The client keeps its authentication and personal
+code and may connect again manually. This departure remains hidden after a host
+restart; reloads and accidental transport interruptions still retain waiting
+participants.
 
 Each connected Share or Remote participant has a **Disconnect** button (plug icon)
 on their **Session** row. It closes that client's stream and browser authentication
@@ -158,6 +178,11 @@ screenshot into the message field or use **Attach image** to choose a PNG, JPEG
 or WebP file (up to 5 MB). Review the preview before sending, or remove it.
 **Enter** sends; **Shift+Enter** inserts a new line. Click an image thumbnail to
 enlarge it. Chat does not capture screenshots or request screen access.
+
+Links in the operator's chat use Boatyard's destination dialog, including links
+in archived conversations and modified or middle clicks. The Share popup closes
+before opening that dialog. Browser guests use their browser's normal link
+navigation.
 
 Each message shows its author and a compact local-time timestamp; hover over the
 time for the full date and time. Date separators keep longer histories readable.

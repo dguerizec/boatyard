@@ -58,9 +58,11 @@ test("Group admission gives every named participant a distinct personal code, wi
   assert.equal(pending.pending, true); assert.deepEqual(notifications, ["Needs approval"]);
   assert.equal(server.getClients().length, 20, "Pending visitors have no participant or authentication yet");
   server.decideShareJoinRequest(server.getShareAccess()!.requests[0].id, true);
+  assert.equal(server.getClients().find(client => client.label === "Needs approval")?.state, "connecting", "Accepted visitors appear before their approval poll");
   const accepted = await post("/api/share/request-status", { requestToken: pending.requestToken });
   assert.equal(accepted.status, 200); assert.equal((await accepted.json()).participant.label, "Needs approval");
   assert.ok(accepted.headers.get("set-cookie"));
+  assert.equal(server.getClients().find(client => client.label === "Needs approval")?.state, "signed-in", "Admitted visitors remain visible while waiting for a stream");
   assert.equal((await post("/api/share/request-status", { requestToken: pending.requestToken })).status, 410, "A request cannot issue a second authentication");
   server.configureShareAccess({ groupEnabled: false });
   assert.equal((await post("/api/redeem", { token: groupCode, label: "Late guest" })).status, 401);
@@ -130,6 +132,34 @@ test("Six-digit code guesses are throttled without consuming valid codes", async
   finally { Date.now = originalNow; }
 });
 
+test("Share status distinguishes waiting, setup and an open streaming transport", async t => {
+  let ready = false;
+  const updates: string[] = [];
+  const server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash: "", readOnly: true,
+    listWindows: () => [{ id: "window", title: "Fixture", width: 800, height: 600 }],
+    connect: async () => ({ sessionId: "fixture", type: "answer", sdp: "v=0" }),
+    isTransportConnected: () => ready, disconnect() {},
+    clientsChanged: () => { updates.push(server.getClients()[0]?.state ?? "absent"); } });
+  const origin = `http://127.0.0.1:${await server.start()}`; t.after(() => server.stop());
+  const invitation = server.createReadOnlyInvitation("Alice");
+  const post = (path: string, body: unknown, cookie = "") => fetch(`${origin}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(body) });
+  const admitted = await post("/api/redeem", { token: invitation.token });
+  const cookie = admitted.headers.get("set-cookie")!.split(";")[0];
+  assert.equal(server.getClients()[0].state, "signed-in");
+  const response = await post("/api/connect", { windowId: "window", type: "offer", sdp: "v=0" }, cookie);
+  assert.equal(response.status, 200);
+  assert.equal(server.getClients()[0].state, "connecting", "A signaling answer does not imply a ready transport");
+  assert.ok(updates.includes("connecting"), "Setup publishes status changes to the host");
+  ready = true;
+  assert.equal(server.getClients()[0].state, "connected");
+  ready = false;
+  assert.equal(server.getClients()[0].state, "connecting", "An interrupted transport remains visible while recovering");
+  server.sessionClosed("fixture");
+  assert.equal(server.getClients()[0].state, "signed-in", "Closing the stream keeps the admitted participant waiting");
+  server.disconnectClient(invitation.id);
+  assert.equal(server.getClients()[0].state, "invited", "Forced disconnect ends the wait without revoking the invitation");
+});
+
 test("A device takeover cancels pending setup and keeps microphone permission", async t => {
   let entered!: () => void, finish!: (value: { sessionId: string; type: "answer"; sdp: string }) => void;
   const started = new Promise<void>(resolve => { entered = resolve; });
@@ -147,6 +177,7 @@ test("A device takeover cancels pending setup and keeps microphone permission", 
   const cookie = first.headers.get("set-cookie")!.split(";")[0];
   const pending = post("/api/connect", { windowId: "window", type: "offer", sdp: "v=0" }, cookie);
   await started;
+  assert.equal(server.getClients()[0].state, "connecting", "In-flight setup is visible before the answer is ready");
   assert.equal((await post("/api/redeem", { token: invitation.token })).status, 200);
   assert.deepEqual(disconnected, ["pending-session"], "Setup is closed immediately, before it produces its answer");
   finish({ sessionId: "pending-session", type: "answer", sdp: "v=0" });

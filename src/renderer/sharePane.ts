@@ -14,6 +14,7 @@ export type ShareSidebarPin = {
   subscribe(callback: () => void): () => void;
 };
 type SharePaneOptions = {
+  openUrl?: (payload: UnknownRecord) => unknown;
   sidebarPin?: ShareSidebarPin;
   hideTabs?: boolean;
   onTabChanged?: (tab: ShareTab) => void;
@@ -66,8 +67,8 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
       <button type="button" class="secondary-button" data-end-turn>End turn</button></div>
     <p class="form-hint" data-floor-status role="status"></p>
     <section data-join-queue hidden><h4>Join requests</h4><ul class="remote-join-requests" aria-label="Join requests"></ul></section>
-    <h4>Participants</h4><p class="form-hint" data-session-empty>No connected participants. Create invitations in Setup.</p>
-    <ul class="remote-client-list" aria-label="Connected participants"></ul>
+    <h4>Participants</h4><p class="form-hint" data-session-empty>No participants waiting or connected. Create invitations in Setup.</p>
+    <ul class="remote-client-list" aria-label="Participants"></ul>
     </section>
     <section class="share-tab-panel" role="tabpanel" id="${paneId}-chat" aria-labelledby="${paneId}-chat-tab" data-share-panel="chat" hidden><div data-chat-root></div></section>
     <section class="share-tab-panel" role="tabpanel" id="${paneId}-setup" aria-labelledby="${paneId}-setup-tab" data-share-panel="setup" hidden>
@@ -102,7 +103,12 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
     delete: (id, messageId) => api.deleteShareChatMessage!(id, messageId),
     image: (id, messageId) => api.getShareChatImage!(id, messageId),
     subscribe: callback => api.onShareChatChanged?.(callback),
-    openLink: url => { void api.openExternal(url); },
+    openLink: url => {
+      if (!options.openUrl) { showError("Link opening is unavailable."); return; }
+      const bounds = root.getBoundingClientRect();
+      void options.openUrl({ url, sourceId: "boatyard-share-chat", sourceLabel: "Share chat",
+        sourceBounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height } });
+    },
     unread: count => { const badge = root.querySelector<HTMLElement>(".share-chat-badge")!; badge.hidden = !count; badge.textContent = count > 99 ? "99+" : String(count); alerts.messages = count; options.onAlertsChanged?.({ ...alerts }); }
   }) : undefined;
   const statuses: Record<Mode, UnknownRecord> = { share: {}, remote: {} };
@@ -260,7 +266,6 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
     start.hidden = share.listening === true;
     stop.hidden = !share.listening && !share.enabled;
     const connected = Number(share.connectedClients || 0) + Number(statuses.remote.connectedClients || 0);
-    root.querySelector<HTMLElement>("[data-session-empty]")!.hidden = connected > 0;
     root.querySelector<HTMLElement>("[data-voice-controls]")!.hidden = compact && !connected;
     const hostMuted = statuses.share.listening ? statuses.share.hostMuted !== false : statuses.remote.hostMuted !== false;
     iconAction(hostMic, hostMuted ? "micOff" : "mic", hostMuted ? "Unmute my microphone" : "Mute my microphone");
@@ -305,7 +310,7 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
         if (connected && voice.hasFloor === true) floorLabel = String(client.label || "Unnamed participant");
         if (connected && typeof voice.handRaised === "number") waitingCount++;
         for (const invitation of mode === "share" ? [false, true] : [false]) {
-          if (!invitation && !connected) continue;
+          if (!invitation && client.state === "invited") continue;
           const key = `${mode}:${id}:${invitation}`; ids.add(key);
           let row = rows.get(key);
           if (!row) {
@@ -328,7 +333,8 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
             row = { root: item, text, voice, mute, floor, revoke, disconnect, urls }; rows.set(key, row);
           }
           const route = client.route === "direct" ? "Direct" : client.route === "relay" ? "Relayed" : "Checking connection…";
-          row.text.textContent = `${client.label || "Unnamed participant"} · ${mode === "remote" ? "Remote · " : ""}${client.state === "connected" ? `Connected · ${route}` : client.state === "invited" ? "Invited" : "Signed in"}`;
+          row.root.dataset.clientState = String(client.state);
+          row.text.textContent = `${client.label || "Unnamed participant"} · ${mode === "remote" ? "Remote · " : ""}${connected ? `Connected · ${route}` : client.state === "invited" ? "Invited" : client.state === "connecting" ? "Connecting…" : "Waiting to connect…"}`;
           row.text.title = row.text.textContent;
           const microphoneOff = voice.allowed === false || voice.selfMuted !== false;
           const microphoneLabel = `${voice.hasFloor ? "Has the floor · " : ""}${microphoneOff ? "Microphone off" : "Microphone on"}${voice.allowed === false ? " · Blocked by host" : ""}`;
@@ -342,7 +348,7 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
           iconAction(row.floor, "hand", `Give the floor to ${client.label || "Unnamed participant"}`);
           row.floor.hidden = invitation || !handRaised; row.floor.disabled = busy;
           if (!invitation) participants.push({ root: row.root, rank: handRaised ? Number(voice.handRaised) : Infinity });
-          row.voice.hidden = invitation;
+          row.voice.hidden = invitation || !connected;
           iconAction(row.mute, voice.allowed === false ? "micOff" : "mic", `${voice.allowed === false ? "Allow microphone" : "Mute"}: ${client.label || "Unnamed participant"}`);
           row.mute.dataset.allowed = String(voice.allowed !== false);
           iconAction(row.revoke, "trash", `Revoke: ${client.label || "Unnamed participant"}`);
@@ -357,6 +363,7 @@ export function createSharePane(api: BoatyardBridge, compact = false, options: S
       }
     }
     for (const [id, row] of rows) if (!ids.has(id)) { row.root.remove(); rows.delete(id); }
+    root.querySelector<HTMLElement>("[data-session-empty]")!.hidden = participants.length > 0;
     for (const [index, participant] of participants.sort((a, b) => a.rank - b.rank).entries()) {
       if (list.children[index] !== participant.root) list.moveBefore(participant.root, list.children[index] || null);
     }

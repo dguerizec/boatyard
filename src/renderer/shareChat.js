@@ -41,7 +41,11 @@ export function createShareChat(root, adapter) {
     for (const match of value.matchAll(matcher)) {
       container.append(document.createTextNode(value.slice(cursor, match.index)));
       const link = document.createElement('a'); link.textContent = match[0]; link.href = match[0]; link.target = '_blank'; link.rel = 'noopener noreferrer';
-      if (adapter.openLink) link.onclick = event => { event.preventDefault(); adapter.openLink(link.href); };
+      if (adapter.openLink) {
+        const open = event => { event.preventDefault(); adapter.openLink(link.href); };
+        link.onclick = open;
+        link.onauxclick = event => { if (event.button === 1) open(event); };
+      }
       container.append(link); cursor = match.index + match[0].length;
     }
     container.append(document.createTextNode(value.slice(cursor)));

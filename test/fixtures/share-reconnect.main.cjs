@@ -29,7 +29,7 @@ module.exports = async harness => {
     for (let attempt = 0; attempt < 700; attempt++) { if (await predicate()) return; await sleep(50); }
     throw new Error(`Share reconnect timed out: ${label}; status=${await evaluate('document.getElementById("status").textContent')}; intent=${await evaluate('sessionStorage.getItem("boatyard-stream-active")')}; requests=${JSON.stringify(requests.slice(-15))}`);
   };
-  const connected = () => until(async () => service.server.getConnectedClientCount() === 1 &&
+  const connected = () => until(async () => service.server.getClients().some(client => client.state === 'connected') &&
     await evaluate('document.getElementById("status").textContent.startsWith("Connected") && document.getElementById("video").videoWidth > 0'), 'live video');
   const joinClient = async code => {
     await evaluate(`document.getElementById('accessCode').value=${JSON.stringify(code)};document.getElementById('participantName').value='Alice';document.getElementById('shareJoin').requestSubmit()`);
@@ -47,21 +47,39 @@ module.exports = async harness => {
     await until(() => evaluate('!document.getElementById("shareJoin").hidden'), 'initial join form');
     await joinClient(invitation.token);
     const identity = service.server.getClients().find(client => client.state === 'connected').id;
+    const reloadStarted = Date.now();
     let loaded = new Promise(resolve => client.webContents.once('did-finish-load', resolve));
     client.reload(); await loaded;
     await connected();
+    assert.ok(Date.now() - reloadStarted < 14000, 'Reload reconnects before the old 15-second transport retention expires');
     assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'Reload keeps participant identity');
     const crashed = new Promise(resolve => client.webContents.once('render-process-gone', resolve));
     client.webContents.forcefullyCrashRenderer(); await crashed;
+    await until(() => service.server.getClients().find(client => client.id === identity)?.state === 'connecting', 'host sees interrupted transport');
     await sleep(100); loaded = new Promise(resolve => client.webContents.once('did-finish-load', resolve));
     client.reload(); await loaded; await connected();
     assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'Renderer crash and reload preserve admission');
     await service.stop();
     await sleep(2200);
     access = new ShareAccessState(undefined, file); windowId = 'after-restart';
-    await boot(); await connected();
+    await boot();
+    assert.equal(service.server.getClients().find(client => client.id === identity)?.state, 'signed-in', 'Restarted host shows the participant while waiting for automatic reconnection');
+    await connected();
     assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'Host restart retains the admitted participant');
     assert.equal(await evaluate('document.getElementById("microphone").getAttribute("aria-pressed")'), 'false', 'Automatic reconnection never starts a microphone');
+    await evaluate('document.getElementById("disconnect").click()');
+    await until(() => service.server.getClients().find(client => client.id === identity)?.state === 'invited', 'voluntary disconnect removes the waiting participant');
+    await sleep(1800);
+    assert.equal(service.server.getConnectedClientCount(), 0, 'Voluntary disconnect does not reconnect automatically');
+    await service.stop(); access = new ShareAccessState(undefined, file); await boot();
+    assert.equal(service.server.getClients().find(client => client.id === identity)?.state, 'invited', 'Voluntary departure stays hidden after host restart');
+    loaded = new Promise(resolve => client.webContents.once('did-finish-load', resolve));
+    client.reload(); await loaded;
+    await until(() => evaluate('!document.getElementById("connect").hidden'), 'voluntary departure presents manual Connect after reload');
+    await sleep(1800);
+    assert.equal(service.server.getClients().find(client => client.id === identity)?.state, 'invited', 'Reload after voluntary departure does not resume automatically');
+    await evaluate('document.getElementById("connect").requestSubmit()'); await connected();
+    assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'A voluntary departure can reconnect manually without joining again');
     service.server.disconnectClient(identity);
     await until(() => evaluate('!document.getElementById("shareJoin").hidden'), 'forced disconnect requires admission');
     await sleep(2200);

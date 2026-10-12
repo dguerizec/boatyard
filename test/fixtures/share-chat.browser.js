@@ -7,9 +7,10 @@ const bridge = {
   getRemoteStatus: async () => ({ listening: true, clients: [] }),
   getShareChat: id => invoke('read', id), sendShareChat: (id, input) => invoke('send', id, input),
   deleteShareChatMessage: (id, messageId) => invoke('delete', id, messageId), getShareChatImage: (id, messageId) => invoke('image', id, messageId),
-  onShareChatChanged: callback => window.chatFixture.subscribe(callback), openExternal() {}
+  onShareChatChanged: callback => window.chatFixture.subscribe(callback), openExternal() { throw new Error('Chat bypassed the Boatyard link gate'); }
 };
-const host = createSharePane(bridge); host.style.height = '650px'; document.body.append(host);
+const links = [];
+const host = createSharePane(bridge, false, { openUrl: payload => links.push(payload) }); host.style.height = '650px'; document.body.append(host);
 host.querySelector('[data-share-tab="chat"]').click();
 const guest = await invoke('guest', 'Alice');
 const evaluate = code => invoke('eval', guest, code);
@@ -20,6 +21,11 @@ await wait(() => evaluate(`document.querySelector('.chat-compose textarea')?.dis
 await evaluate(`document.getElementById('chat').click(); const text = document.querySelector('.chat-compose textarea'); text.value = 'Question https://example.com <script>alert(1)</script>'; text.dispatchEvent(new Event('input')); document.querySelector('.chat-compose').requestSubmit();`);
 await wait(() => host.querySelectorAll('.chat-message').length === 1, 'Operator did not receive message');
 check(host.querySelector('.chat-message a').href === 'https://example.com/', 'Link not clickable');
+const link = host.querySelector('.chat-message a');
+for (const event of [new MouseEvent('click', { bubbles: true, cancelable: true }), new MouseEvent('click', { bubbles: true, cancelable: true, ctrlKey: true }), new MouseEvent('auxclick', { bubbles: true, cancelable: true, button: 1 })]) {
+  check(!link.dispatchEvent(event) && event.defaultPrevented, 'Chat navigation was not intercepted');
+}
+check(links.length === 3 && links.every(payload => payload.url === link.href && payload.sourceId === 'boatyard-share-chat' && payload.sourceLabel === 'Share chat' && payload.sourceBounds.width > 0), 'Chat links must use the destination gate with source context');
 check(!host.querySelector('.chat-message script'), 'Text was interpreted as HTML');
 check(/^\d{2}:\d{2}/.test(host.querySelector('.chat-message time').textContent), 'Compact timestamp missing');
 check(host.querySelector('.chat-message time').title && host.querySelector('.chat-day'), 'Full timestamp/date missing');
@@ -64,5 +70,7 @@ check(host.querySelector('textarea').disabled, 'Archived conversation still acce
 check(host.querySelector('.chat-archive select').options.length === 2, 'Archive selector missing');
 const selection = host.querySelector('.chat-archive select'); selection.value = current.activeId; selection.dispatchEvent(new Event('change'));
 await wait(() => host.querySelectorAll('.chat-message').length === 4, 'Cannot consult archived messages');
+host.querySelector('.chat-message a').click();
+check(links.length === 4, 'Archived chat links must use the same gate');
 await host.boatyardCleanup();
 window.browserTestResult = 'passed';

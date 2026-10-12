@@ -14,7 +14,7 @@ export function normalizeShareCode(value: unknown) {
 // Invitations and browser authentication persist; requests and microphone permissions are session-only.
 export class ShareAccessState {
   readonly participants = new Map<string, ShareParticipant>();
-  private browserSessions: { login: string; id: string }[] = [];
+  private browserSessions: { login: string; id: string; awaiting?: boolean }[] = [];
   private readonly requests = new Map<string, JoinRequest>();
   private readonly issuedCodes = new Set<string>();
   private groupCode = "";
@@ -38,9 +38,9 @@ export class ShareAccessState {
         participants.set(entry.id, { id: entry.id, label: entry.label, token, ...(entry.used ? { used: true } : {}) }); codes.add(token);
       }
       const sessions = value.browserSessions ?? [];
-      if (!Array.isArray(sessions) || sessions.length > 32 || sessions.some(entry => !entry || typeof entry.login !== "string" || !/^[a-f0-9]{64}$/.test(entry.login) || !participants.has(entry.id)) ||
+      if (!Array.isArray(sessions) || sessions.length > 32 || sessions.some(entry => !entry || typeof entry.login !== "string" || !/^[a-f0-9]{64}$/.test(entry.login) || !participants.has(entry.id) || entry.awaiting !== undefined && typeof entry.awaiting !== "boolean") ||
         new Set(sessions.map(entry => entry.login)).size !== sessions.length || new Set(sessions.map(entry => entry.id)).size !== sessions.length) throw new Error("Invalid Share browser sessions.");
-      this.browserSessions = sessions.map(({ login, id }) => ({ login, id }));
+      this.browserSessions = sessions.map(({ login, id, awaiting }) => ({ login, id, ...(awaiting === false ? { awaiting: false } : {}) }));
       for (const { id } of this.browserSessions) participants.get(id)!.used = true;
       chmodSync(filePath, 0o600);
       this.settings = { groupEnabled: settings.groupEnabled, groupApprovalRequired: settings.groupApprovalRequired, allowJoinRequests: settings.allowJoinRequests };
@@ -59,7 +59,7 @@ export class ShareAccessState {
     renameSync(temporaryPath, this.filePath); chmodSync(this.filePath, 0o600);
   }
   getBrowserSessions() { return this.browserSessions.map(entry => ({ ...entry })); }
-  saveBrowserSessions(sessions: { login: string; id: string }[]) {
+  saveBrowserSessions(sessions: { login: string; id: string; awaiting?: boolean }[]) {
     this.browserSessions = sessions.filter(entry => this.participants.has(entry.id)); this.save();
   }
   private code() {
@@ -91,6 +91,9 @@ export class ShareAccessState {
     this.save();
   }
   get publicSettings() { return { ...this.settings }; }
+  isAwaitingJoin(id: string) {
+    return [...this.requests.values()].some(request => request.participantId === id && request.state === "approved");
+  }
   hostSnapshot() {
     this.prune();
     return { ...this.settings, groupCode: this.groupCode, invitations: [...this.participants.values()].map(({ id, token }) => ({ id, code: token })),

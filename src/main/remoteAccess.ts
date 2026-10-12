@@ -50,6 +50,8 @@ type Connection = {
   heartbeat: number;
   epoch: number;
   recovering: boolean;
+  transportConnected: boolean;
+  transportInterrupted: boolean;
   recoveredAt: number;
   watchdog?: ReturnType<typeof setInterval>;
   route: RemoteConnectionRoute | null;
@@ -104,6 +106,8 @@ export class RemoteAccessService {
       recover: (id, offer) => this.recover(id, offer),
       getVoiceState: id => { const voice = this.voice.get(id); return voice ? { ...voice, ...this.conferenceVoice(id) } : undefined; },
       getConnectionRoute: id => this.connections.get(id)?.route ?? null,
+      isTransportConnected: id => this.connections.get(id)?.transportConnected === true,
+      isTransportInterrupted: id => this.connections.get(id)?.transportInterrupted === true,
       disconnect: id => this.disconnect(id)
     };
     this.server = new RemoteServer(serverOptions);
@@ -198,6 +202,12 @@ export class RemoteAccessService {
       return x >= 0 && y >= 0 && x < bounds.width && y < bounds.height ? { x, y } : null;
     }
     if (action === "heartbeat") { c.heartbeat = Date.now(); return; }
+    if (action === "transport-connected") {
+      if (typeof payload !== "boolean") throw new Error("Invalid transport state");
+      c.transportInterrupted = !payload;
+      if (c.transportConnected !== payload) { c.transportConnected = payload; this.options.clientsChanged?.(); }
+      return;
+    }
     if (action === "route") {
       if (payload !== null && payload !== "direct" && payload !== "relay") throw new Error("Invalid connection route");
       if (c.route !== payload) { c.route = payload; this.options.clientsChanged?.(); }
@@ -260,7 +270,7 @@ export class RemoteAccessService {
       viewport: { x: 0, y: 0, width, height, revision: 0 }, keyboard: target.window.webContents,
       viewports: new Map([[0, { x: 0, y: 0, width, height, revision: 0 }]]),
       drag: null, lastPointer: null, buttons: new Set(), keys: new Map(), closeTarget, resolve, reject, route: null, iceTransportPolicy: this.options.getIceTransportPolicy?.() ?? "all",
-      timeout: setTimeout(() => { reject(new Error("Streaming setup timed out")); this.disconnect(id); }, 25000), heartbeat: Date.now(), epoch: 0, recovering: false, recoveredAt: -Infinity,
+      timeout: setTimeout(() => { reject(new Error("Streaming setup timed out")); this.disconnect(id); }, 25000), heartbeat: Date.now(), epoch: 0, recovering: false, transportConnected: false, transportInterrupted: false, recoveredAt: -Infinity,
       following: this.options.readOnly === true, followRevision: 0, localPointer: screen.getCursorScreenPoint() };
     this.connections.set(id, c);
     this.voice.add(id, allowed);
@@ -285,7 +295,7 @@ export class RemoteAccessService {
     const c = this.connections.get(id);
     if (!c || c.windowId !== offer.windowId || c.window.isDestroyed()) throw new Error("Remote session unavailable");
     if (c.recovering || Date.now() - c.recoveredAt < 30000) throw new Error("Streaming recovery is already in progress or too recent");
-    c.recovering = true; c.recoveredAt = Date.now(); c.epoch++; c.heartbeat = Date.now();
+    c.recovering = true; c.transportConnected = false; c.transportInterrupted = false; c.recoveredAt = Date.now(); c.epoch++; c.heartbeat = Date.now();
     this.release(c);
     // Transport replacement retains host moderation and hand order, but never
     // reopens a participant's microphone after a connection interruption.

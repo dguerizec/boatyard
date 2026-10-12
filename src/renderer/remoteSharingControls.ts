@@ -8,7 +8,8 @@ import { toUnknownRecord, type UnknownRecord } from "./rendererRecords.js";
 type ShowDialog = (dialog: HTMLDialogElement, options: { removeOnClose: boolean; freeze: "all"; onClose(): void }) => Promise<unknown>;
 
 export function setupRemoteSharingControls(button: HTMLButtonElement, api: BoatyardBridge, openSettings: () => void,
-  showDialog: ShowDialog, mode: "remote" | "share", applyFormControls: (container: HTMLElement) => void = () => {}, sidebarPin?: ShareSidebarPin) {
+  showDialog: ShowDialog, mode: "remote" | "share", applyFormControls: (container: HTMLElement) => void = () => {}, sidebarPin?: ShareSidebarPin,
+  openUrl?: (payload: UnknownRecord) => unknown) {
   let current: UnknownRecord = {}, loaded = false, disposed = false, revision = 0;
   let popup: HTMLDialogElement | null = null;
   const name = mode === "remote" ? "Remote" : "Share";
@@ -55,7 +56,10 @@ export function setupRemoteSharingControls(button: HTMLButtonElement, api: Boaty
     close.textContent = "Close"; close.onclick = () => dialog.close(); footer.append(settingsButton, close);
     if (settings) panel.append(settings, footer);
     else {
-      panel.append(createSharePane(api, true, { sidebarPin: sidebarPin ? { ...sidebarPin, toggle() { dialog.close(); sidebarPin.toggle(); } } : undefined }), footer);
+      panel.append(createSharePane(api, true, {
+        openUrl: openUrl ? payload => { dialog.close(); return openUrl(payload); } : undefined,
+        sidebarPin: sidebarPin ? { ...sidebarPin, toggle() { dialog.close(); sidebarPin.toggle(); } } : undefined
+      }), footer);
       applyFormControls(panel);
     }
     dialog.append(panel); render();

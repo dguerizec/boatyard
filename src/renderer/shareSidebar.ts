@@ -3,11 +3,13 @@ import { createSharePane, type SharePaneHost } from "./sharePane.js";
 import { cleanupPaneLayout } from "./paneCleanup.js";
 import { createToolIcon } from "./toolIcons.js";
 import type { BoatyardBridge } from "./rendererTypes.js";
+import type { UnknownRecord } from "./rendererRecords.js";
 
 export function createShareSidebar(shell: HTMLElement, api: BoatyardBridge, options: {
   save(state: ShareSidebarState): Promise<unknown>;
   layoutChanged(): void;
   applyFormControls(container: HTMLElement): void;
+  openUrl?: (payload: UnknownRecord) => unknown;
 }) {
   const sidebar = document.createElement("aside");
   sidebar.className = "share-sidebar"; sidebar.setAttribute("aria-label", "Share sidebar");
@@ -79,6 +81,7 @@ export function createShareSidebar(shell: HTMLElement, api: BoatyardBridge, opti
     resizer.setAttribute("aria-valuemin", "300"); resizer.setAttribute("aria-valuemax", "640"); resizer.setAttribute("aria-valuenow", String(state.width));
     if (state.pinned && !pane) {
       pane = createSharePane(api, true, {
+        openUrl: options.openUrl,
         hideTabs: true,
         onTabChanged(tab) {
           if (!restoring && tab !== state.tab) { state.tab = tab; render(); persist(); }

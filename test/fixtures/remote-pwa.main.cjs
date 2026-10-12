@@ -99,7 +99,7 @@ module.exports = async harness => {
         : original(url,options);
       document.getElementById('connect').requestSubmit();
     })()`);
-    await until('document.getElementById("status").textContent === "Waiting for Boatyard to reconnect…"');
+    await until('document.getElementById("status").textContent === "Reconnecting…"');
     assert.equal(await client.webContents.executeJavaScript('document.getElementById("connect").hidden'), false, 'A proxy error keeps reconnection available');
     await client.webContents.executeJavaScript('window.fixtureProxyOffline=false');
     const before = await client.webContents.executeJavaScript('document.querySelector("meta[name=boatyard-client-version]").content');

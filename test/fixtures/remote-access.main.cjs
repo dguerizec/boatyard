@@ -570,7 +570,15 @@ module.exports = async harness => {
     await until('document.getElementById("status").textContent.startsWith("Connected")', 'reconnect after disconnect');
     const closing = connection();
     target.setSize(820, 620);
-    await until('document.getElementById("status").textContent.includes("Connection lost")', 'resize stops sharing');
+    for (let i = 0; i < 100 && (!connection() || connection().id === closing.id || !connection().transportConnected); i++) await sleep(100);
+    assert.equal(service.connections.has(closing.id), false, 'Resize removes the previous stream');
+    assert.ok(connection()?.transportConnected, 'Resize automatically reconnects the client');
+    assert.notEqual(connection().id, closing.id, 'Resize creates a new stream');
+    await until('document.getElementById("status").textContent.startsWith("Connected")', 'reconnect after resize');
+    await client.webContents.executeJavaScript('document.getElementById("fit").click()');
+    const [resizedWidth, resizedHeight] = target.getContentSize();
+    // The displayed frame excludes the transport metadata footer and rounds to even pixels.
+    await until(`document.getElementById("frame").width === ${Math.round(resizedWidth / 2) * 2} && document.getElementById("frame").height === ${Math.round(resizedHeight / 2) * 2}`, 'live video uses the resized window dimensions');
     for (const action of ['closed', 'error']) {
       await closing.sender.webContents.executeJavaScript(`remoteHost.invoke('transport', {epoch:${closing.epoch},action:'${action}',payload:'Late teardown'},${JSON.stringify(closing.id)})`);
     }

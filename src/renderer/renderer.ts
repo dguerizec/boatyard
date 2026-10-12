@@ -1369,6 +1369,7 @@ const openRemoteSettings = () => {
   document.querySelector<HTMLButtonElement>('.settings-nav-button[data-section-id="remote"]')?.click();
 };
 shareSidebar = createShareSidebar(appShell, boatyardWindow.boatyard, {
+  openUrl: openWebAppOpenUrlDialog,
   async save(shareSidebarState) {
     const navigation = await boatyardWindow.boatyard.updateNavigation({ ...state.navigation, shareSidebar: shareSidebarState }, { notifySource: false });
     state = { ...state, navigation };
@@ -1376,7 +1377,7 @@ shareSidebar = createShareSidebar(appShell, boatyardWindow.boatyard, {
   layoutChanged: queueWebAppSync,
   applyFormControls
 });
-const disposeRemoteSharing = setupRemoteSharingControls(remoteSharingButton, boatyardWindow.boatyard, openRemoteSettings, showOverlayDialog, "share", applyFormControls, shareSidebar.pinControl);
+const disposeRemoteSharing = setupRemoteSharingControls(remoteSharingButton, boatyardWindow.boatyard, openRemoteSettings, showOverlayDialog, "share", applyFormControls, shareSidebar.pinControl, openWebAppOpenUrlDialog);
 const disposeRemoteAccess = setupRemoteSharingControls(remoteAccessButton, boatyardWindow.boatyard, openRemoteSettings, showOverlayDialog, "remote", applyFormControls);
 window.addEventListener("pagehide", () => { shareSidebar.dispose(); disposeRemoteSharing(); disposeRemoteAccess(); }, { once: true });
 

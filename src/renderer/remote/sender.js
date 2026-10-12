@@ -233,12 +233,13 @@ function startConnection(id, offer, remoteHost) {
         channel = event.channel;
         channel.onopen = () => {
           if (!active) return;
+          remoteHost.invoke('transport-connected', true).catch(close);
           send(dimensions()); void publishRoute();
           remoteHost.invoke('follow-state').then(follow).catch(close);
           remoteHost.invoke('voice-state').then(voice).catch(close);
           heartbeat = setInterval(() => { send({ kind: 'ping' }); void publishRoute(); }, 3000);
         };
-        channel.onclose = deferClose;
+        channel.onclose = () => { if (active) remoteHost.invoke('transport-connected', false).catch(close); deferClose(); };
         let events = 0, epoch = performance.now();
         channel.onmessage = event => {
           if (!active) return;
@@ -279,8 +280,13 @@ function startConnection(id, offer, remoteHost) {
       };
       peer.onconnectionstatechange = () => {
         if (!active) return;
-        if (['failed', 'closed', 'disconnected'].includes(peer.connectionState)) deferClose();
-        else { clearTimeout(lostTimer); lostTimer = null; void publishRoute(); }
+        if (['failed', 'closed', 'disconnected'].includes(peer.connectionState)) {
+          remoteHost.invoke('transport-connected', false).catch(close); deferClose();
+        }
+        else {
+          if (peer.connectionState === 'connected' && channel?.readyState === 'open') remoteHost.invoke('transport-connected', true).catch(close);
+          clearTimeout(lostTimer); lostTimer = null; void publishRoute();
+        }
       };
       await peer.setRemoteDescription(offer);
       const audioTransceiver = peer.getTransceivers().find(transceiver => transceiver.receiver.track.kind === 'audio');

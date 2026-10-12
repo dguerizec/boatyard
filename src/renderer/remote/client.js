@@ -43,7 +43,7 @@ import { openMicrophone } from './microphone.js';
   function retryConnection() {
     if (!reconnectWanted || peer || reconnectTimer) return;
     const epoch = reconnectEpoch;
-    status('Waiting for Boatyard to reconnect…');
+    status('Reconnecting…');
     reconnectTimer = setTimeout(async () => {
       reconnectTimer = null;
       if (epoch !== reconnectEpoch || !reconnectWanted) return;
@@ -136,7 +136,7 @@ import { openMicrophone } from './microphone.js';
   $('login').hidden = true;
   function refreshWaitingScreen() {
     const waiting = surface.classList.contains('screen-waiting');
-    const connecting = !surface.classList.contains('live') && /^(Connecting|Recovering live video|Connected)/.test($('status').textContent);
+    const connecting = !surface.classList.contains('live') && /^(Connecting|Reconnecting|Recovering live video|Connected)/.test($('status').textContent);
     $('status').hidden = waiting;
     $('screenWaitingCopy').hidden = !waiting;
     $('waitingHint').textContent = waiting ? 'Your connection is active. Video will return when the host resumes sharing.' : 'Establishing the connection…';
@@ -181,7 +181,7 @@ import { openMicrophone } from './microphone.js';
     peer?.close(); peer = null; channel = null;
     diagnostics.reset(); renderVoice(); video.srcObject = null; surface.classList.remove('live', 'screen-waiting'); refreshWaitingScreen();
   }
-  function reset(checkUpdate = true, preserveIntent = false) {
+  function reset(checkUpdate = true, preserveIntent = false, leave = false) {
     cancelReconnect(!preserveIntent);
     recovering = false; recovery.reset();
     closeTransport(); handRaised = null; voiceError = "";
@@ -190,10 +190,10 @@ import { openMicrophone } from './microphone.js';
     setKeyboardOpen(false); $('connect').hidden = !authenticated;
     const id = sessionId; sessionId = null;
     status('Disconnected');
-    const disconnected = id ? api('/api/disconnect', { sessionId: id }).catch(() => {}) : Promise.resolve();
+    const disconnected = id || leave ? api('/api/disconnect', { sessionId: id || '', ...(leave ? { leave: true } : {}) }).catch(() => {}) : Promise.resolve();
     return disconnected.then(() => { if (checkUpdate !== false) return clientUpdates.check(); });
   }
-  $('disconnect').onclick = () => { void reset(); };
+  $('disconnect').onclick = () => { void reset(true, false, true); };
   async function loadWindows(resume = false) {
     const epoch = reconnectEpoch;
     const result = await api('/api/windows');
@@ -206,16 +206,16 @@ import { openMicrophone } from './microphone.js';
     authenticated = true; document.body.classList.add('authenticated');
     $('windows').hidden = result.windows.length <= 1;
     $('windows').closest('label').hidden = result.windows.length <= 1;
-    $('connect').hidden = result.windows.length === 1; $('login').hidden = true; $('logout').hidden = false;
+    $('connect').hidden = result.windows.length === 1 && result.resumeAllowed !== false; $('login').hidden = true; $('logout').hidden = false;
     shareJoin.participant(result.participant);
     if (readOnly && !disposeChat) disposeChat = startShareChatClient({ api, root: $("chatPanel"), button: $("chat"), workspace: $("viewerWorkspace") });
     updateViewerHint();
-    status(result.windows.length ? 'Choose a window' : 'No windows available');
+    status(result.windows.length ? resume ? 'Reconnecting…' : 'Choose a window' : 'No windows available');
     const desired = remembered('boatyard-stream-window'), title = remembered('boatyard-stream-title');
     const matches = result.windows.filter(window => window.title === title);
     const selected = result.windows.find(window => window.id === desired) || (matches.length === 1 ? matches[0] : undefined);
     if (resume && selected) $('windows').value = selected.id;
-    if (result.windows.length === 1 || resume && selected) return connectStream();
+    if (result.windows.length === 1 && result.resumeAllowed !== false || resume && selected) return connectStream();
     return false;
   }
   $('login').onsubmit = async event => {
@@ -245,12 +245,13 @@ import { openMicrophone } from './microphone.js';
   }
   async function connectStream(replaceTransport = false, following = false) {
     if (peer) return true;
+    const connectingStatus = replaceTransport ? 'Recovering live video…' : reconnectWanted ? 'Reconnecting…' : 'Connecting…';
     reconnectWanted = true; remember('boatyard-stream-active', 'true');
     remember('boatyard-stream-window', $('windows').value);
     remember('boatyard-stream-title', $('windows').selectedOptions[0]?.textContent || '');
     const startedAt = generation;
     const selected = $('windows').selectedOptions[0]; if (!selected) return;
-    status(replaceTransport ? 'Recovering live video…' : 'Connecting…');
+    status(connectingStatus);
     if (!replaceTransport && (await clientUpdates.check() || peer)) return;
     try {
       const metadata = await api('/api/windows');
@@ -273,7 +274,7 @@ import { openMicrophone } from './microphone.js';
       revision = 0; viewport = null; requested = { x: 0, y: 0, ...full, revision };
     }
     const connection = new RTCPeerConnection(remotePeerConfiguration(iceServers, iceTransportPolicy)); peer = connection;
-    $('connect').hidden = true; $('disconnect').disabled = false; status(replaceTransport ? 'Recovering live video…' : 'Connecting…');
+    $('connect').hidden = true; $('disconnect').disabled = false; status(connectingStatus);
     channel = connection.createDataChannel('controls', { ordered: true });
     channel.onmessage = event => {
       if (generation !== current) return;

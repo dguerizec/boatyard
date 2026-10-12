@@ -79,6 +79,41 @@ test("Share browser authentication persists device takeover and forced disconnec
   assert.equal((await windows(await signIn())).status, 200, "The reusable invitation still permits a deliberate join");
 });
 
+test("Voluntary Share departure survives restart without revoking admission, unlike an interrupted stream", async t => {
+  const root = mkdtempSync(join(tmpdir(), "boatyard-share-departure-"));
+  const file = join(root, "share-access.json");
+  let server!: RemoteServer;
+  const boot = async () => {
+    server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash: "", readOnly: true,
+      shareAccess: new ShareAccessState(undefined, file),
+      listWindows: () => [{ id: "window", title: "Fixture", width: 800, height: 600 }],
+      connect: async () => ({ sessionId: "fixture", type: "answer", sdp: "v=0" }), disconnect() {} });
+    return `http://127.0.0.1:${await server.start()}`;
+  };
+  t.after(async () => { await server.stop(); rmSync(root, { recursive: true, force: true }); });
+  let origin = await boot();
+  const invitation = server.createReadOnlyInvitation("Alice");
+  const post = (path: string, body: unknown, cookie = "") => fetch(`${origin}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(body) });
+  const admitted = await post("/api/redeem", { token: invitation.token });
+  const cookie = admitted.headers.get("set-cookie")!.split(";")[0];
+  const connect = () => post("/api/connect", { windowId: "window", type: "offer", sdp: "v=0" }, cookie);
+  await connect();
+  await post("/api/disconnect", { sessionId: "fixture" }, cookie);
+  assert.equal(server.getClients()[0].state, "signed-in", "Transport cleanup keeps the participant waiting");
+  await connect();
+  await post("/api/disconnect", { sessionId: "unrelated", leave: true }, cookie);
+  assert.equal(server.getClients()[0].state, "connected", "A stale session cannot mark the current stream as departed");
+  await post("/api/disconnect", { sessionId: "fixture", leave: true }, cookie);
+  assert.equal(server.getClients()[0].state, "invited", "Voluntary departure ends the wait");
+  await server.stop(); origin = await boot();
+  assert.equal(server.getClients()[0].state, "invited", "Departed participants do not return as waiting after restart");
+  assert.equal((await fetch(`${origin}/api/windows`, { headers: { Cookie: cookie } })).status, 200, "Admission remains valid");
+  assert.equal((await connect()).status, 200, "The client can deliberately reconnect without redeeming its code");
+  assert.equal(server.getClients()[0].state, "connected");
+  await server.stop(); origin = await boot();
+  assert.equal(server.getClients()[0].state, "signed-in", "Manual reconnection restores waiting state for subsequent host restarts");
+});
+
 test("Restart resumes enabled Share with saved codes, and explicit Stop remains stopped while keeping options", async t => {
   const root = mkdtempSync(join(tmpdir(), "boatyard-share-restart-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));

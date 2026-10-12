@@ -33,9 +33,11 @@ test("Remote authentication survives time and restarts but not logout or passwor
   } finally { Date.now = originalNow; }
   await server.stop(); server = create(); endpoint = `http://127.0.0.1:${await server.start()}`;
   assert.equal((await windows(cookie)).status, 200, "A new server restores the existing browser session");
+  assert.deepEqual(server.getClients(), [], "Restored authentication alone does not imply an active Remote client");
   await fetch(`${endpoint}/api/logout`, { method: "POST", headers: { Cookie: cookie } });
   await server.stop(); server = create(); endpoint = `http://127.0.0.1:${await server.start()}`;
   assert.equal((await windows(cookie)).status, 401, "Logout remains effective after restart");
+  assert.deepEqual(server.getClients(), [], "Signed-out browsers do not reappear as waiting clients");
   const second = await signIn();
   await server.stop(); server = create(await hashRemotePassword("replacement-password")); endpoint = `http://127.0.0.1:${await server.start()}`;
   assert.equal((await windows(second)).status, 401, "Changing the password invalidates prior sessions");
@@ -142,6 +144,68 @@ test("remote PWA assets are public, uncached and versioned by their content", as
   assert.notEqual(await version(), changed, "Worklet changes also refresh the client version");
   assert.ok((await (await fetch(endpoint)).text()).includes(`content="${await version()}"`));
   assert.equal((await fetch(`${endpoint}/api/windows`)).status, 401, "PWA metadata does not grant access to shared windows");
+});
+
+test("Remote clients appear before setup completes and retain their identity through transport readiness", async t => {
+  let entered!: () => void, finish!: (value: { sessionId: string; type: "answer"; sdp: string }) => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  let ready = false;
+  const updates: string[] = [];
+  const server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash: await hashRemotePassword("fixture-password"),
+    listWindows: () => [{ id: "window", title: "Fixture", width: 800, height: 600 }],
+    connect: async () => { entered(); return new Promise(resolve => { finish = resolve; }); },
+    isTransportConnected: () => ready, disconnect() {},
+    clientsChanged: () => { updates.push(server.getClients()[0]?.state ?? "absent"); } });
+  const endpoint = `http://127.0.0.1:${await server.start()}`; t.after(() => server.stop());
+  const post = (path: string, body: unknown, cookie = "") => fetch(`${endpoint}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(body) });
+  const login = await post("/api/login", { password: "fixture-password" });
+  const cookie = login.headers.get("set-cookie")!.split(";")[0];
+  await post("/api/login", { password: "fixture-password" });
+  await post("/api/login", { password: "fixture-password" });
+  assert.deepEqual(server.getClients(), [], "Unused browser authentications do not create participant rows");
+  const pending = post("/api/connect", { windowId: "window", type: "offer", sdp: "v=0" }, cookie);
+  await started;
+  assert.equal(server.getClients().length, 1, "Only the browser currently connecting appears");
+  const client = server.getClients()[0];
+  assert.equal(server.getClients()[0].state, "connecting", "Remote setup is visible before its answer");
+  assert.equal(updates.at(-1), "connecting");
+  finish({ sessionId: "fixture", type: "answer", sdp: "v=0" });
+  assert.equal((await pending).status, 200);
+  assert.equal(server.getClients()[0].state, "connecting", "Remote waits for the transport to open");
+  ready = true;
+  assert.equal(server.getClients()[0].state, "connected");
+  assert.equal(server.getClients()[0].id, client.id);
+  server.sessionClosed("fixture");
+  assert.deepEqual(server.getClients(), [], "Inactive Remote authentication does not leave a waiting participant");
+  server.disconnectClient(client.id);
+  assert.deepEqual(server.getClients(), [], "Forced disconnect removes the waiting Remote client");
+});
+
+test("An authenticated browser replaces only its own interrupted transport without waiting for expiry", async t => {
+  let next = 0;
+  const interrupted = new Set<string>(), disconnected: (string | undefined)[] = [];
+  const server = new RemoteServer({ assetsDirectory: resolve("src/renderer/remote"), passwordHash: "", readOnly: true,
+    listWindows: () => [{ id: "window", title: "Fixture", width: 800, height: 600 }],
+    connect: async () => ({ sessionId: `stream-${++next}`, type: "answer", sdp: "v=0" }),
+    isTransportInterrupted: id => interrupted.has(id), disconnect: id => disconnected.push(id) });
+  const origin = `http://127.0.0.1:${await server.start()}`; t.after(() => server.stop());
+  const post = (path: string, body: unknown, cookie = "") => fetch(`${origin}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Cookie: cookie }, body: JSON.stringify(body) });
+  const cookie = async (label: string) => {
+    const invitation = server.createReadOnlyInvitation(label);
+    const response = await post("/api/redeem", { token: invitation.token });
+    return response.headers.get("set-cookie")!.split(";")[0];
+  };
+  const a = await cookie("Alice"), b = await cookie("Bob");
+  const offer = { windowId: "window", type: "offer", sdp: "v=0" };
+  const first = await (await post("/api/connect", offer, a)).json();
+  await post("/api/connect", offer, b);
+  assert.equal((await post("/api/connect", offer, a)).status, 409, "An active or negotiating transport is not replaced");
+  interrupted.add(first.sessionId);
+  assert.equal((await post("/api/connect", offer, b)).status, 409, "Another browser cannot claim an interrupted participant's transport");
+  assert.equal((await post("/api/connect", offer, a)).status, 200, "The owner can immediately replace its interrupted transport");
+  assert.deepEqual(disconnected, [first.sessionId]);
+  assert.equal(server.getConnectedClientCount(), 2, "Replacement preserves capacity for the other participant");
+  assert.equal(server.getClients().length, 2, "Replacement preserves participant identities");
 });
 
 test("remote server gates signaling, serializes sessions and rejects stale disconnects", async t => {
