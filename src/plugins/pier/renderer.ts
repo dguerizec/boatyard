@@ -10,6 +10,8 @@
   const SYSTEM_RESOURCES_PANE_ID = "boatyard.systemResources.pane";
   const SYSTEM_RESOURCES_SERVICE_ID = "boatyard.systemResources";
   const workloadCacheByProject = new Map<string, PierWorkload[]>();
+  const pendingWorkloadsByProject = new Map<string, Promise<PierWorkload[]>>();
+  let activationRevision = 0;
   const selectedEntryPointsByProject = new Map<string, Set<string>>();
 
   if (!registry) {
@@ -311,7 +313,7 @@
   }
 
   function getWorkloadCacheKey(project: PierProject, options: PierOptions = {}) {
-    return `${String(project?.id || project?.slug || "")}\u0000${String(options.pluginConfig?.pierProjectName || "")}`;
+    return `${getPierApiUrl(options)}\u0000${String(project?.id || project?.slug || "")}\u0000${normalizePath(project.sourcePath)}\u0000${String(options.pluginConfig?.pierProjectName || "")}`;
   }
 
   function setCachedWorkloads(project: PierProject, options: PierOptions, workloads: PierWorkload[]) {
@@ -391,9 +393,22 @@
     });
   }
 
-  async function listProjectWorkloads(project: PierProject, options: PierOptions = {}) {
+  function listProjectWorkloads(project: PierProject, options: PierOptions = {}) {
+    const key = getWorkloadCacheKey(project, options);
+    const pending = pendingWorkloadsByProject.get(key);
+    if (pending) return pending;
+    const request = fetchProjectWorkloads(project, options).finally(() => {
+      if (pendingWorkloadsByProject.get(key) === request) pendingWorkloadsByProject.delete(key);
+    });
+    pendingWorkloadsByProject.set(key, request);
+    return request;
+  }
+
+  async function fetchProjectWorkloads(project: PierProject, options: PierOptions = {}) {
+    const revision = activationRevision;
+    const signal = typeof AbortSignal !== "undefined" ? AbortSignal.timeout(5000) : undefined;
     const apiUrl = getPierApiUrl(options);
-    const projectsResponse = await fetch(`${apiUrl}/api/v1/projects`);
+    const projectsResponse = await fetch(`${apiUrl}/api/v1/projects`, { signal });
 
     if (!projectsResponse.ok) {
       throw new Error(`Pier projects API returned ${projectsResponse.status}.`);
@@ -406,11 +421,11 @@
     const pierProjectPath = pierProject?.repo_path || "";
 
     if (!pierProjectName) {
-      setCachedWorkloads(project, options, []);
+      if (revision === activationRevision) setCachedWorkloads(project, options, []);
       return [];
     }
 
-    const worktreesResponse = await fetch(`${apiUrl}/api/v1/projects/${encodeURIComponent(pierProjectName)}/worktrees`);
+    const worktreesResponse = await fetch(`${apiUrl}/api/v1/projects/${encodeURIComponent(pierProjectName)}/worktrees`, { signal });
 
     if (!worktreesResponse.ok) {
       throw new Error(`Pier worktrees API returned ${worktreesResponse.status}.`);
@@ -421,7 +436,7 @@
       .map((worktree) => normalizeWorktreeEntry(pierProjectName, pierProjectPath, worktree))
       .filter((entry): entry is PierWorkload => Boolean(entry.slug && entry.worktreePath)));
 
-    setCachedWorkloads(project, options, entries);
+    if (revision === activationRevision) setCachedWorkloads(project, options, entries);
     return entries;
   }
 
@@ -1570,7 +1585,21 @@
       ]
     },
     {
+      deactivate() {
+        activationRevision += 1;
+        pendingWorkloadsByProject.clear();
+      },
       activate(ctx: PierPluginContext) {
+        activationRevision += 1;
+        ctx.events.on<PluginPaneMenuOpenedEvent>("boatyard.paneMenu.opened", (payload) => {
+          if (!isRecord(payload.project) || !payload.project.id) return;
+          void listProjectWorkloads(payload.project, {
+            pluginConfig: payload.projectConfig as PierConfig,
+            globalPluginConfig: payload.globalPluginConfig as PierConfig
+          }).catch(() => {
+            // Keep cached entries when background discovery is unavailable.
+          });
+        });
         ctx.status.set({
           state: "ready",
           summary: "Pier integration is available"

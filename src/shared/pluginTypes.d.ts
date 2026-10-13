@@ -383,6 +383,13 @@ declare global {
     globalPluginConfig?: PluginRegistryRecord;
   };
 
+  // Emitted after the pane selector opens; refresh contributions asynchronously.
+  // Config fields are scoped to the receiving plugin by the registry.
+  type PluginPaneMenuOpenedEvent = PluginRegistryRecord & PluginPaneResolveContext & {
+    project: PluginRegistryRecord;
+    paneId: string;
+  };
+
   type PluginPaneDefinitionInput = PluginRegistryRecord & {
     id?: unknown;
     icon?: unknown;

@@ -732,6 +732,17 @@ function renderProjectPaneArea(project: RendererProject) {
 }
 
 const webAppMenus = createWebAppMenus({
+  getProjectWebApps,
+  onPaneMenuOpened: (project, paneId) => {
+    boatyardWindow.BoatyardPluginRegistry?.emit("boatyard.paneMenu.opened", {
+      project,
+      paneId,
+      forPlugin: (pluginId: string) => ({
+        projectConfig: getProjectPluginConfig(project.id, pluginId),
+        globalPluginConfig: getGlobalPluginConfig(pluginId)
+      })
+    });
+  },
   webAppOpenSplitRatio: WEBAPP_OPEN_SPLIT_RATIO,
   getCurrentWebAppUrl,
   getSettings,

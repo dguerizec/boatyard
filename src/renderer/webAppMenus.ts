@@ -115,6 +115,8 @@ export function getPaneMenuWebApps(webApps: WebAppDefinition[]) {
     getCurrentWebAppUrl: (webApp: MenuWebApp) => string | undefined;
     getSettings: () => UnknownRecord & { webAppOpenRules?: WebAppOpenRule[] };
     getProjectById: (projectId?: string) => RendererProject | null;
+    getProjectWebApps?: (project: RendererProject, paneId: string) => MenuWebApp[];
+    onPaneMenuOpened?: (project: RendererProject, paneId: string) => void;
     getProjectWidgetPanes: (project: RendererProject) => UnknownRecord[];
     getWebAppFavicon: (key?: string) => string;
     getVisibleWebAppEntryByKey: (key?: string) => VisibleWebAppEntry | null;
@@ -181,6 +183,8 @@ export function createWebAppMenus({
     getCurrentWebAppUrl,
     getSettings,
     getProjectById,
+    getProjectWebApps,
+    onPaneMenuOpened,
     getProjectWidgetPanes,
     getWebAppFavicon,
     getVisibleWebAppEntryByKey,
@@ -1189,27 +1193,51 @@ export function createWebAppMenus({
         return item;
       }
 
-      for (const group of buildPaneTypeCatalog(webApps)) {
-        if (!group.children.length) {
-          menu.append(createWebAppTabMenuItem(group.webApp, group.label));
-          continue;
+      function renderItems(entries: MenuWebApp[]) {
+        const focused = document.activeElement as HTMLElement | null;
+        const focusedId = menu.contains(focused) ? focused?.dataset.webAppId : undefined;
+        const scrollTop = menu.scrollTop;
+        menu.replaceChildren();
+        for (const group of buildPaneTypeCatalog(entries)) {
+          if (!group.children.length) {
+            menu.append(createWebAppTabMenuItem(group.webApp, group.label));
+            continue;
+          }
+
+          const groupElement = document.createElement("div");
+          groupElement.className = "webapp-tab-menu-group";
+          groupElement.classList.toggle(
+            "contains-current",
+            group.children.some((child) => child.webApp.id === selectedWebApp.id)
+          );
+          groupElement.append(createWebAppTabMenuItem(group.webApp, group.label, { hasSubmenu: true }));
+
+          const childList = document.createElement("div");
+          childList.className = "webapp-tab-submenu";
+          for (const child of group.children) {
+            childList.append(createWebAppTabMenuItem(child.webApp, child.label, { child: true }));
+          }
+          groupElement.append(childList);
+          menu.append(groupElement);
         }
 
-        const groupElement = document.createElement("div");
-        groupElement.className = "webapp-tab-menu-group";
-        groupElement.classList.toggle(
-          "contains-current",
-          group.children.some((child) => child.webApp.id === selectedWebApp.id)
-        );
-        groupElement.append(createWebAppTabMenuItem(group.webApp, group.label, { hasSubmenu: true }));
-
-        const childList = document.createElement("div");
-        childList.className = "webapp-tab-submenu";
-        for (const child of group.children) {
-          childList.append(createWebAppTabMenuItem(child.webApp, child.label, { child: true }));
+        if (focusedId !== undefined) {
+          const replacement = [...menu.querySelectorAll<HTMLButtonElement>("button")]
+            .find((item) => item.dataset.webAppId === focusedId && !item.disabled);
+          (replacement || menu.querySelector<HTMLButtonElement>("button:not(:disabled)"))?.focus({ preventScroll: true });
         }
-        groupElement.append(childList);
-        menu.append(groupElement);
+        menu.scrollTop = scrollTop;
+      }
+      renderItems(webApps);
+
+      function onContributionsChanged(event: Event) {
+        const detail = (event as CustomEvent<{ projectId?: string }>).detail;
+        if (openWebAppTabMenu !== menu || (detail?.projectId && detail.projectId !== project.id)) {
+          return;
+        }
+        if (getProjectWebApps) {
+          renderItems(getProjectWebApps(getProjectById(project.id) || project, paneNode.id));
+        }
       }
 
       document.body.append(menu);
@@ -1228,17 +1256,21 @@ export function createWebAppMenus({
       }
 
       menu.cleanup = () => {
+        window.removeEventListener("boatyard:pane-contributions-changed", onContributionsChanged);
         document.removeEventListener("pointerdown", onPointerDown);
         document.removeEventListener("keydown", onKeyDown);
         button.setAttribute("aria-expanded", "false");
       };
 
+      window.addEventListener("boatyard:pane-contributions-changed", onContributionsChanged);
       setTimeout(() => {
+        if (openWebAppTabMenu !== menu) return;
         document.addEventListener("pointerdown", onPointerDown);
         document.addEventListener("keydown", onKeyDown);
       }, 0);
 
       menu.querySelector("button")?.focus();
+      onPaneMenuOpened?.(project, paneNode.id);
     }
 
     function normalizeNavigationHistory(history: unknown) {
