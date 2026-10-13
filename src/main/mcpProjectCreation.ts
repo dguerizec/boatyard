@@ -71,12 +71,17 @@ export type ProjectCreationStore = {
 };
 export type ProjectCreationContext = {
   store: ProjectCreationStore;
+  onProjectsChanged?(): void;
   twiccEnabled: boolean;
   createTwiccProject(values: {
     name: string; sourcePath: string; trust: true; propagateTrust: true; allowCliFallback: false
   }): Promise<unknown>;
 };
 const notAttemptedTwicc = () => ({ status: "not_attempted" as const, attemptedCount: 0, confirmedCount: 0 });
+function notifyProjectsChanged(context: ProjectCreationContext) {
+  try { context.onProjectsChanged?.(); }
+  catch { console.error("Could not notify windows of a project catalog change."); }
+}
 export function rejectProjectCreation(code: typeof rejectionCodes[number]): ProjectCreationReceipt {
   return { status: "rejected", code, attemptedCount: 0, confirmedCount: 0,
     directory: { status: "not_attempted", createdCount: 0 }, twicc: notAttemptedTwicc() };
@@ -167,6 +172,7 @@ export async function createMcpProject(
     const created = added[0];
     project = projectSchema.parse({ id: created.id, name: created.name, slug: created.slug, group: created.group, isOpen: created.isOpen });
   } catch { return uncertainProjectCreation(directoryReceipt); }
+  finally { notifyProjectsChanged(context); }
   const base = { contextId, project, attemptedCount: 1 as const, confirmedCount: 1 as const, directory: directoryReceipt };
   if (!wantsTwicc) return { status: "created", ...base, twicc: { status: "skipped", attemptedCount: 0, confirmedCount: 0 } };
   let twiccProject: { id: string; url: string };
@@ -191,5 +197,6 @@ export async function createMcpProject(
     }
     context.store.updateProjectPluginConfig(project.id, "boatyard.twicc", { twiccProjectUrl: twiccProject.url });
   } catch { return { status: "partial", code: "TWICC_LINK_UNCERTAIN", ...base, twicc }; }
+  finally { notifyProjectsChanged(context); }
   return { status: "created", ...base, twicc };
 }

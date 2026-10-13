@@ -2475,6 +2475,14 @@ if (isPrimaryInstance) app.whenReady().then(async () => {
         const context = [...configurationContexts.values()].find((candidate) => getMcpContextId(candidate) === contextId);
         return context ? {
           store: context.store,
+          onProjectsChanged() {
+            const state = context.store.getState();
+            sendToConfiguration(context, "projects:changed", {
+              projects: state.projects,
+              projectPluginConfig: (state.pluginConfig as { projects?: unknown } | undefined)?.projects || {},
+              projectHugescreen: state.projectHugescreen
+            });
+          },
           twiccEnabled: context.pluginHost.hasAction("boatyard.twicc", "createProject"),
           createTwiccProject: (values) => Promise.resolve(context.pluginHost.invoke("boatyard.twicc", "createProject", {
             ...values,

@@ -264,6 +264,7 @@ export type BoatyardBridge = {
   listLayouts(projectId?: string | null): Promise<WorkspaceLayout[]>;
   getWebAppNavigationHistory?: (key: unknown) => Promise<unknown>;
   getState(): Promise<RendererState>;
+  onProjectsChanged?: (callback: (catalog: import("./projectCatalog").ProjectCatalog) => void) => () => void;
   prepareShareNavigation?: (navigation: { view: string; projectId: string | null }) => void;
   updateShareScreen?: (patch: UnknownRecord) => Promise<UnknownRecord>;
   getShareProjects?: () => Promise<{ id: string; name: string; key: string; group?: string }[]>;

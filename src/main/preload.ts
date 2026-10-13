@@ -42,6 +42,11 @@ contextBridge.exposeInMainWorld("boatyard", {
   listPlugins: () => ipcRenderer.invoke("plugins:list"),
   invokePlugin: (pluginId: string, actionName: string, payload: unknown) => ipcRenderer.invoke("plugins:invoke", pluginId, actionName, payload),
   addProject: (project: unknown) => ipcRenderer.invoke("projects:add", project),
+  onProjectsChanged: (callback: BridgeCallback): Unsubscribe => {
+    const listener = (_event: IpcRendererEvent, payload: unknown) => callback(payload);
+    ipcRenderer.on("projects:changed", listener);
+    return () => ipcRenderer.removeListener("projects:changed", listener);
+  },
   listLayouts: (projectId: string | null = null) => ipcRenderer.invoke("layouts:list", projectId),
   getLayoutPreviewMetrics: () => ipcRenderer.invoke("layouts:preview-metrics"),
   applyLayout: (payload: unknown) => ipcRenderer.invoke("layouts:apply", payload),

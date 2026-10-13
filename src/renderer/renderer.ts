@@ -1,4 +1,5 @@
 import { createProjectShareControls } from "./projectShareControls.js";
+import { createProjectCatalogSync } from "./projectCatalog.js";
 import { createShareSidebar } from "./shareSidebar.js";
 import { setupHugescreenControls } from "./hugescreenControls.js";
 import { setupRemoteSharingControls } from "./remoteSharingControls.js";
@@ -1311,8 +1312,16 @@ function render() {
   }
 }
 
+const projectCatalogSync = createProjectCatalogSync({
+  subscribe: boatyardWindow.boatyard.onProjectsChanged,
+  readState: () => boatyardWindow.boatyard.getState(),
+  getState: () => state,
+  setState: next => { state = next; },
+  renderProjectList
+});
+
 async function loadState() {
-  state = await boatyardWindow.boatyard.getState();
+  state = await projectCatalogSync.readState();
   boatyardWindow.BoatyardPluginRegistry?.applyEnabledState(getPluginEnabledState());
   webAppRuntime.hydrateCurrentWebAppUrls(state.webApps);
   hydratePaneLayouts();

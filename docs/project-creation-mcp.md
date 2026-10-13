@@ -72,8 +72,11 @@ A complete creation returns:
 
 The domain generates the UUID, marks the project open and initializes its
 display settings. No window is selected or navigated, and no initial pane layout
-is applied. `list_windows` reads the updated project inventory; an already
-rendered sidebar may need its normal state refresh. The receipt acknowledges
+is applied. Every open window in the selected configuration receives the updated
+project catalog immediately after the domain mutation, and again after linking
+TwiCC. Sidebars update without reloading the current view, navigating away, or
+discarding settings drafts. Other configurations are not notified.
+`list_windows` also reads the updated project inventory. The receipt acknowledges
 store/backend operations, not UI rendering or session readiness.
 
 Top-level `attemptedCount` and `confirmedCount` refer only to the single Boatyard

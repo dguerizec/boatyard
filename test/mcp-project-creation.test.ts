@@ -46,6 +46,41 @@ test("MCP project creation creates bounded directories, persists domain defaults
   }
 });
 
+test("MCP creation notifies its context immediately and again after the TwiCC link is saved", async (t) => {
+  const first = isolatedContext(t), other = isolatedContext(t);
+  const snapshots: ReturnType<ProjectStore["getState"]>[] = [];
+  let finishTwicc!: (value: unknown) => void;
+  first.context.twiccEnabled = true;
+  first.context.createTwiccProject = () => new Promise(resolve => { finishTwicc = resolve; });
+  first.context.onProjectsChanged = () => { snapshots.push(first.store.getState()); };
+  other.context.onProjectsChanged = () => assert.fail("Another configuration was notified");
+  const pending = createMcpProject(input, id => id === contextId ? first.context : other.context);
+  assert.equal(snapshots.length, 1, "The project is visible before the TwiCC request finishes");
+  assert.equal(snapshots[0].projects[0].name, input.name);
+  finishTwicc(twiccReply);
+  assert.equal((await pending).status, "created");
+  assert.equal(snapshots.length, 2);
+  const id = snapshots[1].projects[0].id;
+  assert.equal(snapshots[1].pluginConfig.projects[id]["boatyard.twicc"].twiccProjectUrl, twiccReply.url);
+  assert.equal(other.store.getState().projects.length, 0);
+  assert.equal((await createMcpProject(input, () => first.context)).status, "rejected");
+  assert.equal(snapshots.length, 2, "Rejected requests never notify or replay mutations");
+});
+
+test("MCP creation notifies persisted projects even when a mutation has an uncertain outcome", async (t) => {
+  const { context, store } = isolatedContext(t);
+  let notifications = 0;
+  context.onProjectsChanged = () => { notifications++; assert.equal(store.getState().projects.length, 1); };
+  const add = store.addProject.bind(store);
+  context.store = {
+    getState: () => store.getState(),
+    addProject: values => { add(values); throw new Error("Reply lost after persistence"); },
+    updateProjectPluginConfig: (...args) => store.updateProjectPluginConfig(...args)
+  };
+  assert.equal((await createMcpProject(input, () => context)).status, "unknown");
+  assert.equal(notifications, 1);
+});
+
 test("schema refuses missing fields, traversal, overlong values and privileged fields before resolution", async () => {
   let resolutions = 0;
   const invalid = [
