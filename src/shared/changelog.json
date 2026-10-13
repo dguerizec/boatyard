@@ -1,6 +1,62 @@
 {
-  "generatedForVersion": "0.19.0",
+  "generatedForVersion": "0.20.0",
   "releases": [
+    {
+      "version": "0.20.0",
+      "date": "2026-10-13",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Browser Remote access",
+          "body": "Control your workspace from a browser with zoom, navigation, and automatic connection recovery; local mouse or keyboard input pauses remote control until you resume it."
+        },
+        {
+          "category": "Added",
+          "title": "Read-only project sharing",
+          "body": "Let guests view selected projects, hide your screen when needed, and keep new projects private by default."
+        },
+        {
+          "category": "Added",
+          "title": "Participant access controls",
+          "body": "Invite guests with reusable personal or group codes, optionally approve join requests, and disconnect individual participants or revoke their access."
+        },
+        {
+          "category": "Added",
+          "title": "Sharing that survives restarts",
+          "body": "Restore sharing settings and admitted guests after an app restart, with automatic reconnection after interruptions and explicit Stop ending active access."
+        },
+        {
+          "category": "Added",
+          "title": "Group chat with images",
+          "body": "Exchange messages and pasted images with participants, see unread alerts, and revisit locally saved conversations as the host."
+        },
+        {
+          "category": "Added",
+          "title": "Moderated voice conversations",
+          "body": "Talk with Remote and Share participants using microphone controls, raised hands, and speaker-only, open-discussion, or Q&A modes."
+        },
+        {
+          "category": "Added",
+          "title": "Share sidebar",
+          "body": "Keep participants, admission requests, and chat close at hand in a pinnable, resizable sidebar that remembers your preferences and shows connection status."
+        },
+        {
+          "category": "Added",
+          "title": "Separate browser apps",
+          "body": "Install Remote and Share as distinct browser apps with their own names and icons."
+        },
+        {
+          "category": "Added",
+          "title": "Pane visibility for assistants",
+          "body": "Connected assistants can identify visible panes and understand why others are unavailable for capture."
+        },
+        {
+          "category": "Fixed",
+          "title": "Captures beside expanded panes",
+          "body": "Connected assistants can capture visible neighboring panes and multiple expanded panes while covered content remains excluded."
+        }
+      ]
+    },
     {
       "version": "0.19.0",
       "date": "2026-10-07",

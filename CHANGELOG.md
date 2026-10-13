@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.20.0] - 2026-10-13
+
+### Summary
+
+- **v0.20.0: Share Your Workspace** — Access Boatyard from your browser, invite others to view selected projects, and collaborate through group chat and moderated voice conversations.
+
+### Added
+
+- **Browser Remote access** — Control your workspace from a browser with zoom, navigation, and automatic connection recovery; local mouse or keyboard input pauses remote control until you resume it.
+- **Read-only project sharing** — Let guests view selected projects, hide your screen when needed, and keep new projects private by default.
+- **Participant access controls** — Invite guests with reusable personal or group codes, optionally approve join requests, and disconnect individual participants or revoke their access.
+- **Sharing that survives restarts** — Restore sharing settings and admitted guests after an app restart, with automatic reconnection after interruptions and explicit Stop ending active access.
+- **Group chat with images** — Exchange messages and pasted images with participants, see unread alerts, and revisit locally saved conversations as the host.
+- **Moderated voice conversations** — Talk with Remote and Share participants using microphone controls, raised hands, and speaker-only, open-discussion, or Q&A modes.
+- **Share sidebar** — Keep participants, admission requests, and chat close at hand in a pinnable, resizable sidebar that remembers your preferences and shows connection status.
+- **Separate browser apps** — Install Remote and Share as distinct browser apps with their own names and icons.
+- **Pane visibility for assistants** — Connected assistants can identify visible panes and understand why others are unavailable for capture.
+
+### Fixed
+
+- **Captures beside expanded panes** — Connected assistants can capture visible neighboring panes and multiple expanded panes while covered content remains excluded.
+
+### Documentation
+
+- **Remote and Share guide** — New documentation covers browser access, project privacy, invitations, reconnection, chat, and voice moderation.
+
 ## [0.19.0] - 2026-10-07
 
 ### Summary
