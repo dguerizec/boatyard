@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { mkdtempSync, rmSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
+const { once } = require('node:events');
 const { RemoteAccessService } = require('../../build/main/remoteAccess');
 const { ShareAccessState } = require('../../build/main/shareAccessState');
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -59,8 +60,17 @@ module.exports = async harness => {
     assert.ok(Date.now() - reloadStarted < 14000, 'Reload reconnects before the old 15-second transport retention expires');
     assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'Reload keeps participant identity');
     const clientURL = client.webContents.getURL();
-    const crashed = new Promise(resolve => client.webContents.once('render-process-gone', resolve));
-    client.webContents.forcefullyCrashRenderer(); await crashed;
+    console.log('Share reconnect: terminating guest renderer');
+    const rendererPid = client.webContents.getOSProcessId();
+    assert.ok(rendererPid > 0, 'Guest renderer has a live process');
+    assert.notEqual(rendererPid, harness.webContents.getOSProcessId(), 'Guest renderer is separate from the test harness');
+    assert.notEqual(rendererPid, target.webContents.getOSProcessId(), 'Guest renderer is separate from the shared window');
+    const crashed = once(client.webContents, 'render-process-gone', { signal: AbortSignal.timeout(10000) });
+    // forcefullyCrashRenderer can stall before render-process-gone on CI. Kill
+    // only the guest renderer to exercise abrupt loss without a native crash.
+    process.kill(rendererPid, 'SIGKILL');
+    const [, details] = await crashed;
+    assert.ok(['killed', 'crashed'].includes(details.reason), 'Guest renderer exits abnormally');
     // The 15-second transport retention can expire before a busy runner observes
     // the transient connecting state. Exercise recovery after expiry instead.
     await until(() => service.server.getClients().find(client => client.id === identity)?.state === 'signed-in', 'host retains admission after crashed transport expires');
