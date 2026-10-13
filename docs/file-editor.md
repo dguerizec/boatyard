@@ -12,6 +12,58 @@ Each pane keeps its opened files in a horizontally scrollable tab strip. Click a
 - JavaScript, TypeScript, JSX/TSX, JSON, CSS, HTML, Markdown, Python, and TOML (`.toml`) have syntax highlighting. Docker build files are recognized as `Dockerfile`, `Containerfile`, variants such as `Dockerfile.dev`, and files ending in `.dockerfile` or `.containerfile`. Other UTF-8 files can be edited as plain text.
 - The editor follows Boatyard's light or dark theme.
 
+## Table editing
+
+CSV, TSV (`.tsv` or `.tab`), PSV, SSV, and DSV files open in **Table** mode by
+default. The **Table** button in the pane toolbar switches between the grid and
+the text editor without saving or discarding the draft. It is also available for
+other complete UTF-8 text files. Each file remembers the selected mode, separator,
+header option, column widths, and each column's sort comparison per pane.
+
+The grid detects comma, semicolon, tab, and pipe separators. Choose a separator
+explicitly if the automatic interpretation is unsuitable. **First row is header**
+integrates the first record into the editable column headings and excludes it
+from the data rows, sorting, and movement. Data rows are numbered from 1.
+Disable it for files without headers to display and number every record as data.
+
+Edit cells directly. Enter moves to the next row; Shift+Enter inserts a newline
+inside the cell. Tab and Shift+Tab navigate cells. Right-click a row number for
+**Add row** (after), **Insert row** (before), or **Delete row**. Right-click a column
+heading for the equivalent column actions. These actions target the row or column
+of the context menu, regardless of the previously selected cell. Use the **Row**
+heading's context menu to add rows to an empty table. Shift+F10 opens a focused
+row or column's menu; arrows navigate its items and Escape closes it.
+The row number selects its row; drag it onto another row to move that record
+to the target position. Alt+Arrow Up/Down moves rows without dragging.
+
+Cells containing an HTTP(S) URL are underlined. Ctrl+click (Cmd+click on macOS)
+opens the existing link destination dialog; a normal click still edits the cell.
+
+Scroll over cells to move through the grid vertically or horizontally; Shift+wheel
+scrolls horizontally. Drag the right edge of a column header to resize it. Focus
+that edge and use Arrow Left/Right for keyboard resizing, or double-click it to
+restore the default width. Resizing changes only the view, without editing the file.
+
+Choose **Sort as text** or **Sort as number** in the column's context menu, then
+click **↑** or **↓** in its header. Each column defaults to text comparison.
+Sorting is stable and changes the actual draft order, as does
+dragging rows. Number sorting requires finite numeric values throughout that
+column; it never converts the stored values, so leading zeroes remain intact.
+Filters and sorting by multiple columns are not included.
+
+Table operations share the text editor's Undo/Redo history, local draft recovery,
+revision checks, and explicit **Save** / Ctrl/Cmd+S. Ctrl/Cmd+Z undoes; Ctrl/Cmd+Shift+Z
+or Ctrl/Cmd+Y redoes. Unchanged field quoting, BOMs, and record line endings are
+preserved. Changed fields are quoted and escaped as needed. Empty fields, quoted
+separators, escaped quotes, multiline values, and rows of different lengths are
+supported. Missing cells appear empty; they are added only when edited or when
+adding a column. Parsing errors leave the source intact: correct the separator
+or return to Text mode.
+
+The grid renders a bounded window of rows. Table mode currently requires a
+complete document and supports at most 200,000 parsed cells and 256 columns;
+paged files remain available through the existing Text and Hex modes.
+
 ## Worktree roots
 
 Click **Project files** at the top of the browser to select the project directory

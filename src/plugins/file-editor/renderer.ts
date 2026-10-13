@@ -30,6 +30,30 @@ import { createProjectFileBrowser } from "./browser";
 import { createResizablePaneSidePanel } from "../../renderer/resizablePaneSidePanel";
 import { normalizePaneSidePanel } from "../../renderer/paneSidePanel";
 import { createPreviewDocument, supportsPreview } from "./preview";
+import { createTableView } from "./tableView";
+import { supportsTable, tableDelimiters, type TableDelimiter } from "./tableData";
+import { undo, redo, isolateHistory, invertedEffects } from "@codemirror/commands";
+import { StateEffect, StateField } from "@codemirror/state";
+
+// Carry exact CSV source through table transactions and their inverse history effects.
+const tableText = StateEffect.define<string>();
+const rawText = StateField.define<string>({
+  create: state => state.sliceDoc(),
+  update(value, transaction) {
+    if (transaction.docChanged) value = (value.startsWith("\uFEFF") ? "\uFEFF" : "") + transaction.state.sliceDoc();
+    for (const effect of transaction.effects) if (effect.is(tableText)) value = effect.value;
+    return value;
+  }
+});
+const tableHistory = invertedEffects.of(transaction => {
+  const effect = transaction.effects.find(effect => effect.is(tableText));
+  if (!effect) return [];
+  const previous = transaction.startState.field(rawText);
+  const source = (state: EditorState, value: string) => (value.startsWith("\uFEFF") ? "\uFEFF" : "") + state.sliceDoc();
+  // Ordinary files need only CodeMirror's compact text changes in history.
+  if (previous === source(transaction.startState, previous) && effect.value === source(transaction.state, effect.value)) return [];
+  return [tableText.of(previous)];
+});
 
 const scope = window as BoatyardPluginRendererGlobal;
 const registry = scope.BoatyardPluginRegistry;
@@ -42,7 +66,7 @@ const projectLinks = new Map<string, EditorPaneLinks>();
 const linkedHosts = new Map<string, HTMLElement>();
 type PaneControl = { open: boolean; enabled: boolean; label: string; button: HTMLButtonElement | null; toggle: (() => void) | null; drag?: (event: DragEvent) => void; highlight?: (active: boolean) => void };
 const paneControls = new WeakMap<HTMLElement, Map<string, PaneControl>>();
-function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | "hex" | "diff" | "open" | "vim"): PaneControl {
+function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | "hex" | "diff" | "open" | "vim" | "table"): PaneControl {
   let controls = paneControls.get(host);
   if (!controls) {
     controls = new Map();
@@ -50,7 +74,7 @@ function getPaneControl(host: HTMLElement, key: "browse" | "preview" | "link" | 
   }
   let control = controls.get(key);
   if (!control) {
-    control = { open: false, enabled: false, label: key === "vim" ? "Vim mode" : key === "open" ? "open files" : key === "browse" ? "project files" : key === "link" ? "linked files" : key === "hex" ? "hex editor" : key === "diff" ? "Git diff" : "preview", button: null, toggle: null };
+    control = { open: false, enabled: false, label: key === "table" ? "table editor" : key === "vim" ? "Vim mode" : key === "open" ? "open files" : key === "browse" ? "project files" : key === "link" ? "linked files" : key === "hex" ? "hex editor" : key === "diff" ? "Git diff" : "preview", button: null, toggle: null };
     controls.set(key, control);
   }
   return control;
@@ -75,6 +99,7 @@ function renderHeaderActions(container: HTMLElement, props: PluginRegistryRecord
     { key: "open", icon: "folderOpen", label: "Open files" },
     { key: "browse", icon: "folderTree", label: "Browse project files" },
     { key: "vim", icon: "", label: "Vim mode" },
+    { key: "table", icon: "table", label: "Table editor" },
     { key: "diff", icon: "gitCompareArrows", label: "Git diff" },
     { key: "hex", icon: "binary", label: "Hex editor" },
     { key: "preview", icon: "eye", label: "Preview" },
@@ -294,6 +319,23 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     try { localStorage.setItem(`${paneKey}:hex`, String(hexMode)); } catch { /* Optional view preference. */ }
   };
   const diffControl = getPaneControl(container, "diff");
+  const tableControl = getPaneControl(container, "table");
+  let tableMode = false;
+  function tablePreferenceKey(path: string) { return `${paneKey}:table:${path}`; }
+  function tablePreferences(path: string) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(tablePreferenceKey(path)) || "null");
+      const widths = Array.isArray(saved?.widths) ? saved.widths.slice(0, 256).map((value: unknown) => typeof value === "number" && Number.isFinite(value) ? Math.max(72, Math.min(1200, Math.round(value))) : 160) : undefined;
+      const sortKinds = Array.isArray(saved?.sortKinds) ? saved.sortKinds.slice(0, 256).map((value: unknown) => value === "number" ? "number" as const : "text" as const) : undefined;
+      return { header: saved?.header !== false, delimiter: tableDelimiters.includes(saved?.delimiter) ? saved.delimiter as TableDelimiter : undefined, widths, sortKinds };
+    } catch { return { header: true }; }
+  }
+  function persistTableMode() {
+    const path = currentPath();
+    if (!path) return;
+    try { localStorage.setItem(`${tablePreferenceKey(path)}:mode`, String(tableMode)); } catch { /* Optional view preference. */ }
+  }
+  function tableAvailable() { return Boolean(doc && !doc.base.block && doc.encoding !== "hex" && !imageMimeType(doc.base.path) && !openedImage && !deletedGitPath); }
   let diffMode = false;
   let sideBySide = false;
   try { sideBySide = localStorage.getItem(`${paneKey}:diff-layout`) === "side-by-side"; } catch { /* Default to inline diff. */ }
@@ -398,6 +440,41 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   let doc: EditorDocument | undefined;
   let view: EditorView | undefined;
   let surface: ReturnType<typeof createEditorSurface> | undefined;
+  const tableHost = element("div", "file-editor-table");
+  tableHost.hidden = true;
+  function openExternalLink(url: string) {
+    const openUrl = props.openUrl as ((url: string) => unknown) | undefined;
+    void Promise.resolve().then(() => openUrl?.(url)).catch(showError);
+  }
+  const tableView = createTableView(tableHost, {
+    openUrl: openExternalLink,
+    edit(text) {
+      if (!doc || !view || doc.locked || !tableAvailable()) return;
+      const previous = view.state.sliceDoc(), next = text.replace(/^\uFEFF/, "");
+      let from = 0, oldEnd = previous.length, nextEnd = next.length;
+      while (from < oldEnd && from < nextEnd && previous[from] === next[from]) from++;
+      while (oldEnd > from && nextEnd > from && previous[oldEnd - 1] === next[nextEnd - 1]) { oldEnd--; nextEnd--; }
+      if (previous[from - 1] === "\r" && previous[from] === "\n") from--;
+      if (previous[oldEnd - 1] === "\r" && previous[oldEnd] === "\n") { oldEnd++; nextEnd++; }
+      // CodeMirror positions use one unit per logical line separator.
+      const position = (offset: number) => previous.slice(0, offset).split(view!.state.lineBreak).join("\n").length;
+      view.dispatch({ changes: { from: position(from), to: position(oldEnd), insert: next.slice(from, nextEnd) },
+        effects: tableText.of(text), annotations: isolateHistory.of("full") });
+    },
+    save: () => { if (doc) void doc.save(); },
+    history: forward => { if (view && !doc?.locked) (forward ? redo : undo)(view); },
+    preference(path, preference) {
+      try { localStorage.setItem(tablePreferenceKey(path), JSON.stringify(preference)); } catch { /* Editing remains available. */ }
+    }
+  });
+  function updateTable() {
+    const visible = tableMode && tableAvailable() && !hexMode && !diffMode && !previewVisible;
+    tableHost.hidden = !visible;
+    tableControl.open = visible;
+    tableControl.enabled = tableAvailable();
+    syncPaneControl(tableControl);
+    if (visible && doc) tableView.update(doc.text, doc.base.path, doc.locked, tablePreferences(doc.base.path));
+  }
   function destroyView() { surface?.destroy(); surface = undefined; view = undefined; }
   const diffHost = element("div", "file-editor-diff");
   diffHost.hidden = true;
@@ -552,7 +629,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   let gitPending = false;
   let gitUpdateTimer: ReturnType<typeof setTimeout> | undefined;
   function useSideBySide() {
-    return Boolean(diffMode && sideBySide && !hexMode && !previewVisible && doc && !doc.base.block
+    return Boolean(diffMode && sideBySide && !hexMode && !tableMode && !previewVisible && doc && !doc.base.block
       && doc.encoding !== "hex" && !openedImage && gitPath === doc.base.path && gitBaseline?.available);
   }
   function updateGitView() {
@@ -601,7 +678,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   function setDiff(value: boolean) {
     if (deletedGitPath && !value) { showError("This file was deleted. Its Git diff is read-only."); return; }
     rememberPosition(); diffMode = value; persistDiffMode();
-    if (value) { previewVisible = false; hexMode = false; persistHexMode(); }
+    if (value) { tableMode = false; previewVisible = false; hexMode = false; persistHexMode(); }
     if (doc && !deletedGitPath && !view) rebuild(false);
     setPreview(previewVisible, false);
     blockNavigation.update(currentBlock(), !diffMode && !hexMode, false);
@@ -716,8 +793,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       if (href.startsWith("#")) return;
       event.preventDefault();
       if (/^https?:\/\//i.test(href)) {
-        const openUrl = props.openUrl as ((url: string) => unknown) | undefined;
-        void Promise.resolve().then(() => openUrl?.(href)).catch(showError);
+        openExternalLink(href);
       } else if (href && !/^[a-z][a-z\d+.-]*:|^\/\//i.test(href)) {
         const directory = previewPath.replace(/[^/\\]*$/, "");
         try {
@@ -740,13 +816,14 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     const rendered = previewVisible && Boolean(doc && !doc.base.block && doc.encoding !== "hex" && supportsPreview(doc.base.path));
     imageHost.hidden = !imagePreview;
     previewFrame.hidden = !rendered || imagePreview;
-    editorHost.hidden = rendered || imagePreview || hexMode;
+    updateTable();
+    editorHost.hidden = rendered || imagePreview || hexMode || !tableHost.hidden;
     hexHost.hidden = rendered || imagePreview || !hexMode || diffMode;
     hexControl.open = hexMode && !previewVisible;
     syncPaneControl(hexControl);
-    findButton.disabled = !view || previewVisible;
+    findButton.disabled = !view || previewVisible || tableMode;
     if (previewVisible || hexMode || !doc?.base.block) pagedSearch.close();
-    wrapButton.disabled = !view || previewVisible || hexMode;
+    wrapButton.disabled = !view || previewVisible || hexMode || tableMode;
     if (view) view.dispatch({ effects: [
       readOnly.reconfigure(EditorState.readOnly.of(previewVisible || Boolean(deletedGitPath) || Boolean(doc?.locked))),
       editable.reconfigure(EditorView.editable.of(!previewVisible && !deletedGitPath && !doc?.locked))
@@ -759,7 +836,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     } else {
       clearTimeout(previewTimer);
       restorePosition();
-      if (focus) { if (hexMode) hexView.focus(); else view?.focus(); }
+      if (focus) { if (!tableHost.hidden) tableView.focus(); else if (hexMode) hexView.focus(); else view?.focus(); }
     }
   }
   function rememberPosition() {
@@ -1030,6 +1107,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     }
     if (doc.encoding === "hex" && !hexMode && !diffMode && imageHost.hidden) { hexMode = true; rebuild(false); return; }
     if (hexMode) updateHexView();
+    updateTable();
     previewControl.enabled = true;
     syncPaneControl(previewControl);
     schedulePreview();
@@ -1037,7 +1115,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     status.textContent = [doc.base.path, doc.dirty ? "Unsaved changes" : "No unsaved changes", (doc.busy || doc.changes?.saving) ? "Working…" : "", doc.changes?.dirty ? `${doc.changes.edits.length} modified ranges` : "", doc.error, persistenceError, previewVisible && imageMimeType(doc.base.path) ? imageInfo : ""].filter(Boolean).join(" · ");
     compare.hidden = !doc.conflict;
     if (doc.conflict && compareText.textContent !== doc.disk.text) compareText.textContent = doc.disk.text;
-    if (view && !hexMode && bom + view.state.sliceDoc() !== doc.text) {
+    if (view && !hexMode && view.state.field(rawText) !== doc.text) {
       const nextBom = (!doc.base.block?.offset && doc.text.startsWith("\uFEFF")) ? "\uFEFF" : "";
       bom = nextBom;
       syncing = true;
@@ -1049,6 +1127,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       if (view.state.lineBreak !== separator) view.dispatch({ effects: lineSeparator.reconfigure(EditorState.lineSeparator.of(separator)) });
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: text },
+        effects: tableText.of(doc.text),
         selection: { anchor: Math.min(selection.anchor, length), head: Math.min(selection.head, length) }
       });
       view.scrollDOM.scrollTop = scrollTop;
@@ -1085,7 +1164,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     viewFirstLine = currentBlock()?.line ?? 1;
     surface = createEditorSurface(editorHost, {
         doc: doc.text.slice(bom.length),
-        extensions: [doc.base.block ? Prec.highest(EditorView.domEventHandlers({ keydown(event) {
+        extensions: [rawText.init(() => doc!.text), tableHistory, doc.base.block ? Prec.highest(EditorView.domEventHandlers({ keydown(event) {
           if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "f") {
             event.preventDefault(); return openFind();
           }
@@ -1114,7 +1193,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
           EditorView.updateListener.of((update) => {
             if (update.selectionSet || update.docChanged) schedulePosition();
             syncFindButton();
-            if (update.docChanged && !syncing) doc?.edit(bom + update.state.sliceDoc());
+            if ((update.docChanged || update.transactions.some(transaction => transaction.effects.some(effect => effect.is(tableText)))) && !syncing) doc?.edit(update.state.field(rawText));
             if ((update.selectionSet || update.docChanged) && !syncing && !hexMode && view?.hasFocus && doc) {
               const positions = positionsFor(doc), selection = update.state.selection.main;
               const start = doc.changes?.blockStart(doc.base) ?? doc.base.block?.offset ?? 0;
@@ -1148,6 +1227,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     const navigationVersion = linkVersion;
     if (doc?.base.path !== path) { textOperation++; pagedSearch.close(); }
     opening = true;
+    tableHost.hidden = true;
     updateTabs();
     status.textContent = "Indexing and opening file…";
     const block = requestedBlock ?? savedBlock(path);
@@ -1159,6 +1239,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
           rememberPosition();
           unsubscribe?.(); unsubscribe = undefined;
           doc = undefined;
+          tableView.clear(); tableHost.hidden = true; tableControl.enabled = false; tableControl.open = false; syncPaneControl(tableControl);
           blockNavigation.update(undefined, false, false);
           destroyView();
           editorHost.replaceChildren();
@@ -1282,6 +1363,12 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       previewSource = "";
       deletedGitPath = "";
       doc = next;
+      if (!tableAvailable()) tableMode = false;
+      else {
+        let saved: string | null = null;
+        try { saved = localStorage.getItem(`${tablePreferenceKey(snapshot.path)}:mode`); } catch { /* Default supported files to Table mode. */ }
+        tableMode = !hexMode && !diffMode && !previewVisible && (saved === null ? supportsTable(snapshot.path) : saved === "true");
+      }
       if (previewVisible) { hexMode = doc.encoding === "hex"; persistHexMode(); }
       openedTab(snapshot.path);
       fileBrowser.setSelected(snapshot.path);
@@ -1292,7 +1379,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       void doc.refresh();
       resetGit();
       if (diffMode) setDiff(true);
-      if (!previewVisible && !diffMode && linkedVersion === undefined) view?.focus();
+      if (!previewVisible && !diffMode && linkedVersion === undefined) { if (tableMode) tableView.focus(); else view?.focus(); }
     } catch (error) {
       if (!disposed && navigationVersion === linkVersion && diffMode) {
         try {
@@ -1304,6 +1391,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     }
     finally {
       opening = false;
+      updateTable();
       updateTabs();
       if (doc) blockNavigation.update(hexMode ? undefined : currentBlock(), !hexMode && !diffMode, doc.saving);
       applyLinkedSelection();
@@ -1320,6 +1408,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     pagedSearch.close();
     unsubscribe?.(); unsubscribe = undefined; destroyView();
     doc = undefined; openedImage = undefined; deletedGitPath = "";
+    tableView.clear(); tableHost.hidden = true; tableMode = false;
     previewVersion++; clearTimeout(previewTimer); previewPendingSource = ""; previewSource = "";
     gitVersion++; gitBaseline = undefined; gitPath = "";
     editorHost.replaceChildren(empty); editorHost.hidden = false;
@@ -1329,7 +1418,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     compare.hidden = true; setNotices(); fileBrowser.setSelected("");
     blockNavigation.update(undefined, false, false);
     gitView.update("", undefined, "", undefined); gitView.show(false);
-    for (const control of [previewControl, hexControl, diffControl]) { control.enabled = false; control.open = false; syncPaneControl(control); }
+    for (const control of [previewControl, hexControl, diffControl, tableControl]) { control.enabled = false; control.open = false; syncPaneControl(control); }
     saveButton.disabled = findButton.disabled = wrapButton.disabled = true;
     findButton.setAttribute("aria-pressed", "false");
     status.textContent = "Open files from the pane toolbar or browse project files.";
@@ -1479,7 +1568,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   browserLayout.panel.append(fileBrowser.element);
   browserLayout.viewport.classList.add("file-editor-main");
   const content = element("div", "file-editor-content");
-  content.append(editorHost, hexHost, previewFrame, imageHost, blockNavigation.rail);
+  content.append(editorHost, tableHost, hexHost, previewFrame, imageHost, blockNavigation.rail);
   blockNavigation.update(undefined, false, false);
   browserLayout.viewport.append(fileActions, pagedSearch.dom, notices, compare, blockNavigation.toolbar, content);
   const browserControl = getPaneControl(container, "browse");
@@ -1494,6 +1583,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   };
   const togglePreview = () => {
     if (deletedGitPath) return;
+    tableMode = false;
     if (diffMode) setDiff(false);
     if (openedImage) {
       previewVisible = !previewVisible;
@@ -1511,6 +1601,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
   };
   const toggleHex = () => {
     if (deletedGitPath || opening || doc?.saving || doc?.changes?.saving) return;
+    tableMode = false;
     if (diffMode) setDiff(false);
     if (hexMode && doc?.base.block && imageMimeType(doc.base.path)) {
       if (doc.dirty) { showError("Save this block before opening the complete image preview."); return; }
@@ -1529,6 +1620,18 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     } else { previewVisible = !hexMode && Boolean(doc && imageMimeType(doc.base.path)); rebuild(); }
   };
   const toggleDiff = () => setDiff(!diffMode);
+  const toggleTable = () => {
+    if (!tableAvailable() || opening || doc?.locked) return;
+    rememberPosition();
+    tableMode = !tableMode;
+    if (tableMode) {
+      diffMode = false; persistDiffMode(); hexMode = false; persistHexMode(); previewVisible = false;
+      if (!view) rebuild(false);
+      if (view) closeSearchPanel(view);
+    }
+    persistTableMode(); setPreview(previewVisible); updateGitView();
+  };
+  tableControl.toggle = toggleTable;
   diffControl.toggle = toggleDiff;
   hexControl.toggle = toggleHex;
   previewControl.toggle = togglePreview;
@@ -1641,6 +1744,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
     themeObserver.disconnect();
     fileBrowser.cleanup();
     imageView.cleanup();
+    tableView.cleanup();
     blockNavigation.cleanup();
     hexView.cleanup();
     browserLayout.cleanup();
@@ -1655,6 +1759,7 @@ function renderEditor(container: HTMLElement, props: PluginRegistryRecord, roots
       syncPaneControl(previewControl);
     }
     if (vimControl.toggle === toggleVim) { vimControl.toggle = null; vimControl.enabled = false; syncPaneControl(vimControl); }
+    if (tableControl.toggle === toggleTable) { tableControl.toggle = null; tableControl.enabled = false; syncPaneControl(tableControl); }
     openControl.toggle = null; openControl.enabled = false; syncPaneControl(openControl);
     disposed = true;
     unsubscribe?.();
