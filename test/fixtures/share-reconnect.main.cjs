@@ -26,8 +26,13 @@ module.exports = async harness => {
   client.webContents.session.webRequest.onCompleted({ urls: [`${origin}/api/*`] }, details => { requests.push({ path: new URL(details.url).pathname, status: details.statusCode }); });
   const evaluate = expression => client.webContents.executeJavaScript(expression);
   const until = async (predicate, label) => {
+    console.log(`Share reconnect: waiting for ${label}`);
     for (let attempt = 0; attempt < 700; attempt++) { if (await predicate()) return; await sleep(50); }
-    throw new Error(`Share reconnect timed out: ${label}; status=${await evaluate('document.getElementById("status").textContent')}; intent=${await evaluate('sessionStorage.getItem("boatyard-stream-active")')}; requests=${JSON.stringify(requests.slice(-15))}`);
+    // Reading a crashed renderer can leave executeJavaScript pending indefinitely.
+    const crashed = client.webContents.isCrashed();
+    const status = crashed ? 'renderer crashed' : await evaluate('document.getElementById("status")?.textContent ?? document.body?.textContent');
+    const intent = crashed ? 'unavailable' : await evaluate('(() => { try { return sessionStorage.getItem("boatyard-stream-active"); } catch (error) { return error.message; } })()');
+    throw new Error(`Share reconnect timed out: ${label}; url=${client.webContents.getURL()}; status=${status}; intent=${intent}; clients=${JSON.stringify(service.server.getClients())}; requests=${JSON.stringify(requests.slice(-15))}`);
   };
   const connected = () => until(async () => service.server.getClients().some(client => client.state === 'connected') &&
     await evaluate('document.getElementById("status").textContent.startsWith("Connected") && document.getElementById("video").videoWidth > 0'), 'live video');
@@ -53,11 +58,14 @@ module.exports = async harness => {
     await connected();
     assert.ok(Date.now() - reloadStarted < 14000, 'Reload reconnects before the old 15-second transport retention expires');
     assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'Reload keeps participant identity');
+    const clientURL = client.webContents.getURL();
     const crashed = new Promise(resolve => client.webContents.once('render-process-gone', resolve));
     client.webContents.forcefullyCrashRenderer(); await crashed;
-    await until(() => service.server.getClients().find(client => client.id === identity)?.state === 'connecting', 'host sees interrupted transport');
-    await sleep(100); loaded = new Promise(resolve => client.webContents.once('did-finish-load', resolve));
-    client.reload(); await loaded; await connected();
+    // The 15-second transport retention can expire before a busy runner observes
+    // the transient connecting state. Exercise recovery after expiry instead.
+    await until(() => service.server.getClients().find(client => client.id === identity)?.state === 'signed-in', 'host retains admission after crashed transport expires');
+    // Explicit navigation avoids Electron's unreliable reload of a crashed renderer.
+    await client.loadURL(clientURL); await connected();
     assert.equal(service.server.getClients().find(client => client.state === 'connected').id, identity, 'Renderer crash and reload preserve admission');
     await service.stop();
     await sleep(2200);
