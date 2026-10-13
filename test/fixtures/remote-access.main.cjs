@@ -38,7 +38,14 @@ module.exports = async harness => {
   harness.on('closed', () => { void service.stop(); fixtureServer.close(); if (!target.isDestroyed()) target.destroy(); if (!client.isDestroyed()) client.destroy(); });
   async function until(expression, label) {
     for (let i = 0; i < 300; i++) { if (await client.webContents.executeJavaScript(expression)) return; await sleep(100); }
-    throw new Error(`Timed out: ${label}; status=${await client.webContents.executeJavaScript('document.getElementById("status").textContent')}`);
+    const state = await client.webContents.executeJavaScript(`({
+      status: document.getElementById('status')?.textContent,
+      diagnostics: document.getElementById('diagnosticsPanel')?.textContent,
+      video: { width: document.getElementById('video')?.videoWidth, height: document.getElementById('video')?.videoHeight },
+      displayedRevision: document.getElementById('frame')?.dataset.revision,
+      transport: window.fixturePeer?.connectionState
+    })`);
+    throw new Error(`Timed out: ${label}; state=${JSON.stringify(state)}`);
   }
   // Wait for the harness to load before publishing its completion flag.
   void (async () => {

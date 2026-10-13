@@ -17,7 +17,7 @@
     "capture:doc": "npm run build:app && node build-scripts/scripts/capture-doc-screenshot.js",
     "lint": "npm run build:scripts && node build-scripts/scripts/check-js.js",
     "typecheck": "tsc --noEmit",
-    "test": "npm run build:app && npm run build:test && node --test build-test/test/*.js",
+    "test": "npm run build:app && npm run build:test && node --test --test-concurrency=1 build-test/test/*.js",
     "package": "npm run build:app && electron-builder --dir",
     "dist": "npm run build:app && electron-builder --publish never",
     "dist:linux": "npm run build:app && electron-builder --linux AppImage --x64 --publish never",
