@@ -1053,7 +1053,9 @@ test("TwiCC pane toolbar opens the peer inbox and mirrors its attention count", 
   assert.equal(button.title, "Peer inbox (2 items need attention)");
   assert.equal(badge.hidden, false);
   assert.equal(badge.textContent, "2");
-  assert.deepEqual(queriedSelectors, [".peer-inbox-button .peer-inbox-badge"]);
+  assert.deepEqual(queriedSelectors, [
+    "#sidebar-rail-inbox .peer-inbox-badge, #sidebar-toggle-button .peer-inbox-badge, .peer-inbox-button .peer-inbox-badge"
+  ]);
 
   button.click();
   assert.deepEqual(plain(openedModals), [{
@@ -1064,6 +1066,54 @@ test("TwiCC pane toolbar opens the peer inbox and mirrors its attention count", 
   }]);
   assert.equal(typeof cleanup, "function");
   cleanup?.();
+});
+
+test("TwiCC inbox attention follows new messages and acknowledgement across sidebar layouts", async () => {
+  for (const badgeSelector of [
+    "#sidebar-rail-inbox .peer-inbox-badge",
+    "#sidebar-toggle-button .peer-inbox-badge",
+    ".peer-inbox-button .peer-inbox-badge"
+  ]) {
+    const { context, registry, refreshIntervals } = loadRendererPluginContext();
+    registry.applyEnabledState({});
+    context.document.createElement = (() => createTestResourceElement()) as unknown as (
+      typeof context.document.createElement
+    );
+    const pane = registry.listPanes({ scope: "project", kind: "wcv" })
+      .find((candidate: PluginPane) => candidate.id === "boatyard.twicc.pane");
+    assert.ok(pane?.renderHeaderActions);
+
+    const container = createTestResourceElement();
+    const attentionStates: boolean[] = [];
+    let count = "";
+    const cleanup = pane.renderHeaderActions(container, {
+      openWebAppModal: async () => true,
+      projectConfig: { twiccProjectUrl: "http://localhost:3500/project/current" },
+      getWebAppTextContent: async (selector: string) => (
+        selector.split(", ").includes(badgeSelector) ? count : ""
+      )
+    });
+    const button = container.children[0];
+    const toggle = button.classList.toggle;
+    button.classList.toggle = (name, force) => {
+      if (name === "has-attention") attentionStates.push(force === true);
+      toggle(name, force);
+    };
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(button.children[1].hidden, true);
+
+    count = "1";
+    await refreshIntervals();
+    assert.equal(button.children[1].hidden, false, badgeSelector);
+    assert.equal(button.title, "Peer inbox (1 item needs attention)");
+
+    count = "";
+    await refreshIntervals();
+    assert.equal(button.children[1].hidden, true);
+    assert.equal(button.title, "Peer inbox");
+    assert.deepEqual(attentionStates, [false, true, false], badgeSelector);
+    cleanup?.();
+  }
 });
 
 test("TwiCC resources render overview and project session details", () => {

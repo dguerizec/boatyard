@@ -4007,7 +4007,7 @@
     async function refreshInboxCount(): Promise<void> {
       try {
         const nativeBadgeText = await props.getWebAppTextContent?.(
-          ".peer-inbox-button .peer-inbox-badge"
+          "#sidebar-rail-inbox .peer-inbox-badge, #sidebar-toggle-button .peer-inbox-badge, .peer-inbox-button .peer-inbox-badge"
         );
         const parsedCount = Number.parseInt(String(nativeBadgeText || ""), 10);
         const nextCount = Number.isFinite(parsedCount) && parsedCount > 0 ? parsedCount : 0;
