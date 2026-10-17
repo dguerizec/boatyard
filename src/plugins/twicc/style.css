@@ -306,6 +306,25 @@
   box-shadow: none;
 }
 
+.twicc-session-flow-search {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--text);
+  background: rgba(var(--deep-rgb), 0.7);
+  font: inherit;
+}
+
+.twicc-session-flow-search:focus-visible {
+  outline: 1px solid var(--twicc-session-flow-color);
+  outline-offset: 1px;
+}
+
 .twicc-session-flow-board {
   min-width: 0;
   min-height: 0;
@@ -778,6 +797,15 @@
   background: linear-gradient(110deg, rgba(var(--panel-rgb), 0.96), rgba(var(--deep-rgb), 0.96));
   cursor: pointer;
   transition: border-color 120ms ease, opacity 120ms ease, transform 120ms ease;
+}
+
+.twicc-session-flow-card:not(.editing-title) {
+  user-select: none;
+}
+
+.twicc-session-flow-card.selected {
+  border-left-width: 6px;
+  padding-left: 5px;
 }
 
 .twicc-session-flow-card:hover {

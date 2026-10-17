@@ -50,6 +50,7 @@
     processState?: string;
     processStateChangedAt?: string;
     provider?: string;
+    stale?: boolean;
     title: string;
     totalCost?: number;
     userMessageCount?: number;
@@ -1536,6 +1537,7 @@
       processState: String(value.processState || "").trim(),
       processStateChangedAt: String(value.processStateChangedAt || "").trim(),
       provider: String(value.provider || "").trim(),
+      stale: value.stale === true,
       title: String(value.title || "Untitled session").trim() || "Untitled session",
       totalCost: normalizeOptionalNumber(value.totalCost) || 0,
       userMessageCount: normalizeOptionalNumber(value.userMessageCount) || 0
@@ -1911,6 +1913,11 @@
     const surfaceId = ++nextSessionFlowSurfaceId;
     widget.className = "widget-card twicc-session-flow-widget";
     widget.dataset.orientation = initialOrientation;
+    const search = document.createElement("input");
+    search.className = "twicc-session-flow-search";
+    search.type = "search";
+    search.placeholder = "Search title or branch…";
+    search.setAttribute("aria-label", "Search sessions by title or branch");
     const board = document.createElement("div");
     board.className = "twicc-session-flow-board";
     const message = document.createElement("p");
@@ -1932,7 +1939,7 @@
     archiveHint.textContent = "Stops its agent and removes it from this board";
     archiveCopy.append(archiveTitle, archiveHint);
     archiveDropzone.append(archiveIcon, archiveCopy);
-    widget.append(board, message, archiveDropzone);
+    widget.append(search, board, message, archiveDropzone);
 
     const projectReference = getSessionFlowProjectReference(project, props);
     const creationDraftStorageKey = getSessionCreationDraftStorageKey(project, projectReference);
@@ -1941,6 +1948,7 @@
     const twiccWebAppKey = String(twiccWebAppState?.key || "");
     let activeSessionId = getSessionIdFromUrl(twiccWebAppState?.url);
     let sessions: TwiccSessionFlowItem[] = [];
+    let searchQuery = "";
     let disposed = false;
     let loading = false;
     let reconciliationRequested = false;
@@ -1958,6 +1966,11 @@
     let sessionInsertionPlaceholder: HTMLElement | null = null;
     let archiveAllDialog: HTMLDialogElement | null = null;
     let moveMenu: HTMLElement | null = null;
+    const selectedSessionIds = new Set<string>();
+    let selectionAnchorId = "";
+    let pendingOpenTimer: number | null = null;
+    let dragScrollFrame: number | null = null;
+    let dragPointer: { clientX: number; clientY: number } | null = null;
     let wasConnected = false;
     let editingSessionId = "";
     let editingSessionDraft = "";
@@ -1970,6 +1983,28 @@
     let pierWorktreePattern = "";
     let creationRequestId = 0;
     let creationDraft = restoredCreation?.draft || createEmptySessionCreationDraft();
+
+    function matchesSearch(session: TwiccSessionFlowItem): boolean {
+      return !searchQuery || session.title.toLowerCase().includes(searchQuery)
+        || Boolean(session.branch?.toLowerCase().includes(searchQuery));
+    }
+
+    function updateSearch(): void {
+      cancelPendingOpen();
+      closeMoveMenu();
+      searchQuery = search.value.trim().toLowerCase();
+      render(false);
+    }
+
+    search.addEventListener("input", updateSearch);
+    search.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        search.value = "";
+        updateSearch();
+      }
+    });
 
     function persistCreationDraft(): void {
       persistSessionCreationDraft(creationDraftStorageKey, composerMode, creationDraft);
@@ -1986,6 +2021,8 @@
     }
 
     function closeMoveMenu(): void {
+      document.removeEventListener("pointerdown", dismissMoveMenu, true);
+      document.removeEventListener("contextmenu", dismissMoveMenu, true);
       moveMenu?.remove();
       moveMenu = null;
       if (renderPending) {
@@ -1995,6 +2032,78 @@
         void load(true);
       }
     }
+
+    function dismissMoveMenu(event: Event): void {
+      if (!moveMenu?.contains(event.target as Node)) {
+        closeMoveMenu();
+      }
+    }
+
+    function cancelPendingOpen(): void {
+      if (pendingOpenTimer !== null) {
+        globalScope.clearTimeout(pendingOpenTimer);
+        pendingOpenTimer = null;
+      }
+    }
+
+    function syncSelection(): void {
+      const existingIds = new Set(sessions.filter(matchesSearch).map((session) => session.id));
+      for (const id of selectedSessionIds) {
+        if (!existingIds.has(id)) {
+          selectedSessionIds.delete(id);
+        }
+      }
+      if (!existingIds.has(selectionAnchorId)) {
+        selectionAnchorId = "";
+      }
+      widget.querySelectorAll<HTMLElement>(".twicc-session-flow-card").forEach((card) => {
+        const selected = selectedSessionIds.has(card.dataset.sessionId || "");
+        card.classList.toggle("selected", selected);
+        card.setAttribute("aria-selected", String(selected));
+      });
+    }
+
+    function selectSession(sessionId: string, event: MouseEvent): void {
+      cancelPendingOpen();
+      closeMoveMenu();
+      if (event.shiftKey) {
+        const visibleIds = [...widget.querySelectorAll<HTMLElement>(".twicc-session-flow-card")]
+          .filter((card) => card.getClientRects().length)
+          .map((card) => card.dataset.sessionId || "");
+        const anchorIndex = visibleIds.indexOf(selectionAnchorId);
+        const endIndex = visibleIds.indexOf(sessionId);
+        if (!event.ctrlKey && !event.metaKey) {
+          selectedSessionIds.clear();
+        }
+        if (anchorIndex >= 0 && endIndex >= 0) {
+          for (const id of visibleIds.slice(Math.min(anchorIndex, endIndex), Math.max(anchorIndex, endIndex) + 1)) {
+            selectedSessionIds.add(id);
+          }
+        } else {
+          selectedSessionIds.add(sessionId);
+          selectionAnchorId = sessionId;
+        }
+      } else {
+        if (selectedSessionIds.has(sessionId)) {
+          selectedSessionIds.delete(sessionId);
+        } else {
+          selectedSessionIds.add(sessionId);
+        }
+        selectionAnchorId = sessionId;
+      }
+      syncSelection();
+    }
+
+    function handleSelectionKeydown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        cancelPendingOpen();
+        closeMoveMenu();
+        selectedSessionIds.clear();
+        syncSelection();
+      }
+    }
+
+    widget.addEventListener("keydown", handleSelectionKeydown);
 
     function hideSessionInsertionPlaceholder(): void {
       sessionInsertionTarget = null;
@@ -2011,6 +2120,7 @@
     }
 
     function resetDragState(): void {
+      stopDragScroll();
       draggedSessionId = "";
       draggedSessionGhostHeight = 0;
       draggedSessionCenterOffset = { x: 0, y: 0 };
@@ -2387,8 +2497,8 @@
       render();
     }
 
-    async function moveSession(
-      sessionId: string,
+    async function moveSessions(
+      sessionIds: string[],
       lane: TwiccSessionFlowLane,
       beforeSessionId: string | null = null
     ): Promise<void> {
@@ -2401,7 +2511,7 @@
       pendingMoves += 1;
       widget.dataset.moving = "true";
       widget.setAttribute("aria-busy", "true");
-      const operation = moveQueue.then(() => performMove(sessionId, lane, beforeSessionId));
+      const operation = moveQueue.then(() => performMove(sessionIds, lane, beforeSessionId));
       moveQueue = operation.catch(() => {});
       try {
         await operation;
@@ -2419,25 +2529,26 @@
     }
 
     async function performMove(
-      sessionId: string,
+      sessionIds: string[],
       lane: TwiccSessionFlowLane,
       beforeSessionId: string | null
     ): Promise<void> {
-      const session = sessions.find((candidate) => candidate.id === sessionId);
-      if (!session || !isAlive() || moveFailed) {
+      const movingIds = new Set(sessionIds);
+      const movingSessions = sessionIds
+        .map((id) => sessions.find((candidate) => candidate.id === id))
+        .filter((session): session is TwiccSessionFlowItem => Boolean(session));
+      if (!movingSessions.length || !isAlive() || moveFailed) {
         return;
       }
       const previousSessions = sessions;
       const previousTargetIds = getOrderedLaneSessions(lane).map((candidate) => candidate.id);
-      const targetSessions = getOrderedLaneSessions(lane).filter((candidate) => candidate.id !== sessionId);
+      const targetSessions = getOrderedLaneSessions(lane).filter((candidate) => !movingIds.has(candidate.id));
       const insertionIndex = beforeSessionId
         ? targetSessions.findIndex((candidate) => candidate.id === beforeSessionId)
         : targetSessions.length;
       const normalizedInsertionIndex = insertionIndex >= 0 ? insertionIndex : targetSessions.length;
-      targetSessions.splice(normalizedInsertionIndex, 0, {
-        ...session,
-        lane
-      });
+      targetSessions.splice(normalizedInsertionIndex, 0,
+        ...movingSessions.map((session) => ({ ...session, lane })));
       // Freeze the full target lane so later activity updates cannot disturb the chosen order.
       const nextTargetSessions = targetSessions.map((candidate, order) => ({
         ...candidate,
@@ -2445,19 +2556,22 @@
       }));
       const nextTargetIds = nextTargetSessions.map((candidate) => candidate.id);
       if (
-        session.lane === lane
+        movingSessions.every((session) => session.lane === lane)
         && previousTargetIds.length === nextTargetIds.length
         && previousTargetIds.every((id, index) => id === nextTargetIds[index])
       ) {
         return;
       }
-      const pendingSession = pendingCreatedSessions.get(sessionId);
-      const previousPendingItem = pendingSession?.item;
-      if (pendingSession) {
-        pendingSession.item = nextTargetSessions.find((candidate) => candidate.id === sessionId) || session;
+      const previousPendingItems = new Map<string, TwiccSessionFlowItem>();
+      for (const session of nextTargetSessions) {
+        const pending = pendingCreatedSessions.get(session.id);
+        if (pending) {
+          previousPendingItems.set(session.id, pending.item);
+          pending.item = session;
+        }
       }
       sessions = previousSessions
-        .filter((candidate) => candidate.id !== sessionId && candidate.lane !== lane)
+        .filter((candidate) => !movingIds.has(candidate.id) && candidate.lane !== lane)
         .concat(nextTargetSessions);
       render();
       message.hidden = false;
@@ -2474,8 +2588,11 @@
         // Do not run queued lane rewrites against an uncertain partial result.
         moveFailed = true;
         sessions = previousSessions;
-        if (pendingSession && previousPendingItem) {
-          pendingSession.item = previousPendingItem;
+        for (const [id, item] of previousPendingItems) {
+          const pending = pendingCreatedSessions.get(id);
+          if (pending) {
+            pending.item = item;
+          }
         }
         message.hidden = false;
         message.textContent = `Could not save all session moves: ${error instanceof Error ? error.message : String(error)}`;
@@ -2551,7 +2668,7 @@
       const header = document.createElement("header");
       header.className = "plugin-settings-dialog-header";
       const title = document.createElement("h3");
-      title.textContent = "Archive all done sessions";
+      title.textContent = searchQuery ? "Archive matching done sessions" : "Archive all done sessions";
       const closeButton = document.createElement("button");
       closeButton.className = "icon-button";
       closeButton.type = "button";
@@ -2583,10 +2700,10 @@
       actions.append(cancelButton, submitButton);
 
       function updateConfirmation(): string[] {
-        const doneSessionIds = getOrderedLaneSessions("done").map((session) => session.id);
+        const doneSessionIds = getOrderedLaneSessions("done").filter(matchesSearch).map((session) => session.id);
         const count = doneSessionIds.length;
         copy.textContent = count
-          ? `Archive all ${count} ${count === 1 ? "session" : "sessions"} in Done? This stops any running agents and removes ${count === 1 ? "it" : "them"} from this board.`
+          ? `Archive all ${count}${searchQuery ? " matching" : ""} ${count === 1 ? "session" : "sessions"} in Done? This stops any running agents and removes ${count === 1 ? "it" : "them"} from this board.`
           : "There are no sessions left to archive in Done.";
         submitButton.disabled = count === 0;
         return doneSessionIds;
@@ -2664,7 +2781,7 @@
       }
     }
 
-    function updateSessionDropTarget(event: DragEvent): HTMLElement | null {
+    function updateSessionDropTarget(event: { clientX: number; clientY: number }): HTMLElement | null {
       const centerX = event.clientX + draggedSessionCenterOffset.x;
       const centerY = event.clientY + draggedSessionCenterOffset.y;
       // The preview remains the native drop target while the ghost covers it.
@@ -2690,11 +2807,95 @@
       return target;
     }
 
+    function stopDragScroll(): void {
+      if (dragScrollFrame !== null) {
+        globalScope.cancelAnimationFrame(dragScrollFrame);
+        dragScrollFrame = null;
+      }
+      dragPointer = null;
+    }
+
+    function startDragScroll(event: DragEvent): void {
+      dragPointer = { clientX: event.clientX, clientY: event.clientY };
+      if (dragScrollFrame !== null) {
+        return;
+      }
+      let previousTime = performance.now();
+      const tick = (now: number): void => {
+        dragScrollFrame = null;
+        if (!draggedSessionId || !dragPointer || !isAlive()) {
+          stopDragScroll();
+          return;
+        }
+        const pointer = dragPointer;
+        const boardRect = board.getBoundingClientRect();
+        const horizontal = widget.dataset.orientation === "horizontal";
+        const hit = document.elementFromPoint(pointer.clientX, pointer.clientY);
+        const list = hit?.closest<HTMLElement>(".twicc-session-flow-list");
+        const containers = horizontal && list && board.contains(list) ? [list, board] : [board];
+        const elapsed = Math.min(32, now - previousTime);
+        previousTime = now;
+        let scrolled = false;
+        let canScroll = false;
+        for (const container of containers) {
+          const rect = container.getBoundingClientRect();
+          const left = Math.max(0, rect.left, boardRect.left);
+          const right = Math.min(globalScope.innerWidth, rect.right, boardRect.right);
+          const top = Math.max(0, rect.top, boardRect.top);
+          const bottom = Math.min(globalScope.innerHeight, rect.bottom, boardRect.bottom);
+          if (pointer.clientX < left || pointer.clientX > right || pointer.clientY < top || pointer.clientY > bottom) {
+            continue;
+          }
+          const edgeVelocity = (position: number, start: number, end: number): number => {
+            const edge = Math.min(48, (end - start) / 3);
+            if (edge <= 0) {
+              return 0;
+            }
+            if (position < start + edge) {
+              return -(1 - (position - start) / edge);
+            }
+            return position > end - edge ? 1 - (end - position) / edge : 0;
+          };
+          const beforeTop = container.scrollTop;
+          const beforeLeft = container.scrollLeft;
+          // The vertical layout scrolls the whole board; horizontal lanes scroll
+          // independently, with the board owning horizontal overflow only.
+          if (!horizontal || container !== board) {
+            const velocity = edgeVelocity(pointer.clientY, top, bottom);
+            canScroll ||= velocity < 0 ? beforeTop > 0
+              : velocity > 0 && beforeTop < container.scrollHeight - container.clientHeight;
+            container.scrollTop += velocity * elapsed * 0.8;
+          }
+          if (horizontal && container === board) {
+            const velocity = edgeVelocity(pointer.clientX, left, right);
+            canScroll ||= velocity < 0 ? beforeLeft > 0
+              : velocity > 0 && beforeLeft < container.scrollWidth - container.clientWidth;
+            container.scrollLeft += velocity * elapsed * 0.8;
+          }
+          scrolled ||= container.scrollTop !== beforeTop || container.scrollLeft !== beforeLeft;
+        }
+        if (scrolled) {
+          updateSessionDropTarget(pointer);
+        }
+        if (canScroll) {
+          dragScrollFrame = globalScope.requestAnimationFrame(tick);
+        }
+      };
+      dragScrollFrame = globalScope.requestAnimationFrame(tick);
+    }
+
+    function handleDragLeave(event: DragEvent): void {
+      if (!event.relatedTarget) {
+        stopDragScroll();
+      }
+    }
+
     function handleSessionDragHover(event: DragEvent): void {
       if (!draggedSessionId || !isAlive()) {
         return;
       }
       const target = updateSessionDropTarget(event);
+      startDragScroll(event);
       event.stopPropagation();
       if (event.dataTransfer) {
         event.dataTransfer.dropEffect = target ? "move" : "none";
@@ -2719,7 +2920,7 @@
       if (target === archiveDropzone) {
         void archiveSession(sessionId);
       } else if (insertion) {
-        void moveSession(sessionId, insertion.lane, insertion.beforeSessionId);
+        void moveSessions([sessionId], insertion.lane, insertion.beforeSessionId);
       }
     }
 
@@ -2730,11 +2931,24 @@
     document.addEventListener("dragenter", handleSessionDragHover, true);
     document.addEventListener("dragover", handleSessionDragHover, true);
     document.addEventListener("drop", handleSessionDrop, true);
+    document.addEventListener("dragleave", handleDragLeave, true);
+    document.addEventListener("dragend", stopDragScroll, true);
 
     function openMoveMenu(event: MouseEvent, session: TwiccSessionFlowItem): void {
       event.preventDefault();
       event.stopPropagation();
+      cancelPendingOpen();
       closeMoveMenu();
+      if (moveFailed || widget.dataset.archiving === "true") {
+        return;
+      }
+      if (!selectedSessionIds.has(session.id)) {
+        selectedSessionIds.clear();
+      }
+      syncSelection();
+      const targets = TWICC_SESSION_FLOW_LANES.flatMap((lane) => getOrderedLaneSessions(lane.id))
+        .filter((candidate) => selectedSessionIds.size ? selectedSessionIds.has(candidate.id) : candidate.id === session.id);
+      const targetIds = targets.map((candidate) => candidate.id);
       refreshRevision += 1;
       const anchor = event.currentTarget as HTMLElement;
       const menu = document.createElement("div");
@@ -2742,34 +2956,54 @@
       menu.setAttribute("role", "menu");
       const label = document.createElement("span");
       label.className = "twicc-session-flow-menu-label";
-      label.textContent = "Move session to";
+      label.textContent = targets.length > 1 ? `Move ${targets.length} sessions to` : "Move session to";
+      menu.setAttribute("aria-label", label.textContent);
       menu.append(label);
 
       for (const lane of TWICC_SESSION_FLOW_LANES) {
+        const current = targets.every((candidate) => candidate.lane === lane.id);
         const button = document.createElement("button");
         button.type = "button";
         button.setAttribute("role", "menuitem");
-        button.setAttribute("aria-current", String(session.lane === lane.id));
+        button.setAttribute("aria-current", String(current));
         const dot = document.createElement("span");
         dot.className = `twicc-session-flow-lane-dot ${lane.id}`;
         const copy = document.createElement("span");
-        copy.textContent = `${lane.label}${session.lane === lane.id ? " ✓" : ""}`;
+        copy.textContent = `${lane.label}${current ? " ✓" : ""}`;
         button.append(dot, copy);
         button.addEventListener("click", () => {
           closeMoveMenu();
-          void moveSession(session.id, lane.id);
+          void moveSessions(targetIds, lane.id);
         });
         menu.append(button);
       }
+      menu.addEventListener("keydown", (keyEvent) => {
+        const buttons = [...menu.querySelectorAll<HTMLButtonElement>("button")];
+        const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        if (keyEvent.key === "Escape") {
+          keyEvent.preventDefault();
+          closeMoveMenu();
+          widget.querySelector<HTMLElement>(`[data-session-id="${session.id}"]`)?.focus();
+        } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(keyEvent.key)) {
+          keyEvent.preventDefault();
+          const next = keyEvent.key === "Home" ? 0 : keyEvent.key === "End" ? buttons.length - 1
+            : (index + (keyEvent.key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length;
+          buttons[next]?.focus();
+        }
+      });
 
       document.body.append(menu);
       const anchorRect = anchor.getBoundingClientRect();
       const menuRect = menu.getBoundingClientRect();
-      menu.style.left = `${Math.max(8, Math.min(globalScope.innerWidth - menuRect.width - 8, anchorRect.right - menuRect.width))}px`;
-      menu.style.top = `${Math.max(8, Math.min(globalScope.innerHeight - menuRect.height - 8, anchorRect.bottom + 4))}px`;
+      const atPointer = event.type === "contextmenu" && (event.clientX !== 0 || event.clientY !== 0);
+      const left = atPointer ? event.clientX : anchorRect.right - menuRect.width;
+      const top = atPointer ? event.clientY : anchorRect.bottom + 4;
+      menu.style.left = `${Math.max(8, Math.min(globalScope.innerWidth - menuRect.width - 8, left))}px`;
+      menu.style.top = `${Math.max(8, Math.min(globalScope.innerHeight - menuRect.height - 8, top))}px`;
       moveMenu = menu;
       menu.querySelector<HTMLButtonElement>("button")?.focus();
-      globalScope.setTimeout?.(() => document.addEventListener("click", closeMoveMenu, { once: true }), 0);
+      document.addEventListener("pointerdown", dismissMoveMenu, true);
+      document.addEventListener("contextmenu", dismissMoveMenu, true);
     }
 
     function createComposerField(
@@ -3306,14 +3540,6 @@
       const indicatorState = isCurrentSession ? "" : getSessionFlowIndicatorState(session);
       let dragStarted = false;
       let dragPointerOffset: { x: number; y: number } | null = null;
-      let pendingOpenTimer: number | null = null;
-      const cancelPendingOpen = (): void => {
-        if (pendingOpenTimer === null) {
-          return;
-        }
-        globalScope.clearTimeout(pendingOpenTimer);
-        pendingOpenTimer = null;
-      };
       const isInteractiveTarget = (target: EventTarget | null): boolean => {
         return Boolean((target as Element | null)?.closest?.("button, input, select, textarea, a"));
       };
@@ -3323,11 +3549,12 @@
       card.tabIndex = isEditingTitle ? -1 : 0;
       card.dataset.sessionId = session.id;
       card.dataset.processState = session.processState || "idle";
-      card.title = `Open ${session.title}; double-click to rename`;
+      card.title = `Open ${session.title}; double-click to rename; Ctrl/Cmd-click to select; Shift-click to select a range`;
       card.setAttribute(
         "aria-label",
-        `${session.title}. Open in TwiCC; double-click or press F2 to rename.`
+        `${session.title}. Open in TwiCC; double-click or press F2 to rename. Ctrl or Command-click to select; Shift-click to select a range.`
       );
+      card.setAttribute("role", "option");
       card.setAttribute("aria-keyshortcuts", "F2");
       if (isCurrentSession) {
         card.setAttribute("aria-current", "true");
@@ -3402,6 +3629,14 @@
       move.addEventListener("click", (event) => openMoveMenu(event, session));
       main.append(provider, title, statusIndicator, currentBadge, move);
 
+      if (session.stale) {
+        const unavailableBadge = document.createElement("span");
+        unavailableBadge.className = "twicc-session-flow-current-badge";
+        unavailableBadge.textContent = "Source missing";
+        unavailableBadge.title = "The original conversation file is missing. Session metadata can still be edited.";
+        main.insertBefore(unavailableBadge, move);
+      }
+
       const meta = document.createElement("div");
       meta.className = "twicc-session-flow-meta";
       const activity = document.createElement("span");
@@ -3428,10 +3663,23 @@
       }
 
       card.append(main, meta, stats);
+      card.addEventListener("contextmenu", (event) => {
+        if (!isEditingTitle && !isInteractiveTarget(event.target)) {
+          openMoveMenu(event, session);
+        }
+      });
       card.addEventListener("click", (event) => {
         if (dragStarted || isEditingTitle || isInteractiveTarget(event.target)) {
           return;
         }
+        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+          event.preventDefault();
+          selectSession(session.id, event);
+          return;
+        }
+        selectedSessionIds.clear();
+        selectionAnchorId = session.id;
+        syncSelection();
         if (event.detail > 1) {
           cancelPendingOpen();
           return;
@@ -3445,7 +3693,8 @@
         }, TWICC_SESSION_FLOW_SINGLE_CLICK_DELAY_MS);
       });
       card.addEventListener("dblclick", (event) => {
-        if (dragStarted || isEditingTitle || isInteractiveTarget(event.target)) {
+        if (dragStarted || isEditingTitle || isInteractiveTarget(event.target)
+          || event.ctrlKey || event.metaKey || event.shiftKey) {
           return;
         }
         event.preventDefault();
@@ -3512,8 +3761,9 @@
       dot.className = `twicc-session-flow-lane-dot ${lane.id}`;
       const count = document.createElement("span");
       count.className = "twicc-session-flow-count";
-      const laneSessions = getOrderedLaneSessions(lane.id);
-      count.textContent = String(laneSessions.length);
+      const allLaneSessions = getOrderedLaneSessions(lane.id);
+      const laneSessions = allLaneSessions.filter(matchesSearch);
+      count.textContent = searchQuery ? `${laneSessions.length} / ${allLaneSessions.length}` : String(laneSessions.length);
       label.append(dot, document.createTextNode(lane.label), count);
       const chevron = document.createElement("span");
       chevron.className = "twicc-session-flow-chevron";
@@ -3527,7 +3777,7 @@
         const archiveAllButton = document.createElement("button");
         archiveAllButton.type = "button";
         archiveAllButton.className = "twicc-session-flow-archive-all";
-        archiveAllButton.textContent = "Archive all";
+        archiveAllButton.textContent = searchQuery ? "Archive matches" : "Archive all";
         archiveAllButton.disabled = laneSessions.length === 0
           || widget.dataset.archiving === "true"
           || widget.dataset.moving === "true";
@@ -3537,6 +3787,9 @@
 
       const list = document.createElement("div");
       list.className = "twicc-session-flow-list";
+      list.setAttribute("role", "listbox");
+      list.setAttribute("aria-label", `${lane.label} sessions`);
+      list.setAttribute("aria-multiselectable", "true");
       if (lane.id === "in_progress") {
         if (composerMode) {
           list.append(createSessionComposer());
@@ -3547,7 +3800,7 @@
       } else {
         const empty = document.createElement("span");
         empty.className = "twicc-session-flow-empty";
-        empty.textContent = "Drop sessions here";
+        empty.textContent = searchQuery ? "No matching sessions" : "Drop sessions here";
         list.append(empty);
       }
       heading.addEventListener("click", () => {
@@ -3558,7 +3811,7 @@
       return section;
     }
 
-    function render(): void {
+    function render(invalidateRead = true): void {
       if (!isAlive()) {
         return;
       }
@@ -3567,8 +3820,11 @@
         return;
       }
       renderPending = false;
-      refreshRevision += 1;
+      if (invalidateRead) {
+        refreshRevision += 1;
+      }
       board.replaceChildren(...TWICC_SESSION_FLOW_LANES.map(createLane));
+      syncSelection();
       board.hidden = false;
     }
 
@@ -3649,9 +3905,13 @@
 
     widget.cleanup = () => {
       disposed = true;
+      cancelPendingOpen();
+      stopDragScroll();
       document.removeEventListener("dragenter", handleSessionDragHover, true);
       document.removeEventListener("dragover", handleSessionDragHover, true);
       document.removeEventListener("drop", handleSessionDrop, true);
+      document.removeEventListener("dragleave", handleDragLeave, true);
+      document.removeEventListener("dragend", stopDragScroll, true);
       globalScope.clearInterval?.(refreshInterval);
       globalScope.removeEventListener?.(WEBAPP_URL_CHANGED_EVENT, handleWebAppUrlChanged);
       if (archiveAllDialog?.open) {

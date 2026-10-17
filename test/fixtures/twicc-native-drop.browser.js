@@ -82,4 +82,29 @@ for (const orientation of ['horizontal', 'vertical']) {
 check(window.kanbanNativeEvents.drop === 4,
   'Every real mouse drag must deliver a trusted drop event');
 cleanup();
+// Real mouse drags must scroll during a stationary edge hover, then save the
+// revealed insertion slot on release. Each surface starts with a fresh board.
+for (const orientation of ['vertical', 'horizontal']) {
+  sessions = Array.from({ length: 30 }, (_, index) => ({
+    id: `edge${index}`, title: `Edge session ${index}`, lane: 'in_progress', order: index
+  }));
+  host.style.width = orientation === 'horizontal' ? '850px' : '380px';
+  const dispose = pane.render(host, {
+    project: { id: 'example', sourcePath: '/workspace/example' }, paneId: `native-edge-${orientation}`,
+    globalPluginConfig: { twiccBaseUrl: 'https://twicc.example.test' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  host.querySelector('.twicc-session-flow-pane').setOrientation(orientation);
+  const source = card('edge0').getBoundingClientRect();
+  const start = { x: source.left + source.width / 2, y: source.top + source.height / 2 };
+  const edgeTarget = orientation === 'vertical' ? '.twicc-session-flow-board'
+    : '[data-lane="in_progress"] .twicc-session-flow-list';
+  const writesBefore = writes.length;
+  const preview = await window.nativeKanbanTest.drag({ start, edgeTarget });
+  check((orientation === 'vertical' ? preview.boardScrollTop : preview.laneScrollTop) > 40,
+    `A native stationary edge hover must scroll the ${orientation} list: ${JSON.stringify(preview)}`);
+  check(writes.length === writesBefore + 1 && writes.at(-1).sessionIds.indexOf('edge0') > 0,
+    'Native release after edge scrolling must persist the revealed insertion slot exactly once');
+  dispose();
+}
 window.browserTestResult = 'passed';

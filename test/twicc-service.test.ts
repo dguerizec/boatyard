@@ -939,6 +939,8 @@ test("loadTwiccSessionFlow computes inferred lanes without writing annotations",
   };
   const flow = await loadTwiccSessionFlow("/workspace/project", options);
 
+  assert.equal(flow.find((session: { id: string }) => session.id === "stale-direct")?.stale, true);
+
   assert.deepEqual(Object.fromEntries(flow.map((session: { id: string; lane: string }) => [
     session.id,
     session.lane
@@ -1086,6 +1088,9 @@ test("reorderTwiccSessionFlow persists every ordered lane position", async () =>
   const result = await reorderTwiccSessionFlow(["session-2", "session-1"], "in_progress", {
     execFileAsync: async (command: string, args: string[]) => {
       calls.push({ command, args });
+      if (args[0] === "sessions") {
+        return { stdout: JSON.stringify({ items: [{ id: "session-2" }, { id: "session-1" }] }) };
+      }
       return {
         stdout: JSON.stringify({ status: "updated" })
       };
@@ -1093,6 +1098,7 @@ test("reorderTwiccSessionFlow persists every ordered lane position", async () =>
   });
 
   assert.deepEqual(calls.map((call) => call.args), [
+    ["sessions", "get", "session-2", "session-1"],
     [
       "update-session",
       "session-2",
@@ -1113,6 +1119,108 @@ test("reorderTwiccSessionFlow persists every ordered lane position", async () =>
     sessionIds: ["session-2", "session-1"]
   });
 });
+
+test("reorderTwiccSessionFlow leaves unchanged stale destination sessions untouched", async () => {
+  const writes: string[][] = [];
+  await reorderTwiccSessionFlow(["old", "moving"], "done", {
+    execFileAsync: async (_command: string, args: string[]) => {
+      if (args[0] === "sessions") {
+        return { stdout: JSON.stringify({ items: [
+          { id: "old", stale: true, annotations: { boatyard: { sessionFlowLane: "done", sessionFlowOrder: 0 } } },
+          { id: "moving", annotations: { boatyard: { sessionFlowLane: "in_progress" } } }
+        ] }) };
+      }
+      writes.push(args);
+      return { stdout: JSON.stringify({ status: "updated" }) };
+    }
+  });
+  assert.deepEqual(writes, [["update-session", "moving", "annotations",
+    "set:boatyard.sessionFlowLane=done", "set:boatyard.sessionFlowOrder=1"]]);
+});
+
+for (const reason of ["missing", "archived", "hidden"]) {
+  test(`reorderTwiccSessionFlow checks the whole plan before writing (${reason})`, async () => {
+    const writes: string[] = [];
+    await assert.rejects(reorderTwiccSessionFlow(["valid", "blocked"], "done", {
+      globalConfig: { twiccBaseUrl: "https://twicc.example" },
+      fetch: createRpcFetch((url, init) => {
+        if (url.endsWith("/sessions/get")) {
+          assert.deepEqual(JSON.parse(String(init.body)), { session_ids: ["valid", "blocked"] });
+          return { exit_code: 0, result: { items: [
+            { id: "valid" },
+            ...(reason === "missing" ? [] : [{ id: "blocked", title: "Unavailable session", [reason]: true }])
+          ] } };
+        }
+        writes.push(url);
+        return { exit_code: 0, result: { status: "updated" } };
+      })
+    }), /No updates were sent/);
+    assert.deepEqual(writes, []);
+  });
+}
+
+for (const transport of ["cli", "rpc"]) {
+  test(`reorderTwiccSessionFlow lets TwiCC update stale session metadata (${transport})`, async () => {
+    const writes: unknown[] = [];
+    const snapshot = { items: [{ id: "stale-session", stale: true, title: "Missing source" }] };
+    const options = transport === "cli" ? {
+      execFileAsync: async (_command: string, args: string[]) => {
+        if (args[0] === "sessions") { return { stdout: JSON.stringify(snapshot) }; }
+        writes.push(args);
+        return { stdout: JSON.stringify({ status: "updated" }) };
+      }
+    } : {
+      globalConfig: { twiccBaseUrl: "https://twicc.example" },
+      fetch: createRpcFetch((url, init) => {
+        if (url.endsWith("/sessions/get")) { return { exit_code: 0, result: snapshot }; }
+        writes.push(JSON.parse(String(init.body)));
+        return { exit_code: 0, result: { status: "updated" } };
+      })
+    };
+    assert.deepEqual(await reorderTwiccSessionFlow(["stale-session"], "done", options), {
+      lane: "done", sessionIds: ["stale-session"]
+    });
+    assert.deepEqual(writes, transport === "cli"
+      ? [["update-session", "stale-session", "annotations", "set:boatyard.sessionFlowLane=done", "set:boatyard.sessionFlowOrder=0"]]
+      : [{ session_id: "stale-session", operations: ["set:boatyard.sessionFlowLane=done", "set:boatyard.sessionFlowOrder=0"] }]);
+  });
+}
+
+test("reorderTwiccSessionFlow stops after a rejected write and names the affected session", async () => {
+  const writes: string[] = [];
+  await assert.rejects(reorderTwiccSessionFlow(["first", "blocked", "last"], "done", {
+    execFileAsync: async (_command: string, args: string[]) => {
+      if (args[0] === "sessions") {
+        return { stdout: JSON.stringify({ items: ["first", "blocked", "last"].map((id) => ({ id, title: id })) }) };
+      }
+      writes.push(args[1]);
+      if (args[1] === "blocked") {
+        throw Object.assign(new Error("Command failed"), { code: 3, stdout: JSON.stringify({
+          status: "rejected", errors: [{ code: "session_stale", message: "Session file disappeared." }]
+        }) });
+      }
+      return { stdout: JSON.stringify({ status: "updated" }) };
+    }
+  }), /Session "blocked" \(blocked\).*session_stale: Session file disappeared/);
+  assert.deepEqual(writes, ["first", "blocked"]);
+});
+
+for (const transport of ["cli", "rpc"]) {
+  test(`session position rejection keeps the structured reason (${transport})`, async () => {
+    const receipt = { status: "rejected", errors: [{ code: "session_stale", message: "Session file is missing." }] };
+    const options = transport === "cli" ? {
+      execFileAsync: async () => { throw Object.assign(new Error("Command failed"), { code: 3, stdout: JSON.stringify(receipt) }); }
+    } : {
+      globalConfig: { twiccBaseUrl: "https://twicc.example" },
+      fetch: createRpcFetch(() => ({ exit_code: 3, result: receipt, error: null }))
+    };
+    await assert.rejects(updateTwiccSessionFlowPosition("blocked", "done", 0, options), (error: Error & { mutationRejected: boolean }) => {
+      assert.match(error.message, /session_stale: Session file is missing/);
+      assert.equal(error.mutationRejected, true);
+      return true;
+    });
+  });
+}
 
 test("updateTwiccSessionFlowPositionFromRpc persists one atomic lane position", async () => {
   const result = await updateTwiccSessionFlowPositionFromRpc("session-2", "done", 512, {

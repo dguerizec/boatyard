@@ -1731,10 +1731,8 @@ test("Twicc session flow widget exposes three draggable lanes and an archive tar
   assert.match(styles, /\.twicc-session-flow-card\.dragging\s*\{[\s\S]*?cursor: grabbing/);
   assert.doesNotMatch(styles, /\.twicc-session-flow-title:hover/);
   assert.match(styles, /\.twicc-session-flow-title-input/);
-  assert.match(renderer, /archiveAllButton\.textContent = "Archive all"/);
   assert.doesNotMatch(renderer, /lane\.id === "done" && widget\.classList\.contains\("twicc-session-flow-pane"\)/);
   assert.match(renderer, /\{ id: "done", label: "Done" \}/);
-  assert.match(renderer, /title\.textContent = "Archive all done sessions"/);
   assert.match(renderer, /in-progress, backlog, and done lanes/);
   assert.doesNotMatch(renderer, /Testing & observing/);
   assert.match(renderer, /BoatyardOverlayDialog\?\.show/);

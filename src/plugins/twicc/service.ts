@@ -49,6 +49,7 @@ type TwiccSession = {
   created_at?: string;
   git_branch?: string;
   id?: string;
+  known?: boolean;
   last_new_content_at?: string;
   last_started_at?: string;
   last_stopped_at?: string;
@@ -75,6 +76,7 @@ type TwiccSessionFlowItem = {
   processState: string;
   processStateChangedAt: string;
   provider: string;
+  stale?: boolean;
   title: string;
   totalCost: number;
   userMessageCount: number;
@@ -346,6 +348,10 @@ async function rpcCommand(
     throw new Error(`TwiCC RPC ${commandPath} returned an invalid response.`);
   }
   if (payload.exit_code && payload.exit_code !== 0) {
+    if (commandPath === "update-session/annotations" && isRecord(payload.result)
+        && ["rejected", "validation_error"].includes(String(payload.result.status))) {
+      throw Object.assign(sessionUpdateError(payload.result, "TwiCC rejected the session update."), { exitCode: payload.exit_code });
+    }
     throw Object.assign(new Error(String(payload.error || `TwiCC RPC ${commandPath} failed.`)), {
       exitCode: payload.exit_code,
       mutationRejected: commandPath === "update-session/annotations" && isRecord(payload.result)
@@ -662,6 +668,7 @@ function getTwiccSessionFlow(
         processState,
         processStateChangedAt: String(process?.last_state_change_at || "").trim(),
         provider: String(session.provider || "").trim(),
+        ...(session.stale === true ? { stale: true } : {}),
         title: String(session.title || "Untitled session").trim() || "Untitled session",
         totalCost: Number(session.total_cost) || 0,
         userMessageCount: Number(session.user_message_count) || 0,
@@ -855,7 +862,7 @@ async function runTwiccCommand(
       try { result = JSON.parse(String(detail?.stdout || "null")); } catch { /* An unreadable receipt remains unknown. */ }
       if ([1, 3].includes(Number(detail?.code)) && isRecord(result)
           && ["rejected", "validation_error"].includes(String(result.status))) {
-        throw Object.assign(new Error("TwiCC rejected the session update."), { mutationRejected: true });
+        throw sessionUpdateError(result, "TwiCC rejected the session update.");
       }
     }
     throw error;
@@ -895,11 +902,19 @@ async function migrateTwiccSessionFlowLanes(options: TwiccCommandOptions = {}) {
   return { results, allSucceeded: results.every((result) => result.status === "updated") };
 }
 
+function sessionUpdateError(result: unknown, fallback: string): Error & { mutationRejected: boolean } {
+  const receipt = isRecord(result) ? result : {};
+  const details = Array.isArray(receipt.errors)
+    ? receipt.errors.filter(isRecord).map((error) => [error.code, error.message].filter(Boolean).join(": ")).filter(Boolean)
+    : [];
+  return Object.assign(new Error(details.length ? `${fallback} ${details.join("; ")}` : fallback), {
+    mutationRejected: ["rejected", "validation_error"].includes(String(receipt.status))
+  });
+}
+
 function requireTwiccUpdate(result: unknown): void {
   if (!isRecord(result) || !["updated", "noop"].includes(String(result.status))) {
-    throw Object.assign(new Error("TwiCC did not confirm the session update."), {
-      mutationRejected: isRecord(result) && ["rejected", "validation_error"].includes(String(result.status))
-    });
+    throw sessionUpdateError(result, "TwiCC did not confirm the session update.");
   }
 }
 
@@ -1143,8 +1158,35 @@ async function reorderTwiccSessionFlow(
     throw new Error("Ordered TwiCC session ids must be non-empty and unique.");
   }
 
+  if (!normalizedSessionIds.length) { return { lane: normalizedLane, sessionIds: [] }; }
+  // Inspect the entire plan before writing: sessions removed from the board
+  // must not cause a predictable partial save; unchanged positions need no update.
+  const snapshot = await runTwiccCommand("sessions/get", { session_ids: normalizedSessionIds },
+    ["sessions", "get", ...normalizedSessionIds], options);
+  if (!isRecord(snapshot) || !Array.isArray(snapshot.items)) {
+    throw new Error("TwiCC did not return the sessions needed to check the move. No updates were sent.");
+  }
+  const sessionsById = new Map(snapshot.items.filter(isTwiccSession).map((session) => [session.id, session]));
+  const updates: Array<{ sessionId: string; title: string; order: number }> = [];
   for (const [order, sessionId] of normalizedSessionIds.entries()) {
-    await updateTwiccSessionFlowPosition(sessionId, normalizedLane, order, options);
+    const session = sessionsById.get(sessionId);
+    if (!session || session.known === false || session.archived === true || session.hidden === true) {
+      throw new Error(`Session ${sessionId} is no longer available on the board. No updates were sent; refresh and try again.`);
+    }
+    if (getAnnotatedSessionFlowLane(session) === normalizedLane && getAnnotatedSessionFlowOrder(session) === order) {
+      continue;
+    }
+    const title = session.title || sessionId;
+    updates.push({ sessionId, title, order });
+  }
+  for (const { sessionId, title, order } of updates) {
+    try {
+      await updateTwiccSessionFlowPosition(sessionId, normalizedLane, order, options);
+    } catch (error) {
+      throw Object.assign(new Error(`Session "${title}" (${sessionId}): ${error instanceof Error ? error.message : String(error)}`), {
+        mutationRejected: isRecord(error) && error.mutationRejected === true
+      });
+    }
   }
 
   return {

@@ -180,6 +180,21 @@ Implemented built-in plugins:
 - `boatyard.twicc`: Twicc conversation pane with a configurable, resizable Session Flow sidebar and compact browser controls; standalone Session Flow pane and widget; global/project settings; project creation action; and service.
 - `boatyard.telegram`: Telegram project topic pane, widget, global/project settings, and service.
 
+In Session Flow, the search field filters sessions by title or branch, ignoring
+case. Escape in the field clears the filter; bulk selection and archive actions
+apply only to matching sessions. Ctrl/Cmd-click toggles individual selections and Shift-click
+selects a range in display order. Selected cards have a thicker left border.
+Right-click or use a selected card's `…` menu to move the selection to In progress,
+Backlog, or Done; opening the menu on an unselected card targets only that card.
+Plain click clears the selection and opens the session, while Escape clears the
+selection without navigating. Drag near the top or bottom edge to scroll the
+board, or the hovered lane in the horizontal layout.
+Sessions whose original conversation files are missing in TwiCC display a
+Source missing badge; their metadata can still be edited. Moves check the
+complete destination order before saving and leave unchanged positions
+untouched. TwiCC decides whether an update is allowed, and rejections identify
+the affected session and preserve the backend's reason.
+
 ## Remote access
 
 See [Boatyard Remote](docs/remote-access.md) for the opt-in embedded server,

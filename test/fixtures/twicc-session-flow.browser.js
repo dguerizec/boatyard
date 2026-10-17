@@ -66,6 +66,7 @@ host.style.width = '420px';
 document.body.append(host);
 const cleanup = pane.render(host, {
   project: { id: 'example', sourcePath: '/workspace/example' }, paneId: 'kanban',
+  pluginConfig: { twiccProjectUrl: 'https://twicc.example.test/project/example' },
   globalPluginConfig: { twiccBaseUrl: 'https://twicc.example.test' }
 });
 await settle();
@@ -396,18 +397,308 @@ archiveGrip.original.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
 await settle();
 check(archives.join(',') === 'c' && !card('c'), 'The center-selected archive drop must execute exactly once');
 
+// Selection uses modifiers without opening sessions or replacing focused cards.
+serverSessions = Array.from({ length: 6 }, (_, index) => ({
+  id: `s${index}`, title: `Selectable ${index}`, lane: index < 4 ? 'in_progress' : 'backlog', order: index
+}));
+refresh();
+await settle();
+const opened = [];
+window.boatyard.openExternal = url => opened.push(url);
+const clickCard = (id, modifiers = {}) => card(id).dispatchEvent(new MouseEvent('click', {
+  bubbles: true, cancelable: true, ...modifiers
+}));
+const selected = () => [...host.querySelectorAll('.twicc-session-flow-card.selected')].map(node => node.dataset.sessionId).join(',');
+const contextMenu = id => card(id).dispatchEvent(new MouseEvent('contextmenu', {
+  bubbles: true, cancelable: true, clientX: 120, clientY: 100
+}));
+const dismissMenu = () => document.querySelector('.twicc-session-flow-menu')?.dispatchEvent(
+  new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+clickCard('s0', { ctrlKey: true });
+const selectionCard = card('s0');
+check(selected() === 's0' && selectionCard.getAttribute('aria-selected') === 'true', 'Ctrl-click must select a session');
+const titleLeft = selectionCard.querySelector('.twicc-session-flow-title').getBoundingClientRect().left;
+clickCard('s0', { ctrlKey: true });
+check(!selected() && titleLeft === card('s0').querySelector('.twicc-session-flow-title').getBoundingClientRect().left,
+  'Toggling the thicker selection border must not shift card content');
+clickCard('s1', { metaKey: true });
+clickCard('s3', { shiftKey: true });
+check(selected() === 's1,s2,s3', 'Shift-click must select the range from the anchor');
+clickCard('s2', { shiftKey: true });
+check(selected() === 's1,s2', 'A second Shift-click must shrink from the same anchor');
+clickCard('s5', { ctrlKey: true });
+check(selected() === 's1,s2,s5', 'Ctrl-click must add a disjoint session across categories');
+refresh();
+await settle();
+check(selected() === 's1,s2,s5', 'Selection must survive polling');
+contextMenu('s2');
+let selectionMenu = document.querySelector('.twicc-session-flow-menu');
+check(selectionMenu.querySelector('.twicc-session-flow-menu-label').textContent === 'Move 3 sessions to',
+  'Right-click on a selected card must target the selection');
+check([...selectionMenu.querySelectorAll('button')].every(button => button.getAttribute('aria-current') === 'false'),
+  'A mixed selection must not mark any destination as current');
+selectionMenu.querySelectorAll('button')[2].click();
+await settle();
+check(writes.at(-1).sessionIds.join(',') === 's1,s2,s5' && writes.at(-1).lane === 'done',
+  'A group move must write one ordered destination lane');
+pendingWrites.shift().resolve();
+await settle();
+check(['s1', 's2', 's5'].every(id => laneOf(id) === 'done') && selected() === 's1,s2,s5',
+  'A successful group move must retain the selected cards');
+openMenu('s1');
+check(document.querySelector('.twicc-session-flow-menu-label').textContent === 'Move 3 sessions to',
+  'The ellipsis menu must target the same selection as right-click');
+dismissMenu();
+check(selected() === 's1,s2,s5' && document.activeElement === card('s1'),
+  'Escape from the menu must preserve selection and restore card focus');
+contextMenu('s0');
+check(!selected() && document.querySelector('.twicc-session-flow-menu-label').textContent === 'Move session to',
+  'Right-click on an unselected session must target only that session');
+dismissMenu();
+clickCard('s3', { ctrlKey: true });
+openMenu('s3');
+check(document.querySelector('.twicc-session-flow-menu-label').textContent === 'Move session to',
+  'A single selected session must use singular menu copy');
+dismissMenu();
+card('s3').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+check(!selected(), 'Escape on the board must clear selection');
+clickCard('s0');
+clickCard('s4', { shiftKey: true });
+check(selected() === 's0,s3,s4', 'Plain click must establish the next range anchor across categories');
+await new Promise(resolve => setTimeout(resolve, 330));
+check(opened.length === 0, 'Modifier selection must cancel a pending plain-click navigation');
+clickCard('s0');
+check(!selected(), 'A plain click must clear multi-selection');
+await new Promise(resolve => setTimeout(resolve, 330));
+check(opened.length === 1, 'A plain click must still open a session');
+clickCard('s0', { ctrlKey: true });
+serverSessions = serverSessions.filter(session => session.id !== 's0');
+refresh();
+await settle();
+check(!selected(), 'Polling must prune selection when sessions disappear');
+
+// A partial bulk save must reconcile backend authority and stop later intents.
+clickCard('s1', { ctrlKey: true });
+clickCard('s2', { ctrlKey: true });
+contextMenu('s1');
+document.querySelectorAll('.twicc-session-flow-menu button')[1].click();
+await settle();
+check(writes.at(-1).sessionIds.join(',') === 's4,s1,s2',
+  'A group must append in visual order after existing destination sessions');
+chooseLane('s3', 'done');
+const writesBeforeBulkFailure = writes.length;
+serverSessions = serverSessions.map(session => session.id === 's1' ? { ...session, lane: 'backlog' } : session);
+pendingWrites.shift().reject(new Error('Partial bulk move failed'));
+await settle();
+check(writes.length === writesBeforeBulkFailure && laneOf('s1') === 'backlog' && laneOf('s2') === 'done'
+  && laneOf('s3') === 'in_progress', 'Partial bulk failure must read actual placements and stop the queued move');
+
+// Search matches title OR branch without case sensitivity, survives refreshes,
+// and never includes hidden sessions in selections or bulk actions.
+serverSessions = [
+  { id: 'search-a', title: 'Fix the Sidebar', branch: 'feature/search', lane: 'in_progress', order: 0 },
+  { id: 'search-hidden', title: 'Unrelated task', branch: 'main', lane: 'in_progress', order: 1 },
+  { id: 'search-b', title: 'Another task', branch: 'fix/sidebar', lane: 'in_progress', order: 2 },
+  { id: 'search-done', title: 'Sidebar cleanup', lane: 'done', order: 0 },
+  { id: 'search-done-hidden', title: 'Completed task', branch: 'main', lane: 'done', order: 1 }
+];
+refresh();
+await settle();
+const search = host.querySelector('.twicc-session-flow-search');
+const filterSessions = value => {
+  search.focus();
+  search.value = value;
+  search.dispatchEvent(new Event('input', { bubbles: true }));
+};
+check(lane('done').querySelector('.twicc-session-flow-archive-all').textContent === 'Archive all',
+  'Without a filter, the bulk archive button must retain its default label');
+lane('done').querySelector('.twicc-session-flow-archive-all').click();
+const unfilteredArchiveDialog = document.querySelector('.twicc-session-flow-archive-dialog');
+check(unfilteredArchiveDialog.querySelector('h3').textContent === 'Archive all done sessions',
+  'Without a filter, the archive dialog must retain its default title');
+await new Promise(resolve => {
+  unfilteredArchiveDialog.addEventListener('close', resolve, { once: true });
+  unfilteredArchiveDialog.close();
+});
+clickCard('search-hidden', { ctrlKey: true });
+filterSessions('  SIDEbar  ');
+check(document.activeElement === search && search.isConnected, 'Filtering must preserve the search input and focus');
+check(card('search-a') && card('search-b') && card('search-done') && !card('search-hidden') && !card('search-done-hidden'),
+  'Search must match title or branch in any lane, ignoring case and outer whitespace');
+check(!selected(), 'Filtering must remove hidden sessions from the selection');
+check(lane('in_progress').querySelector('.twicc-session-flow-count').textContent === '2 / 3',
+  'Filtered lane counts must show matching and total sessions');
+clickCard('search-a', { ctrlKey: true });
+clickCard('search-b', { shiftKey: true });
+check(selected() === 'search-a,search-b', 'Shift selection must include only matching cards');
+chooseLane('search-b', 'backlog');
+await settle();
+check(writes.at(-1).sessionIds.join(',') === 'search-a,search-b', 'Bulk moves must not include a filtered-out selection');
+pendingWrites.shift().resolve();
+await settle();
+check(!card('search-hidden') && laneOf('search-a') === 'backlog' && search.value === '  SIDEbar  ',
+  'The filter must survive move reconciliation');
+// Reordering a filtered lane must retain its hidden destination sessions.
+filterSessions('another');
+chooseLane('search-b', 'in_progress');
+await settle();
+check(writes.at(-1).sessionIds.join(',') === 'search-hidden,search-b',
+  'Filtered moves must retain hidden sessions in persisted destination ordering');
+pendingWrites.shift().resolve();
+await settle();
+filterSessions('does-not-exist');
+check(!host.querySelector('.twicc-session-flow-card')
+  && [...host.querySelectorAll('.twicc-session-flow-empty')].every(node => node.textContent === 'No matching sessions'),
+  'No matches must leave the search available with an explicit empty state');
+filterSessions('feature/search');
+check(card('search-a') && !card('search-b'), 'The branch field must be independently searchable');
+search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+check(search.value === '' && card('search-hidden') && card('search-done-hidden'), 'Escape must clear the filter and restore sessions');
+const filteredRead = deferred();
+nextRead = filteredRead;
+refresh();
+filterSessions('cleanup');
+filteredRead.resolve(structuredClone(serverSessions));
+await settle();
+check(card('search-done') && !card('search-a') && document.activeElement === search,
+  'An in-flight refresh must apply the latest filter without losing input focus');
+check(lane('done').querySelector('.twicc-session-flow-archive-all').textContent === 'Archive matches',
+  'Bulk archive must clearly indicate the filtered scope');
+lane('done').querySelector('.twicc-session-flow-archive-all').click();
+const archiveSearchDialog = document.querySelector('.twicc-session-flow-archive-dialog');
+check(archiveSearchDialog.textContent.includes('1 matching session'), 'Archive confirmation must count only matching sessions');
+archiveSearchDialog.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+await settle();
+check(archives.includes('search-done') && !archives.includes('search-done-hidden'),
+  'Archiving search matches must leave hidden done sessions untouched');
+filterSessions('');
+check(card('search-done-hidden'), 'Clearing a filter must restore remaining hidden sessions');
+
+serverSessions = [
+  { id: 'available', title: 'Available session', lane: 'in_progress', order: 0 },
+  { id: 'unavailable', title: 'Missing conversation', stale: true, lane: 'in_progress', order: 1 }
+];
+refresh();
+await settle();
+check(card('unavailable').textContent.includes('Source missing') && !card('unavailable').textContent.includes('Unavailable'),
+  'A missing source file must not label session metadata as unavailable');
+card('available').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+card('unavailable').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+const beforeUnavailableMove = writes.length;
+chooseLane('unavailable', 'done');
+await settle();
+check(writes.length === beforeUnavailableMove + 1 && writes.at(-1).sessionIds.includes('unavailable'),
+  'A selection containing a stale session must reach TwiCC for metadata updates');
+pendingWrites.shift().resolve();
+await settle();
+check(laneOf('available') === 'done' && laneOf('unavailable') === 'done',
+  'TwiCC may confirm moving both stale and available sessions');
+lane('done').querySelector('.twicc-session-flow-archive-all').click();
+document.querySelector('.twicc-session-flow-archive-dialog form')
+  .dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+await settle();
+check(archives.includes('unavailable') && !card('unavailable'),
+  'A stale session must remain archivable when TwiCC accepts its metadata update');
+
+// Edge scrolling continues with a stationary pointer and recomputes insertion
+// after each frame, in both the vertical board and horizontal lane lists.
+serverSessions = Array.from({ length: 36 }, (_, index) => ({
+  id: `scroll${index}`, title: `Scrolling session ${index}`, lane: index < 30 ? 'in_progress' : 'backlog', order: index
+}));
+host.style.cssText = 'position:fixed;left:20px;top:20px;width:420px;height:360px';
+surface.style.display = 'flex';
+surface.style.flexDirection = 'column';
+surface.style.boxSizing = 'border-box';
+refresh();
+await settle();
+const board = host.querySelector('.twicc-session-flow-board');
+const nativeRequestFrame = window.requestAnimationFrame;
+const nativeCancelFrame = window.cancelAnimationFrame;
+const animationFrames = new Map();
+let frameId = 0;
+let frameTime = performance.now();
+window.requestAnimationFrame = callback => { animationFrames.set(++frameId, callback); return frameId; };
+window.cancelAnimationFrame = id => animationFrames.delete(id);
+const frames = async (count = 8) => {
+  for (let i = 0; i < count; i++) {
+    frameTime = Math.max(frameTime + 16, performance.now() + 16);
+    const pending = [...animationFrames.values()];
+    animationFrames.clear();
+    for (const callback of pending) callback(frameTime);
+    await settle();
+  }
+};
+const hoverAt = (dragged, x, y) => dragEventAtCenter(dragged, 'dragover',
+  x + dragged.centerOffsetX, y + dragged.centerOffsetY);
+check(board.scrollHeight > board.clientHeight, 'Vertical fixture must overflow');
+const scrollGrip = drag('scroll0');
+const boardRect = board.getBoundingClientRect();
+hoverAt(scrollGrip, boardRect.left + boardRect.width / 2, boardRect.bottom - 3);
+await frames();
+check(board.scrollTop > 10, `A stationary pointer near the lower board edge must scroll down: ${JSON.stringify({ scrollTop: board.scrollTop, rect: boardRect.toJSON(), currentRect: board.getBoundingClientRect().toJSON(), dragging: surface.dataset.dragging })}`);
+const scrollAfterFirstFrames = board.scrollTop;
+await frames();
+check(board.scrollTop > scrollAfterFirstFrames, 'Scrolling must continue without another dragover');
+const beforeUpScroll = board.scrollTop;
+hoverAt(scrollGrip, boardRect.left + boardRect.width / 2, boardRect.top + 3);
+await frames();
+check(board.scrollTop < beforeUpScroll, 'The upper board edge must scroll back up');
+hoverAt(scrollGrip, boardRect.left + boardRect.width / 2, boardRect.top + boardRect.height / 2);
+await frames(2);
+const middleScroll = board.scrollTop;
+await frames();
+check(board.scrollTop === middleScroll, 'The middle of the board must not keep scrolling');
+hoverAt(scrollGrip, boardRect.left + boardRect.width / 2, boardRect.bottom - 3);
+await frames(3);
+scrollGrip.original.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+const afterEnd = board.scrollTop;
+await frames();
+check(board.scrollTop === afterEnd, 'Ending a drag must cancel the scrolling animation');
+
+surface.setOrientation('horizontal');
+host.style.width = '780px';
+board.scrollTop = 0;
+const horizontalList = lane('in_progress').querySelector('.twicc-session-flow-list');
+check(horizontalList.scrollHeight > horizontalList.clientHeight, 'Horizontal lane fixture must overflow');
+const listGrip = drag('scroll0');
+const listRect = horizontalList.getBoundingClientRect();
+hoverAt(listGrip, listRect.left + listRect.width / 2, listRect.bottom - 3);
+await frames();
+check(horizontalList.scrollTop > 10 && board.scrollTop === 0, 'Horizontal layout must scroll the hovered lane independently');
+const beforeScrollDrop = writes.length;
+const previewBeforeScrollDrop = host.querySelector('.twicc-session-flow-insertion-placeholder');
+check(previewBeforeScrollDrop?.isConnected, 'Scrolling must keep a live insertion preview');
+const dropX = listRect.left + listRect.width / 2;
+const dropY = listRect.bottom - 3;
+dragEventAtCenter(listGrip, 'drop', dropX + listGrip.centerOffsetX, dropY + listGrip.centerOffsetY);
+listGrip.original.dispatchEvent(new DragEvent('dragend', { bubbles: true }));
+await settle();
+check(writes.length === beforeScrollDrop + 1 && writes.at(-1).sessionIds.indexOf('scroll0') > 0,
+  'Dropping after scrolling must save the newly revealed insertion position');
+pendingWrites.shift().resolve();
+await settle();
+surface.setOrientation('vertical');
+board.scrollTop = 0;
 // Refresh failures keep the usable board, and late reads cannot revive it after cleanup.
 const failedRead = deferred();
 nextRead = failedRead;
 refresh();
 failedRead.reject(new Error('TwiCC unavailable'));
 await settle();
-check(!host.querySelector('.twicc-session-flow-board').hidden && card('a'), 'Read failure must retain the last useful board');
+check(!host.querySelector('.twicc-session-flow-board').hidden && card('scroll1'), 'Read failure must retain the last useful board');
 const removedRead = deferred();
 nextRead = removedRead;
 refresh();
+const disposalGrip = drag('scroll1');
+const cleanupRect = board.getBoundingClientRect();
+hoverAt(disposalGrip, cleanupRect.left + cleanupRect.width / 2, cleanupRect.bottom - 3);
 cleanup();
+const disposedScroll = board.scrollTop;
+await frames();
+check(board.scrollTop === disposedScroll, 'Disposal must cancel edge scrolling');
 removedRead.resolve([]);
 await settle();
 check(!surface.isConnected, 'A disposed surface must stay removed');
+window.requestAnimationFrame = nativeRequestFrame;
+window.cancelAnimationFrame = nativeCancelFrame;
 window.browserTestResult = 'passed';
