@@ -2616,8 +2616,14 @@
       resetDragState();
       const failures: string[] = [];
       let archivedCount = 0;
+      const showProgress = (completed: number): void => {
+        message.hidden = false;
+        message.textContent = `Archiving sessions… ${completed} / ${targets.length}`;
+      };
+      render();
+      showProgress(0);
       try {
-        for (const session of targets) {
+        for (const [index, session] of targets.entries()) {
           try {
             await invokePlugin("archiveSession", {
               globalConfig: props.globalPluginConfig || {},
@@ -2626,22 +2632,21 @@
             sessions = sessions.filter((candidate) => candidate.id !== session.id);
             pendingCreatedSessions.delete(session.id);
             archivedCount += 1;
-            render();
           } catch (error) {
             const detail = error instanceof Error ? error.message : String(error);
             failures.push(`${session.title}: ${detail}`);
           }
+          render();
+          showProgress(index + 1);
         }
       } finally {
         delete widget.dataset.archiving;
       }
       render();
-      message.hidden = failures.length === 0 && sessions.length > 0;
+      message.hidden = false;
       message.textContent = failures.length
-        ? `Could not archive ${failures.length} ${failures.length === 1 ? "session" : "sessions"}.`
-        : sessions.length
-          ? ""
-          : "No current TwiCC sessions.";
+        ? `${archivedCount} archived; ${failures.length} failed. ${failures[0]}`
+        : `Archived ${archivedCount} ${archivedCount === 1 ? "session" : "sessions"}.${sessions.length ? "" : " No current TwiCC sessions."}`;
       return { archivedCount, failures };
     }
 
@@ -2682,10 +2687,6 @@
       confirmation.className = "danger-confirmation";
       const copy = document.createElement("p");
       confirmation.append(copy);
-      const error = document.createElement("p");
-      error.className = "form-error";
-      error.setAttribute("role", "alert");
-      error.hidden = true;
       const actions = document.createElement("div");
       actions.className = "form-actions";
       const cancelButton = document.createElement("button");
@@ -2709,46 +2710,18 @@
         return doneSessionIds;
       }
 
-      form.append(header, confirmation, error, actions);
-      form.addEventListener("submit", async (event) => {
+      form.append(header, confirmation, actions);
+      form.addEventListener("submit", (event) => {
         event.preventDefault();
         const sessionIds = updateConfirmation();
+        dialog.close();
         if (!sessionIds.length) {
-          dialog.close();
           return;
         }
-        error.hidden = true;
-        error.textContent = "";
-        closeButton.disabled = true;
-        cancelButton.disabled = true;
-        submitButton.disabled = true;
-        submitButton.textContent = "Archiving…";
-        try {
-          const result = await archiveSessions(sessionIds);
-          if (!result.failures.length) {
-            dialog.close();
-            return;
-          }
-          error.textContent = `${result.archivedCount} archived; ${result.failures.length} failed. ${result.failures[0]}`;
-          error.hidden = false;
-          updateConfirmation();
-        } catch (archiveError) {
-          error.textContent = archiveError instanceof Error ? archiveError.message : String(archiveError);
-          error.hidden = false;
-        } finally {
-          closeButton.disabled = false;
-          cancelButton.disabled = false;
-          submitButton.textContent = "Archive all";
-          if (dialog.open) {
-            updateConfirmation();
-          }
-        }
-      });
-      dialog.addEventListener("cancel", (event) => {
-        event.preventDefault();
-        if (widget.dataset.archiving !== "true") {
-          dialog.close();
-        }
+        void archiveSessions(sessionIds).catch((archiveError) => {
+          message.hidden = false;
+          message.textContent = archiveError instanceof Error ? archiveError.message : String(archiveError);
+        });
       });
       dialog.addEventListener("close", () => {
         if (archiveAllDialog === dialog) {

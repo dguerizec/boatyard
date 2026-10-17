@@ -194,6 +194,8 @@ Source missing badge; their metadata can still be edited. Moves check the
 complete destination order before saving and leave unchanged positions
 untouched. TwiCC decides whether an update is allowed, and rejections identify
 the affected session and preserve the backend's reason.
+Confirming a bulk archive closes the dialog immediately. Archiving continues
+in the background, with progress and any failure details shown on the board.
 
 ## Remote access
 

@@ -25,6 +25,7 @@ let readCount = 0;
 let nextRead;
 const writes = [];
 const archives = [];
+const archiveReplies = [];
 const pendingWrites = [];
 window.boatyard = {
   onPluginEvent: () => () => {},
@@ -51,6 +52,8 @@ window.boatyard = {
     }
     if (action === 'archiveSession') {
       archives.push(payload.sessionId);
+      const reply = archiveReplies.shift();
+      if (reply) await reply.promise;
       serverSessions = serverSessions.filter(session => session.id !== payload.sessionId);
       return { status: 'updated' };
     }
@@ -599,6 +602,49 @@ document.querySelector('.twicc-session-flow-archive-dialog form')
 await settle();
 check(archives.includes('unavailable') && !card('unavailable'),
   'A stale session must remain archivable when TwiCC accepts its metadata update');
+
+serverSessions = [
+  { id: 'archive-slow', title: 'Slow archive', lane: 'done', order: 0 },
+  { id: 'archive-failed', title: 'Failed archive', lane: 'done', order: 1 },
+  { id: 'archive-last', title: 'Last archive', lane: 'done', order: 2 },
+  { id: 'archive-other', title: 'Other work', lane: 'in_progress', order: 0 }
+];
+refresh();
+await settle();
+const slowArchive = deferred();
+const failedArchive = deferred();
+const lastArchive = deferred();
+archiveReplies.push(slowArchive, failedArchive, lastArchive);
+const archiveStart = archives.length;
+lane('done').querySelector('.twicc-session-flow-archive-all').click();
+const backgroundArchiveDialog = document.querySelector('.twicc-session-flow-archive-dialog');
+backgroundArchiveDialog.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+check(!backgroundArchiveDialog.open, 'Confirmation must close the dialog before a slow archive completes');
+await settle();
+check(archives.length === archiveStart + 1 && surface.textContent.includes('Archiving sessions… 0 / 3'),
+  'The board must report background progress while the first archive is pending');
+check(lane('done').querySelector('.twicc-session-flow-archive-all').disabled,
+  'Another bulk archive must be disabled while a batch is in progress');
+search.value = 'Other work';
+search.dispatchEvent(new Event('input', { bubbles: true }));
+check(card('archive-other') && !card('archive-slow'), 'Search must remain usable during a background archive');
+filterSessions('');
+slowArchive.resolve();
+await settle();
+check(!card('archive-slow') && surface.textContent.includes('Archiving sessions… 1 / 3'),
+  'Confirmed archives must disappear and advance progress without reopening the modal');
+failedArchive.reject(new Error('Archive denied'));
+await settle();
+check(archives.length === archiveStart + 3 && surface.textContent.includes('Archiving sessions… 2 / 3'),
+  'A failed archive must not prevent the rest of the confirmed batch from running');
+lastArchive.resolve();
+await settle();
+check(card('archive-failed') && !card('archive-last') && surface.dataset.archiving !== 'true',
+  'Completion must retain failed sessions and unlock the board');
+check(surface.textContent.includes('2 archived; 1 failed. Failed archive: Archive denied'),
+  'Partial failure details must be visible on the board after the modal closes');
+check(!document.querySelector('.twicc-session-flow-archive-dialog[open]'),
+  'Background completion must not reopen the confirmation dialog');
 
 // Edge scrolling continues with a stationary pointer and recomputes insertion
 // after each frame, in both the vertical board and horizontal lane lists.
