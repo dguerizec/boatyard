@@ -1,6 +1,47 @@
 {
-  "generatedForVersion": "0.20.0",
+  "generatedForVersion": "0.21.0",
   "releases": [
+    {
+      "version": "0.21.0",
+      "date": "2026-10-17",
+      "features": [
+        {
+          "category": "Added",
+          "title": "Editable tables",
+          "body": "Edit CSV and related delimited files in a table, sort by text or numeric values, and drag rows to reorder them."
+        },
+        {
+          "category": "Added",
+          "title": "Session selection and menus",
+          "body": "Select multiple TwiCC sessions with Ctrl/Command-click or Shift-click, then move them using right-click or ellipsis menus."
+        },
+        {
+          "category": "Added",
+          "title": "Session filtering",
+          "body": "Find TwiCC sessions by title or branch, with bulk archiving limited to matching sessions."
+        },
+        {
+          "category": "Fixed",
+          "title": "Responsive bulk archiving",
+          "body": "Archive confirmation closes immediately while the board shows progress, completion counts, and failure details; failed sessions remain available."
+        },
+        {
+          "category": "Fixed",
+          "title": "Stale session updates",
+          "body": "Update session metadata even when the original conversation file is missing, with clearer explanations when an update fails."
+        },
+        {
+          "category": "Fixed",
+          "title": "Automatic project refresh",
+          "body": "Projects created by connected assistants appear in sidebars across open windows without disrupting panes or unsaved settings."
+        },
+        {
+          "category": "Fixed",
+          "title": "Fresh Pier workload menus",
+          "body": "Opening the pane menu refreshes available Pier workloads while preserving focus, scroll position, and cached entries if discovery fails."
+        }
+      ]
+    },
     {
       "version": "0.20.0",
       "date": "2026-10-13",

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.21.0] - 2026-10-17
+
+### Summary
+
+- **v0.21.0: Tables and Session Control** — Edit delimited files as tables, organize TwiCC sessions with selection and filtering, and see projects and workloads refresh automatically.
+
+### Added
+
+- **Editable tables** — Edit CSV and related delimited files in a table, sort by text or numeric values, and drag rows to reorder them.
+- **Session selection and menus** — Select multiple TwiCC sessions with Ctrl/Command-click or Shift-click, then move them using right-click or ellipsis menus.
+- **Session filtering** — Find TwiCC sessions by title or branch, with bulk archiving limited to matching sessions.
+
+### Fixed
+
+- **Responsive bulk archiving** — Archive confirmation closes immediately while the board shows progress, completion counts, and failure details; failed sessions remain available.
+- **Stale session updates** — Update session metadata even when the original conversation file is missing, with clearer explanations when an update fails.
+- **Automatic project refresh** — Projects created by connected assistants appear in sidebars across open windows without disrupting panes or unsaved settings.
+- **Fresh Pier workload menus** — Opening the pane menu refreshes available Pier workloads while preserving focus, scroll position, and cached entries if discovery fails.
+
 ## [0.20.0] - 2026-10-13
 
 ### Summary
