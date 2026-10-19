@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html). As a small deviation, each release opens with a one-line **Summary** recapping its highlights, and some entries include illustrative screenshots in nested sub-lists.
 
+## [0.21.1] - 2026-10-19
+
+### Summary
+
+- **v0.21.1: Inbox Alerts Restored** — TwiCC inbox alerts work again with the redesigned sidebar navigation.
+
+### Fixed
+
+- **TwiCC inbox attention** — The toolbar alert now detects incoming peer messages with either an expanded or collapsed sidebar, while remaining compatible with older TwiCC versions.
+
 ## [0.21.0] - 2026-10-17
 
 ### Summary

@@ -1,6 +1,17 @@
 {
-  "generatedForVersion": "0.21.0",
+  "generatedForVersion": "0.21.1",
   "releases": [
+    {
+      "version": "0.21.1",
+      "date": "2026-10-19",
+      "features": [
+        {
+          "category": "Fixed",
+          "title": "TwiCC inbox attention",
+          "body": "The toolbar alert now detects incoming peer messages with either an expanded or collapsed sidebar, while remaining compatible with older TwiCC versions."
+        }
+      ]
+    },
     {
       "version": "0.21.0",
       "date": "2026-10-17",
